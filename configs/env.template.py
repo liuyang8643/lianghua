@@ -1,0 +1,20 @@
+# 本文件用于存放全局配置参数
+
+import os
+
+# 日志文件存放路径
+current_work_dir = os.path.dirname(__file__)
+LOGGER_PATH = os.path.join(current_work_dir, 'logs')
+
+# 国金 QMT 安装路径列表（使用第一个存在的目录）
+QMT_ROOT_DIR = [
+  'D:\\gjqmt\\bin.x64',
+]
+
+# 交易账户配置
+TRADE_ACCOUNT = '你的账户ID'
+
+# 飞书机器人配置
+LARK_APP_ID = "你的应用ID"
+LARK_APP_SECRET = "你的应用密钥"
+LARK_RECEIVE_ID = "接收通知的用户或群组ID"

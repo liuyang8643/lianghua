@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+logs*/
+*.pclprof
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# secrets
+configs/env.py
