@@ -1,4 +1,4 @@
-# 本文件用于存放全局配置参数
+""" 本文件用于存放全局配置参数 """
 
 import os
 
@@ -15,6 +15,6 @@ QMT_ROOT_DIR = [
 TRADE_ACCOUNT = '你的账户ID'
 
 # 飞书机器人配置
-LARK_APP_ID = "你的应用ID"
-LARK_APP_SECRET = "你的应用密钥"
-LARK_RECEIVE_ID = "接收通知的用户或群组ID"
+LARK_APP_ID = "你的飞书机器人ID"
+LARK_APP_SECRET = "你的飞书机器人密钥"
+LARK_RECEIVE_ID = "你的飞书邮箱"
