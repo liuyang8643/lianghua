@@ -1,16 +1,18 @@
+from core import allow_buy_stock_code_list
+from core.strategies import TopN
+
 if __name__ == '__main__':
   import threading
   from xtquant import xtdata
-  from datetime import datetime, time
+  from datetime import datetime, date, time
 
   from configs import TRADE_ACCOUNT
   from trading.logger import trading_logger
-  from core.sizer import MIN_BUY_AMOUNT
+  from core.strategies.sizers.sizer import MIN_BUY_AMOUNT
   from utils.recorder import recorder
   from .lark.receiver import create_lark_handler
-  from .subscribe import subscribe_stock, unsubscribe_stock
   from .scheduler import TradingScheduler
-  from .trader import Trader, get_position
+  from .trader import Trader
 
   td = Trader(TRADE_ACCOUNT)
 
@@ -33,6 +35,8 @@ if __name__ == '__main__':
         if asset.cash > MIN_BUY_AMOUNT * 1.1 if asset else False:
           trading_logger.debug(f"开始选股")
           recorder.mark(f"开始选股")
+          all_stocks = allow_buy_stock_code_list(date.today())
+          sorted_stocks = TopN(all_stocks, datetime.now())
           # TODO 实现选股及购买逻辑
           trading_logger.debug(f"选股结束! ")
       finally:

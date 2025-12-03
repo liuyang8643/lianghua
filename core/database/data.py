@@ -30,7 +30,7 @@ def clear_market_data_cache(code: str = None, period: str = None):
     if period is None or period == '1m':
       _GLOBAL_MINUTE_CACHE.clear()
 
-def get_full_market_data(stock_code: str, period: str = '1d', target_time: datetime = None) -> Optional[pd.DataFrame]:
+def get_full_market_data(stock_code: str, period: str = '1d', target_time: datetime = None, dividend_type: str = 'back') -> Optional[pd.DataFrame]:
   """获取股票的完整历史数据（从上市日到目标时间），使用全局缓存
 
   性能优化：
@@ -49,10 +49,10 @@ def get_full_market_data(stock_code: str, period: str = '1d', target_time: datet
   # 缓存中没有，需要加载数据
   if period == '1d':
     # 日线数据：不传入count参数，获取所有可用数据
-    data = get_market_data(stock_code, None, target_time, '1d')
+    data = get_market_data(stock_code, None, target_time, '1d', dividend_type=dividend_type)
   else:
     # 分钟数据：默认获取最近30个交易日（约7500条）
-    data = get_market_data(stock_code, 7500, target_time, '1m', allow_tainted=True)
+    data = get_market_data(stock_code, 7500, target_time, '1m', allow_tainted=True, dividend_type=dividend_type)
 
   # 缓存数据
   cache[stock_code] = data
@@ -64,6 +64,7 @@ def get_market_data_from_cache(
     count: int,
     base_time: datetime,
     period: str = '1d',
+    dividend_type: str = 'back',
 ) -> Optional[pd.DataFrame]:
   """从缓存中获取指定时间范围的市场数据
 
@@ -73,7 +74,7 @@ def get_market_data_from_cache(
   - 避免重复的timestamp转换
   """
   # 获取完整历史数据
-  full_data = get_full_market_data(stock_code, period)
+  full_data = get_full_market_data(stock_code, period, dividend_type=dividend_type)
 
   if full_data is None or full_data.empty:
     return None
@@ -93,7 +94,7 @@ def get_market_data_from_cache(
       required_size = count + 2000
       _GLOBAL_MINUTE_CACHE[stock_code] = None  # 清除旧缓存
       # 重新加载更多数据
-      full_data = get_market_data(stock_code, required_size, base_time, '1m', allow_tainted=True)
+      full_data = get_market_data(stock_code, required_size, base_time, '1m', allow_tainted=True, dividend_type=dividend_type)
       _GLOBAL_MINUTE_CACHE[stock_code] = full_data
 
       if full_data is not None and not full_data.empty:
@@ -113,9 +114,12 @@ def get_market_data(
     base_time: datetime = None,
     period: str = '1d',
     allow_tainted: bool = False,  # 是否允许返回不完整或非最新的数据
+    dividend_type: str = 'back',
 ) -> Optional[pd.DataFrame]:
   """ deprecated, use get_market_data_batch instead """
-  history_data = get_market_data_batch([stock_code], count, base_time, period, allow_tainted)[stock_code]
+  history_data = get_market_data_batch(
+    [stock_code], count, base_time, period, allow_tainted, dividend_type
+  )[stock_code]
   # 当count为None时，不校验数据数量
   if not allow_tainted and count is not None:
     if history_data is None or history_data['time'].size < count:
@@ -132,6 +136,7 @@ def get_market_data_batch(
     base_time: datetime = None,
     period: str = '1d',
     allow_tainted: bool = False,  # 是否允许返回不完整或非最新的数据
+    dividend_type: str = 'back',
 ) -> dict[str, Optional[pd.DataFrame]]:
   """批量获取市场数据
 
@@ -146,7 +151,7 @@ def get_market_data_batch(
   input_time = base_time or datetime.now()
   latest_trading_time = get_latest_trading_time(input_time)
 
-  history_data_dict = get_history_data(stock_codes, count, latest_trading_time, period)
+  history_data_dict = get_history_data(stock_codes, count, latest_trading_time, period, dividend_type)
 
   # 如果允许污染数据，直接返回，跳过所有校验和修复逻辑
   if allow_tainted:
@@ -184,7 +189,7 @@ def get_market_data_batch(
 
     # 批量更新过期数据
     if stocks_need_update:
-      updated_dict = get_history_data_after_download(stocks_need_update, count, latest_trading_time, period)
+      updated_dict = get_history_data_after_download(stocks_need_update, count, latest_trading_time, period, dividend_type)
 
       for code, updated_data in updated_dict.items():
         if updated_data is not None and not updated_data.empty:
@@ -203,7 +208,7 @@ def get_market_data_batch(
       data_sizes = [stocks_need_fix[c]['time'].size for c in stocks_need_suspend_fix]
       estimated_count = max(count - size for size in data_sizes)
 
-      more_data_dict = get_history_data_after_download(stocks_need_suspend_fix, estimated_count * (attempt + 1) + 1, max_earliest_time, period)
+      more_data_dict = get_history_data_after_download(stocks_need_suspend_fix, estimated_count * (attempt + 1) + 1, max_earliest_time, period, dividend_type)
 
       # 处理返回数据 - 优化版本：使用向量化过滤
       filtered_more_data = {}

@@ -1,10 +1,12 @@
 from datetime import datetime, date
 from typing import Optional
 from pandas import DataFrame
+import talib
+import numpy as np
 
 from core.database import StockDetail, StockTradingData
 
-class JudgeCtx:
+class FactorCtx:
   """判断上下文，包含股票代码、时间"""
 
   def __init__(self, code: str, base_time: datetime):
@@ -104,6 +106,24 @@ class JudgeCtx:
     highest_d = history_data[-period:-1]['high'].max()
     lowest_d = history_data[-period:-1]['low'].min()
     return (highest_d - lowest_d) / lowest_d  # 从底部涨幅比例
+
+  def get_macd(self, fast_period: int = 12, slow_period: int = 26, signal_period: int = 9) -> tuple[float, float, float]:
+    """
+    获取MACD指标
+    :param fast_period: 快速EMA周期
+    :param slow_period: 慢速EMA周期
+    :param signal_period: 信号线EMA周期
+    :return: MACD线、信号线、柱状图序列
+    """
+    history_data = self.get_daily_data(slow_period)  # 获取足够的历史数据
+    close_prices = np.array(history_data['close'].values, dtype=np.float64)
+    macd, signal, hist = talib.MACD(
+      close_prices,
+      fastperiod=fast_period,
+      slowperiod=slow_period,
+      signalperiod=signal_period
+    )
+    return macd[-1], signal[-1], hist[-1]
 
   def get_bbi(self, period: int) -> DataFrame:
     """

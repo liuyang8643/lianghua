@@ -12,6 +12,7 @@ def get_history_data(
     count: Optional[int],
     base_time: datetime,
     period: str,
+    dividend_type: str = 'back',
 ) -> dict[str, Optional[DataFrame]]:
   # 当count为None时，使用-1表示获取所有数据
   actual_count = -1 if count is None else count
@@ -21,7 +22,7 @@ def get_history_data(
     end_time=format_qmt_datetime(base_time),
     period=period,
     count=actual_count,
-    dividend_type='back',
+    dividend_type=dividend_type,
   )
 
 def get_history_data_after_download(
@@ -29,6 +30,7 @@ def get_history_data_after_download(
     count: Optional[int],
     base_time: datetime,
     period: str,
+    dividend_type: str = 'back',
 ) -> dict[str, Optional[DataFrame]]:
   # 当count为None时，使用一个大的默认值（约10年数据）
   actual_count = 2500 if count is None else count
@@ -41,7 +43,7 @@ def get_history_data_after_download(
       end_time=format_qmt_date(base_time),
       incrementally=True
     )
-  return get_history_data(stock_codes, count, base_time, period)
+  return get_history_data(stock_codes, count, base_time, period, dividend_type)
 
 # @profile
 def check_stocks_need_fix(
