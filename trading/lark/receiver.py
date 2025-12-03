@@ -51,41 +51,12 @@ def create_lark_handler(trader: Trader):
       content="```\n" + '\n'.join(logs) + "\n```",
     )
 
-  is_in_query_worth_buy = False
-
   def handle_action_query_worth_buy():
-    from trading.actions.buy import to_quick_buy_stocks
-
-    nonlocal is_in_query_worth_buy
-    if is_in_query_worth_buy:
-      trading_logger.debug(f'正在查询值得买股票，跳过')
-      lark_sender.send_notification_card(
-        level=LarkMsgLevel.Warning,
-        title="查询值得买股票",
-        content="当前正在查询值得买股票，请耐心等待……",
-      )
-      return
-    else:
-      lark_sender.send_notification_card(
-        level=LarkMsgLevel.Info,
-        title="查询值得买股票",
-        content="开始查询值得买股票，请耐心等待……",
-      )
-
-    is_in_query_worth_buy = True
-    trading_logger.debug(f'开始查询值得买股票')
-    worth_buy_list = to_quick_buy_stocks(trader, None)
-    asset = trader.query_asset()
-    if asset:
-      lark_sender.send_stock_card(
-        "值得买股票",
-        f"""\
-      资产合计：{asset.total_asset:.2f}
-      股票市值：{asset.market_value:.2f}
-      可用资金：{asset.cash:.2f}""",
-        worth_buy_list
-      )
-    is_in_query_worth_buy = False
+    lark_sender.send_notification_card(
+      level=LarkMsgLevel.Warning,
+      title="维护中",
+      content="该功能正在维护中，快去写代码实现一下！",
+    )
 
   def handle_action_kill():
     """ 结束程序 """
