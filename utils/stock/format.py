@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Optional
 
-from core.database import StockDetail
+from core.database.type import StockDetail
 
 def get_stock_code(stock_detail: StockDetail) -> str:
   return f"{stock_detail['ExchangeCode']}.{stock_detail['ExchangeID']}" if stock_detail else '-'

@@ -2,7 +2,6 @@ import re
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache
 
-from utils.logger import global_logger
 from .holiday import is_trading_day
 
 DAY_START = time(0, 0)
@@ -124,8 +123,7 @@ def get_target_period_backward(base_time: datetime, period: str, count=1) -> dat
   # 使用预编译的正则表达式
   match = _PERIOD_REGEX.match(period)
   if not match:
-    global_logger.error(f"不支持的周期格式: {period}")
-    return base_time
+    raise Exception(f"不支持的周期格式: {period}")
 
   period_value = int(match.group(1))
   period_unit = match.group(2)
@@ -180,8 +178,7 @@ def get_target_period_backward(base_time: datetime, period: str, count=1) -> dat
     return result_time
 
   else:
-    global_logger.error(f"不支持的周期单位: {period_unit}")
-    return base_time
+    raise Exception(f"不支持的周期单位: {period_unit}")
 
 def get_trading_date_span(
     start_date: date,

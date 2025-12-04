@@ -1,7 +1,9 @@
-from configs import *
 from core.factors import *
 
 from datetime import datetime
+
+from ._weights import FactorWights
+from ..logger import core_logger
 
 class TopN:
   """ 给定股票池中，选取市值排名前N的股票 """
@@ -13,7 +15,7 @@ class TopN:
   def get_factors(self) -> list[tuple[BaseFactor, float]]:
     return [
       # TODO 添加更多因子
-      (MACD(), FactorWights[MACD.__class__]),
+      (MACD(), FactorWights['MACD']),
     ]
 
   def get_ordered_stocks(self) -> list[str]:
@@ -23,8 +25,15 @@ class TopN:
       ctx = FactorCtx(stock_code, self.target_date)
       total_score = 0.0
       for factor, weight in self.get_factors():
-        result = factor.calc(ctx)
-        total_score += result['score'] * weight if result['score'] is not None else 0.0
+        try:
+          result = factor.calc(ctx)
+          score = result['score'] or 0.0
+          # TODO 分数归一化处理
+          total_score += score * weight
+        except Exception as e:
+          # 如果某个因子计算失败，则跳过该因子
+          core_logger.warning(e)
+          continue
       stock_scores.append((stock_code, total_score))
 
     return [

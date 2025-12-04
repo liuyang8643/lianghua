@@ -5,6 +5,7 @@ import talib
 import numpy as np
 
 from core.database import StockDetail, StockTradingData
+from .cache import cached_dataframe, cached_value
 
 class FactorCtx:
   """判断上下文，包含股票代码、时间"""
@@ -22,16 +23,12 @@ class FactorCtx:
       raise ValueError(f"获取股票详情失败: {self.code}")
     return detail
 
+  @cached_dataframe('get_daily_data')
   def get_daily_data(self, pass_days: int) -> DataFrame:
     """获取日线数据"""
-    from core.database import get_market_data_from_cache, get_market_data
+    from core.database import get_market_data
 
-    if self.base_time < datetime.combine(date.today(), datetime.min.time()):
-      # 历史数据，使用缓存
-      return get_market_data_from_cache(self.code, pass_days, self.base_time, '1d')
-    else:
-      # 今天或未来的数据，不使用缓存
-      return get_market_data(self.code, pass_days, self.base_time, '1d')
+    return get_market_data(self.code, pass_days, self.base_time, '1d')
 
   def get_today_data(self) -> StockTradingData:
     """获取今日数据"""
@@ -45,16 +42,12 @@ class FactorCtx:
     """获取昨日数据"""
     return self.get_daily_data(2).iloc[-2]
 
+  @cached_dataframe('get_minute_data')
   def get_minute_data(self, pass_minutes: int) -> DataFrame:
     """获取分钟数据"""
-    from core.database import get_market_data_from_cache, get_market_data
+    from core.database import get_market_data
 
-    if self.base_time < datetime.combine(date.today(), datetime.min.time()):
-      # 历史数据，使用缓存
-      return get_market_data_from_cache(self.code, pass_minutes, self.base_time, '1m')
-    else:
-      # 今天或未来的数据，不使用缓存
-      return get_market_data(self.code, pass_minutes, self.base_time, '1m')
+    return get_market_data(self.code, pass_minutes, self.base_time, '1m')
 
   def get_minute_data_today(self, base_datetime: datetime) -> Optional[DataFrame]:
     """获取今日分钟数据"""
@@ -74,6 +67,7 @@ class FactorCtx:
     bar_count_day = 4 * 60 + 1  # 当日k线数量，+1是因为0930开盘的k线
     return self.get_minute_data(pass_days * bar_count_day)
 
+  @cached_value('get_amount_pass_days')
   def get_amount_pass_days(self, pass_days: int) -> list[float]:
     """当前时间下过去 pass_days 天同期成交额"""
     from utils.stock.time import get_trading_pass_minute
@@ -87,12 +81,14 @@ class FactorCtx:
     bar_count_pass = get_trading_pass_minute(latest_time) + 1
     return [sum(history_data['amount'].iloc[- bar_count_pass - d * bar_count:(-d * bar_count) if d else None]) for d in reversed(range(pass_days))]
 
+  @cached_dataframe('get_maw')
   def get_maw(self, period: int) -> DataFrame:
     """获取MAW指标"""
     history_data = self.get_daily_data(period * 2)
     return ((history_data['open'] + history_data['close'] + history_data['low'] + history_data['high']) / 4 * history_data['amount']).rolling(window=period).mean() / \
       history_data['amount'].rolling(window=period).mean()
 
+  @cached_value('get_raise_ratio')
   def get_raise_ratio(self, period: int) -> float:
     """获取从底部涨幅比例"""
     history_data = self.get_daily_data(period)
@@ -100,6 +96,7 @@ class FactorCtx:
     current_price = history_data.iloc[-1]['close']
     return (current_price - lowest_d) / lowest_d  # 从底部涨幅比例
 
+  @cached_value('get_raise_ratio_max')
   def get_raise_ratio_max(self, period: int) -> float:
     """获取最大涨幅比例"""
     history_data = self.get_daily_data(period)
@@ -107,6 +104,7 @@ class FactorCtx:
     lowest_d = history_data[-period:-1]['low'].min()
     return (highest_d - lowest_d) / lowest_d  # 从底部涨幅比例
 
+  @cached_value('get_macd')
   def get_macd(self, fast_period: int = 12, slow_period: int = 26, signal_period: int = 9) -> tuple[float, float, float]:
     """
     获取MACD指标
@@ -116,6 +114,9 @@ class FactorCtx:
     :return: MACD线、信号线、柱状图序列
     """
     history_data = self.get_daily_data(slow_period)  # 获取足够的历史数据
+
+    if history_data is None or history_data.empty:
+      raise ValueError(f"获取MACD指标失败，历史数据不足: 需要至少{slow_period}天")
     close_prices = np.array(history_data['close'].values, dtype=np.float64)
     macd, signal, hist = talib.MACD(
       close_prices,
@@ -125,6 +126,7 @@ class FactorCtx:
     )
     return macd[-1], signal[-1], hist[-1]
 
+  @cached_dataframe('get_bbi')
   def get_bbi(self, period: int) -> DataFrame:
     """
     获取BBI指标（多空指数）
@@ -141,6 +143,7 @@ class FactorCtx:
     bbi = (ma3 + ma6 + ma12 + ma24) / 4
     return bbi
 
+  @cached_dataframe('get_cci')
   def get_cci(self, period: int) -> DataFrame:
     """
     获取CCI指标（顺势指标）

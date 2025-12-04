@@ -36,7 +36,7 @@ if __name__ == '__main__':
           trading_logger.debug(f"开始选股")
           recorder.mark(f"开始选股")
           all_stocks = allow_buy_stock_code_list(date.today())
-          sorted_stocks = TopN(all_stocks, datetime.now())
+          sorted_stocks = TopN(all_stocks, datetime.now()).get_ordered_stocks()
           # TODO 实现选股及购买逻辑
           trading_logger.debug(f"选股结束! ")
       finally:

@@ -6,7 +6,7 @@ import psutil
 import subprocess
 from typing import Optional, Union
 
-from configs import QMT_ROOT_DIR
+from configs.env import QMT_ROOT_DIR
 
 def get_qmt_process() -> Optional[psutil.Process]:
   """获取 QMT 进程对象"""

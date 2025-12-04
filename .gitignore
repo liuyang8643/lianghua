@@ -1,3 +1,6 @@
+# Cached files
+.cache/
+
 # Python
 .venv/
 __pycache__/
