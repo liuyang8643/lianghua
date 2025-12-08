@@ -5,6 +5,8 @@ from .indicators import FactorCtx
 class FactorResult(TypedDict):
   # 计算得分，如果计算出错则为 None
   score: Optional[float]
+  # 可选的错误信息
+  err: Optional[Exception]
 
 class BaseFactor:
   def calc(self, ctx: FactorCtx) -> FactorResult:

@@ -1,223 +1,223 @@
 """
 因子计算数据持久化缓存层
-使用 Parquet 格式存储 + LRU 内存缓存
+使用 Parquet 格式存储 + 内存映射（持久化，~1ms）
+
+优化特性：
+- 内存映射读取（操作系统页面缓存）
+- 原子写入防止并发写入损坏
+- 文件存在性缓存减少文件系统调用
 """
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Any
 import hashlib
 import pickle
-import sys
+import os
+import tempfile
+import mmap
 from pandas import DataFrame
-import pandas as pd
+from threading import RLock
+from functools import lru_cache
+import io
+import pyarrow.parquet as pq
+import pyarrow as pa
+from utils.hash import hash_function_code
 
 # 缓存配置
 CACHE_DIR = Path(__file__).parent / '.cache'
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-# LRU 缓存配置：8GB 内存限制
-# 假设平均每个 DataFrame 约 100KB，8GB = 8 * 1024 * 1024 KB = 8388608 KB
-# 最大缓存条目数 = 8388608 / 100 ≈ 83886
-LRU_MAX_SIZE = 80000  # 留一些余量
 
 class CacheKey:
   """缓存键生成器"""
 
   @staticmethod
   def make_key(code: str, base_time: datetime, method: str, *args, **kwargs) -> str:
-    """
-    生成缓存键
-    :param code: 股票代码
-    :param base_time: 基准时间
-    :param method: 方法名
-    :param args: 位置参数
-    :param kwargs: 关键字参数
-    :return: 缓存键字符串
-    """
-    # 使用日期部分作为key（忽略时分秒）
+    """生成缓存键"""
     date_str = base_time.strftime('%Y%m%d')
-
-    # 序列化参数
-    params_str = f"{args}_{sorted(kwargs.items())}"
-    param_hash = hashlib.md5(params_str.encode()).hexdigest()[:8]
-
-    return f"{code}_{date_str}_{method}_{param_hash}"
+    if args or kwargs:
+      params_str = f"{args}_{sorted(kwargs.items())}"
+      param_hash = hashlib.blake2b(params_str.encode(), digest_size=4).hexdigest()
+      return f"{code}_{date_str}_{method}_{param_hash}"
+    return f"{code}_{date_str}_{method}"
 
   @staticmethod
+  @lru_cache(maxsize=2048)
   def make_file_path(key: str, data_type: str = 'df') -> Path:
-    """
-    生成缓存文件路径
-    :param key: 缓存键
-    :param data_type: 数据类型 ('df' for DataFrame, 'pkl' for pickle)
-    :return: 文件路径
-    """
-    # 按股票代码分目录存储
+    """生成缓存文件路径（带路径缓存）"""
     code = key.split('_')[0]
     code_dir = CACHE_DIR / code
     code_dir.mkdir(exist_ok=True)
-
-    if data_type == 'df':
-      return code_dir / f"{key}.parquet"
-    else:
-      return code_dir / f"{key}.pkl"
+    ext = 'parquet' if data_type == 'df' else 'pkl'
+    return code_dir / f"{key}.{ext}"
 
 class DiskCache:
-  """磁盘缓存管理器"""
+  """磁盘缓存管理器（使用内存映射，操作系统页面缓存实现跨进程共享）"""
+
+  # 文件存在性缓存（减少文件系统调用）
+  _existence_cache: dict[str, bool] = {}
+  _existence_lock = RLock()
+
+  @classmethod
+  def _mark_exists(cls, key: str, data_type: str, exists: bool):
+    with cls._existence_lock:
+      cls._existence_cache[f"{key}_{data_type}"] = exists
+
+  @classmethod
+  def _check_exists(cls, key: str, data_type: str) -> Optional[bool]:
+    with cls._existence_lock:
+      return cls._existence_cache.get(f"{key}_{data_type}")
 
   @staticmethod
   def save_dataframe(key: str, df: DataFrame) -> None:
-    """保存 DataFrame 到磁盘"""
+    """保存 DataFrame 到磁盘（原子写入）"""
     file_path = CacheKey.make_file_path(key, 'df')
     try:
-      df.to_parquet(file_path, engine='pyarrow', compression='snappy')
-    except Exception as e:
-      # 静默失败，不影响主流程
+      # 使用 PyArrow 直接序列化（更快）
+      table = pa.Table.from_pandas(df)
+      buffer = io.BytesIO()
+      pq.write_table(table, buffer, compression='snappy')
+      data = buffer.getvalue()
+
+      # 使用临时文件 + 重命名实现原子写入
+      fd, tmp_path = tempfile.mkstemp(suffix='.parquet', dir=file_path.parent)
+      try:
+        os.write(fd, data)
+        os.close(fd)
+        if file_path.exists():
+          try:
+            file_path.unlink()
+          except Exception:
+            pass
+        os.replace(tmp_path, file_path)
+        DiskCache._mark_exists(key, 'df', True)
+      except Exception:
+        try:
+          os.close(fd)
+        except Exception:
+          pass
+        try:
+          os.unlink(tmp_path)
+        except Exception:
+          pass
+        raise
+    except Exception:
       pass
 
   @staticmethod
   def load_dataframe(key: str) -> Optional[DataFrame]:
     """从磁盘加载 DataFrame"""
+    cached_exists = DiskCache._check_exists(key, 'df')
+    if cached_exists is False:
+      return None
+
     file_path = CacheKey.make_file_path(key, 'df')
     if not file_path.exists():
+      DiskCache._mark_exists(key, 'df', False)
       return None
 
     try:
-      return pd.read_parquet(file_path, engine='pyarrow')
-    except Exception as e:
-      # 缓存损坏，删除文件
-      file_path.unlink(missing_ok=True)
+      # 使用内存映射读取（多进程共享物理内存页）
+      table = pq.read_table(file_path, memory_map=True)
+      result = table.to_pandas()
+      DiskCache._mark_exists(key, 'df', True)
+
+      return result
+    except Exception:
+      try:
+        file_path.unlink(missing_ok=True)
+      except Exception:
+        pass
+      DiskCache._mark_exists(key, 'df', False)
       return None
 
   @staticmethod
   def save_pickle(key: str, data: Any) -> None:
-    """保存 pickle 数据到磁盘"""
+    """保存 pickle 数据到磁盘（原子写入）"""
     file_path = CacheKey.make_file_path(key, 'pkl')
     try:
-      with open(file_path, 'wb') as f:
-        pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)  # type: ignore
-    except Exception as e:
+      serialized = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
+
+      fd, tmp_path = tempfile.mkstemp(suffix='.pkl', dir=file_path.parent)
+      try:
+        os.write(fd, serialized)
+        os.close(fd)
+        if file_path.exists():
+          try:
+            file_path.unlink()
+          except Exception:
+            pass
+        os.replace(tmp_path, file_path)
+        DiskCache._mark_exists(key, 'pkl', True)
+      except Exception:
+        try:
+          os.close(fd)
+        except Exception:
+          pass
+        try:
+          os.unlink(tmp_path)
+        except Exception:
+          pass
+        raise
+    except Exception:
       pass
 
   @staticmethod
   def load_pickle(key: str) -> Optional[Any]:
     """从磁盘加载 pickle 数据"""
+    cached_exists = DiskCache._check_exists(key, 'pkl')
+    if cached_exists is False:
+      return None
+
     file_path = CacheKey.make_file_path(key, 'pkl')
     if not file_path.exists():
+      DiskCache._mark_exists(key, 'pkl', False)
       return None
 
     try:
-      with open(file_path, 'rb') as f:
-        return pickle.load(f)
-    except Exception as e:
-      file_path.unlink(missing_ok=True)
+      file_size = file_path.stat().st_size
+      if file_size > 512 * 1024:  # 大于512KB使用mmap
+        with open(file_path, 'rb') as f:
+          with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+            serialized = mm[:]
+            result = pickle.loads(serialized)
+      else:
+        with open(file_path, 'rb') as f:
+          serialized = f.read()
+          result = pickle.loads(serialized)
+
+      DiskCache._mark_exists(key, 'pkl', True)
+
+      return result
+    except Exception:
+      try:
+        file_path.unlink(missing_ok=True)
+      except Exception:
+        pass
+      DiskCache._mark_exists(key, 'pkl', False)
       return None
 
-class MemoryCache:
-  """内存 LRU 缓存管理器"""
-
-  # 使用类级别的缓存字典，所有实例共享
-  _df_cache = {}
-  _pkl_cache = {}
-  _cache_size = 0
-
-  @classmethod
-  def _estimate_size(cls, obj: Any) -> int:
-    """估算对象大小（字节）"""
-    if isinstance(obj, DataFrame):
-      return obj.memory_usage(deep=True).sum()
-    else:
-      return sys.getsizeof(obj)
-
-  @classmethod
-  def _evict_if_needed(cls, new_size: int) -> None:
-    """如果需要，驱逐最旧的缓存项"""
-    max_bytes = 8 * 1024 * 1024 * 1024  # 8GB
-
-    while cls._cache_size + new_size > max_bytes and (cls._df_cache or cls._pkl_cache):
-      # 简单的 FIFO 策略，删除第一个元素
-      if cls._df_cache:
-        key, (_, size) = next(iter(cls._df_cache.items()))
-        del cls._df_cache[key]
-        cls._cache_size -= size
-      elif cls._pkl_cache:
-        key, (_, size) = next(iter(cls._pkl_cache.items()))
-        del cls._pkl_cache[key]
-        cls._cache_size -= size
-
-  @classmethod
-  def get_dataframe(cls, key: str) -> Optional[DataFrame]:
-    """从内存缓存获取 DataFrame"""
-    if key in cls._df_cache:
-      return cls._df_cache[key][0].copy()  # 返回副本避免修改
-    return None
-
-  @classmethod
-  def set_dataframe(cls, key: str, df: DataFrame) -> None:
-    """设置 DataFrame 到内存缓存"""
-    size = cls._estimate_size(df)
-    cls._evict_if_needed(size)
-    cls._df_cache[key] = (df.copy(), size)  # 存储副本
-    cls._cache_size += size
-
-  @classmethod
-  def get_pickle(cls, key: str) -> Optional[Any]:
-    """从内存缓存获取 pickle 数据"""
-    if key in cls._pkl_cache:
-      return cls._pkl_cache[key][0]
-    return None
-
-  @classmethod
-  def set_pickle(cls, key: str, data: Any) -> None:
-    """设置 pickle 数据到内存缓存"""
-    size = cls._estimate_size(data)
-    cls._evict_if_needed(size)
-    cls._pkl_cache[key] = (data, size)
-    cls._cache_size += size
-
-  @classmethod
-  def clear(cls) -> None:
-    """清空所有缓存"""
-    cls._df_cache.clear()
-    cls._pkl_cache.clear()
-    cls._cache_size = 0
+  @staticmethod
+  def clear_existence_cache():
+    """清除文件存在性缓存"""
+    with DiskCache._existence_lock:
+      DiskCache._existence_cache.clear()
 
 def cached_dataframe(method_name: str):
-  """
-  DataFrame 缓存装饰器
-  用于装饰返回 DataFrame 的方法
-  """
+  """DataFrame 缓存装饰器（直接磁盘缓存，内存映射读取）"""
 
   def decorator(func):
     def wrapper(self, *args, **kwargs):
-      # 生成缓存键
-      cache_key = CacheKey.make_key(
-        self.code,
-        self.base_time,
-        method_name,
-        *args,
-        **kwargs
-      )
+      cache_key = CacheKey.make_key(self.code, self.base_time, method_name, *args, **kwargs)
 
-      # 1. 尝试从内存缓存读取
-      result = MemoryCache.get_dataframe(cache_key)
-      if result is not None:
-        return result
-
-      # 2. 尝试从磁盘缓存读取
+      # 直接从磁盘加载（内存映射，操作系统页面缓存）
       result = DiskCache.load_dataframe(cache_key)
       if result is not None:
-        # 加载到内存缓存
-        MemoryCache.set_dataframe(cache_key, result)
         return result
 
-      # 3. 执行原始方法
+      # 计算并缓存
       result = func(self, *args, **kwargs)
-
-      # 4. 保存到缓存
       if result is not None and not result.empty:
-        MemoryCache.set_dataframe(cache_key, result)
         DiskCache.save_dataframe(cache_key, result)
-
       return result
 
     return wrapper
@@ -225,44 +225,56 @@ def cached_dataframe(method_name: str):
   return decorator
 
 def cached_value(method_name: str):
-  """
-  值缓存装饰器
-  用于装饰返回非 DataFrame 的方法（如 float, tuple, list 等）
-  """
+  """值缓存装饰器（直接磁盘缓存）"""
 
   def decorator(func):
     def wrapper(self, *args, **kwargs):
-      # 生成缓存键
-      cache_key = CacheKey.make_key(
-        self.code,
-        self.base_time,
-        method_name,
-        *args,
-        **kwargs
-      )
+      cache_key = CacheKey.make_key(self.code, self.base_time, method_name, *args, **kwargs)
 
-      # 1. 尝试从内存缓存读取
-      result = MemoryCache.get_pickle(cache_key)
-      if result is not None:
-        return result
-
-      # 2. 尝试从磁盘缓存读取
       result = DiskCache.load_pickle(cache_key)
       if result is not None:
-        # 加载到内存缓存
-        MemoryCache.set_pickle(cache_key, result)
         return result
 
-      # 3. 执行原始方法
       result = func(self, *args, **kwargs)
-
-      # 4. 保存到缓存
       if result is not None:
-        MemoryCache.set_pickle(cache_key, result)
         DiskCache.save_pickle(cache_key, result)
-
       return result
 
     return wrapper
 
   return decorator
+
+def cached_factor(factor_name: str):
+  """因子计算缓存装饰器（直接磁盘缓存，自动函数代码哈希）"""
+
+  def decorator(func):
+    # 自动获取函数代码哈希
+    func_hash = hash_function_code(func)
+
+    def wrapper(self, ctx, *args, **kwargs):
+      cache_key = CacheKey.make_key(ctx.code, ctx.base_time, f"factor_{factor_name}_h{func_hash}", *args, **kwargs)
+
+      result = DiskCache.load_pickle(cache_key)
+      if result is not None:
+        return result
+
+      result = func(self, ctx, *args, **kwargs)
+      if result is not None:
+        DiskCache.save_pickle(cache_key, result)
+      return result
+
+    return wrapper
+
+  return decorator
+
+def clear_cache():
+  """清除所有缓存状态（文件缓存）"""
+  DiskCache.clear_existence_cache()
+  CacheKey.make_file_path.cache_clear()
+
+def get_cache_stats() -> dict:
+  """获取缓存统计信息"""
+  return {
+    'cache_dir': str(CACHE_DIR),
+    'existence_cache_size': len(DiskCache._existence_cache),
+  }

@@ -1,45 +1,52 @@
-from core.factors import *
-
 from datetime import datetime
+from typing import Optional
 
-from ._weights import FactorWights
+from core.factors import MACD, BBI, CCI, FactorCtx, FactorResult
+from utils.parallel import batch_run_threads
+from utils.stock.format import format_qmt_date
 from ..logger import core_logger
 
 class TopN:
   """ 给定股票池中，选取市值排名前N的股票 """
 
-  def __init__(self, stock_list: list[str], target_date: datetime):
+  def __init__(
+      self, stock_list: list[str],
+      base_date: datetime,
+  ):
     self.stock_list = stock_list
-    self.target_date = target_date
-
-  def get_factors(self) -> list[tuple[BaseFactor, float]]:
-    return [
+    self.base_date = base_date
+    self.factors = [
       # TODO 添加更多因子
-      (MACD(), FactorWights['MACD']),
+      MACD(),
+      BBI(),
+      CCI(),
     ]
+    self.factor_scores: Optional[dict[str, FactorResult]] = {}  # 因子名 -> 得分
 
-  def get_ordered_stocks(self) -> list[str]:
-    """ 获取排序后的股票列表,从高到低返回N个股票代码 """
-    stock_scores: list[tuple[str, float]] = []
-    for stock_code in self.stock_list:
-      ctx = FactorCtx(stock_code, self.target_date)
-      total_score = 0.0
-      for factor, weight in self.get_factors():
-        try:
-          result = factor.calc(ctx)
-          score = result['score'] or 0.0
-          # TODO 分数归一化处理
-          total_score += score * weight
-        except Exception as e:
-          # 如果某个因子计算失败，则跳过该因子
-          core_logger.warning(e)
-          continue
-      stock_scores.append((stock_code, total_score))
+    core_logger.debug(f"TopN 计算 {format_qmt_date(self.base_date)} 因子分数，共计{len(self.stock_list)}只股票")
+    # 多线程计算因子原始分数
+    batch_run_threads(
+      func=self._calculate_factor_score,
+      args_list=[[stock_code] for stock_code in self.stock_list],
+      max_workers=64,  # 最大并发线程数
+    )
 
-    return [
-      stock_code for stock_code, score in sorted(
-        stock_scores,
-        key=lambda x: x[1],
-        reverse=True
-      )
-    ]
+    core_logger.debug(f"TopN 计算 {format_qmt_date(self.base_date)} 因子分数完成")
+
+  def _calculate_factor_score(self, stock_code: str):
+    """ 计算单个股票的综合得分（用于并行执行）
+    
+    :param stock_code: 股票代码
+    :return: (股票代码, 综合得分)
+    """
+    ctx = FactorCtx(stock_code, self.base_date)
+
+    # 因子计算优化：如果某个因子失败，继续计算其他因子
+    for f in self.factors:
+      factor_name = f.__class__.__name__
+      try:
+        self.factor_scores[factor_name] = f.calc(ctx)
+      except Exception as e:
+        # 忽略单个因子计算失败
+        core_logger.warning(f"股票{stock_code}因子{factor_name}计算错误！忽略该因子分数: {e}")
+        pass

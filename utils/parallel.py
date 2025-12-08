@@ -2,13 +2,12 @@ import time
 from typing import Any, Callable, List, Optional, Dict
 import concurrent.futures
 
-from utils.logger import global_logger
-
 def batch_run_threads(
     func: Callable[..., Optional[Any]],  # 要执行的函数
     args_list: List[List[Any]],  # 位置参数列表
     kwargs_list: List[Dict[str, Any]] = None,  # 关键字参数列表
     timeout: Optional[int] = None,  # 超时时间，默认为 None
+    max_workers: Optional[int] = None,  # 最大线程数，默认为 None（自动选择）
 ) -> List[Optional[Any]]:
   """
   使用线程池并发执行多个函数任务，并支持传递位置参数和关键字参数。
@@ -17,6 +16,7 @@ def batch_run_threads(
   :param args_list: 包含函数位置参数的列表，列表中的每一项都是一次调用的参数。
   :param kwargs_list: 包含函数关键字参数的列表，列表中的每一项都是一次调用的关键字参数。
   :param timeout: 超时时间，默认为 None。
+  :param max_workers: 最大线程数，默认为 None（自动选择，通常为 CPU核心数 * 5）。对于IO密集型任务，可以设置更大的值。
   :return: 所有任务的执行结果（保持与输入顺序一致）。
   """
   if kwargs_list is None:
@@ -24,7 +24,7 @@ def batch_run_threads(
 
   total_tasks = len(args_list)
 
-  with concurrent.futures.ThreadPoolExecutor() as executor:
+  with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
     # 提交所有任务，保存 future 和索引的映射
     future_to_index = {
       executor.submit(func, *args, **kwargs): idx
@@ -42,10 +42,8 @@ def batch_run_threads(
 
       except concurrent.futures.TimeoutError:
         future.cancel()  # 取消任务
-        global_logger.error(f"批量子任务 #{idx+1} 超时！")
         results[idx] = None
       except Exception as e:
-        global_logger.exception(f"任务 #{idx+1} 执行出错：{e}")
         results[idx] = None
 
     return results
@@ -76,10 +74,8 @@ def exec_with_retry(
         return future.result(timeout=timeout)
       except concurrent.futures.TimeoutError:
         future.cancel()
-        global_logger.warning(f"{func.__name__} 执行超时! 正在进行第 {attempt + 1} 次重试...")
       except Exception as e:
-        global_logger.exception(f"{func.__name__} 执行失败: {e}，正在进行第 {attempt + 1} 次重试...")
+        pass
       if delay > 0:
         time.sleep(delay)
-    global_logger.error(f"{func.__name__} 执行失败！")
     return None

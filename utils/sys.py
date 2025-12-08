@@ -99,18 +99,3 @@ def terminate_process_tree(
     print(f"没有权限访问进程 (PID: {pid})")
   except Exception as e:
     print(f"终止进程时发生错误: {e}")
-
-def with_time_count(desc: str, func: callable):
-  """
-  执行函数并计算执行时间。
-  :param desc: 描述。
-  :param func: 函数。
-  """
-  import time
-  from utils.logger import global_logger
-
-  start = time.time()
-  res = func()
-  end = time.time()
-  global_logger.info(f"[{desc}]执行时间：{(end - start) * 1000:.3f} ms")
-  return res

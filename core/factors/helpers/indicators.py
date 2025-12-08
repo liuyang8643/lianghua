@@ -5,7 +5,6 @@ import talib
 import numpy as np
 
 from core.database import StockDetail, StockTradingData
-from .cache import cached_dataframe, cached_value
 
 class FactorCtx:
   """判断上下文，包含股票代码、时间"""
@@ -23,7 +22,6 @@ class FactorCtx:
       raise ValueError(f"获取股票详情失败: {self.code}")
     return detail
 
-  @cached_dataframe('get_daily_data')
   def get_daily_data(self, pass_days: int) -> DataFrame:
     """获取日线数据"""
     from core.database import get_market_data
@@ -42,7 +40,6 @@ class FactorCtx:
     """获取昨日数据"""
     return self.get_daily_data(2).iloc[-2]
 
-  @cached_dataframe('get_minute_data')
   def get_minute_data(self, pass_minutes: int) -> DataFrame:
     """获取分钟数据"""
     from core.database import get_market_data
@@ -67,7 +64,6 @@ class FactorCtx:
     bar_count_day = 4 * 60 + 1  # 当日k线数量，+1是因为0930开盘的k线
     return self.get_minute_data(pass_days * bar_count_day)
 
-  @cached_value('get_amount_pass_days')
   def get_amount_pass_days(self, pass_days: int) -> list[float]:
     """当前时间下过去 pass_days 天同期成交额"""
     from utils.stock.time import get_trading_pass_minute
@@ -81,30 +77,12 @@ class FactorCtx:
     bar_count_pass = get_trading_pass_minute(latest_time) + 1
     return [sum(history_data['amount'].iloc[- bar_count_pass - d * bar_count:(-d * bar_count) if d else None]) for d in reversed(range(pass_days))]
 
-  @cached_dataframe('get_maw')
-  def get_maw(self, period: int) -> DataFrame:
-    """获取MAW指标"""
+  def get_wma(self, period: int) -> DataFrame:
+    """获取WMA指标"""
     history_data = self.get_daily_data(period * 2)
     return ((history_data['open'] + history_data['close'] + history_data['low'] + history_data['high']) / 4 * history_data['amount']).rolling(window=period).mean() / \
       history_data['amount'].rolling(window=period).mean()
 
-  @cached_value('get_raise_ratio')
-  def get_raise_ratio(self, period: int) -> float:
-    """获取从底部涨幅比例"""
-    history_data = self.get_daily_data(period)
-    lowest_d = history_data[-period:]['low'].min()
-    current_price = history_data.iloc[-1]['close']
-    return (current_price - lowest_d) / lowest_d  # 从底部涨幅比例
-
-  @cached_value('get_raise_ratio_max')
-  def get_raise_ratio_max(self, period: int) -> float:
-    """获取最大涨幅比例"""
-    history_data = self.get_daily_data(period)
-    highest_d = history_data[-period:-1]['high'].max()
-    lowest_d = history_data[-period:-1]['low'].min()
-    return (highest_d - lowest_d) / lowest_d  # 从底部涨幅比例
-
-  @cached_value('get_macd')
   def get_macd(self, fast_period: int = 12, slow_period: int = 26, signal_period: int = 9) -> tuple[float, float, float]:
     """
     获取MACD指标
@@ -113,10 +91,11 @@ class FactorCtx:
     :param signal_period: 信号线EMA周期
     :return: MACD线、信号线、柱状图序列
     """
-    history_data = self.get_daily_data(slow_period)  # 获取足够的历史数据
+    date_span = slow_period + signal_period - 1
+    history_data = self.get_daily_data(date_span)  # 获取足够的历史数据
 
     if history_data is None or history_data.empty:
-      raise ValueError(f"获取MACD指标失败，历史数据不足: 需要至少{slow_period}天")
+      raise ValueError(f"获取MACD指标失败，历史数据不足: 需要至少{date_span}天")
     close_prices = np.array(history_data['close'].values, dtype=np.float64)
     macd, signal, hist = talib.MACD(
       close_prices,
@@ -126,49 +105,54 @@ class FactorCtx:
     )
     return macd[-1], signal[-1], hist[-1]
 
-  @cached_dataframe('get_bbi')
-  def get_bbi(self, period: int) -> DataFrame:
+  def get_bbi(self) -> float:
     """
-    获取BBI指标（多空指数）
+    获取BBI指标（多空指数）- 只返回最新值
     BBI = (MA3 + MA6 + MA12 + MA24) / 4
-    :param period: 额外获取的历史数据周期
-    :return: BBI序列
+    :return: 当前BBI值
     """
-    history_data = self.get_daily_data(period + 24)  # 需要额外24天计算MA24
-    close = (history_data['open'] + history_data['close'] + history_data['low'] + history_data['high']) / 4
-    ma3 = close.rolling(window=3).mean()
-    ma6 = close.rolling(window=6).mean()
-    ma12 = close.rolling(window=12).mean()
-    ma24 = close.rolling(window=24).mean()
-    bbi = (ma3 + ma6 + ma12 + ma24) / 4
-    return bbi
+    history_data = self.get_daily_data(25)  # 需要24天数据+当前1天
+    # 使用numpy加速：直接在数组上计算，避免多次DataFrame操作
+    close_array = ((history_data['open'].values + history_data['close'].values +
+                    history_data['low'].values + history_data['high'].values) * 0.25)
 
-  @cached_dataframe('get_cci')
-  def get_cci(self, period: int) -> DataFrame:
+    # 向量化计算所有MA值（只计算最后一个点）
+    ma3 = close_array[-3:].mean()
+    ma6 = close_array[-6:].mean()
+    ma12 = close_array[-12:].mean()
+    ma24 = close_array[-24:].mean()
+
+    return (ma3 + ma6 + ma12 + ma24) * 0.25
+
+  def get_cci(self) -> float:
     """
-    获取CCI指标（顺势指标）
+    获取CCI指标（顺势指标）- 只返回最新值
     CCI = (TP - MA) / (0.015 * MD)
     其中：TP = (最高价 + 最低价 + 收盘价) / 3
          MA = TP的N日简单移动平均
          MD = TP的N日平均绝对偏差
-    :param period: CCI计算周期
-    :return: CCI序列
+    :return: 当前CCI值
     """
-    history_data = self.get_daily_data(period * 2)
-    high = history_data['high']
-    low = history_data['low']
-    close = history_data['close']
+    period = 14
+    history_data = self.get_daily_data(period + 1)
 
-    # 计算典型价格TP
-    tp = (high + low + close) / 3
+    # 使用numpy直接计算，避免创建中间Series
+    high = history_data['high'].values
+    low = history_data['low'].values
+    close = history_data['close'].values
 
-    # 计算TP的移动平均MA
-    ma = tp.rolling(window=period).mean()
+    # 计算典型价格TP（向量化）
+    tp = (high + low + close) / 3.0
 
-    # 计算平均绝对偏差MD
-    md = tp.rolling(window=period).apply(lambda x: (abs(x - x.mean())).mean(), raw=False)
+    # 只需要最后period个数据点
+    tp_window = tp[-period:]
 
-    # 计算CCI
-    cci = (tp - ma) / (0.015 * md)
+    # 计算MA和MD（纯numpy，更快）
+    ma = tp_window.mean()
+    md = np.abs(tp_window - ma).mean()
+
+    # 计算当前CCI值
+    current_tp = tp[-1]
+    cci = (current_tp - ma) / (0.015 * md) if md > 0 else 0.0
 
     return cci

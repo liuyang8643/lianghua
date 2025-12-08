@@ -1,17 +1,18 @@
 from .helpers import *
 
-class MACD(BaseFactor):
+class CCI(BaseFactor):
   """
-  判断当前股票是否MAW金叉
+  CCI顺势指标因子
+  CCI = (TP - MA) / (0.015 * MD)
   """
 
   def __init__(self):
     super().__init__()
 
-  @cached_factor('MACD')
+  @cached_factor('CCI')
   def calc(self, ctx: FactorCtx) -> FactorResult:
     try:
-      macd, signal, hist = ctx.get_macd()
-      return FactorResult(score=macd, err=None)
+      cci_value = ctx.get_cci()
+      return FactorResult(score=cci_value, err=None)
     except Exception as e:
       return FactorResult(score=None, err=e)
