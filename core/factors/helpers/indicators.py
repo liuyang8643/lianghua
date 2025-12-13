@@ -156,3 +156,38 @@ class FactorCtx:
     cci = (current_tp - ma) / (0.015 * md) if md > 0 else 0.0
 
     return cci
+
+  def get_kdj(self, period: int = 9) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    获取KDJ指标的原始数据序列
+    :param period: KDJ周期，默认9
+    :return: K值序列、D值序列、J值序列
+    """
+    # talib.STOCH 需要 fastk_period + slowk_period + slowd_period 的数据
+    # period(9) + slowk(3) + slowd(3) = 15 天，再加一些buffer用于差分计算
+    date_span = period + 10
+    history_data = self.get_daily_data(date_span)
+
+    if history_data is None or history_data.empty:
+      raise ValueError(f"获取KDJ指标失败，历史数据不足: 需要至少{date_span}天")
+
+    high = history_data['high'].values
+    low = history_data['low'].values
+    close = history_data['close'].values
+
+    # 使用talib计算KDJ（STOCH指标）
+    k, d = talib.STOCH(
+      high,
+      low,
+      close,
+      fastk_period=period,
+      slowk_period=3,
+      slowd_period=3,
+    )
+
+    # 计算J值: J = 3K - 2D
+    j = 3 * k - 2 * d
+
+    # 返回完整的K、D、J序列
+    return k, d, j
+
