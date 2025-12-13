@@ -191,3 +191,154 @@ class FactorCtx:
     # 返回完整的K、D、J序列
     return k, d, j
 
+
+  def get_rsi(self, period: int = 14) -> float:
+    """
+    获取RSI指标（相对强弱指标）
+    :param period: 计算周期，默认14天
+    :return: 当前RSI值 [0, 100]
+    """
+    history_data = self.get_daily_data(period + 1)
+    close_prices = np.array(history_data['close'].values, dtype=np.float64)
+    rsi = talib.RSI(close_prices, timeperiod=period)
+    return float(rsi[-1])
+
+  def get_adx(self, period: int = 14) -> tuple[float, float, float]:
+    """
+    获取ADX指标（平均趋向指数）
+    :param period: 计算周期，默认14天
+    :return: (adx, plus_di, minus_di)
+    """
+    history_data = self.get_daily_data(period * 2)
+    high = np.array(history_data['high'].values, dtype=np.float64)
+    low = np.array(history_data['low'].values, dtype=np.float64)
+    close = np.array(history_data['close'].values, dtype=np.float64)
+
+    adx = talib.ADX(high, low, close, timeperiod=period)
+    plus_di = talib.PLUS_DI(high, low, close, timeperiod=period)
+    minus_di = talib.MINUS_DI(high, low, close, timeperiod=period)
+
+    return float(adx[-1]), float(plus_di[-1]), float(minus_di[-1])
+
+  def get_bollinger_bands(self, period: int = 20, nbdevup: float = 2, nbdevdn: float = 2) -> tuple[float, float, float, float, float]:
+    """
+    获取布林带指标
+    :param period: 计算周期，默认20天
+    :param nbdevup: 上轨标准差倍数，默认2
+    :param nbdevdn: 下轨标准差倍数，默认2
+    :return: (upper, middle, lower, bb_position, bb_bandwidth)
+            bb_position: 价格在布林带中的位置 [0, 1]，0=下轨，1=上轨
+            bb_bandwidth: 布林带宽度 (upper - lower) / middle
+    """
+    history_data = self.get_daily_data(period + 1)
+    close = np.array(history_data['close'].values, dtype=np.float64)
+
+    upper, middle, lower = talib.BBANDS(close,
+                                        timeperiod=period,
+                                        nbdevup=nbdevup,
+                                        nbdevdn=nbdevdn,
+                                        matype=0)
+
+    current_price = close[-1]
+    upper_val = upper[-1]
+    middle_val = middle[-1]
+    lower_val = lower[-1]
+
+    # 计算价格在布林带中的位置
+    if upper_val > lower_val:
+      bb_position = (current_price - lower_val) / (upper_val - lower_val)
+    else:
+      bb_position = 0.5
+
+    # 计算布林带宽度
+    if middle_val > 0:
+      bb_bandwidth = (upper_val - lower_val) / middle_val
+    else:
+      bb_bandwidth = 0.0
+
+    return float(upper_val), float(middle_val), float(lower_val), float(bb_position), float(bb_bandwidth)
+
+  def get_willr(self, period: int = 14) -> float:
+    """
+    获取威廉指标（Williams %R）
+    :param period: 计算周期，默认14天
+    :return: 当前WILLR值 [-100, 0]
+    """
+    history_data = self.get_daily_data(period + 1)
+    high = np.array(history_data['high'].values, dtype=np.float64)
+    low = np.array(history_data['low'].values, dtype=np.float64)
+    close = np.array(history_data['close'].values, dtype=np.float64)
+
+    willr = talib.WILLR(high, low, close, timeperiod=period)
+    return float(willr[-1])
+
+  def get_sar(self, acceleration: float = 0.02, maximum: float = 0.2) -> float:
+    """
+    获取抛物线SAR指标
+    :param acceleration: 加速因子，默认0.02
+    :param maximum: 最大加速因子，默认0.2
+    :return: 当前SAR值
+    """
+    history_data = self.get_daily_data(50)  # SAR需要较多历史数据
+    high = np.array(history_data['high'].values, dtype=np.float64)
+    low = np.array(history_data['low'].values, dtype=np.float64)
+
+    sar = talib.SAR(high, low, acceleration=acceleration, maximum=maximum)
+    return float(sar[-1])
+
+  def get_trix(self, period: int = 30) -> float:
+    """
+    获取TRIX指标（三重指数平滑平均线）
+    :param period: 计算周期，默认30天
+    :return: 当前TRIX值（百分比形式）
+    """
+    history_data = self.get_daily_data(period * 3 + 1)
+    close = np.array(history_data['close'].values, dtype=np.float64)
+
+    trix = talib.TRIX(close, timeperiod=period)
+    return float(trix[-1])
+
+  def get_mom(self, period: int = 10) -> float:
+    """
+    获取MOM动量指标（Momentum）
+    :param period: 计算周期，默认10天
+    :return: 当前动量值（价格变化）
+    """
+    history_data = self.get_daily_data(period + 1)
+    close = np.array(history_data['close'].values, dtype=np.float64)
+
+    mom = talib.MOM(close, timeperiod=period)
+    return float(mom[-1])
+
+  def get_mom_ratio(self, period: int = 10) -> float:
+    """
+    获取MOM动量比率（Momentum Ratio，百分比形式）
+    :param period: 计算周期，默认10天
+    :return: 动量比率 (当前价格 - N日前价格) / N日前价格 * 100
+    """
+    history_data = self.get_daily_data(period + 1)
+    close = history_data['close'].values
+
+    if len(close) < period + 1:
+      raise ValueError(f"历史数据不足，需要至少{period + 1}天")
+
+    current_price = close[-1]
+    past_price = close[-(period + 1)]
+
+    if past_price == 0:
+      return 0.0
+
+    mom_ratio = ((current_price - past_price) / past_price) * 100.0
+    return float(mom_ratio)
+
+  def get_roc(self, period: int = 10) -> float:
+    """
+    获取ROC指标（Rate of Change，变动率）
+    :param period: 计算周期，默认10天
+    :return: 当前ROC值（百分比形式）
+    """
+    history_data = self.get_daily_data(period + 1)
+    close = np.array(history_data['close'].values, dtype=np.float64)
+
+    roc = talib.ROC(close, timeperiod=period)
+    return float(roc[-1])
