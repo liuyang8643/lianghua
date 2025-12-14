@@ -13,39 +13,139 @@ from core.strategies import TopN
 import pickle
 from multiprocessing import shared_memory
 
-def _wrap_process_worker(shm_name: str, data_size: int, weights: dict[str, float]):
+def _wrap_process_worker(shm_name: str, data_size: int, weights: dict[str, float], rank_n: int = 20):
   """ 独立进程计算最终收益 - 从共享内存读取数据 """
   try:
     # 延迟导入：每个 worker 只导入自己需要的模块
     from xtquant import xtdata
     xtdata.enable_hello = False
+    from core.strategies.sizers.sizer import Sizer
+    from core.database import get_market_data
 
     # 连接到共享内存
     shm = shared_memory.SharedMemory(name=shm_name)
 
     try:
       # 从共享内存反序列化数据
-      s_list = pickle.loads(shm.buf[:data_size])
+      topn_list = pickle.loads(shm.buf[:data_size])
+
+      # 创建账户模拟器
       account = StockAccountMocker(
-        cash=50_0000.0, # 初始资金50万元
-        commission=2 / 1000, # 千2交易磨损
-        min_commission=5.0, # 最小5元交易磨损
+        cash=500_000.0,       # 初始资金50万元
+        commission=2 / 1000,  # 千2交易费率
+        min_commission=5.0,   # 最小5元交易费
       )
 
-      for i in s_list:
-        # testback_logger.info(f"回测日期: {i.base_date.strftime('%Y-%m-%d')}")
-        for f in i.factors:
-          factor_name = f.__class__.__name__
-          # testback_logger.info(f"  因子: {factor_name} 权重: {weights.get(factor_name, 0.0):.4f}")
-          # TODO 使用 weights 计算最终收益，此处获取的是每日的因子计算结果
-          # account.buy_stock()
-          # account.sell_stock()
+      # 记录上一日持仓
+      prev_holdings = set()
+
+      # 遍历每个交易日
+      for topn in topn_list:
+        trade_date = topn.base_date
+
+        # 1. 获取当日 Top N 股票（使用传入的权重）
+        top_stocks = topn.get_ordered_stocks(
+          n=rank_n,
+          weights=weights,
+          temperatures={k: 1.0 for k in weights.keys()},  # 使用默认温度
+          norm_method='rank'
+        )
+
+        if not top_stocks:
+          continue
+
+        # 2. 获取股票价格
+        prices = {}
+        for stock in top_stocks:
+          try:
+            data = get_market_data(stock, 1, trade_date)
+            if data is not None and len(data) > 0:
+              prices[stock] = float(data.iloc[-1]['close'])
+          except Exception as e:
+            testback_logger.warning(f"{stock} 价格获取失败: {e}")
+
+        if not prices:
+          continue
+
+        # 3. 计算仓位分配
+        target_holdings = set(top_stocks)
+        allocations = Sizer.allocate(
+          stocks=top_stocks,
+          total_capital=account.current_cash,
+          prices=prices
+        )
+
+        # 4. 卖出不在目标持仓中的股票
+        stocks_to_sell = prev_holdings - target_holdings
+        for stock in stocks_to_sell:
+          pos = account.get_position(stock)
+          if pos and pos['volume'] > 0:
+            try:
+              sell_price = prices.get(stock)
+              if not sell_price:
+                # 如果没有价格，使用持仓均价
+                sell_price = pos['avg_price']
+              account.sell_stock(
+                code=stock,
+                volume=pos['volume'],
+                price=sell_price,
+                sell_date=trade_date.date(),
+                clear_reason='调仓'
+              )
+            except Exception as e:
+              testback_logger.warning(f"卖出 {stock} 失败: {e}")
+
+        # 5. 买入新股票
+        for stock, shares in allocations.items():
+          if shares <= 0:
+            continue
+
+          # 检查是否已持仓
+          pos = account.get_position(stock)
+          if pos:
+            # 已持仓，跳过（不加仓）
+            continue
+
+          try:
+            account.buy_stock(
+              code=stock,
+              volume=shares,
+              price=prices[stock],
+              buy_date=trade_date.date()
+            )
+          except Exception as e:
+            # 资金不足或其他错误，跳过
+            testback_logger.debug(f"买入 {stock} 失败: {e}")
+
+        # 6. 记录当日资产
+        account.calc_assets(trade_date)
+
+        # 更新持仓记录
+        prev_holdings = target_holdings
+
+      # 7. 计算最终收益
+      final_assets = account.calc_assets(topn_list[-1].base_date)
+      total_return = (final_assets['total_asset'] - account.init_cash) / account.init_cash * 100
+
+      return {
+        'weights': weights,
+        'init_cash': account.init_cash,
+        'final_cash': final_assets['cash'],
+        'final_market_value': final_assets['market_value'],
+        'final_total_asset': final_assets['total_asset'],
+        'total_return': total_return,
+        'cleared_positions_count': len(account.cleared_positions),
+        'current_positions_count': len(account.positions),
+      }
+
     finally:
       # 关闭共享内存连接（不删除，因为其他进程还在使用）
       shm.close()
 
   except Exception as e:
     testback_logger.error(f"回测时出错: {e}")
+    import traceback
+    testback_logger.error(traceback.format_exc())
     return None
 
 if __name__ == "__main__":
@@ -98,11 +198,47 @@ if __name__ == "__main__":
             'BBI': random.random(),
             'CCI': random.random(),
           },
+          rank_n=20,  # Top 20 选股
         )
         for idx in range(TASK_COUNT)
       )
 
     testback_logger.info(f"回测执行完成")
+
+    # 输出回测结果
+    valid_results = [r for r in results if r is not None]
+    if valid_results:
+      testback_logger.info(f"\n{'='*60}")
+      testback_logger.info(f"回测结果汇总 ({len(valid_results)}/{TASK_COUNT} 个任务成功)")
+      testback_logger.info(f"{'='*60}")
+
+      # 按收益率排序
+      sorted_results = sorted(valid_results, key=lambda x: x['total_return'], reverse=True)
+
+      # 输出 Top 5 最佳策略
+      testback_logger.info(f"\nTop 5 最佳策略:")
+      for i, result in enumerate(sorted_results[:5], 1):
+        testback_logger.info(
+          f"\n#{i} 收益率: {result['total_return']:.2f}%"
+        )
+        testback_logger.info(f"  初始资金: {result['init_cash']:,.2f}")
+        testback_logger.info(f"  最终资产: {result['final_total_asset']:,.2f}")
+        testback_logger.info(f"  现金: {result['final_cash']:,.2f}")
+        testback_logger.info(f"  市值: {result['final_market_value']:,.2f}")
+        testback_logger.info(f"  已平仓: {result['cleared_positions_count']} 笔")
+        testback_logger.info(f"  持仓中: {result['current_positions_count']} 只")
+        testback_logger.info(f"  因子权重: {result['weights']}")
+
+      # 统计信息
+      returns = [r['total_return'] for r in valid_results]
+      testback_logger.info(f"\n统计信息:")
+      testback_logger.info(f"  平均收益率: {sum(returns) / len(returns):.2f}%")
+      testback_logger.info(f"  最大收益率: {max(returns):.2f}%")
+      testback_logger.info(f"  最小收益率: {min(returns):.2f}%")
+      testback_logger.info(f"  正收益策略: {len([r for r in returns if r > 0])} 个")
+      testback_logger.info(f"  负收益策略: {len([r for r in returns if r < 0])} 个")
+    else:
+      testback_logger.error("所有回测任务均失败！")
 
   finally:
     # 清理共享内存
