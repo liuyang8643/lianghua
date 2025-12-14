@@ -24,3 +24,6 @@ reports/
 
 # secrets
 configs/env.py
+
+# Claude Code local settings
+.claude/

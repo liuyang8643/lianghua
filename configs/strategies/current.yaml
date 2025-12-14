@@ -1,0 +1,129 @@
+# WBR 当前策略配置
+# 基于3个基础技术指标的多因子选股策略
+
+# ==================== 策略元信息 ====================
+meta:
+  name: "Multi-Factor Strategy - Current"
+  version: "current"
+  description: "当前使用的多因子选股策略（MACD+BBI+CCI），适用于实盘和回测"
+  created_at: "2025-12-14"
+  author: "WBR"
+  base_config: "base.yaml"
+  changelog:
+    - "2025-12-14: 初始版本，基于3个基础因子"
+
+# ==================== 因子配置 ====================
+# 初始权重和温度系数设置说明：
+# - weight: 因子权重，决定该因子对最终排名的贡献度
+# - temperature: 温度系数，控制softmax归一化的平滑程度
+#   * temperature < 1.0: 差异变大（锐化），排名更敏感
+#   * temperature = 1.0: 标准分布
+#   * temperature > 1.0: 差异变小（平滑），排名更稳定
+
+factors:
+  # MACD - 趋势跟踪指标
+  # 主导因子，高权重，中等温度（保持灵敏度）
+  MACD:
+    enabled: true
+    weight: 1.0          # 主导因子
+    temperature: 1.0     # 标准温度
+    search_range:
+      weight: [0.5, 2.0]
+      temperature: [0.5, 2.0]
+    params:
+      fast_period: 12
+      slow_period: 26
+      signal_period: 9
+
+  # BBI - 多空指数
+  # 辅助因子，中等权重，较高温度（稳定）
+  BBI:
+    enabled: true
+    weight: 0.8          # 中等权重
+    temperature: 1.2     # 稍微平滑
+    search_range:
+      weight: [0.3, 1.5]
+      temperature: [0.8, 2.0]
+    params:
+      periods: [3, 6, 12, 24]
+
+  # CCI - 顺势指标
+  # 辅助因子，较低权重，中等温度
+  CCI:
+    enabled: true
+    weight: 0.6          # 较低权重
+    temperature: 1.0     # 标准温度
+    search_range:
+      weight: [0.3, 1.5]
+      temperature: [0.5, 2.0]
+    params:
+      period: 14
+
+# ==================== 选股配置 ====================
+selection:
+  strategy: "TopN"
+  rank_n: 20            # 选取前20只股票
+  stock_pool: "allow_buy"
+
+# ==================== 仓位管理配置 ====================
+position:
+  hand_size: 100        # 一手100股
+  # 简化为等额分配模式：总资金 / rank_n
+  min_buy_amount: 0     # 不设最小限制
+  max_buy_amount: 0     # 不设最大限制
+  preserve_amount: 0    # 不保留资金
+  allocation_method: "equal"  # 等额分配
+
+# ==================== 资金配置 ====================
+capital:
+  initial_capital: 1000000    # 初始资金100万
+  max_position_ratio: 1.0     # 满仓（等额分配自动控制）
+
+# ==================== 交易时间配置 ====================
+trading:
+  buy_time_start: "14:40:00"
+  buy_time_end: "14:55:00"
+  sell_time_start: "09:35:00"
+  sell_time_end: "09:45:00"
+
+# ==================== 回测配置 ====================
+backtest:
+  start_date: "20240101"      # 回测开始日期
+  end_date: "20241231"        # 回测结束日期
+  commission_rate: 0.0003     # 交易佣金率（万三）
+  slippage_rate: 0.001        # 滑点率（千一）
+  min_commission: 5           # 最低佣金5元
+
+# ==================== 归一化配置 ====================
+normalization:
+  method: "softmax"           # 归一化方法（softmax, minmax, zscore, rank）
+
+# ==================== 遗传算法配置 ====================
+genetic_algorithm:
+  enabled: false              # 暂不启用GA优化
+  population_size: 50
+  generations: 100
+  mutation_rate: 0.1
+  crossover_rate: 0.8
+  elite_ratio: 0.1
+  objective:
+    metric: "sharpe_ratio"
+    direction: "maximize"
+
+# ==================== 风控配置 ====================
+risk_control:
+  max_drawdown_ratio: 0.2     # 最大回撤20%
+  stop_loss_ratio: 0.1        # 单日止损10%
+  stop_profit_ratio: 0.5      # 单日止盈50%
+
+# ==================== 缓存配置 ====================
+cache:
+  enabled: true
+  cache_dir: "testback/.cache/.cache"
+  ttl_days: 30
+
+# ==================== 日志配置 ====================
+logging:
+  level: "INFO"
+  log_to_file: true
+  log_dir: "logs"

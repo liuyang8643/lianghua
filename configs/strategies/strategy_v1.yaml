@@ -1,0 +1,46 @@
+# WBR 策略配置文件 - 版本1
+# 基于MACD+BBI+CCI的保守型策略
+
+# ==================== 策略元信息 ====================
+meta:
+  name: "Conservative Multi-Factor Strategy"
+  version: "v1.0"
+  description: "保守型多因子策略，使用MACD+BBI+CCI，低温度参数，降低交易频率"
+  created_at: "2025-12-14"
+  author: "WBR"
+  base_config: "base.yaml"  # 继承基础配置
+  changelog:
+    - "2025-12-14: 初始版本，启用3个基础因子"
+
+# ==================== 因子配置 ====================
+# 只覆盖需要修改的因子配置，其他继承base.yaml
+factors:
+  MACD:
+    enabled: true
+    weight: 1.0
+    temperature: 0.8  # 较低温度，保持排名稳定
+
+  BBI:
+    enabled: true
+    weight: 0.5
+    temperature: 0.7  # 较低温度
+
+  CCI:
+    enabled: true
+    weight: 0.5
+    temperature: 0.6  # 较低温度
+
+  # 其他因子保持关闭（继承base配置）
+
+# ==================== 选股策略配置 ====================
+selection:
+  rank_n: 30  # 选取前30只
+
+# ==================== 资金配置 ====================
+capital:
+  initial_capital: 1000000
+
+# ==================== 回测配置 ====================
+backtest:
+  start_date: "20240101"
+  end_date: "20241231"

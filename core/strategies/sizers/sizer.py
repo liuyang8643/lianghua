@@ -1,122 +1,231 @@
-from math import ceil, floor
-from typing import List, Optional, TypedDict
+"""
+仓位管理工具 - 简化版等额分配模式
 
-HAND_SIZE = 100
-MIN_BUY_AMOUNT = 10_000.0
-MAX_BUY_AMOUNT = 25_000.0
-PRESERVE_AMOUNT = 0.0  # 保留金额
+计算逻辑：
+- 总资金 / 股票数量 = 每只股票分配金额
+- 每只股票买入数量 = (分配金额 / 股价) // 100 * 100 （向下取整到100的倍数）
+"""
 
-class StockInfo(TypedDict):
-  code: str
-  price: float
+from typing import Dict, List
 
-class StockAllocation(TypedDict):
-  code: str
-  count: int
-  amount: float
-
-def get_quick_allocation(stock: StockInfo, budget: float, expect_position_count=0) -> Optional[StockAllocation]:
-  """ 在预算之内，购买最少数量的股票 """
-  hand_price = stock["price"] * HAND_SIZE
-  expect_hand = floor(budget / expect_position_count / hand_price) if expect_position_count > 0 else 0
-  target_hand = max(ceil(MIN_BUY_AMOUNT / hand_price), expect_hand)
-  target_amount = target_hand * hand_price
-
-  if target_amount > budget - PRESERVE_AMOUNT:
-    # 预算不足
-    return StockAllocation(
-      code=stock['code'],
-      count=0,
-      amount=0
-    )
-
-  return StockAllocation(
-    code=stock['code'],
-    count=target_hand * HAND_SIZE,
-    amount=target_amount
-  )
 
 class Sizer:
-  @property
-  def stocks(self):
-    return self._stocks
+    """简化的仓位管理器 - 等额分配模式"""
 
-  @property
-  def budget(self):
-    return self._budget
+    HAND_SIZE = 100  # 一手股数
 
-  @property
-  def allocation(self):
-    return self._allocation
+    @staticmethod
+    def allocate(
+        stocks: List[str],
+        total_capital: float,
+        prices: Dict[str, float],
+        hand_size: int = 100
+    ) -> Dict[str, int]:
+        """
+        等额分配资金并计算每只股票的买入数量
 
-  @property
-  def rest(self):
-    return self._rest
+        Args:
+            stocks: 股票代码列表
+            total_capital: 总资金
+            prices: 股票价格字典 {stock_code: price}
+            hand_size: 一手股数（默认100）
 
-  def __init__(self, stocks: List[StockInfo], budget: float):
-    self._stocks = stocks
-    self._budget = budget
-    self._allocation: list[StockAllocation] = []
-    self._rest = budget - PRESERVE_AMOUNT
+        Returns:
+            {stock_code: shares} - 每只股票的买入股数
+        """
+        if len(stocks) == 0:
+            return {}
 
-    # 如果股票列表为空，直接返回空分配
-    if not stocks:
-      return
+        # 等额分配
+        amount_per_stock = total_capital / len(stocks)
 
-    target_buy = budget / len(stocks)
+        allocation = {}
 
-    for stock in stocks:
-      target_hand = min(
-        max(
-          # 预期购买手数
-          ceil(target_buy / (stock["price"] * HAND_SIZE)),
-          # 最小购买手数
-          ceil(MIN_BUY_AMOUNT / (stock["price"] * HAND_SIZE)),
-        ),
-        # 最大购买手数
-        floor(MAX_BUY_AMOUNT / (stock["price"] * HAND_SIZE)),
-      )
-      target_amount = target_hand * HAND_SIZE * stock["price"]
+        for stock in stocks:
+            if stock not in prices:
+                # 没有价格数据的股票，跳过
+                allocation[stock] = 0
+                continue
 
-      if target_hand <= 0:
-        continue
+            price = prices[stock]
 
-      if target_amount <= self._rest:
-        self._rest -= target_amount
-        self._allocation.append(
-          {
-            "code": stock['code'],
-            "count": target_hand * HAND_SIZE,
-            "amount": target_amount
-          }
-        )
-      else:
-        buy_rest_hand = floor(self._rest / (stock["price"] * HAND_SIZE))
-        buy_rest_amount = buy_rest_hand * HAND_SIZE * stock["price"]
+            if price <= 0:
+                # 价格无效，跳过
+                allocation[stock] = 0
+                continue
 
-        if buy_rest_hand > 0 and buy_rest_amount >= MIN_BUY_AMOUNT:
-          self._rest -= buy_rest_amount
-          self._allocation.append(
+            # 计算能买多少手（向下取整）
+            hands = int(amount_per_stock / price / hand_size)
+
+            # 转换为股数
+            shares = hands * hand_size
+
+            allocation[stock] = shares
+
+        return allocation
+
+    @staticmethod
+    def allocate_detailed(
+        stocks: List[str],
+        total_capital: float,
+        prices: Dict[str, float],
+        hand_size: int = 100
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        等额分配（返回详细信息）
+
+        Args:
+            stocks: 股票代码列表
+            total_capital: 总资金
+            prices: 股票价格字典
+            hand_size: 一手股数
+
+        Returns:
             {
-              "code": stock['code'],
-              "count": buy_rest_hand * HAND_SIZE,
-              "amount": buy_rest_amount
+                stock_code: {
+                    'shares': 股数,
+                    'hands': 手数,
+                    'amount': 实际金额,
+                    'allocated_amount': 分配金额,
+                    'price': 股价,
+                }
             }
-          )
+        """
+        if len(stocks) == 0:
+            return {}
 
-  def get_stock_allocation(self, stock_code: str):
-    return next((x for x in self._allocation if x["code"] == stock_code), None)
+        amount_per_stock = total_capital / len(stocks)
 
+        allocation = {}
+
+        for stock in stocks:
+            if stock not in prices:
+                allocation[stock] = {
+                    'shares': 0,
+                    'hands': 0,
+                    'amount': 0.0,
+                    'allocated_amount': amount_per_stock,
+                    'price': 0.0,
+                }
+                continue
+
+            price = prices[stock]
+
+            if price <= 0:
+                allocation[stock] = {
+                    'shares': 0,
+                    'hands': 0,
+                    'amount': 0.0,
+                    'allocated_amount': amount_per_stock,
+                    'price': price,
+                }
+                continue
+
+            # 计算手数
+            hands = int(amount_per_stock / price / hand_size)
+            shares = hands * hand_size
+            actual_amount = shares * price
+
+            allocation[stock] = {
+                'shares': shares,
+                'hands': hands,
+                'amount': actual_amount,
+                'allocated_amount': amount_per_stock,
+                'price': price,
+            }
+
+        return allocation
+
+    @staticmethod
+    def get_total_usage(allocation: Dict[str, int], prices: Dict[str, float]) -> Dict[str, float]:
+        """
+        计算资金使用情况
+
+        Args:
+            allocation: 分配结果 {stock_code: shares}
+            prices: 股票价格 {stock_code: price}
+
+        Returns:
+            {
+                'total_cost': 总花费,
+                'stock_count': 持仓股票数,
+                'share_count': 总股数,
+            }
+        """
+        total_cost = 0.0
+        stock_count = 0
+        share_count = 0
+
+        for stock, shares in allocation.items():
+            if shares > 0 and stock in prices:
+                cost = shares * prices[stock]
+                total_cost += cost
+                stock_count += 1
+                share_count += shares
+
+        return {
+            'total_cost': total_cost,
+            'stock_count': stock_count,
+            'share_count': share_count,
+        }
+
+
+# 测试和示例
 if __name__ == "__main__":
-  # 定义预算和股票列表
-  plan_budget = 11_000
-  stock_to_buy = [
-    StockInfo(code="apple", price=16.07),
-    StockInfo(code="banana", price=35.42),
-    StockInfo(code="camera", price=16.47),
-    StockInfo(code="digital", price=24.17),
-    StockInfo(code="elephant", price=12.34),
-  ]
-  # 示例1: 使用默认预算和股票列表
-  result = Sizer(stock_to_buy, plan_budget)
-  print(result)
+    # 测试数据
+    test_stocks = [
+        '000001.SZ',
+        '000002.SZ',
+        '600000.SH',
+        '600036.SH',
+        '601318.SH',
+    ]
+
+    test_prices = {
+        '000001.SZ': 10.50,
+        '000002.SZ': 25.80,
+        '600000.SH': 8.90,
+        '600036.SH': 35.20,
+        '601318.SH': 42.50,
+    }
+
+    test_capital = 100_000  # 10万资金
+
+    print("=" * 60)
+    print("简化仓位管理器测试")
+    print("=" * 60)
+    print(f"总资金: {test_capital:,.0f} 元")
+    print(f"股票数量: {len(test_stocks)}")
+    print(f"每只分配: {test_capital / len(test_stocks):,.0f} 元")
+    print()
+
+    # 简单分配
+    print("1. 简单分配结果:")
+    allocation = Sizer.allocate(test_stocks, test_capital, test_prices)
+    for stock, shares in allocation.items():
+        if shares > 0:
+            price = test_prices[stock]
+            amount = shares * price
+            print(f"  {stock}: {shares:>5} 股 ({shares // 100:>3} 手) "
+                  f"= {amount:>10,.2f} 元 @ {price:.2f}")
+    print()
+
+    # 详细分配
+    print("2. 详细分配结果:")
+    detailed = Sizer.allocate_detailed(test_stocks, test_capital, test_prices)
+    for stock, info in detailed.items():
+        print(f"  {stock}:")
+        print(f"    分配金额: {info['allocated_amount']:>10,.2f} 元")
+        print(f"    股价: {info['price']:>10,.2f} 元")
+        print(f"    买入: {info['shares']:>5} 股 ({info['hands']:>3} 手)")
+        print(f"    实际花费: {info['amount']:>10,.2f} 元")
+    print()
+
+    # 资金使用情况
+    print("3. 资金使用情况:")
+    usage = Sizer.get_total_usage(allocation, test_prices)
+    print(f"  总花费: {usage['total_cost']:>10,.2f} 元")
+    print(f"  剩余: {test_capital - usage['total_cost']:>10,.2f} 元")
+    print(f"  使用率: {usage['total_cost'] / test_capital * 100:>6.2f}%")
+    print(f"  持仓股票数: {usage['stock_count']}")
+    print(f"  总股数: {usage['share_count']:,}")

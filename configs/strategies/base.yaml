@@ -1,0 +1,180 @@
+# WBR 策略配置文件 - 基础配置
+# 所有策略的默认配置，其他策略配置文件可以继承此配置
+
+# ==================== 策略元信息 ====================
+meta:
+  name: "Base Strategy"
+  version: "base"
+  description: "基础默认配置，作为所有策略的基准"
+  created_at: "2025-12-14"
+  author: "WBR"
+
+# ==================== 因子配置 ====================
+factors:
+  # 每个因子的配置包括：
+  # - enabled: 是否启用
+  # - weight: 权重（用于加权求和）
+  # - temperature: 温度参数（用于归一化，控制分数离散程度）
+  # - search_range: GA搜索范围（用于遗传算法优化）
+
+  MACD:
+    enabled: true
+    weight: 1.0
+    temperature: 1.0
+    search_range:
+      weight: [0.5, 2.0]
+      temperature: [0.5, 2.0]
+    # 因子特定参数（如果有）
+    params:
+      fast_period: 12
+      slow_period: 26
+      signal_period: 9
+
+  BBI:
+    enabled: true
+    weight: 0.5
+    temperature: 1.0
+    search_range:
+      weight: [0.3, 1.5]
+      temperature: [0.5, 2.0]
+    params:
+      periods: [3, 6, 12, 24]
+
+  CCI:
+    enabled: true
+    weight: 0.5
+    temperature: 1.0
+    search_range:
+      weight: [0.3, 1.5]
+      temperature: [0.5, 2.0]
+    params:
+      period: 14
+
+  RSI:
+    enabled: false  # 默认关闭，可在具体策略中启用
+    weight: 0.8
+    temperature: 1.5
+    search_range:
+      weight: [0.5, 1.5]
+      temperature: [1.0, 3.0]
+    params:
+      period: 14
+
+  ADX:
+    enabled: false
+    weight: 0.7
+    temperature: 1.2
+    search_range:
+      weight: [0.5, 1.5]
+      temperature: [0.8, 2.0]
+    params:
+      period: 14
+
+  KDJ:
+    enabled: false
+    weight: 0.6
+    temperature: 1.8
+    search_range:
+      weight: [0.4, 1.2]
+      temperature: [1.0, 3.0]
+    params:
+      fastk_period: 9
+      slowk_period: 3
+      slowd_period: 3
+
+  BollingerBands:
+    enabled: false
+    weight: 0.7
+    temperature: 1.3
+    search_range:
+      weight: [0.5, 1.5]
+      temperature: [0.8, 2.0]
+    params:
+      period: 20
+      std_dev: 2.0
+
+  TRIX:
+    enabled: false
+    weight: 0.6
+    temperature: 1.0
+    search_range:
+      weight: [0.4, 1.2]
+      temperature: [0.5, 1.5]
+    params:
+      period: 12
+
+  MOM:
+    enabled: false
+    weight: 0.5
+    temperature: 1.5
+    search_range:
+      weight: [0.3, 1.0]
+      temperature: [1.0, 2.5]
+    params:
+      period: 10
+
+# ==================== 选股策略配置 ====================
+selection:
+  strategy: "TopN"  # 策略类型
+  rank_n: 30        # 选取前N只股票
+  stock_pool: "allow_buy"  # 股票池来源
+
+# ==================== 仓位管理配置 ====================
+position:
+  hand_size: 100              # 一手股数
+  min_buy_amount: 10000       # 最小买入金额（元）
+  max_buy_amount: 25000       # 最大买入金额（元）
+  preserve_amount: 0          # 保留金额（元）
+  allocation_method: "equal"  # 分配方法: equal（均等）, weighted（加权）
+
+# ==================== 资金配置 ====================
+capital:
+  initial_capital: 1000000    # 初始资金（元）
+  max_position_ratio: 0.95    # 最大持仓比例（避免满仓）
+
+# ==================== 交易时间配置 ====================
+trading:
+  buy_time_start: "14:40:00"  # 买入时间窗口开始
+  buy_time_end: "14:55:00"    # 买入时间窗口结束
+  sell_time_start: "09:35:00" # 卖出时间窗口开始（如果有）
+  sell_time_end: "09:45:00"   # 卖出时间窗口结束
+
+# ==================== 回测配置 ====================
+backtest:
+  start_date: "20240101"      # 回测开始日期
+  end_date: "20241231"        # 回测结束日期
+  commission_rate: 0.0003     # 交易佣金率（万三）
+  slippage_rate: 0.001        # 滑点率（千一）
+  min_commission: 5           # 最低佣金（元）
+
+# ==================== 遗传算法配置 ====================
+genetic_algorithm:
+  enabled: false              # 是否启用GA优化
+  population_size: 50         # 种群大小
+  generations: 100            # 迭代代数
+  mutation_rate: 0.1          # 变异率
+  crossover_rate: 0.8         # 交叉率
+  elite_ratio: 0.1            # 精英保留比例
+
+  # 优化目标
+  objective:
+    metric: "sharpe_ratio"    # 优化指标: sharpe_ratio, total_return, max_drawdown
+    direction: "maximize"     # 优化方向: maximize, minimize
+
+# ==================== 风控配置 ====================
+risk_control:
+  max_drawdown_ratio: 0.2     # 最大回撤比例
+  stop_loss_ratio: 0.1        # 单日止损比例
+  stop_profit_ratio: 0.5      # 单日止盈比例（如果有）
+
+# ==================== 缓存配置 ====================
+cache:
+  enabled: true
+  cache_dir: "testback/.cache/.cache"
+  ttl_days: 30                # 缓存有效期（天）
+
+# ==================== 日志配置 ====================
+logging:
+  level: "INFO"               # 日志级别: DEBUG, INFO, WARNING, ERROR
+  log_to_file: true
+  log_dir: "logs"
