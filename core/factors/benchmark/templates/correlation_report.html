@@ -258,6 +258,8 @@
                         </thead>
                         <tbody>
                           {% for stock in day.stock_scores|sort(attribute='factor_score', reverse=true) %}
+                          {% set future_price = stock.future_close_prices.get(period.m_days) if stock.future_close_prices else none %}
+                          {% set return_rate = stock.return_rates.get(period.m_days) if stock.return_rates else none %}
                           <tr class="border-t">
                             <td class="px-4 py-2 text-gray-500">{{ loop.index }}</td>
                             <td class="px-4 py-2">{{ stock.stock_code }}</td>
@@ -269,11 +271,11 @@
                               {{ "%.2f"|format(stock.close_price) if stock.close_price is not none else 'N/A' }}
                             </td>
                             <td class="px-4 py-2 text-right">
-                              {{ "%.2f"|format(stock.future_close_price) if stock.future_close_price is not none else 'N/A' }}
+                              {{ "%.2f"|format(future_price) if future_price is not none else 'N/A' }}
                             </td>
-                            <td class="px-4 py-2 text-right {% if stock.return_rate is not none %}{% if stock.return_rate >= 0 %}text-positive{% else %}text-negative{% endif %}{% endif %}">
-                              {% if stock.return_rate is not none %}
-                              {{ "%.2f"|format(stock.return_rate * 100) }}%
+                            <td class="px-4 py-2 text-right {% if return_rate is not none %}{% if return_rate >= 0 %}text-positive{% else %}text-negative{% endif %}{% endif %}">
+                              {% if return_rate is not none %}
+                              {{ "%.2f"|format(return_rate * 100) }}%
                               {% else %}
                               N/A
                               {% endif %}

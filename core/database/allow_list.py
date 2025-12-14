@@ -18,7 +18,7 @@ def allow_buy_stock_code_list(base_date: date = None) -> list[str]:
     # xtdata.download_sector_data()
     xtdata.download_history_contracts()
     sector_list = xtdata.get_sector_list()
-    core_logger.debug(f'更新板块选择器成功：{'|'.join(sector_list)}')
+    core_logger.debug(f'更新板块选择器成功：共 {len(sector_list)} 条板块数据')
     _last_sector_data_download_date = date.today()
 
   time_tag = format_qmt_date(input_date)
