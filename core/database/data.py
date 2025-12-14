@@ -12,25 +12,13 @@ from .history import check_stocks_need_fix, get_history_data, get_history_data_a
 _GLOBAL_DAILY_CACHE: dict[str, Optional[pd.DataFrame]] = {}
 _GLOBAL_MINUTE_CACHE: dict[str, Optional[pd.DataFrame]] = {}
 
-def clear_market_data_cache(code: str = None, period: str = None):
-  """清除市场数据缓存
-
-  Args:
-    code: 股票代码，如果为None则清除所有
-    period: 数据周期 ('1d' 或 '1m')，如果为None则清除所有周期
-  """
-  if code:
-    if period is None or period == '1d':
-      _GLOBAL_DAILY_CACHE.pop(code, None)
-    if period is None or period == '1m':
-      _GLOBAL_MINUTE_CACHE.pop(code, None)
-  else:
-    if period is None or period == '1d':
-      _GLOBAL_DAILY_CACHE.clear()
-    if period is None or period == '1m':
-      _GLOBAL_MINUTE_CACHE.clear()
-
-def get_full_market_data(stock_code: str, period: str = '1d', target_time: datetime = None, dividend_type: str = 'back') -> Optional[pd.DataFrame]:
+def get_full_market_data(
+    stock_code: str,
+    period: str = '1d',
+    target_time: datetime = None,
+    allow_tainted: bool = True,
+    dividend_type: str = 'back'
+) -> Optional[pd.DataFrame]:
   """获取股票的完整历史数据（从上市日到目标时间），使用全局缓存
 
   性能优化：
@@ -47,12 +35,7 @@ def get_full_market_data(stock_code: str, period: str = '1d', target_time: datet
     return cache[stock_code]
 
   # 缓存中没有，需要加载数据
-  if period == '1d':
-    # 日线数据：不传入count参数，获取所有可用数据
-    data = get_market_data(stock_code, None, target_time, '1d', dividend_type=dividend_type)
-  else:
-    # 分钟数据：默认获取最近30个交易日（约7500条）
-    data = get_market_data(stock_code, 7500, target_time, '1m', allow_tainted=True, dividend_type=dividend_type)
+  data = get_market_data(stock_code, None, target_time, period, allow_tainted=allow_tainted, dividend_type=dividend_type)
 
   # 缓存数据
   cache[stock_code] = data
@@ -64,6 +47,7 @@ def get_market_data_from_cache(
     count: int,
     base_time: datetime,
     period: str = '1d',
+    allow_tainted: bool = True,
     dividend_type: str = 'back',
 ) -> Optional[pd.DataFrame]:
   """从缓存中获取指定时间范围的市场数据
@@ -74,7 +58,7 @@ def get_market_data_from_cache(
   - 避免重复的timestamp转换
   """
   # 获取完整历史数据
-  full_data = get_full_market_data(stock_code, period, dividend_type=dividend_type)
+  full_data = get_full_market_data(stock_code, period, allow_tainted=allow_tainted, dividend_type=dividend_type)
 
   if full_data is None or full_data.empty:
     return None
