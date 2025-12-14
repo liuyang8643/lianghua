@@ -18,32 +18,42 @@ def generate_html_report(report: FactorCorrelationReport) -> str:
   """
   from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-  # 准备模板数据
-  # 按相关系数排序（绝对值从大到小）
-  sorted_correlations = sorted(
-    report.stock_correlations,
-    key=lambda x: abs(x.correlation) if x.correlation is not None else -1,
-    reverse=True
-  )
+  # 准备多持有期数据
+  periods_data = []
+  for period_stat in report.period_statistics:
+    # 按日期排序每日相关性
+    sorted_daily_correlations = sorted(
+      period_stat.daily_correlations,
+      key=lambda x: x.trade_date,
+      reverse=False
+    )
 
-  # 分类统计
-  positive_corr = [r for r in report.stock_correlations if r.correlation is not None and r.correlation > 0]
-  negative_corr = [r for r in report.stock_correlations if r.correlation is not None and r.correlation < 0]
-  invalid_corr = [r for r in report.stock_correlations if r.correlation is None]
+    # 分类统计
+    valid_days = [r for r in period_stat.daily_correlations if r.correlation is not None]
+    positive_days = [r for r in valid_days if r.correlation > 0]
+    negative_days = [r for r in valid_days if r.correlation < 0]
+
+    periods_data.append({
+      'm_days': period_stat.m_days,
+      'daily_correlations': sorted_daily_correlations,
+      'avg_correlation': period_stat.avg_correlation,
+      'median_correlation': period_stat.median_correlation,
+      'avg_rank_correlation': period_stat.avg_rank_correlation,
+      'positive_count': len(positive_days),
+      'negative_count': len(negative_days),
+      'valid_days': period_stat.valid_days,
+      'total_days': len(period_stat.daily_correlations)
+    })
 
   # 准备数据
   data = {
     'factor_name': report.factor_name,
     'start_date': report.start_date.strftime('%Y-%m-%d'),
     'end_date': report.end_date.strftime('%Y-%m-%d'),
+    'm_days_list': report.m_days_list,
     'total_stocks': report.total_stocks,
     'valid_stocks': report.valid_stocks,
-    'invalid_stocks': len(invalid_corr),
-    'avg_correlation': report.avg_correlation,
-    'median_correlation': report.median_correlation,
-    'positive_count': len(positive_corr),
-    'negative_count': len(negative_corr),
-    'correlations': sorted_correlations,
+    'periods_data': periods_data,
     'generated_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
   }
 
@@ -61,7 +71,8 @@ def generate_html_report(report: FactorCorrelationReport) -> str:
   html_content = template.render(**data)
 
   # 保存HTML文件
-  filename = f"{report_dir}/factor-correlation-{report.factor_name}-{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+  m_days_str = '_'.join(map(str, report.m_days_list))
+  filename = f"{report_dir}/factor-correlation-{report.factor_name}-T+{m_days_str}-{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
   with open(filename, 'w', encoding='utf-8') as f:
     f.write(html_content)
 

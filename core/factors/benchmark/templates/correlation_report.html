@@ -24,12 +24,18 @@
   </script>
   <style>
     body, html { margin: 0; padding: 0; min-height: 100vh; }
-    .stock-row:hover { background-color: #f3f4f6; }
+    .day-row:hover { background-color: #f3f4f6; cursor: pointer; }
     .correlation-bar {
       height: 8px;
       border-radius: 4px;
       transition: width 0.3s ease;
     }
+    .stock-detail { display: none; }
+    .stock-detail.show { display: table-row; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .tab-button { cursor: pointer; transition: all 0.3s; }
+    .tab-button.active { background-color: #667eea !important; color: white !important; }
   </style>
 </head>
 <body class="bg-gray-100">
@@ -37,9 +43,10 @@
   <!-- Header -->
   <header class="bg-white shadow-md px-6 py-4 flex-shrink-0">
     <div class="max-w-7xl mx-auto">
-      <h1 class="text-3xl font-bold text-gray-800">因子相关性分析报告</h1>
+      <h1 class="text-3xl font-bold text-gray-800">因子相关性分析报告（多周期对比）</h1>
       <p class="text-gray-600 mt-2">因子: <span class="font-semibold text-primary">{{ factor_name }}</span></p>
       <p class="text-sm text-gray-500">生成时间: {{ generated_time }}</p>
+      <p class="text-sm text-gray-500">持有期: {% for m in m_days_list %}T+{{ m }}日{% if not loop.last %}, {% endif %}{% endfor %}</p>
     </div>
   </header>
 
@@ -47,179 +54,245 @@
   <div class="flex-1 p-6">
     <div class="max-w-7xl mx-auto">
 
-      <!-- Summary Stats -->
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div class="bg-white rounded-lg shadow p-6">
-          <div class="text-sm text-gray-500 mb-1">分析时间范围</div>
-          <div class="text-xl font-bold text-gray-800">{{ start_date }}</div>
-          <div class="text-xl font-bold text-gray-800">至 {{ end_date }}</div>
-        </div>
-
-        <div class="bg-white rounded-lg shadow p-6">
-          <div class="text-sm text-gray-500 mb-1">股票总数</div>
-          <div class="text-3xl font-bold text-primary">{{ total_stocks }}</div>
-          <div class="text-xs text-gray-500 mt-1">有效: {{ valid_stocks }} / 无效: {{ invalid_stocks }}</div>
-        </div>
-
-        <div class="bg-white rounded-lg shadow p-6">
-          <div class="text-sm text-gray-500 mb-1">平均相关系数</div>
-          <div class="text-3xl font-bold {% if avg_correlation >= 0 %}text-positive{% else %}text-negative{% endif %}">
-            {{ "%.4f"|format(avg_correlation) }}
-          </div>
-          <div class="text-xs text-gray-500 mt-1">中位数: {{ "%.4f"|format(median_correlation) }}</div>
-        </div>
-
-        <div class="bg-white rounded-lg shadow p-6">
-          <div class="text-sm text-gray-500 mb-1">相关性分布</div>
-          <div class="flex items-center gap-2 mt-2">
-            <div class="flex-1">
-              <div class="text-sm font-semibold text-positive">正相关: {{ positive_count }}</div>
-              <div class="text-xs text-gray-500">{{ "%.1f"|format((positive_count / valid_stocks * 100) if valid_stocks
-                > 0 else 0) }}%
-              </div>
-            </div>
-            <div class="flex-1">
-              <div class="text-sm font-semibold text-negative">负相关: {{ negative_count }}</div>
-              <div class="text-xs text-gray-500">{{ "%.1f"|format((negative_count / valid_stocks * 100) if valid_stocks
-                > 0 else 0) }}%
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Distribution Chart -->
+      <!-- Period Comparison Summary -->
       <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4">相关系数分布图</h2>
-        <div id="distribution-chart" style="width: 100%; height: 400px;"></div>
-      </div>
-
-      <!-- Stock List -->
-      <div class="bg-white rounded-lg shadow">
-        <div class="px-6 py-4 border-b">
-          <div class="flex items-center justify-between">
-            <h2 class="text-xl font-semibold text-gray-800">股票相关性详情</h2>
-            <div class="flex gap-2">
-              <input
-                  type="text"
-                  id="search-input"
-                  placeholder="搜索股票代码或名称..."
-                  class="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-              <select id="filter-select"
-                      class="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-                <option value="all">全部</option>
-                <option value="positive">正相关</option>
-                <option value="negative">负相关</option>
-                <option value="invalid">计算失败</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">持有期对比汇总</h2>
         <div class="overflow-x-auto">
-          <table class="w-full">
-            <thead class="bg-gray-50 border-b">
-            <tr>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                  onclick="sortTable('rank')">
-                排名 <span class="sort-indicator">▼</span>
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                  onclick="sortTable('code')">
-                股票代码 <span class="sort-indicator"></span>
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                  onclick="sortTable('name')">
-                股票名称 <span class="sort-indicator"></span>
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                  onclick="sortTable('correlation')">
-                相关系数 <span class="sort-indicator"></span>
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                可视化
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                  onclick="sortTable('pvalue')">
-                P值 <span class="sort-indicator"></span>
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                  onclick="sortTable('samples')">
-                样本数 <span class="sort-indicator"></span>
-              </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                备注
-              </th>
-            </tr>
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-3 text-left">持有期</th>
+                <th class="px-4 py-3 text-right">平均相关系数</th>
+                <th class="px-4 py-3 text-right">中位数</th>
+                <th class="px-4 py-3 text-right">等级相关</th>
+                <th class="px-4 py-3 text-right">有效天数</th>
+                <th class="px-4 py-3 text-right">正相关天数</th>
+                <th class="px-4 py-3 text-right">负相关天数</th>
+                <th class="px-4 py-3 text-right">胜率</th>
+              </tr>
             </thead>
-            <tbody id="stock-table-body" class="bg-white divide-y divide-gray-200">
-            {% for stock in correlations %}
-            <tr class="stock-row"
-                data-code="{{ stock.stock_code }}"
-                data-name="{{ stock.stock_name }}"
-                data-correlation="{{ stock.correlation if stock.correlation is not none else 'null' }}"
-                data-type="{% if stock.correlation is none %}invalid{% elif stock.correlation >= 0 %}positive{% else %}negative{% endif %}">
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {{ loop.index }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                {{ stock.stock_code }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                {{ stock.stock_name }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm font-bold">
-                {% if stock.correlation is not none %}
-                <span class="{% if stock.correlation >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                      {{ "%.4f"|format(stock.correlation) }}
-                    </span>
-                {% else %}
-                <span class="text-gray-400">N/A</span>
-                {% endif %}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                {% if stock.correlation is not none %}
-                <div class="w-32">
-                  <div
-                      class="correlation-bar {% if stock.correlation >= 0 %}bg-positive{% else %}bg-negative{% endif %}"
-                      style="width: {{ (stock.correlation|abs * 100)|int }}%;"></div>
-                </div>
-                {% else %}
-                <span class="text-xs text-gray-400">-</span>
-                {% endif %}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {% if stock.p_value is not none %}
-                {{ "%.4f"|format(stock.p_value) }}
-                {% if stock.p_value < 0.05 %}
-                <span class="text-xs text-positive">*</span>
-                {% endif %}
-                {% else %}
-                <span class="text-gray-400">N/A</span>
-                {% endif %}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {{ stock.sample_count }}
-              </td>
-              <td class="px-6 py-4 text-sm text-gray-500">
-                {% if stock.error %}
-                <span class="text-xs text-red-600" title="{{ stock.error }}">{{ stock.error[:30] }}...</span>
-                {% else %}
-                <span class="text-xs text-green-600">正常</span>
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
+            <tbody>
+              {% for period in periods_data %}
+              <tr class="border-t hover:bg-gray-50">
+                <td class="px-4 py-3 font-semibold">T+{{ period.m_days }}日</td>
+                <td class="px-4 py-3 text-right font-bold {% if period.avg_correlation >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                  {{ "%.4f"|format(period.avg_correlation) }}
+                </td>
+                <td class="px-4 py-3 text-right">{{ "%.4f"|format(period.median_correlation) }}</td>
+                <td class="px-4 py-3 text-right">{{ "%.4f"|format(period.avg_rank_correlation) }}</td>
+                <td class="px-4 py-3 text-right">{{ period.valid_days }}</td>
+                <td class="px-4 py-3 text-right text-positive">{{ period.positive_count }}</td>
+                <td class="px-4 py-3 text-right text-negative">{{ period.negative_count }}</td>
+                <td class="px-4 py-3 text-right">{{ "%.1f"|format((period.positive_count / period.valid_days * 100) if period.valid_days > 0 else 0) }}%</td>
+              </tr>
+              {% endfor %}
             </tbody>
           </table>
         </div>
+      </div>
 
-        <div class="px-6 py-4 border-t bg-gray-50">
-          <div class="text-sm text-gray-600">
-            共 <span id="filtered-count">{{ correlations|length }}</span> 条记录
+      <!-- Multi-Period Comparison Chart -->
+      <div class="bg-white rounded-lg shadow p-6 mb-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">多周期相关系数对比</h2>
+        <div id="multi-period-chart" style="width: 100%; height: 400px;"></div>
+      </div>
+
+      <!-- Period Tabs -->
+      <div class="bg-white rounded-lg shadow mb-6">
+        <div class="px-6 py-4 border-b">
+          <h2 class="text-xl font-semibold text-gray-800 mb-4">详细分析（按持有期）</h2>
+          <div class="flex flex-wrap gap-2">
+            {% for period in periods_data %}
+            <button class="tab-button px-6 py-2 rounded-lg bg-gray-100 text-gray-700 font-medium {% if loop.first %}active{% endif %}"
+                    onclick="switchTab({{ loop.index0 }})">
+              T+{{ period.m_days }}日
+            </button>
+            {% endfor %}
           </div>
         </div>
+
+        {% for period in periods_data %}
+        <div class="tab-content {% if loop.first %}active{% endif %}" id="tab-{{ loop.index0 }}">
+          <!-- Summary Stats for this period -->
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-6">
+            <div class="bg-gray-50 rounded-lg p-4">
+              <div class="text-xs text-gray-500 mb-1">平均相关系数</div>
+              <div class="text-2xl font-bold {% if period.avg_correlation >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                {{ "%.4f"|format(period.avg_correlation) }}
+              </div>
+              <div class="text-xs text-gray-500 mt-1">中位数: {{ "%.4f"|format(period.median_correlation) }}</div>
+            </div>
+
+            <div class="bg-gray-50 rounded-lg p-4">
+              <div class="text-xs text-gray-500 mb-1">等级相关系数</div>
+              <div class="text-2xl font-bold text-primary">
+                {{ "%.4f"|format(period.avg_rank_correlation) }}
+              </div>
+            </div>
+
+            <div class="bg-gray-50 rounded-lg p-4">
+              <div class="text-xs text-gray-500 mb-1">有效交易日</div>
+              <div class="text-2xl font-bold text-gray-800">
+                {{ period.valid_days }} / {{ period.total_days }}
+              </div>
+            </div>
+
+            <div class="bg-gray-50 rounded-lg p-4">
+              <div class="text-xs text-gray-500 mb-1">相关性分布</div>
+              <div class="flex items-center gap-3">
+                <div>
+                  <div class="text-sm font-semibold text-positive">正: {{ period.positive_count }}</div>
+                </div>
+                <div>
+                  <div class="text-sm font-semibold text-negative">负: {{ period.negative_count }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Time Series Chart -->
+          <div class="p-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">T+{{ period.m_days }}日 相关系数时间序列</h3>
+            <div id="time-series-chart-{{ loop.index0 }}" style="width: 100%; height: 400px;"></div>
+          </div>
+
+          <!-- Distribution Chart -->
+          <div class="p-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">T+{{ period.m_days }}日 相关系数分布</h3>
+            <div id="distribution-chart-{{ loop.index0 }}" style="width: 100%; height: 400px;"></div>
+          </div>
+
+          <!-- Daily Details -->
+          <div class="p-6">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold text-gray-800">T+{{ period.m_days }}日 每日相关性详情</h3>
+              <select class="filter-select px-4 py-2 border rounded-lg" data-period="{{ loop.index0 }}">
+                <option value="all">全部</option>
+                <option value="positive">正相关</option>
+                <option value="negative">负相关</option>
+                <option value="invalid">无效</option>
+              </select>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="w-full">
+                <thead class="bg-gray-50 border-b">
+                <tr>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">交易日期</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pearson相关</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Spearman相关</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">可视化</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">P值</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">有效股票数</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+                </tr>
+                </thead>
+                <tbody class="daily-table-body bg-white divide-y divide-gray-200" data-period="{{ loop.index0 }}">
+                {% for day in period.daily_correlations %}
+                <tr class="day-row"
+                    data-date="{{ day.trade_date }}"
+                    data-correlation="{{ day.correlation if day.correlation is not none else 'null' }}"
+                    data-type="{% if day.correlation is none %}invalid{% elif day.correlation >= 0 %}positive{% else %}negative{% endif %}"
+                    onclick="toggleStockDetails('{{ loop.index0 }}-{{ day.trade_date }}')">
+                  <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{{ day.trade_date }}</td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm font-bold">
+                    {% if day.correlation is not none %}
+                    <span class="{% if day.correlation >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                      {{ "%.4f"|format(day.correlation) }}
+                    </span>
+                    {% else %}
+                    <span class="text-gray-400">N/A</span>
+                    {% endif %}
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm font-bold">
+                    {% if day.rank_correlation is not none %}
+                    <span class="{% if day.rank_correlation >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                      {{ "%.4f"|format(day.rank_correlation) }}
+                    </span>
+                    {% else %}
+                    <span class="text-gray-400">N/A</span>
+                    {% endif %}
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap">
+                    {% if day.correlation is not none %}
+                    <div class="w-32">
+                      <div class="correlation-bar {% if day.correlation >= 0 %}bg-positive{% else %}bg-negative{% endif %}"
+                           style="width: {{ (day.correlation|abs * 100)|int }}%;"></div>
+                    </div>
+                    {% else %}
+                    <span class="text-xs text-gray-400">-</span>
+                    {% endif %}
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                    {% if day.p_value is not none %}
+                    {{ "%.4f"|format(day.p_value) }}
+                    {% if day.p_value < 0.05 %}<span class="text-xs text-positive">*</span>{% endif %}
+                    {% else %}
+                    <span class="text-gray-400">N/A</span>
+                    {% endif %}
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">{{ day.valid_stock_count }}</td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm text-primary">
+                    {% if day.stock_scores|length > 0 %}
+                    <span class="cursor-pointer">▼ 展开</span>
+                    {% else %}
+                    <span class="text-gray-400">无数据</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% if day.stock_scores|length > 0 %}
+                <tr class="stock-detail" id="detail-{{ loop.index0 }}-{{ day.trade_date }}">
+                  <td colspan="7" class="px-4 py-3 bg-gray-50">
+                    <div class="max-h-96 overflow-y-auto">
+                      <table class="w-full text-sm">
+                        <thead class="bg-gray-100">
+                          <tr>
+                            <th class="px-4 py-2 text-left">排名</th>
+                            <th class="px-4 py-2 text-left">股票代码</th>
+                            <th class="px-4 py-2 text-left">股票名称</th>
+                            <th class="px-4 py-2 text-right">因子得分</th>
+                            <th class="px-4 py-2 text-right">当日收盘价</th>
+                            <th class="px-4 py-2 text-right">T+{{ period.m_days }}日收盘价</th>
+                            <th class="px-4 py-2 text-right">收益率</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for stock in day.stock_scores|sort(attribute='factor_score', reverse=true) %}
+                          <tr class="border-t">
+                            <td class="px-4 py-2 text-gray-500">{{ loop.index }}</td>
+                            <td class="px-4 py-2">{{ stock.stock_code }}</td>
+                            <td class="px-4 py-2">{{ stock.stock_name }}</td>
+                            <td class="px-4 py-2 text-right font-semibold text-primary">
+                              {{ "%.4f"|format(stock.factor_score) if stock.factor_score is not none else 'N/A' }}
+                            </td>
+                            <td class="px-4 py-2 text-right">
+                              {{ "%.2f"|format(stock.close_price) if stock.close_price is not none else 'N/A' }}
+                            </td>
+                            <td class="px-4 py-2 text-right">
+                              {{ "%.2f"|format(stock.future_close_price) if stock.future_close_price is not none else 'N/A' }}
+                            </td>
+                            <td class="px-4 py-2 text-right {% if stock.return_rate is not none %}{% if stock.return_rate >= 0 %}text-positive{% else %}text-negative{% endif %}{% endif %}">
+                              {% if stock.return_rate is not none %}
+                              {{ "%.2f"|format(stock.return_rate * 100) }}%
+                              {% else %}
+                              N/A
+                              {% endif %}
+                            </td>
+                          </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
       </div>
 
     </div>
@@ -227,32 +300,218 @@
 
   <!-- Footer -->
   <footer class="bg-white border-t px-6 py-4 text-center text-sm text-gray-500">
-    <p>因子相关性分析报告 © 2025 | 使用皮尔逊相关系数计算</p>
+    <p>因子相关性分析报告（多周期对比）© 2025 | 使用皮尔逊和斯皮尔曼相关系数</p>
     <p class="text-xs mt-1">* P值 < 0.05 表示相关性具有统计学意义</p>
   </footer>
 </div>
 
 <script>
-  // 数据准备
-  const correlationData = [
-    {% for stock in correlations %}
-    {% if stock.correlation is not none %}
-    { code: "{{ stock.stock_code }}", name: "{{ stock.stock_name }}", correlation: {{ stock.correlation }} },
-    {% endif %}
+  // 数据准备 - 多周期
+  const periodsData = [
+    {% for period in periods_data %}
+    {
+      m_days: {{ period.m_days }},
+      dailyData: [
+        {% for day in period.daily_correlations %}
+        {% if day.correlation is not none %}
+        {
+          date: "{{ day.trade_date }}",
+          correlation: {{ day.correlation }},
+          rank_correlation: {{ day.rank_correlation if day.rank_correlation is not none else 'null' }},
+          p_value: {{ day.p_value if day.p_value is not none else 'null' }},
+          valid_count: {{ day.valid_stock_count }}
+        },
+        {% endif %}
+        {% endfor %}
+      ],
+      avgCorrelation: {{ period.avg_correlation }},
+      medianCorrelation: {{ period.median_correlation }}
+    },
     {% endfor %}
   ];
 
-  // 绘制分布图
-  function drawDistributionChart() {
-    const chartDom = document.getElementById('distribution-chart');
+  // Tab切换
+  function switchTab(index) {
+    // 更新按钮状态
+    document.querySelectorAll('.tab-button').forEach((btn, i) => {
+      if (i === index) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+
+    // 更新内容显示
+    document.querySelectorAll('.tab-content').forEach((content, i) => {
+      if (i === index) {
+        content.classList.add('active');
+        // 重新渲染该tab的图表
+        drawTimeSeriesChart(index);
+        drawDistributionChart(index);
+      } else {
+        content.classList.remove('active');
+      }
+    });
+  }
+
+  // 绘制多周期对比图
+  function drawMultiPeriodChart() {
+    const chartDom = document.getElementById('multi-period-chart');
     const myChart = echarts.init(chartDom);
 
-    // 创建直方图数据
+    const series = [];
+    const colors = ['#667eea', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6'];
+
+    periodsData.forEach((period, index) => {
+      const dates = period.dailyData.map(d => d.date);
+      const correlations = period.dailyData.map(d => d.correlation);
+
+      series.push({
+        name: `T+${period.m_days}日`,
+        data: correlations,
+        type: 'line',
+        smooth: true,
+        itemStyle: { color: colors[index % colors.length] }
+      });
+    });
+
+    const allDates = periodsData[0].dailyData.map(d => d.date);
+
+    const option = {
+      title: {
+        text: '多周期相关系数对比',
+        left: 'center'
+      },
+      tooltip: {
+        trigger: 'axis'
+      },
+      legend: {
+        data: periodsData.map(p => `T+${p.m_days}日`),
+        top: 30
+      },
+      xAxis: {
+        type: 'category',
+        data: allDates,
+        axisLabel: {
+          interval: Math.floor(allDates.length / 10),
+          rotate: 45
+        }
+      },
+      yAxis: {
+        type: 'value',
+        name: '相关系数',
+        min: -1,
+        max: 1
+      },
+      series: series,
+      grid: {
+        left: '10%',
+        right: '5%',
+        bottom: '15%',
+        top: '20%'
+      },
+      dataZoom: [{
+        type: 'inside',
+        start: 0,
+        end: 100
+      }, {
+        start: 0,
+        end: 100
+      }]
+    };
+
+    myChart.setOption(option);
+    window.addEventListener('resize', () => myChart.resize());
+  }
+
+  // 绘制时间序列图
+  function drawTimeSeriesChart(periodIndex) {
+    const chartDom = document.getElementById(`time-series-chart-${periodIndex}`);
+    if (!chartDom) return;
+
+    const myChart = echarts.init(chartDom);
+    const period = periodsData[periodIndex];
+
+    const dates = period.dailyData.map(d => d.date);
+    const correlations = period.dailyData.map(d => d.correlation);
+    const rankCorrelations = period.dailyData.map(d => d.rank_correlation);
+
+    const option = {
+      title: {
+        text: `T+${period.m_days}日 相关系数时间序列`,
+        left: 'center'
+      },
+      tooltip: {
+        trigger: 'axis'
+      },
+      legend: {
+        data: ['Pearson相关系数', 'Spearman等级相关'],
+        top: 30
+      },
+      xAxis: {
+        type: 'category',
+        data: dates,
+        axisLabel: {
+          interval: Math.floor(dates.length / 10),
+          rotate: 45
+        }
+      },
+      yAxis: {
+        type: 'value',
+        name: '相关系数',
+        min: -1,
+        max: 1
+      },
+      series: [
+        {
+          name: 'Pearson相关系数',
+          data: correlations,
+          type: 'line',
+          smooth: true,
+          itemStyle: { color: '#667eea' },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{
+              offset: 0,
+              color: 'rgba(102, 126, 234, 0.3)'
+            }, {
+              offset: 1,
+              color: 'rgba(102, 126, 234, 0.1)'
+            }])
+          }
+        },
+        {
+          name: 'Spearman等级相关',
+          data: rankCorrelations,
+          type: 'line',
+          smooth: true,
+          itemStyle: { color: '#f59e0b' }
+        }
+      ],
+      grid: {
+        left: '10%',
+        right: '5%',
+        bottom: '15%',
+        top: '20%'
+      }
+    };
+
+    myChart.setOption(option);
+    window.addEventListener('resize', () => myChart.resize());
+  }
+
+  // 绘制分布图
+  function drawDistributionChart(periodIndex) {
+    const chartDom = document.getElementById(`distribution-chart-${periodIndex}`);
+    if (!chartDom) return;
+
+    const myChart = echarts.init(chartDom);
+    const period = periodsData[periodIndex];
+
     const bins = 20;
     const binWidth = 2.0 / bins;
     const histogram = new Array(bins).fill(0);
 
-    correlationData.forEach(item => {
+    period.dailyData.forEach(item => {
       const binIndex = Math.min(Math.floor((item.correlation + 1) / binWidth), bins - 1);
       histogram[binIndex]++;
     });
@@ -260,33 +519,28 @@
     const xAxisData = [];
     for (let i = 0; i < bins; i++) {
       const start = -1 + i * binWidth;
-      const end = start + binWidth;
       xAxisData.push(`${start.toFixed(2)}`);
     }
 
     const option = {
       title: {
-        text: '相关系数分布',
+        text: `T+${period.m_days}日 相关系数分布`,
         left: 'center'
       },
       tooltip: {
         trigger: 'axis',
-        axisPointer: {
-          type: 'shadow'
-        },
+        axisPointer: { type: 'shadow' },
         formatter: function(params) {
           const binIndex = params[0].dataIndex;
           const start = -1 + binIndex * binWidth;
           const end = start + binWidth;
-          return `范围: [${start.toFixed(2)}, ${end.toFixed(2)})<br/>数量: ${params[0].value}`;
+          return `范围: [${start.toFixed(2)}, ${end.toFixed(2)})<br/>交易日数: ${params[0].value}`;
         }
       },
       xAxis: {
         type: 'category',
         data: xAxisData,
         name: '相关系数',
-        nameLocation: 'middle',
-        nameGap: 30,
         axisLabel: {
           interval: 4,
           rotate: 45
@@ -294,7 +548,7 @@
       },
       yAxis: {
         type: 'value',
-        name: '股票数量'
+        name: '交易日数'
       },
       series: [{
         data: histogram,
@@ -316,113 +570,47 @@
     };
 
     myChart.setOption(option);
-
-    // 响应式调整
-    window.addEventListener('resize', function() {
-      myChart.resize();
-    });
+    window.addEventListener('resize', () => myChart.resize());
   }
 
-  // 搜索功能
-  const searchInput = document.getElementById('search-input');
-  const filterSelect = document.getElementById('filter-select');
-  const tableBody = document.getElementById('stock-table-body');
-  const filteredCount = document.getElementById('filtered-count');
+  // 筛选功能
+  document.querySelectorAll('.filter-select').forEach(select => {
+    select.addEventListener('change', function() {
+      const periodIndex = this.dataset.period;
+      const filterType = this.value;
+      const tableBody = document.querySelector(`.daily-table-body[data-period="${periodIndex}"]`);
+      const rows = tableBody.querySelectorAll('.day-row');
 
-  function filterTable() {
-    const searchTerm = searchInput.value.toLowerCase();
-    const filterType = filterSelect.value;
-    const rows = tableBody.getElementsByClassName('stock-row');
-    let visibleCount = 0;
-
-    for (let row of rows) {
-      const code = row.getAttribute('data-code').toLowerCase();
-      const name = row.getAttribute('data-name').toLowerCase();
-      const type = row.getAttribute('data-type');
-
-      const matchesSearch = code.includes(searchTerm) || name.includes(searchTerm);
-      const matchesFilter = filterType === 'all' || type === filterType;
-
-      if (matchesSearch && matchesFilter) {
-        row.style.display = '';
-        visibleCount++;
-      } else {
-        row.style.display = 'none';
-      }
-    }
-
-    filteredCount.textContent = visibleCount;
-  }
-
-  searchInput.addEventListener('input', filterTable);
-  filterSelect.addEventListener('change', filterTable);
-
-  // 排序功能
-  let currentSortColumn = 'rank';
-  let currentSortOrder = 'asc';
-
-  function sortTable(column) {
-    const rows = Array.from(tableBody.getElementsByClassName('stock-row'));
-
-    // 切换排序顺序
-    if (currentSortColumn === column) {
-      currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
-    } else {
-      currentSortColumn = column;
-      currentSortOrder = 'asc';
-    }
-
-    // 排序
-    rows.sort((a, b) => {
-      let aVal, bVal;
-
-      switch(column) {
-        case 'rank':
-          aVal = parseInt(a.querySelector('td:nth-child(1)').textContent);
-          bVal = parseInt(b.querySelector('td:nth-child(1)').textContent);
-          break;
-        case 'code':
-          aVal = a.getAttribute('data-code');
-          bVal = b.getAttribute('data-code');
-          break;
-        case 'name':
-          aVal = a.getAttribute('data-name');
-          bVal = b.getAttribute('data-name');
-          break;
-        case 'correlation':
-          aVal = parseFloat(a.getAttribute('data-correlation')) || -999;
-          bVal = parseFloat(b.getAttribute('data-correlation')) || -999;
-          break;
-        case 'pvalue':
-          aVal = parseFloat(a.querySelector('td:nth-child(6)').textContent) || 999;
-          bVal = parseFloat(b.querySelector('td:nth-child(6)').textContent) || 999;
-          break;
-        case 'samples':
-          aVal = parseInt(a.querySelector('td:nth-child(7)').textContent);
-          bVal = parseInt(b.querySelector('td:nth-child(7)').textContent);
-          break;
-      }
-
-      if (currentSortOrder === 'asc') {
-        return aVal > bVal ? 1 : -1;
-      } else {
-        return aVal < bVal ? 1 : -1;
-      }
+      rows.forEach(row => {
+        const type = row.getAttribute('data-type');
+        if (filterType === 'all' || type === filterType) {
+          row.style.display = '';
+        } else {
+          row.style.display = 'none';
+          // 隐藏详情行
+          const date = row.getAttribute('data-date');
+          const detailRow = document.getElementById(`detail-${periodIndex}-${date}`);
+          if (detailRow) {
+            detailRow.style.display = 'none';
+            detailRow.classList.remove('show');
+          }
+        }
+      });
     });
+  });
 
-    // 更新表格
-    rows.forEach(row => tableBody.appendChild(row));
-
-    // 更新排序指示器
-    document.querySelectorAll('.sort-indicator').forEach(el => el.textContent = '');
-    const header = event.target.querySelector('.sort-indicator');
-    if (header) {
-      header.textContent = currentSortOrder === 'asc' ? '▲' : '▼';
+  // 展开/收起股票详情
+  function toggleStockDetails(id) {
+    const detailRow = document.getElementById(`detail-${id}`);
+    if (detailRow) {
+      detailRow.classList.toggle('show');
     }
   }
 
   // 初始化
-  drawDistributionChart();
+  drawMultiPeriodChart();
+  drawTimeSeriesChart(0);
+  drawDistributionChart(0);
 </script>
 </body>
 </html>

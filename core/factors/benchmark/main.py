@@ -7,8 +7,8 @@ from core.factors.benchmark import calculate_factor_correlation, generate_html_r
 
 if __name__ == '__main__':
   """
-  因子与股价相关性分析模块
-  计算因子得分与股票收盘价的皮尔逊相关系数
+  因子相关性分析模块（日度截面分析）
+  计算每日因子得分排名与T+M日收益率的相关性
   """
   stock_list = allow_buy_stock_code_list()
 
@@ -16,10 +16,11 @@ if __name__ == '__main__':
 
   report = calculate_factor_correlation(
     factor_cls=KDJ,
-    start_date=date(2014, 1, 1),
+    start_date=date(2024, 1, 1),
     end_date=date(2025, 1, 1),
+    m_days=[1, 3, 5, 10, 20],  # 多个持有期对比：T+1, T+3, T+5, T+10, T+20日
     # stock_codes=stock_list
-    stock_codes=random.sample(stock_list, 1000),  # 测试时随机抽取1000只股票
+    stock_codes=random.sample(stock_list, 100),
   )
 
   # 保存Pickle报告（高效的Python原生格式）
