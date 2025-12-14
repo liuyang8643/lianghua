@@ -13,14 +13,14 @@ class TopN:
     def __init__(
         self,
         stock_list: List[str],
-        base_date: datetime,
+        base_date: datetime,  # 只接受 datetime
     ):
         """
         初始化TopN策略
 
         Args:
             stock_list: 股票池列表
-            base_date: 基准日期
+            base_date: 基准日期（必须是datetime对象）
         """
         self.stock_list = stock_list
         self.base_date = base_date
@@ -74,7 +74,14 @@ class TopN:
             factor_name = f.__class__.__name__
             try:
                 # ✅ 修复：正确存储每只股票的分数
-                self.factor_scores[factor_name][stock_code] = f.calc(ctx)
+                result = f.calc(ctx)
+                self.factor_scores[factor_name][stock_code] = result
+
+                # 检查结果，如果有错误则打印日志
+                if result['err'] is not None:
+                    core_logger.warning(
+                        f"股票{stock_code}因子{factor_name}计算失败: {result['err']}"
+                    )
             except Exception as e:
                 # 记录错误但继续计算其他因子
                 core_logger.warning(

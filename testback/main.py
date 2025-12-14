@@ -58,7 +58,9 @@ def _wrap_process_worker(shm_name: str, data_size: int, weights: dict[str, float
         prices = {}
         for stock in top_stocks:
           try:
-            data = get_market_data(stock, 1, trade_date)
+            # 将 date 转换为 datetime
+            trade_datetime = datetime.combine(trade_date, datetime.min.time())
+            data = get_market_data(stock, 1, trade_datetime)
             if data is not None and len(data) > 0:
               prices[stock] = float(data.iloc[-1]['close'])
           except Exception as e:
@@ -89,7 +91,7 @@ def _wrap_process_worker(shm_name: str, data_size: int, weights: dict[str, float
                 code=stock,
                 volume=pos['volume'],
                 price=sell_price,
-                sell_date=trade_date.date(),
+                sell_date=trade_date,
                 clear_reason='调仓'
               )
             except Exception as e:
@@ -111,20 +113,22 @@ def _wrap_process_worker(shm_name: str, data_size: int, weights: dict[str, float
               code=stock,
               volume=shares,
               price=prices[stock],
-              buy_date=trade_date.date()
+              buy_date=trade_date
             )
           except Exception as e:
             # 资金不足或其他错误，跳过
             testback_logger.debug(f"买入 {stock} 失败: {e}")
 
         # 6. 记录当日资产
-        account.calc_assets(trade_date)
+        trade_datetime = datetime.combine(trade_date, datetime.min.time())
+        account.calc_assets(trade_datetime)
 
         # 更新持仓记录
         prev_holdings = target_holdings
 
       # 7. 计算最终收益
-      final_assets = account.calc_assets(topn_list[-1].base_date)
+      final_datetime = datetime.combine(topn_list[-1].base_date, datetime.min.time())
+      final_assets = account.calc_assets(final_datetime)
       total_return = (final_assets['total_asset'] - account.init_cash) / account.init_cash * 100
 
       return {
@@ -153,19 +157,28 @@ if __name__ == "__main__":
   from core.database import allow_buy_stock_code_list
   from utils.stock.time import get_trading_date_span
 
-  all_stocks = allow_buy_stock_code_list()
-  # FIXME 模拟多日期回测
-  back_dates = get_trading_date_span(date(2025, 11, 24), date(2025, 12, 5))
+  # 最小配置测试
+  all_stocks = allow_buy_stock_code_list()[:5]  # 只用前5只股票
+  # 使用最近3个交易日（确保有足够历史数据）
+  from datetime import timedelta
+  today = date.today()
+  start_date = today - timedelta(days=7)  # 往前推7天，确保能找到3个交易日
+  back_dates = get_trading_date_span(start_date, today)[-3:]  # 取最近3个交易日
 
-  TASK_COUNT = 640  # FIXME 模拟 GA 迭代
+  TASK_COUNT = 2  # 只运行2个任务
   worker_count = min(os.cpu_count() or 4, TASK_COUNT)
 
-  testback_logger.debug(f'回测日期列表: {[d.strftime("%Y-%m-%d") for d in back_dates]}')
+  testback_logger.info(f'='*60)
+  testback_logger.info(f'最小配置测试')
+  testback_logger.info(f'股票数量: {len(all_stocks)}')
+  testback_logger.info(f'回测日期: {[d.strftime("%Y-%m-%d") for d in back_dates]}')
+  testback_logger.info(f'任务数量: {TASK_COUNT}')
+  testback_logger.info(f'='*60)
 
   # 多线程获取 TopN 实例
   topNs = batch_run_threads(
     func=TopN,
-    args_list=[[all_stocks, d] for d in back_dates],
+    args_list=[[all_stocks, datetime.combine(d, datetime.min.time())] for d in back_dates],  # 转换为datetime
     max_workers=64,  # 最大并发线程数
   )
 
