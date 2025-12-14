@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, Dict, List
 
-from core.factors import MACD, BBI, CCI, Fundamental, TRIXFactor, MOMFactor, ADXFactor, KDJFactor, FactorCtx, FactorResult, BatchNormFactor
+from core.factors import MACD, BBI, CCI, Fundamental, TRIXFactor, MOMFactor, ADXFactor, FactorCtx, FactorResult, BatchNormFactor
 from utils.parallel import batch_run_threads
 from utils.stock.format import format_qmt_date
 from ..logger import core_logger
