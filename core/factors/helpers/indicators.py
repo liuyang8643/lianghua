@@ -24,9 +24,9 @@ class FactorCtx:
 
   def get_daily_data(self, pass_days: int) -> DataFrame:
     """获取日线数据"""
-    from core.database import get_market_data
+    from core.database import get_market_data_from_cache
 
-    return get_market_data(self.code, pass_days, self.base_time, '1d')
+    return get_market_data_from_cache(self.code, pass_days, self.base_time, '1d')
 
   def get_today_data(self) -> StockTradingData:
     """获取今日数据"""
@@ -42,9 +42,9 @@ class FactorCtx:
 
   def get_minute_data(self, pass_minutes: int) -> DataFrame:
     """获取分钟数据"""
-    from core.database import get_market_data
+    from core.database import get_market_data_from_cache
 
-    return get_market_data(self.code, pass_minutes, self.base_time, '1m')
+    return get_market_data_from_cache(self.code, pass_minutes, self.base_time, '1m')
 
   def get_minute_data_today(self, base_datetime: datetime) -> Optional[DataFrame]:
     """获取今日分钟数据"""

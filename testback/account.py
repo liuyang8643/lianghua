@@ -1,7 +1,7 @@
 from typing import Dict, TypedDict
 from datetime import date as sys_date, datetime
 
-from core.database import get_market_data
+from core.database import get_market_data_from_cache
 
 class MockStockPosition(TypedDict):
   code: str
@@ -97,7 +97,7 @@ class StockAccountMocker:
     """ 获取持仓 """
     res = []
     for pos in self.positions.values():
-      latest_data = get_market_data(pos['code'], 1, cur_time)
+      latest_data = get_market_data_from_cache(pos['code'], 1, cur_time)
       current_price = latest_data.iloc[-1]['close'] if latest_data is not None and latest_data.size > 0 else pos['avg_price']
       res.append(
         {

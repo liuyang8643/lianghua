@@ -35,8 +35,8 @@ baseline_stock_code = '000300.SH'  # 基准股票代码，沪深300
 
 def get_baseline_data(base_time: datetime = None) -> Optional[StockTradingData]:
   """ 获取基准价格 """
-  from core.database import get_market_data
+  from core.database import get_market_data_from_cache
 
   input_time = base_time or datetime.now()
-  data = get_market_data(baseline_stock_code, 1, input_time, '1d')
+  data = get_market_data_from_cache(baseline_stock_code, 1, input_time, '1d')
   return data.iloc[-1] if data is not None and data.size > 0 else None

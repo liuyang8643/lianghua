@@ -67,7 +67,7 @@ def _wrap_process_worker(weights: dict[str, float], rank_n: int = 20):
         try:
           # 将 date 转换为 datetime
           trade_datetime = datetime.combine(trade_date, datetime.min.time())
-          data = get_market_data(stock, 1, trade_datetime)
+          data = get_market_data_from_cache(stock, 1, trade_datetime)
           if data is not None and len(data) > 0:
             prices[stock] = float(data.iloc[-1]['close'])
         except Exception as e:
@@ -179,6 +179,8 @@ if __name__ == "__main__":
   testback_logger.info(f'任务数量: {TASK_COUNT}')
   testback_logger.info(f'=' * 60)
 
+  # 初始化并预加载数据到共享内存
+  init_full_data(all_stocks, '1d')
   # 多线程获取 TopN 实例
   topNs = batch_run_threads(
     func=TopN,
