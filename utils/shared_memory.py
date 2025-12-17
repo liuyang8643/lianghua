@@ -1,113 +1,206 @@
 import pickle
 import struct
+import zlib
 from multiprocessing import shared_memory
-from typing import Optional
+from typing import Optional, Any, TypeVar, Generic
 
-import pandas as pd
+T = TypeVar('T')
 
-class SharedMemoryCache:
-  """支持多进程的共享内存缓存（零拷贝，无本地缓存）"""
-  def __init__(self, cache_type: str):
-    self.cache_type = cache_type  # 'daily' or 'minute'
-    self._shm_registry: dict[str, shared_memory.SharedMemory] = {}  # 股票代码 -> SharedMemory对象
-
-  def _get_shm_name(self, stock_code: str) -> str:
-    """生成共享内存名称"""
-    return f"wbr_cache_{self.cache_type}_{stock_code.replace('.', '_')}"
-
-  def put(self, stock_code: str, data: Optional[pd.DataFrame]) -> None:
-    """存入缓存（仅在主进程调用）"""
-    if data is None:
-      return
-
-    # 序列化DataFrame
-    serialized = pickle.dumps(data)
-    data_size = len(serialized)
-
-    # 创建共享内存：4字节头（存储数据大小） + 实际数据
-    shm_name = self._get_shm_name(stock_code)
-    total_size = 4 + data_size
-
-    try:
-      # 如果已存在，先释放
-      if stock_code in self._shm_registry:
-        old_shm = self._shm_registry[stock_code]
-        old_shm.close()
-        old_shm.unlink()
-
-      # 创建新的共享内存
-      shm = shared_memory.SharedMemory(create=True, size=total_size, name=shm_name)
-
-      # 写入数据大小（4字节）
-      shm.buf[0:4] = struct.pack('I', data_size)
-      # 写入序列化数据
-      shm.buf[4:4+data_size] = serialized
-
-      self._shm_registry[stock_code] = shm
-
-    except Exception as e:
-      # 共享内存创建失败，静默失败（子进程会回退到正常加载）
-      pass
-
-  def get(self, stock_code: str) -> Optional[pd.DataFrame]:
-    """从缓存获取（主进程和子进程都可调用）
-
-    每次都从共享内存反序列化，不使用本地缓存。
-    这样可以避免子进程内存累积，适合只读场景。
+class SharedMemoryCache(Generic[T]):
+  """极致性能多进程共享内存缓存
+  
+  特性：
+  - 支持任意可序列化对象
+  - 可选压缩（compress_level=0 禁用，1-9 启用，推荐 6）
+  - 无锁设计（需要外部保证线程安全）
+  - 支持上下文管理器
+  - 零拷贝读取（子进程不保留本地缓存）
+  
+  内存布局：
+  [4字节: 数据大小] [1字节: 压缩标志] [N字节: 序列化数据]
+  """
+  
+  def __init__(self, cache_name: str, compress_level: int = 0):
+    """初始化共享内存缓存
+    
+    Args:
+      cache_name: 缓存命名空间（用于区分不同用途的缓存）
+      compress_level: 压缩级别，0=禁用，1-9=启用（推荐 6）
     """
-    shm_name = self._get_shm_name(stock_code)
+    self.cache_name = cache_name
+    self.compress_level = compress_level
+    self._shm_registry: dict[str, shared_memory.SharedMemory] = {}
+    
+  def _get_shm_name(self, key: str) -> str:
+    """生成共享内存名称（Windows下最多247字符）"""
+    # 替换特殊字符，避免命名冲突
+    safe_key = key.replace('.', '_').replace('/', '_').replace('\\', '_')
+    return f"wbr_{self.cache_name}_{safe_key}"[:247]
+  
+  def _serialize(self, data: Any) -> tuple[bytes, bool]:
+    """序列化并可选压缩数据
+    
+    Returns:
+      (序列化后的字节, 是否压缩)
+    """
+    serialized = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
+    
+    if self.compress_level > 0:
+      compressed = zlib.compress(serialized, level=self.compress_level)
+      # 只有压缩后更小才使用
+      if len(compressed) < len(serialized):
+        return compressed, True
+    
+    return serialized, False
+  
+  def _deserialize(self, data: bytes, is_compressed: bool) -> Any:
+    """反序列化数据"""
+    if is_compressed:
+      data = zlib.decompress(data)
+    return pickle.loads(data)
+  
+  def put(self, key: str, data: Any) -> bool:
+    """存入缓存（主进程调用，无锁设计）
+    
+    Args:
+      key: 缓存键
+      data: 任意可序列化对象
+      
+    Returns:
+      是否成功写入
+    """
+    if data is None:
+      return False
+    
+    try:
+      # 序列化（可选压缩）
+      serialized, is_compressed = self._serialize(data)
+      data_size = len(serialized)
+      
+      # 内存布局：[4字节大小] [1字节压缩标志] [数据]
+      total_size = 4 + 1 + data_size
+      shm_name = self._get_shm_name(key)
+      
+      # 释放旧共享内存
+      if key in self._shm_registry:
+        self._cleanup_key(key)
+      
+      # 创建新共享内存
+      shm = shared_memory.SharedMemory(create=True, size=total_size, name=shm_name)
+      
+      # 写入头部
+      shm.buf[0:4] = struct.pack('I', data_size)
+      shm.buf[4:5] = struct.pack('B', int(is_compressed))
+      
+      # 写入数据
+      shm.buf[5:5+data_size] = serialized
+      
+      self._shm_registry[key] = shm
+      return True
+      
+    except Exception:
+      # 失败时静默处理（避免中断主流程）
+      return False
+  
+  def get(self, key: str) -> Optional[T]:
+    """从缓存获取（主进程和子进程都可调用，无锁设计）
+    
+    Args:
+      key: 缓存键
+      
+    Returns:
+      缓存的对象，不存在则返回 None
+    """
+    shm_name = self._get_shm_name(key)
     shm = None
-
+    
     try:
       # 连接共享内存
       shm = shared_memory.SharedMemory(name=shm_name)
-
-      # 读取数据大小
+      
+      # 读取头部
       data_size = struct.unpack('I', bytes(shm.buf[0:4]))[0]
-
-      # 读取序列化数据并反序列化
-      serialized = bytes(shm.buf[4:4+data_size])
-      data = pickle.loads(serialized)
-
-      # 记录共享内存引用（主进程用于后续清理）
-      if stock_code not in self._shm_registry:
-        self._shm_registry[stock_code] = shm
+      is_compressed = bool(struct.unpack('B', bytes(shm.buf[4:5]))[0])
+      
+      # 读取并反序列化数据
+      serialized = bytes(shm.buf[5:5+data_size])
+      data = self._deserialize(serialized, is_compressed)
+      
+      # 主进程：记录引用（用于后续清理）
+      # 子进程：立即关闭（避免资源泄漏）
+      if key not in self._shm_registry:
+        self._shm_registry[key] = shm
       else:
-        # 子进程：立即关闭连接
         shm.close()
-
+      
       return data
-
+      
     except FileNotFoundError:
-      # 共享内存不存在，返回None
+      # 共享内存不存在
       if shm:
         shm.close()
       return None
+      
     except Exception:
-      # 其他错误，返回None
+      # 其他错误（损坏的数据等）
       if shm:
         try:
           shm.close()
         except:
           pass
       return None
-
-  def contains(self, stock_code: str) -> bool:
-    """检查缓存是否包含该股票"""
-    shm_name = self._get_shm_name(stock_code)
+  
+  def contains(self, key: str) -> bool:
+    """检查缓存是否包含指定键"""
+    shm_name = self._get_shm_name(key)
     try:
       shm = shared_memory.SharedMemory(name=shm_name)
       shm.close()
       return True
     except FileNotFoundError:
       return False
-
-  def cleanup(self) -> None:
-    """清理所有共享内存（仅在主进程退出时调用）"""
-    for stock_code, shm in self._shm_registry.items():
+  
+  def _cleanup_key(self, key: str) -> None:
+    """清理单个键（内部方法，不加锁）"""
+    if key in self._shm_registry:
+      shm = self._shm_registry[key]
       try:
         shm.close()
         shm.unlink()
       except:
         pass
-    self._shm_registry.clear()
+      del self._shm_registry[key]
+  
+  def remove(self, key: str) -> bool:
+    """从缓存中移除指定键（无锁设计）
+    
+    Returns:
+      是否成功移除
+    """
+    try:
+      self._cleanup_key(key)
+      return True
+    except:
+      return False
+  
+  def cleanup(self) -> None:
+    """清理所有共享内存（主进程退出时调用，无锁设计）"""
+    for key in list(self._shm_registry.keys()):
+      self._cleanup_key(key)
+  
+  def keys(self) -> list[str]:
+    """返回所有缓存键（无锁设计）"""
+    return list(self._shm_registry.keys())
+  
+  def __len__(self) -> int:
+    """返回缓存中的键数量（无锁设计）"""
+    return len(self._shm_registry)
+  
+  def __enter__(self):
+    """上下文管理器：进入"""
+    return self
+  
+  def __exit__(self, exc_type, exc_val, exc_tb):
+    """上下文管理器：退出时自动清理"""
+    self.cleanup()
+    return False
