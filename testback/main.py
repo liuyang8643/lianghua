@@ -2,6 +2,8 @@ import os
 
 from joblib import Parallel, delayed, parallel_backend
 
+from core import get_market_data_from_cache
+from core.database import init_full_data
 from utils.parallel import batch_run_threads
 from utils.shared_memory import SharedMemoryCache
 from testback.account import StockAccountMocker
@@ -15,8 +17,14 @@ from core.strategies import TopN
 # 全局缓存
 testback_cache = SharedMemoryCache('testback_cache', compress_level=6)
 
-def _wrap_process_worker(weights: dict[str, float], rank_n: int = 20):
-  """ 独立进程计算最终收益 - 从共享内存读取数据 """
+def _wrap_process_worker(weights: dict[str, float], rank_n: int = 20, use_rl_env: bool = False):
+  """ 独立进程计算最终收益 - 从共享内存读取数据
+  
+  Args:
+    weights: 因子权重
+    rank_n: 选股数量
+    use_rl_env: 是否使用RL环境（如果为True，使用rl_example中的TopN策略）
+  """
   try:
     # 延迟导入：每个 worker 只导入自己需要的模块
     from xtquant import xtdata
@@ -36,6 +44,32 @@ def _wrap_process_worker(weights: dict[str, float], rank_n: int = 20):
       testback_logger.error("无法从共享内存读取数据")
       return None
 
+    # === 可选：使用RL环境 ===
+    if use_rl_env:
+      from testback.rl_env import RLEnv
+      from testback.rl_example import TopNAgent, run_episode_with_agent
+      
+      # 创建RL环境（使用alpha奖励）
+      env = RLEnv(
+        topn_list=topn_list,
+        init_cash=500_000.0,
+        rank_n=rank_n,
+        weights=weights,
+        commission=2 / 1000,
+        min_commission=5.0,
+        use_alpha_reward=True,  # 启用超额收益作为奖励
+      )
+      
+      # 使用TopN策略
+      agent = TopNAgent(n=10)
+      
+      # 运行回测
+      summary = run_episode_with_agent(env, agent)
+      summary['weights'] = weights
+      
+      return summary
+    
+    # === 原有的逐日回测逻辑 ===
     # 创建账户模拟器
     account = StockAccountMocker(
       cash=500_000.0,  # 初始资金50万元
