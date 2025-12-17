@@ -4,13 +4,37 @@ from datetime import datetime
 from typing import Optional
 import numpy as np
 
+from core.logger import core_logger
+from utils.shared_memory import SharedMemoryCache
 from utils.stock.format import format_qmt_datetime
 from utils.stock.time import get_latest_trading_time, is_latest_data
 from .history import check_stocks_need_fix, get_history_data, get_history_data_after_download
 
 # 全局历史数据缓存，以股票代码为key，存储完整历史数据
-_GLOBAL_DAILY_CACHE: dict[str, Optional[pd.DataFrame]] = {}
-_GLOBAL_MINUTE_CACHE: dict[str, Optional[pd.DataFrame]] = {}
+_GLOBAL_DAILY_CACHE = SharedMemoryCache('daily')
+_GLOBAL_MINUTE_CACHE = SharedMemoryCache('minute')
+
+def init_full_data(stock_codes: list[str] = None, period: str = '1d'):
+  """初始化共享缓存并预加载股票数据（一站式接口）
+  
+  Args:
+    stock_codes: 股票代码列表，默认使用 allow_buy_stock_code_list()
+    period: 数据周期，'1d' 或 '1m'
+
+  Returns:
+    成功加载的股票数量
+  """
+  core_logger.debug(f"正在预加载 {len(stock_codes)} 只股票的 {period} 数据到共享内存...")
+
+  for stock_code in stock_codes:
+    get_full_market_data(stock_code, period)
+
+  core_logger.debug(f"{len(stock_codes)} 只股票的 {period} 数据预加载完成。")
+
+def cleanup_shared_cache():
+  """清理共享缓存（在主进程退出时调用）"""
+  _GLOBAL_DAILY_CACHE.cleanup()
+  _GLOBAL_MINUTE_CACHE.cleanup()
 
 def get_full_market_data(
     stock_code: str,
@@ -31,14 +55,16 @@ def get_full_market_data(
   cache = _GLOBAL_DAILY_CACHE if period == '1d' else _GLOBAL_MINUTE_CACHE
 
   # 如果缓存中已有数据，直接返回（零拷贝）
-  if stock_code in cache and cache[stock_code] is not None:
-    return cache[stock_code]
+  if cache.contains(stock_code):
+    cached_data = cache.get(stock_code)
+    if cached_data is not None:
+      return cached_data
 
   # 缓存中没有，需要加载数据
   data = get_market_data(stock_code, None, target_time, period, allow_tainted=allow_tainted, dividend_type=dividend_type)
 
   # 缓存数据
-  cache[stock_code] = data
+  cache.put(stock_code, data)
 
   return data
 
@@ -76,10 +102,10 @@ def get_market_data_from_cache(
     # 数据不足，尝试重新加载更多数据（对于分钟数据可能需要更多）
     if period == '1m':
       required_size = count + 2000
-      _GLOBAL_MINUTE_CACHE[stock_code] = None  # 清除旧缓存
+      _GLOBAL_MINUTE_CACHE.put(stock_code, None)  # 清除旧缓存
       # 重新加载更多数据
       full_data = get_market_data(stock_code, required_size, base_time, '1m', allow_tainted=True, dividend_type=dividend_type)
-      _GLOBAL_MINUTE_CACHE[stock_code] = full_data
+      _GLOBAL_MINUTE_CACHE.put(stock_code, full_data)
 
       if full_data is not None and not full_data.empty:
         time_values = full_data['time'].values

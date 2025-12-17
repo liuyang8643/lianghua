@@ -7,7 +7,8 @@ import numpy as np
 from joblib import Parallel, delayed
 from scipy.stats import pearsonr, spearmanr
 
-from core import FactorCtx, allow_buy_stock_code_list, core_logger, get_full_market_data, get_stock_detail
+from core import FactorCtx, core_logger, init_full_data
+from core.database import allow_buy_stock_code_list, get_full_market_data, get_stock_detail
 from utils.stock.time import get_trading_date_span
 
 @dataclass
@@ -29,7 +30,7 @@ class DailyCorrelation:
   rank_correlation: Optional[float]
   p_value: Optional[float]
   valid_stock_count: int
-  stock_scores: list[StockFactorScore]
+  stock_scores: list[StockFactorScore] = None  # 可选：默认不保存以节省内存
 
 @dataclass
 class PeriodStatistics:
@@ -58,7 +59,8 @@ def _calculate_daily_correlation(
     stock_codes: list[str],
     factor_cls,
     m_days_list: list[int],
-    trading_dates: list[date]
+    trading_dates: list[date],
+    save_stock_scores: bool = False  # 新增：是否保存详细 stock_scores
 ) -> dict[int, DailyCorrelation]:
   """计算单日的因子得分与多个T+M日收益率的相关性"""
   try:
@@ -72,7 +74,7 @@ def _calculate_daily_correlation(
                     if current_idx + m < len(trading_dates)}
 
     if not future_dates:
-      return {m: DailyCorrelation(trade_date, m, None, None, None, 0, [])
+      return {m: DailyCorrelation(trade_date, m, None, None, None, 0, None)
               for m in m_days_list}
 
     factor = factor_cls()
@@ -89,11 +91,11 @@ def _calculate_daily_correlation(
         if full_data is None or full_data.empty:
           continue
 
-        # 构建日期到收盘价的映射
-        time_to_close = {
-          datetime.fromtimestamp(row['time'] / 1000).date(): row['close']
-          for _, row in full_data.iterrows()
-        }
+        # 构建日期到收盘价的映射（优化：使用向量化操作替代 iterrows）
+        timestamps = full_data['time'].values
+        closes = full_data['close'].values
+        dates = [datetime.fromtimestamp(ts / 1000).date() for ts in timestamps]
+        time_to_close = dict(zip(dates, closes))
 
         if trade_date not in time_to_close:
           continue
@@ -137,7 +139,11 @@ def _calculate_daily_correlation(
       valid_scores = [s for s in stock_scores if s.return_rates.get(m) is not None]
 
       if len(valid_scores) < 10:
-        results[m] = DailyCorrelation(trade_date, m, None, None, None, len(valid_scores), stock_scores)
+        # 不保存 stock_scores 以节省内存
+        results[m] = DailyCorrelation(
+          trade_date, m, None, None, None, len(valid_scores), 
+          stock_scores if save_stock_scores else None
+        )
         continue
 
       factor_scores = np.array([s.factor_score for s in valid_scores])
@@ -147,14 +153,15 @@ def _calculate_daily_correlation(
       rank_correlation, _ = spearmanr(factor_scores, return_rates_array)
 
       results[m] = DailyCorrelation(
-        trade_date, m, correlation, rank_correlation, p_value, len(valid_scores), stock_scores
+        trade_date, m, correlation, rank_correlation, p_value, len(valid_scores),
+        stock_scores if save_stock_scores else None  # 默认不保存以节省内存
       )
 
     return results
 
   except Exception as e:
     core_logger.error(f"计算日期 {trade_date} 的相关性时出错: {e}")
-    return {m: DailyCorrelation(trade_date, m, None, None, None, 0, [])
+    return {m: DailyCorrelation(trade_date, m, None, None, None, 0, None)
             for m in m_days_list}
 
 def calculate_factor_correlation(
@@ -162,12 +169,20 @@ def calculate_factor_correlation(
     start_date: date,
     end_date: date,
     m_days: int | list[int] = 5,
-    stock_codes: list[str] = None
+    stock_codes: list[str] = None,
+    save_stock_scores: bool = False  # 新增：是否保存详细的 stock_scores（默认否以节省内存）
 ) -> FactorCorrelationReport:
-  """计算因子得分与T+M日收益率的相关性（一次性计算所有持有期）"""
-
+  """计算因子得分与T+M日收益率的相关性（一次性计算所有持有期）
+  
+  注意：该函数会在内部使用多进程并行计算，共享内存缓存已自动启用。
+  如果在外部多进程环境中调用，请确保主进程已调用 init_full_data()
+  """
+  
   stock_codes = stock_codes or allow_buy_stock_code_list()
   m_days_list = [m_days] if isinstance(m_days, int) else sorted(m_days)
+
+  # 初始化并预加载数据到共享内存
+  init_full_data(stock_codes, '1d')
 
   core_logger.info(f"开始计算 {factor_cls.__name__} 相关性: {start_date} 至 {end_date}")
   core_logger.info(f"股票数: {len(stock_codes)}, 持有期: {m_days_list}")
@@ -177,7 +192,7 @@ def calculate_factor_correlation(
 
   # 并行计算所有日期和持有期
   daily_results_list = Parallel(n_jobs=worker_count, backend='loky')(
-    delayed(_calculate_daily_correlation)(d, stock_codes, factor_cls, m_days_list, date_list)
+    delayed(_calculate_daily_correlation)(d, stock_codes, factor_cls, m_days_list, date_list, save_stock_scores)
     for d in date_list
   )
 

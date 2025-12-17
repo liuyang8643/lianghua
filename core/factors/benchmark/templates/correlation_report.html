@@ -233,14 +233,14 @@
                   </td>
                   <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">{{ day.valid_stock_count }}</td>
                   <td class="px-4 py-3 whitespace-nowrap text-sm text-primary">
-                    {% if day.stock_scores|length > 0 %}
+                    {% if day.stock_scores and day.stock_scores|length > 0 %}
                     <span class="cursor-pointer">▼ 展开</span>
                     {% else %}
                     <span class="text-gray-400">无数据</span>
                     {% endif %}
                   </td>
                 </tr>
-                {% if day.stock_scores|length > 0 %}
+                {% if day.stock_scores and day.stock_scores|length > 0 %}
                 <tr class="stock-detail" id="detail-{{ loop.index0 }}-{{ day.trade_date }}">
                   <td colspan="7" class="px-4 py-3 bg-gray-50">
                     <div class="max-h-96 overflow-y-auto">
