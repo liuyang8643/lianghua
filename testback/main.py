@@ -7,6 +7,7 @@ from core.database import init_full_data
 from utils.parallel import batch_run_threads
 from utils.shared_memory import SharedMemoryCache
 from testback.account import StockAccountMocker
+from utils.stock.format import format_qmt_datetime
 
 os.environ['LOKY_PICKLER'] = 'pickle'  # 使用更快的pickle
 
@@ -48,7 +49,7 @@ def _wrap_process_worker(weights: dict[str, float], rank_n: int = 20, use_rl_env
     if use_rl_env:
       from testback.rl_env import RLEnv
       from testback.rl_example import TopNAgent, run_episode_with_agent
-      
+
       # 创建RL环境（使用alpha奖励）
       env = RLEnv(
         topn_list=topn_list,
@@ -59,16 +60,16 @@ def _wrap_process_worker(weights: dict[str, float], rank_n: int = 20, use_rl_env
         min_commission=5.0,
         use_alpha_reward=True,  # 启用超额收益作为奖励
       )
-      
+
       # 使用TopN策略
       agent = TopNAgent(n=10)
-      
+
       # 运行回测
       summary = run_episode_with_agent(env, agent)
       summary['weights'] = weights
-      
+
       return summary
-    
+
     # === 原有的逐日回测逻辑 ===
     # 创建账户模拟器
     account = StockAccountMocker(
@@ -195,40 +196,43 @@ if __name__ == "__main__":
   from utils.stock.time import get_trading_date_span
 
   # 最小配置测试
-  all_stocks = allow_buy_stock_code_list()[:5]  # 只用前5只股票
+  all_stocks = allow_buy_stock_code_list()[:50]  # 只用前5只股票
   # 使用最近3个交易日（确保有足够历史数据）
   from datetime import timedelta
 
-  today = date.today()
-  start_date = today - timedelta(days=7)  # 往前推7天，确保能找到3个交易日
-  back_dates = get_trading_date_span(start_date, today)[-3:]  # 取最近3个交易日
+  backtest_datetime_list = [
+    datetime.combine(d, datetime.min.time())
+    for d in get_trading_date_span(date(2025, 12, 1), date(2025, 12, 15))]
 
-  TASK_COUNT = 2  # 只运行2个任务
+  TASK_COUNT = 200  # 只运行2个任务
   worker_count = min(os.cpu_count() or 4, TASK_COUNT)
 
   testback_logger.info(f'=' * 60)
   testback_logger.info(f'最小配置测试')
   testback_logger.info(f'股票数量: {len(all_stocks)}')
-  testback_logger.info(f'回测日期: {[d.strftime("%Y-%m-%d") for d in back_dates]}')
+  testback_logger.info(f'回测日期: {[format_qmt_datetime(d) for d in backtest_datetime_list]}')
   testback_logger.info(f'任务数量: {TASK_COUNT}')
   testback_logger.info(f'=' * 60)
+
+  ts = datetime.now()
 
   # 预加载股票详情到共享内存缓存
   init_stock_detail_cache(all_stocks)
   # 初始化并预加载数据到共享内存
   init_full_data(all_stocks, '1d')
-  # 多线程获取 TopN 实例
-  topNs = batch_run_threads(
-    func=TopN,
-    args_list=[[all_stocks, datetime.combine(d, datetime.min.time())] for d in back_dates],  # 转换为datetime
-    max_workers=64,  # 最大并发线程数
-  )
+  # 多进程获取 TopN 实例
+  with parallel_backend('loky', n_jobs=worker_count, inner_max_num_threads=1):
+    topNs = Parallel(
+      n_jobs=worker_count,
+      prefer='processes',  # 明确指定使用进程而不是线程
+      batch_size=1,  # 每次发送1个任务，减少序列化开销
+    )(
+      delayed(TopN)(all_stocks,d)
+      for d in backtest_datetime_list
+    )
 
   # 创建共享内存缓存并存入数据
-  testback_logger.info("topNs 获取完成，正在写入共享内存...")
   testback_cache.put('topn_data', topNs)
-
-  testback_logger.info(f"共享内存写入完成")
 
   testback_logger.info(f"开始回测：{TASK_COUNT}个任务，{worker_count}个进程，共{len(all_stocks)}只股票")
   with parallel_backend('loky', n_jobs=worker_count, inner_max_num_threads=1):
@@ -248,39 +252,16 @@ if __name__ == "__main__":
       for idx in range(TASK_COUNT)
     )
 
-  testback_logger.info(f"回测执行完成")
-
   # 输出回测结果
-  valid_results = [r for r in results if r is not None]
-  if valid_results:
-    testback_logger.info(f"\n{'=' * 60}")
-    testback_logger.info(f"回测结果汇总 ({len(valid_results)}/{TASK_COUNT} 个任务成功)")
-    testback_logger.info(f"{'=' * 60}")
-
-    # 按收益率排序
-    sorted_results = sorted(valid_results, key=lambda x: x['total_return'], reverse=True)
-
-    # 输出 Top 5 最佳策略
-    testback_logger.info(f"\nTop 5 最佳策略:")
-    for i, result in enumerate(sorted_results[:5], 1):
-      testback_logger.info(
-        f"\n#{i} 收益率: {result['total_return']:.2f}%"
-      )
-      testback_logger.info(f"  初始资金: {result['init_cash']:,.2f}")
-      testback_logger.info(f"  最终资产: {result['final_total_asset']:,.2f}")
-      testback_logger.info(f"  现金: {result['final_cash']:,.2f}")
-      testback_logger.info(f"  市值: {result['final_market_value']:,.2f}")
-      testback_logger.info(f"  已平仓: {result['cleared_positions_count']} 笔")
-      testback_logger.info(f"  持仓中: {result['current_positions_count']} 只")
-      testback_logger.info(f"  因子权重: {result['weights']}")
-
-    # 统计信息
-    returns = [r['total_return'] for r in valid_results]
-    testback_logger.info(f"\n统计信息:")
-    testback_logger.info(f"  平均收益率: {sum(returns) / len(returns):.2f}%")
-    testback_logger.info(f"  最大收益率: {max(returns):.2f}%")
-    testback_logger.info(f"  最小收益率: {min(returns):.2f}%")
-    testback_logger.info(f"  正收益策略: {len([r for r in returns if r > 0])} 个")
-    testback_logger.info(f"  负收益策略: {len([r for r in returns if r < 0])} 个")
-  else:
-    testback_logger.error("所有回测任务均失败！")
+  testback_logger.info(f"{'=' * 60}")
+  testback_logger.info(f"回测执行完成")
+  returns = [r['total_return'] for r in [r for r in results if r is not None]]
+  testback_logger.info(f"\n统计信息:")
+  testback_logger.info(f"  平均收益率: {sum(returns) / len(returns):.2f}%")
+  testback_logger.info(f"  最大收益率: {max(returns):.2f}%")
+  testback_logger.info(f"  最小收益率: {min(returns):.2f}%")
+  testback_logger.info(f"  正收益策略: {len([r for r in returns if r > 0])} 个")
+  testback_logger.info(f"  负收益策略: {len([r for r in returns if r < 0])} 个")
+  testback_logger.info(f"{'=' * 60}")
+  te = datetime.now()
+  testback_logger.info(f"总耗时: {(te - ts).total_seconds():.2f} 秒")
