@@ -9,6 +9,7 @@ from utils.shared_memory import SharedMemoryCache
 from utils.stock.format import format_qmt_datetime
 from utils.stock.time import get_latest_trading_time, is_latest_data
 from .history import check_stocks_need_fix, get_history_data, get_history_data_after_download
+from .detail import check_stock_date_valid, get_stock_detail
 
 # 全局历史数据缓存，以股票代码为key，存储完整历史数据
 _GLOBAL_DAILY_CACHE = SharedMemoryCache('daily')
@@ -86,6 +87,9 @@ def get_market_data_from_cache(
   # 获取完整历史数据
   full_data = get_full_market_data(stock_code, period, allow_tainted=allow_tainted, dividend_type=dividend_type)
 
+  # 检查股票日期有效性
+  check_stock_date_valid(stock_code, base_time, count, period)
+
   if full_data is None or full_data.empty:
     return None
 
@@ -127,6 +131,9 @@ def get_market_data(
     dividend_type: str = 'back',
 ) -> Optional[pd.DataFrame]:
   """ deprecated, use get_market_data_batch instead """
+  # 检查股票日期有效性
+  check_stock_date_valid(stock_code, base_time, count, period)
+
   history_data = get_market_data_batch(
     [stock_code], count, base_time, period, allow_tainted, dividend_type
   )[stock_code]

@@ -12,7 +12,7 @@ class StockDetail(TypedDict):
   UniCode: str  # 统一规则代码
   CreateDate: str  # 创建日期
   OpenDate: str  # 上市日期 (特殊值情况见表末)
-  ExpireDate: int  # 退市日或者到期日 (特殊值情况见表末)
+  ExpireDate: str  # 退市日或者到期日 (特殊值情况见表末)
   PreClose: float  # 前收盘价格
   SettlementPrice: float  # 前结算价格
   UpStopPrice: float  # 当日涨停价

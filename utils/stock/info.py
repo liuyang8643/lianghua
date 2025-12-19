@@ -20,7 +20,7 @@ def is_stock_trading(detail: Optional[StockDetail]) -> bool:
   return (
       detail['InstrumentStatus'] <= 0  # 未停牌
       # 未退市
-      and (detail['ExpireDate'] == '0' or detail['ExpireDate'] == '99999999')
+      and (detail['ExpireDate'] in ('0', '99999999'))
   )
 
 def is_cyb_stock(stock_code: str) -> bool:

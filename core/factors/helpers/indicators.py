@@ -191,7 +191,6 @@ class FactorCtx:
     # 返回完整的K、D、J序列
     return k, d, j
 
-
   def get_rsi(self, period: int = 14) -> float:
     """
     获取RSI指标（相对强弱指标）
@@ -345,15 +344,12 @@ class FactorCtx:
 
   def get_benchmark_pct_change(self, period: int = 60, benchmark: str = '000300.SH') -> Optional[np.ndarray]:
     """获取大盘涨跌幅序列"""
-    from core.database import get_market_data
+    from core.database import get_market_data_from_cache
 
-    try:
-      benchmark_data = get_market_data(benchmark, period, self.base_time, '1d', allow_tainted=True)
-      if benchmark_data is None or benchmark_data.empty:
-        return None
-
-      closes = benchmark_data['close'].values
-      pre_closes = benchmark_data['preClose'].values
-      return ((closes - pre_closes) / pre_closes) * 100
-    except:
+    benchmark_data = get_market_data_from_cache(benchmark, period, self.base_time, '1d', allow_tainted=True)
+    if benchmark_data is None or benchmark_data.empty:
       return None
+
+    closes = benchmark_data['close'].values
+    pre_closes = benchmark_data['preClose'].values
+    return ((closes - pre_closes) / pre_closes) * 100

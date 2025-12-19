@@ -7,7 +7,7 @@ import numpy as np
 from joblib import Parallel, delayed
 from scipy.stats import pearsonr, spearmanr
 
-from core import FactorCtx, core_logger, init_full_data
+from core import FactorCtx, core_logger, init_full_data, init_stock_detail_cache
 from core.database import allow_buy_stock_code_list, get_full_market_data, get_stock_detail
 from utils.stock.time import get_trading_date_span
 
@@ -181,6 +181,8 @@ def calculate_factor_correlation(
   stock_codes = stock_codes or allow_buy_stock_code_list()
   m_days_list = [m_days] if isinstance(m_days, int) else sorted(m_days)
 
+  # 预加载股票详情到共享内存缓存
+  init_stock_detail_cache(stock_codes)
   # 初始化并预加载数据到共享内存
   init_full_data(stock_codes, '1d')
 

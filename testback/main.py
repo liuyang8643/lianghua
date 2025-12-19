@@ -2,7 +2,7 @@ import os
 
 from joblib import Parallel, delayed, parallel_backend
 
-from core import get_market_data_from_cache
+from core import get_market_data_from_cache, init_stock_detail_cache
 from core.database import init_full_data
 from utils.parallel import batch_run_threads
 from utils.shared_memory import SharedMemoryCache
@@ -213,6 +213,8 @@ if __name__ == "__main__":
   testback_logger.info(f'任务数量: {TASK_COUNT}')
   testback_logger.info(f'=' * 60)
 
+  # 预加载股票详情到共享内存缓存
+  init_stock_detail_cache(all_stocks)
   # 初始化并预加载数据到共享内存
   init_full_data(all_stocks, '1d')
   # 多线程获取 TopN 实例
