@@ -30,6 +30,10 @@ def init_full_data(stock_codes: list[str] = None, period: str = '1d'):
   for stock_code in stock_codes:
     get_full_market_data(stock_code, period)
 
+  # 预加载基准股票数据
+  from utils.stock.info import baseline_stock_code
+  get_full_market_data(baseline_stock_code, period)
+
   core_logger.debug(f"{len(stock_codes)} 只股票的 {period} 数据预加载完成。")
 
 def cleanup_shared_cache():

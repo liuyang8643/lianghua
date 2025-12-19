@@ -342,11 +342,12 @@ class FactorCtx:
     roc = talib.ROC(close, timeperiod=period)
     return float(roc[-1])
 
-  def get_benchmark_pct_change(self, period: int = 60, benchmark: str = '000300.SH') -> Optional[np.ndarray]:
+  def get_benchmark_pct_change(self, period: int) -> Optional[np.ndarray]:
     """获取大盘涨跌幅序列"""
     from core.database import get_market_data_from_cache
+    from utils.stock.info import baseline_stock_code
 
-    benchmark_data = get_market_data_from_cache(benchmark, period, self.base_time, '1d', allow_tainted=True)
+    benchmark_data = get_market_data_from_cache(baseline_stock_code, period, self.base_time, '1d', allow_tainted=True)
     if benchmark_data is None or benchmark_data.empty:
       return None
 

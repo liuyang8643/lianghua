@@ -31,7 +31,8 @@ def is_convertible_bond(stock_code: str) -> bool:
   """ 判断股票是否为可转债 """
   return stock_code.startswith('11') or stock_code.startswith('12') or stock_code.startswith('13')
 
-baseline_stock_code = '000300.SH'  # 基准股票代码，沪深300
+# baseline_stock_code = '000300.SH'  # 基准股票代码，沪深300
+baseline_stock_code = '000852.SH'  # 基准股票代码，中证1000
 
 def get_baseline_data(base_time: datetime = None) -> Optional[StockTradingData]:
   """ 获取基准价格 """

@@ -14,8 +14,6 @@ from core import get_market_data_from_cache
 from testback.logger import testback_logger
 from testback.account import StockAccountMocker
 from core.strategies import TopN
-from core.database import get_market_data
-from utils.stock.time import get_trading_date_span
 from utils.stock.info import get_baseline_data, baseline_stock_code
 
 class RLEnv:
