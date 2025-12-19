@@ -8,3 +8,5 @@ from .Fundamental import *
 from .TRIX import *
 from .MOM import *
 from .ADX import *
+from .SmallCap import *
+from .Unpopular import *

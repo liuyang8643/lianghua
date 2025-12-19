@@ -4,17 +4,17 @@ import random
 from datetime import date, datetime
 
 from core.database import allow_buy_stock_code_list
-from core.factors import TRIXFactor
+from core.factors import SmallCap
 from core.factors.benchmark import calculate_factor_correlation, generate_html_report
 
 if __name__ == '__main__':
   stock_list = allow_buy_stock_code_list()
 
   report = calculate_factor_correlation(
-    factor_cls=TRIXFactor,
-    start_date=date(2024, 7, 1),
-    end_date=date(2024, 8, 1),
-    m_days=[1, 5, 10, 20],
+    factor_cls=SmallCap,
+    start_date=date(2024, 1, 1),
+    end_date=date(2024, 12, 1),
+    m_days=[ 5, 10, 20, 30, 60],
     # stock_codes=stock_list
     stock_codes=random.sample(stock_list, 1000),
   )

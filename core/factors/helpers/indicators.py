@@ -342,3 +342,18 @@ class FactorCtx:
 
     roc = talib.ROC(close, timeperiod=period)
     return float(roc[-1])
+
+  def get_benchmark_pct_change(self, period: int = 60, benchmark: str = '000300.SH') -> Optional[np.ndarray]:
+    """获取大盘涨跌幅序列"""
+    from core.database import get_market_data
+
+    try:
+      benchmark_data = get_market_data(benchmark, period, self.base_time, '1d', allow_tainted=True)
+      if benchmark_data is None or benchmark_data.empty:
+        return None
+
+      closes = benchmark_data['close'].values
+      pre_closes = benchmark_data['preClose'].values
+      return ((closes - pre_closes) / pre_closes) * 100
+    except:
+      return None

@@ -9,6 +9,8 @@ FactorWeights = {
     'TRIXFactor': 0.8,   # 三重指数平滑因子
     'MOMFactor': 0.6,    # 动量因子
     'ADXFactor': 0.7,    # 趋势强度因子
+    'SmallCap': 1.0,     # 小盘股因子（基于成交额）
+    'Unpopular': 0.6,    # 冷门股因子（成交额+振幅+大盘相关性）
 }
 
 # 因子温度参数（用于归一化平滑）
@@ -23,6 +25,8 @@ FactorTemperatures = {
     'TRIXFactor': 0.8,   # 三重指数平滑因子，稍微平滑
     'MOMFactor': 1.0,    # 动量因子，保持原始差异
     'ADXFactor': 0.7,    # 趋势强度因子，较平滑
+    'SmallCap': 1.0,     # 小盘股因子，保持原始差异
+    'Unpopular': 0.7,    # 冷门股因子，适度平滑
 }
 
 # 选股数量
