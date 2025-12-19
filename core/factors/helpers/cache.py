@@ -44,11 +44,13 @@ class CacheKey:
   @lru_cache(maxsize=2048)
   def make_file_path(key: str, data_type: str = 'df') -> Path:
     """生成缓存文件路径（带路径缓存）"""
-    code = key.split('_')[0]
-    code_dir = CACHE_DIR / code
-    code_dir.mkdir(exist_ok=True)
     ext = 'parquet' if data_type == 'df' else 'pkl'
-    return code_dir / f"{key}.{ext}"
+    parts = key.split('_')
+    cache_path = CACHE_DIR
+    for part in parts[:-1]:
+        cache_path = cache_path / part
+    cache_path.mkdir(parents=True, exist_ok=True)
+    return cache_path / f"{parts[-1]}.{ext}"
 
 class DiskCache:
   """磁盘缓存管理器（使用内存映射，操作系统页面缓存实现跨进程共享）"""

@@ -204,7 +204,7 @@ if __name__ == "__main__":
     datetime.combine(d, datetime.min.time())
     for d in get_trading_date_span(date(2025, 12, 1), date(2025, 12, 15))]
 
-  TASK_COUNT = 200  # 只运行2个任务
+  TASK_COUNT = 1  # 只运行2个任务
   worker_count = min(os.cpu_count() or 4, TASK_COUNT)
 
   testback_logger.info(f'=' * 60)
