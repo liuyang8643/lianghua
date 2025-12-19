@@ -15,7 +15,7 @@ import random
 import numpy as np
 from typing import Dict, List, Tuple, Any, Callable
 import time
-from concurrent.futures import ProcessPoolExecutor
+from joblib import Parallel, delayed, parallel_backend
 from deap import base, creator, tools
 from pathlib import Path
 import json
@@ -89,7 +89,6 @@ class NSGA2GeneticAlgorithm:
         self.pareto_fronts = []
         self.generation_time_history = []
         self.population = []
-        self.executor = None
         self.all_evaluated_individuals = []  # 存储每代所有评估的个体
 
         self._setup_deap()
@@ -188,14 +187,19 @@ class NSGA2GeneticAlgorithm:
 
         testback_logger.info(f"[第{generation}代] 开始并行评估{len(population)}个个体...")
 
-        # 准备评估任务
-        tasks = []
-        for idx, ind in enumerate(population):
-            tasks.append((ind, self.fitness_function, self.fitness_params, idx, generation))
-
-        # 并行评估
+        # 并行评估（使用 joblib + loky backend）
         t_eval_start = time.time()
-        results = list(self.executor.map(_evaluate_individual_task, tasks))
+        with parallel_backend('loky', n_jobs=self.max_workers, inner_max_num_threads=1):
+            results = Parallel(
+                n_jobs=self.max_workers,
+                prefer='processes',
+                batch_size=1,
+            )(
+                delayed(_evaluate_individual_task)(
+                    ind, self.fitness_function, self.fitness_params, idx, generation
+                )
+                for idx, ind in enumerate(population)
+            )
         t_eval_end = time.time()
 
         testback_logger.info(f"[第{generation}代] 并行评估耗时: {(t_eval_end-t_eval_start):.1f}秒")
@@ -376,12 +380,6 @@ class NSGA2GeneticAlgorithm:
             f"结束代数={total_generations-1}"
         )
 
-        # 创建进程池
-        if self.max_workers and self.max_workers > 1:
-            self.executor = ProcessPoolExecutor(max_workers=self.max_workers)
-        else:
-            self.executor = ProcessPoolExecutor(max_workers=1)
-
         # Resume模式：跳过第0代，直接使用继承的种群
         if self.start_generation > 0 and self.initial_population_genes:
             testback_logger.info(f"✅ Resume模式：跳过初始化，从第{self.start_generation}代继续")
@@ -487,11 +485,8 @@ class NSGA2GeneticAlgorithm:
             if self.progress_callback:
                 self.progress_callback(gen, pareto_front, self)
 
-        # 清理
+        # 完成
         testback_logger.info(f"\nGA优化完成")
-        if self.executor:
-            self.executor.shutdown(wait=True)
-            self.executor = None
 
         return self.population, self.pareto_fronts[-1]
 
@@ -521,13 +516,11 @@ class NSGA2GeneticAlgorithm:
 
 
 # ============================================================================
-# 模块级函数：用于并行评估
+# 模块级函数：用于并行评估（joblib worker）
 # ============================================================================
 
-def _evaluate_individual_task(task):
-    """解包参数并调用fitness函数"""
-    ind, fitness_func, fitness_params, idx, gen = task
-
+def _evaluate_individual_task(ind, fitness_func, fitness_params, idx, gen):
+    """并行评估单个个体（worker函数）"""
     fitness_params = fitness_params.copy()
     fitness_params['individual_idx'] = idx
     fitness_params['generation'] = gen

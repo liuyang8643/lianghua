@@ -5,7 +5,6 @@ GA优化模块
 """
 
 from .ga_optimizer import NSGA2GeneticAlgorithm
-from .fitness import evaluate_individual
 from .utils import (
     load_previous_best,
     load_progress_info,
