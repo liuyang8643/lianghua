@@ -5,6 +5,7 @@ GA优化模块
 """
 
 from .ga_optimizer import NSGA2GeneticAlgorithm
+from .fitness import evaluate_individual_worker
 from .utils import (
     load_previous_best,
     load_progress_info,
@@ -14,7 +15,7 @@ from .utils import (
 
 __all__ = [
     'NSGA2GeneticAlgorithm',
-    'evaluate_individual',
+    'evaluate_individual_worker',
     'load_previous_best',
     'load_progress_info',
     'load_population_genes',

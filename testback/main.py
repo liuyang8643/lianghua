@@ -195,23 +195,30 @@ if __name__ == "__main__":
   from core.database import allow_buy_stock_code_list
   from utils.stock.time import get_trading_date_span
 
-  # 最小配置测试
-  all_stocks = allow_buy_stock_code_list()[:50]  # 只用前5只股票
-  # 使用最近3个交易日（确保有足够历史数据）
-  from datetime import timedelta
+  # ==================== 与 ga_main.py 相同的配置 ====================
+  # 股票池：全部股票（与 GA 一致，除非指定 --stock-limit）
+  all_stocks = allow_buy_stock_code_list()
+
+  # 数据集：train 训练集（2014-2024，随机采样180天）
+  train_dates = get_trading_date_span(date(2014, 1, 1), date(2024, 1, 1))
+  backtest_days = 180
+  train_dates = sorted(random.sample(train_dates, min(backtest_days, len(train_dates))))
 
   backtest_datetime_list = [
     datetime.combine(d, datetime.min.time())
-    for d in get_trading_date_span(date(2025, 12, 1), date(2025, 12, 15))]
+    for d in train_dates
+  ]
 
-  TASK_COUNT = 200  # 只运行2个任务
+  # 任务数量：模拟 GA 一代的评估量（3k，k=24时为72）
+  TASK_COUNT = 72  # 对应 population=24 时一代的评估量
   worker_count = min(os.cpu_count() or 4, TASK_COUNT)
 
   testback_logger.info(f'=' * 60)
-  testback_logger.info(f'最小配置测试')
+  testback_logger.info(f'性能测试 - 模拟 GA 一代的工作量')
   testback_logger.info(f'股票数量: {len(all_stocks)}')
-  testback_logger.info(f'回测日期: {[format_qmt_datetime(d) for d in backtest_datetime_list]}')
-  testback_logger.info(f'任务数量: {TASK_COUNT}')
+  testback_logger.info(f'回测天数: {len(backtest_datetime_list)}天 ({train_dates[0]} ~ {train_dates[-1]})')
+  testback_logger.info(f'任务数量: {TASK_COUNT} (模拟 population=24 的一代)')
+  testback_logger.info(f'进程数量: {worker_count}')
   testback_logger.info(f'=' * 60)
 
   ts = datetime.now()

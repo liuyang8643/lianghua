@@ -27,3 +27,4 @@ configs/env.py
 
 # Claude Code local settings
 .claude/
+*.json
