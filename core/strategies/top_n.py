@@ -2,8 +2,10 @@ from datetime import datetime
 from typing import Optional, Dict, List
 
 from core.factors import MACD, BBI, CCI, Fundamental, TRIXFactor, MOMFactor, ADXFactor, FactorCtx, FactorResult, BatchNormFactor
+from utils.hash import hash_function_code
 from utils.parallel import batch_run_threads
-from utils.stock.format import format_qmt_date
+from utils.stock.format import format_qmt_date, format_qmt_datetime
+from core.factors.helpers import BaseFactor, CacheKey, DiskCache
 from ..logger import core_logger
 
 class TopN:
@@ -35,7 +37,6 @@ class TopN:
       ADXFactor(),
     ]
 
-    # ✅ 修复：正确的数据结构
     # {factor_name: {stock_code: FactorResult}}
     self.factor_scores: Dict[str, Dict[str, FactorResult]] = {
       factor.__class__.__name__: {}
@@ -45,35 +46,34 @@ class TopN:
     # 多线程计算因子原始分数
     batch_run_threads(
       func=self._calculate_factor_score,
-      args_list=[[stock_code] for stock_code in self.stock_list],
+      args_list=[[f] for f in self.factors],
       max_workers=64,
     )
 
-  def _calculate_factor_score(self, stock_code: str):
-    """
-    计算单个股票的所有因子分数（用于并行执行）
-
-    Args:
-        stock_code: 股票代码
-    """
-    ctx = FactorCtx(stock_code, self.base_date)
-
+  def _calculate_factor_score(self, f: BaseFactor):
     # 计算所有因子
-    for f in self.factors:
-      factor_name = f.__class__.__name__
+    factor_name = f.__class__.__name__
+    # 创建缓存
+    func_hash = hash_function_code(f.calc)
+    cache_key = CacheKey.make_key([f"factor-{factor_name}-{func_hash}", format_qmt_datetime(self.base_date)], stocks=self.stock_list)
+    # 直接从磁盘加载（内存映射，操作系统页面缓存）
+    cached_factor_stocks = DiskCache.load_pickle(cache_key) or {}
+
+    for stock_code in self.stock_list:
+      cached_stock_value = cached_factor_stocks[stock_code] if stock_code in cached_factor_stocks else None
+      if cached_stock_value is not None:
+        # 命中缓存
+        self.factor_scores[factor_name][stock_code] = cached_stock_value
+        continue
+
+      # 计算因子分数
+      ctx = FactorCtx(stock_code, self.base_date)
       result = f.calc(ctx)
       self.factor_scores[factor_name][stock_code] = result
+      cached_factor_stocks[stock_code] = result
 
-  def _count_valid_stocks(self) -> int:
-    """统计至少有一个有效因子分数的股票数量"""
-    valid_stocks = set()
-
-    for factor_name, scores in self.factor_scores.items():
-      for stock_code, result in scores.items():
-        if result['err'] is None and result['score'] is not None:
-          valid_stocks.add(stock_code)
-
-    return len(valid_stocks)
+    # 保存缓存
+    DiskCache.save_pickle(cache_key, cached_factor_stocks)
 
   def get_normalized_scores(
       self,
@@ -182,48 +182,3 @@ class TopN:
       )
 
     return top_n
-
-  def get_factor_scores_summary(self) -> Dict[str, dict]:
-    """
-    获取因子分数摘要（用于调试和分析）
-
-    Returns:
-        {
-            factor_name: {
-                'mean': 平均分,
-                'std': 标准差,
-                'min': 最小分,
-                'max': 最大分,
-                'valid_count': 有效数量,
-            }
-        }
-    """
-    import numpy as np
-
-    summary = {}
-
-    for factor_name, scores in self.factor_scores.items():
-      valid_scores = [
-        result['score']
-        for result in scores.values()
-        if result['err'] is None and result['score'] is not None
-      ]
-
-      if len(valid_scores) > 0:
-        summary[factor_name] = {
-          'mean': float(np.mean(valid_scores)),
-          'std': float(np.std(valid_scores)),
-          'min': float(np.min(valid_scores)),
-          'max': float(np.max(valid_scores)),
-          'valid_count': len(valid_scores),
-        }
-      else:
-        summary[factor_name] = {
-          'mean': 0.0,
-          'std': 0.0,
-          'min': 0.0,
-          'max': 0.0,
-          'valid_count': 0,
-        }
-
-    return summary

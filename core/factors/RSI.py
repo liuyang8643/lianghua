@@ -45,7 +45,6 @@ class RSIOversold(BaseFactor):
         self.divergence_lookback = divergence_lookback
         self.divergence_order = divergence_order
 
-    @cached_factor('RSIOversold')
     def calc(self, ctx: FactorCtx) -> FactorResult:
         try:
             # === 1. 连续基础分 (50%) ===

@@ -1,10 +1,9 @@
 import numpy as np
-from core.factors.helpers import BaseFactor, FactorResult, FactorCtx, cached_factor
+from core.factors.helpers import BaseFactor, FactorResult, FactorCtx
 
 class Unpopular(BaseFactor):
   """冷门股因子 - 基于大盘相关性和持续时间 (独立于市值)"""
 
-  @cached_factor('Unpopular')
   def calc(self, ctx: FactorCtx) -> FactorResult:
     period = 60
     history_data = ctx.get_daily_data(period)

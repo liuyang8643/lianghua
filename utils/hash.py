@@ -35,3 +35,15 @@ def hash_function_code(func: Callable) -> str:
     fallback_str = f"{func.__module__}.{func.__qualname__}"
     code_hash = hashlib.blake2b(fallback_str.encode('utf-8'), digest_size=4).hexdigest()
     return code_hash
+
+def hash_string(s: str) -> str:
+  """
+  对字符串生成哈希值
+
+  Args:
+    s: 输入字符串
+
+  Returns:
+    8位十六进制哈希字符串
+  """
+  return hashlib.blake2b(s.encode('utf-8'), digest_size=4).hexdigest()

@@ -9,7 +9,6 @@ class CCI(BaseFactor):
   def __init__(self):
     super().__init__()
 
-  @cached_factor('CCI')
   def calc(self, ctx: FactorCtx) -> FactorResult:
     try:
       cci_value = ctx.get_cci()

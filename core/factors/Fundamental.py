@@ -11,7 +11,6 @@ import pandas as pd
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 from core.factors.helpers.interface import BaseFactor, FactorResult
-from core.factors.helpers.cache import cached_factor
 
 if TYPE_CHECKING:
     from core.factors.helpers.indicators import FactorCtx
@@ -34,7 +33,6 @@ class Fundamental(BaseFactor):
     # 类变量：缓存全市场数据（避免重复 API 调用）
     _market_cache = {}  # {report_period: DataFrame}
 
-    @cached_factor("Fundamental")
     def calc(self, ctx: 'FactorCtx') -> FactorResult:
         """
         计算基本面因子

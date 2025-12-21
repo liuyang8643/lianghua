@@ -54,7 +54,6 @@ class MOMFactor(BaseFactor):
         self.mom_center = mom_center
         self.acceleration_lookback = acceleration_lookback
 
-    @cached_factor('MOMFactor')
     def calc(self, ctx: FactorCtx) -> FactorResult:
         try:
             # 获取动量比率（百分比形式）

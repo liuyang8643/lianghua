@@ -9,7 +9,6 @@ class BBI(BaseFactor):
   def __init__(self):
     super().__init__()
 
-  @cached_factor('BBI')
   def calc(self, ctx: FactorCtx) -> FactorResult:
     try:
       bbi_value = ctx.get_bbi()  # 直接获取当前BBI值

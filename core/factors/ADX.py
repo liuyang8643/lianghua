@@ -48,7 +48,6 @@ class ADXFactor(BaseFactor):
         self.adx_period = adx_period
         self.cross_valid_days = cross_valid_days
 
-    @cached_factor('ADXFactor')
     def calc(self, ctx: FactorCtx) -> FactorResult:
         try:
             # 获取ADX相关指标

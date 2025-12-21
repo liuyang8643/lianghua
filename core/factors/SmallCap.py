@@ -1,10 +1,9 @@
 import numpy as np
-from core.factors.helpers import BaseFactor, FactorResult, FactorCtx, cached_factor
+from core.factors.helpers import BaseFactor, FactorResult, FactorCtx
 
 class SmallCap(BaseFactor):
   """小盘股因子 - 基于成交额近似市值"""
 
-  @cached_factor('SmallCap')
   def calc(self, ctx: FactorCtx) -> FactorResult:
     history_data = ctx.get_daily_data(60)
     avg_amount_yi = history_data['amount'].values.mean() / 1e8

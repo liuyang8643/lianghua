@@ -3,7 +3,7 @@ import os
 from joblib import Parallel, delayed, parallel_backend
 from tqdm import tqdm
 
-from core import get_market_data_from_cache, init_stock_detail_cache
+from core import cleanup_shared_cache, get_market_data_from_cache, init_stock_detail_cache
 from core.database import init_full_data
 from utils.parallel import batch_run_threads
 from utils.shared_memory import SharedMemoryCache
@@ -224,6 +224,9 @@ if __name__ == "__main__":
       maxinterval=30,
       desc=f"预热 TopN 股票：{len(all_stocks)} 只股票在 {backtest_datetime_list[0]} ~ {backtest_datetime_list[-1]}，{len(backtest_datetime_list)}天"
     ))
+
+  # 清理预加载的全局缓存，释放内存
+  cleanup_shared_cache()
 
   # 创建共享内存缓存并存入数据
   ordered_topNs = sorted(topNs, key=lambda x: x.base_date)

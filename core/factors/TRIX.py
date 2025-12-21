@@ -51,7 +51,6 @@ class TRIXFactor(BaseFactor):
         self.cross_valid_days = cross_valid_days
         self.trix_center = trix_center
 
-    @cached_factor('TRIXFactor')
     def calc(self, ctx: FactorCtx) -> FactorResult:
         try:
             # 获取TRIX指标

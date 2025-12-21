@@ -16,4 +16,3 @@ class BaseFactor:
     :return: 判断结果
     """
     raise NotImplementedError("必须实现判断逻辑")
-

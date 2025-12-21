@@ -51,7 +51,6 @@ class BollingerBandsFactor(BaseFactor):
         self.squeeze_threshold = squeeze_threshold
         self.low_position_threshold = low_position_threshold
 
-    @cached_factor('BollingerBandsFactor')
     def calc(self, ctx: FactorCtx) -> FactorResult:
         try:
             # 获取布林带指标

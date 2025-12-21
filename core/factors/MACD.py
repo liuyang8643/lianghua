@@ -8,7 +8,6 @@ class MACD(BaseFactor):
   def __init__(self):
     super().__init__()
 
-  @cached_factor('MACD')
   def calc(self, ctx: FactorCtx) -> FactorResult:
     try:
       macd, signal, hist = ctx.get_macd()

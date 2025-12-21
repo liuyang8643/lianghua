@@ -44,7 +44,6 @@ class KDJ(BaseFactor):
 
     return score[-1]
 
-  @cached_factor('KDJ')
   def calc(self, ctx: FactorCtx) -> FactorResult:
     try:
       k, d, j = ctx.get_kdj(self.period)

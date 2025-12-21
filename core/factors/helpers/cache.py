@@ -7,7 +7,6 @@
 - 原子写入防止并发写入损坏
 - 文件存在性缓存减少文件系统调用
 """
-from datetime import datetime
 from pathlib import Path
 from typing import Optional, Any
 import hashlib
@@ -21,7 +20,9 @@ from functools import lru_cache
 import io
 import pyarrow.parquet as pq
 import pyarrow as pa
-from utils.hash import hash_function_code
+
+from utils.hash import hash_function_code, hash_string
+from utils.stock.format import format_qmt_datetime
 
 # 缓存配置
 CACHE_DIR = Path(__file__).parent / '.cache'
@@ -31,14 +32,12 @@ class CacheKey:
   """缓存键生成器"""
 
   @staticmethod
-  def make_key(code: str, base_time: datetime, method: str, *args, **kwargs) -> str:
+  def make_key(identifiers: list[str], *args, **kwargs) -> str:
     """生成缓存键"""
-    date_str = base_time.strftime('%Y%m%d')
+    id_str = '_'.join(identifiers)
     if args or kwargs:
-      params_str = f"{args}_{sorted(kwargs.items())}"
-      param_hash = hashlib.blake2b(params_str.encode(), digest_size=4).hexdigest()
-      return f"{code}_{date_str}_{method}_{param_hash}"
-    return f"{code}_{date_str}_{method}"
+      return f"{id_str}_{hash_string(f"{args}_{sorted(kwargs.items())}")}"
+    return id_str
 
   @staticmethod
   @lru_cache(maxsize=2048)
@@ -48,7 +47,7 @@ class CacheKey:
     parts = key.split('_')
     cache_path = CACHE_DIR
     for part in parts[:-1]:
-        cache_path = cache_path / part
+      cache_path = cache_path / part
     cache_path.mkdir(parents=True, exist_ok=True)
     return cache_path / f"{parts[-1]}.{ext}"
 
@@ -209,7 +208,7 @@ def cached_dataframe(method_name: str):
 
   def decorator(func):
     def wrapper(self, *args, **kwargs):
-      cache_key = CacheKey.make_key(self.code, self.base_time, method_name, *args, **kwargs)
+      cache_key = CacheKey.make_key([method_name, format_qmt_datetime(self.base_time), self.code], *args, **kwargs)
 
       # 直接从磁盘加载（内存映射，操作系统页面缓存）
       result = DiskCache.load_dataframe(cache_key)
@@ -231,7 +230,7 @@ def cached_value(method_name: str):
 
   def decorator(func):
     def wrapper(self, *args, **kwargs):
-      cache_key = CacheKey.make_key(self.code, self.base_time, method_name, *args, **kwargs)
+      cache_key = CacheKey.make_key([method_name, format_qmt_datetime(self.base_time), self.code], *args, **kwargs)
 
       result = DiskCache.load_pickle(cache_key)
       if result is not None:
@@ -254,7 +253,7 @@ def cached_factor(factor_name: str):
     func_hash = hash_function_code(func)
 
     def wrapper(self, ctx, *args, **kwargs):
-      cache_key = CacheKey.make_key(ctx.code, ctx.base_time, f"factor_{factor_name}_h{func_hash}", *args, **kwargs)
+      cache_key = CacheKey.make_key([f"factor-{factor_name}-{func_hash}", format_qmt_datetime(ctx.base_time), ctx.code], *args, **kwargs)
 
       result = DiskCache.load_pickle(cache_key)
       if result is not None:
@@ -268,15 +267,3 @@ def cached_factor(factor_name: str):
     return wrapper
 
   return decorator
-
-def clear_cache():
-  """清除所有缓存状态（文件缓存）"""
-  DiskCache.clear_existence_cache()
-  CacheKey.make_file_path.cache_clear()
-
-def get_cache_stats() -> dict:
-  """获取缓存统计信息"""
-  return {
-    'cache_dir': str(CACHE_DIR),
-    'existence_cache_size': len(DiskCache._existence_cache),
-  }
