@@ -12,8 +12,11 @@ _GLOBAL_STOCK_DETAIL_CACHE = SharedMemoryCache('stock_detail')
 
 def init_stock_detail_cache(stock_codes: list[str]):
   """初始化股票详情缓存，预加载指定股票列表的详情数据"""
+
+  core_logger.debug(f"预加载 {len(stock_codes)} 只股票的【详情数据】到共享内存...")
   for stock_code in stock_codes:
     get_stock_detail(stock_code)
+  core_logger.debug(f"预加载 {len(stock_codes)} 只股票的【详情数据】预加载完成。")
 
 def get_stock_detail(stock_code: str) -> Optional[StockDetail]:
   """获取股票详情（使用全局缓存）

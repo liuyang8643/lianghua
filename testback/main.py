@@ -1,6 +1,7 @@
 import os
 
 from joblib import Parallel, delayed, parallel_backend
+from tqdm import tqdm
 
 from core import get_market_data_from_cache, init_stock_detail_cache
 from core.database import init_full_data
@@ -15,16 +16,17 @@ from testback.logger import testback_logger
 from core.strategies import TopN
 
 # 全局缓存
-testback_cache = SharedMemoryCache('testback_cache', compress_level=6)
+testback_cache = SharedMemoryCache[list[TopN]]('testback_cache', compress_level=6)
 
-def _wrap_process_worker(weights: dict[str, float], rank_n: int = 20, use_rl_env: bool = False):
+def _wrap_process_worker(weights: dict[str, float], mem_offset: int, mem_count: int):
   """ 独立进程计算最终收益 - 从共享内存读取数据
   
   Args:
     weights: 因子权重
-    rank_n: 选股数量
-    use_rl_env: 是否使用RL环境（如果为True，使用rl_example中的TopN策略）
   """
+
+  rank_n = 20
+  use_rl_env = False
   try:
     # 延迟导入：每个 worker 只导入自己需要的模块
     from xtquant import xtdata
@@ -33,16 +35,16 @@ def _wrap_process_worker(weights: dict[str, float], rank_n: int = 20, use_rl_env
     from core.database import get_market_data
 
     # 创建缓存实例并从共享内存读取
-    topn_list = testback_cache.get('topn_data')
+    topn_list_all = testback_cache.get('topn_data')
 
     # 检查是否成功写入
-    if not topn_list:
+    if not topn_list_all or topn_list_all is None or len(topn_list_all) == 0:
       testback_logger.error("请先调用 testback_cache.put('topn_data', data) 写入数据")
       exit(1)
 
-    if topn_list is None:
-      testback_logger.error("无法从共享内存读取数据")
-      return None
+    # 读取指定范围的 TopN 实例
+    topn_list = topn_list_all[mem_offset:mem_offset + mem_count]
+    testback_logger.debug(f'回测周期: {len(topn_list)}天 ({topn_list[0].base_date} ~ {topn_list[-1].base_date})')
 
     # === 可选：使用RL环境 ===
     if use_rl_env:
@@ -194,59 +196,66 @@ if __name__ == "__main__":
   from core.database import allow_buy_stock_code_list
   from utils.stock.time import get_trading_date_span
 
-  all_stocks = allow_buy_stock_code_list()
-
-  backtest_datetime_list = [
-    datetime.combine(d, datetime.min.time())
-    for d in get_trading_date_span(date(2025, 12, 1), date(2025, 12, 15))]
-
-  testback_logger.info(f'=' * 60)
-  testback_logger.info(f'股票数量: {len(all_stocks)}')
-  testback_logger.info(f'回测天数: {len(backtest_datetime_list)}天 ({backtest_datetime_list[0]} ~ {backtest_datetime_list[-1]})')
-  testback_logger.info(f'=' * 60)
-
   ts = datetime.now()
+  all_stocks = allow_buy_stock_code_list()
 
   # 预加载股票详情到共享内存缓存
   init_stock_detail_cache(all_stocks)
   # 初始化并预加载数据到共享内存
   init_full_data(all_stocks, '1d')
+
+  backtest_datetime_list = [
+    datetime.combine(d, datetime.min.time())
+    for d in get_trading_date_span(date(2025, 11, 1), date(2025, 12, 15))]
+
   # 多进程获取 TopN 实例
   topn_worker_count = min(os.cpu_count(), len(backtest_datetime_list))
-  with parallel_backend('loky', n_jobs=topn_worker_count, inner_max_num_threads=1):
-    topNs = Parallel(
+  with parallel_backend('loky', n_jobs=topn_worker_count):
+    parallel_pool = Parallel(
+      return_as='generator',  # 结果以生成器形式返回
       n_jobs=topn_worker_count,
-      prefer='processes',  # 明确指定使用进程而不是线程
-      batch_size=1,  # 每次发送1个任务，减少序列化开销
-      verbose=30,
-    )(
-      delayed(TopN)(all_stocks, d)
-      for d in backtest_datetime_list
+      prefer='processes',
+      batch_size=1,
+      verbose=0,
     )
+    topNs = list(tqdm(
+      parallel_pool(delayed(TopN)(all_stocks, d) for d in backtest_datetime_list),
+      total=len(backtest_datetime_list),
+      maxinterval=30,
+      desc=f"预热 TopN 股票：{len(all_stocks)} 只股票在 {backtest_datetime_list[0]} ~ {backtest_datetime_list[-1]}，{len(backtest_datetime_list)}天"
+    ))
 
   # 创建共享内存缓存并存入数据
-  testback_cache.put('topn_data', topNs)
+  ordered_topNs = sorted(topNs, key=lambda x: x.base_date)
+  testback_cache.put('topn_data', ordered_topNs)
+  testback_logger.debug(f"已将 {len(ordered_topNs)} 天的 TopN 实例存入共享内存缓存")
 
   # 任务数量：模拟 GA 一代的评估量（3k，k=24时为72）
-  TASK_COUNT = 72  # 对应 population=24 时一代的评估量
-  testback_logger.info(f'=' * 60)
-  testback_logger.info(f"开始回测：{TASK_COUNT}个任务，{topn_worker_count}个进程，共{len(all_stocks)}只股票")
-  topn_worker_count = min(os.cpu_count(), TASK_COUNT)
-  with parallel_backend('loky', n_jobs=topn_worker_count, inner_max_num_threads=1):
+  TASK_COUNT = 2  # 对应 population=24 时一代的评估量
+  GA_PERIOD_SPAN = 5  # 天，模拟每个任务使用不同时间段的数据
+  ga_worker_count = min(os.cpu_count(), TASK_COUNT)
+  ga_task_args = [
+    [
+      {  # FIXME 模拟每个任务使用不同权重
+        'MACD': random.random(),
+        'BBI': random.random(),
+        'CCI': random.random(),
+      },
+      data_idx,
+      GA_PERIOD_SPAN
+    ]
+    for data_idx in random.sample(range(len(ordered_topNs) - GA_PERIOD_SPAN), TASK_COUNT)
+  ]
+  testback_logger.debug(f"开始回测：{TASK_COUNT}个任务，{ga_worker_count}个进程，共{len(all_stocks)}只股票")
+  with parallel_backend('loky', n_jobs=ga_worker_count):
     results = Parallel(
-      n_jobs=topn_worker_count,
       prefer='processes',  # 明确指定使用进程而不是线程
-      batch_size=1,  # 每次发送1个任务，减少序列化开销
+      n_jobs=ga_worker_count,
+      batch_size=1,
+      verbose=0,
     )(
-      delayed(_wrap_process_worker)(
-        {  # FIXME 模拟每个任务使用不同权重
-          'MACD': random.random(),
-          'BBI': random.random(),
-          'CCI': random.random(),
-        },
-        rank_n=20,  # Top 20 选股
-      )
-      for idx in range(TASK_COUNT)
+      delayed(_wrap_process_worker)(*args)
+      for args in ga_task_args
     )
 
   # 输出回测结果

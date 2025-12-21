@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.12"
 
 [[package]]
@@ -478,11 +478,11 @@ wheels = [
 
 [[package]]
 name = "joblib"
-version = "1.5.2"
+version = "1.5.3"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e8/5d/447af5ea094b9e4c4054f82e223ada074c552335b9b4b2d14bd9b35a67c4/joblib-1.5.2.tar.gz", hash = "sha256:3faa5c39054b2f03ca547da9b2f52fde67c06240c31853f306aea97f13647b55", size = 331077, upload-time = "2025-08-27T12:15:46.575Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/41/f2/d34e8b3a08a9cc79a50b2208a93dce981fe615b64d5a4d4abee421d898df/joblib-1.5.3.tar.gz", hash = "sha256:8561a3269e6801106863fd0d6d84bb737be9e7631e33aaed3fb9ce5953688da3", size = 331603, upload-time = "2025-12-15T08:41:46.427Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/1e/e8/685f47e0d754320684db4425a0967f7d3fa70126bffd76110b7009a0090f/joblib-1.5.2-py3-none-any.whl", hash = "sha256:4e1f0bdbb987e6d843c70cf43714cb276623def372df3c22fe5266b2670bc241", size = 308396, upload-time = "2025-08-27T12:15:45.188Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/7b/91/984aca2ec129e2757d1e4e3c81c3fcda9d0f85b74670a094cc443d9ee949/joblib-1.5.3-py3-none-any.whl", hash = "sha256:5fc3c5039fc5ca8c0276333a188bbd59d6b7ab37fe6632daa76bc7f9ec18e713", size = 309071, upload-time = "2025-12-15T08:41:44.973Z" },
 ]
 
 [[package]]
@@ -1404,6 +1404,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "scipy" },
     { name = "ta-lib" },
+    { name = "tqdm" },
     { name = "xtquant" },
 ]
 
@@ -1412,7 +1413,7 @@ requires-dist = [
     { name = "akshare", specifier = ">=1.14.0" },
     { name = "deap", specifier = ">=1.4.3" },
     { name = "jinja2", specifier = "~=3.1.6" },
-    { name = "joblib", specifier = "~=1.5.2" },
+    { name = "joblib", specifier = "~=1.5.3" },
     { name = "lark-oapi", specifier = "~=1.4.23" },
     { name = "loguru", specifier = "~=0.7.2" },
     { name = "loky", specifier = "~=3.5.6" },
@@ -1423,6 +1424,7 @@ requires-dist = [
     { name = "pyyaml", specifier = "~=6.0" },
     { name = "scipy", specifier = ">=1.16.3" },
     { name = "ta-lib", specifier = "~=0.6.8" },
+    { name = "tqdm", specifier = ">=4.67.1" },
     { name = "xtquant", specifier = "~=250516.1.1" },
 ]
 

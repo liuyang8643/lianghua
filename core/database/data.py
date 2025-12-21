@@ -25,7 +25,7 @@ def init_full_data(stock_codes: list[str] = None, period: str = '1d'):
   Returns:
     成功加载的股票数量
   """
-  core_logger.debug(f"正在预加载 {len(stock_codes)} 只股票的 {period} 数据到共享内存...")
+  core_logger.debug(f"预加载 {len(stock_codes)} 只股票的 【{period} 数据】到共享内存...")
 
   for stock_code in stock_codes:
     get_full_market_data(stock_code, period)
@@ -34,7 +34,7 @@ def init_full_data(stock_codes: list[str] = None, period: str = '1d'):
   from utils.stock.info import baseline_stock_code
   get_full_market_data(baseline_stock_code, period)
 
-  core_logger.debug(f"{len(stock_codes)} 只股票的 {period} 数据预加载完成。")
+  core_logger.debug(f"预加载 {len(stock_codes)} 只股票的 【{period} 数据】完成。")
 
 def cleanup_shared_cache():
   """清理共享缓存（在主进程退出时调用）"""
