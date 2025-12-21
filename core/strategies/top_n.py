@@ -72,26 +72,8 @@ class TopN:
         # 计算所有因子
         for f in self.factors:
             factor_name = f.__class__.__name__
-            try:
-                # ✅ 修复：正确存储每只股票的分数
-                result = f.calc(ctx)
-                self.factor_scores[factor_name][stock_code] = result
-
-                # 检查结果，如果有错误则打印日志
-                if result['err'] is not None:
-                    core_logger.warning(
-                        f"股票{stock_code}因子{factor_name}计算失败: {result['err']}"
-                    )
-            except Exception as e:
-                # 记录错误但继续计算其他因子
-                core_logger.warning(
-                    f"股票{stock_code}因子{factor_name}计算错误: {e}"
-                )
-                # 存储错误结果
-                self.factor_scores[factor_name][stock_code] = FactorResult(
-                    score=None,
-                    err=str(e)
-                )
+            result = f.calc(ctx)
+            self.factor_scores[factor_name][stock_code] = result
 
     def _count_valid_stocks(self) -> int:
         """统计至少有一个有效因子分数的股票数量"""

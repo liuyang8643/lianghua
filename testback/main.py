@@ -7,7 +7,6 @@ from core.database import init_full_data
 from utils.parallel import batch_run_threads
 from utils.shared_memory import SharedMemoryCache
 from testback.account import StockAccountMocker
-from utils.stock.format import format_qmt_datetime
 
 os.environ['LOKY_PICKLER'] = 'pickle'  # 使用更快的pickle
 
@@ -195,30 +194,15 @@ if __name__ == "__main__":
   from core.database import allow_buy_stock_code_list
   from utils.stock.time import get_trading_date_span
 
-  # ==================== 与 ga_main.py 相同的配置 ====================
-  # 股票池：全部股票（与 GA 一致，除非指定 --stock-limit）
   all_stocks = allow_buy_stock_code_list()
-
-  # 数据集：train 训练集（2014-2024，随机采样180天）
-  train_dates = get_trading_date_span(date(2014, 1, 1), date(2024, 1, 1))
-  backtest_days = 180
-  train_dates = sorted(random.sample(train_dates, min(backtest_days, len(train_dates))))
 
   backtest_datetime_list = [
     datetime.combine(d, datetime.min.time())
-    for d in train_dates
-  ]
-
-  # 任务数量：模拟 GA 一代的评估量（3k，k=24时为72）
-  TASK_COUNT = 72  # 对应 population=24 时一代的评估量
-  worker_count = min(os.cpu_count() or 4, TASK_COUNT)
+    for d in get_trading_date_span(date(2025, 12, 1), date(2025, 12, 15))]
 
   testback_logger.info(f'=' * 60)
-  testback_logger.info(f'性能测试 - 模拟 GA 一代的工作量')
   testback_logger.info(f'股票数量: {len(all_stocks)}')
-  testback_logger.info(f'回测天数: {len(backtest_datetime_list)}天 ({train_dates[0]} ~ {train_dates[-1]})')
-  testback_logger.info(f'任务数量: {TASK_COUNT} (模拟 population=24 的一代)')
-  testback_logger.info(f'进程数量: {worker_count}')
+  testback_logger.info(f'回测天数: {len(backtest_datetime_list)}天 ({backtest_datetime_list[0]} ~ {backtest_datetime_list[-1]})')
   testback_logger.info(f'=' * 60)
 
   ts = datetime.now()
@@ -228,23 +212,29 @@ if __name__ == "__main__":
   # 初始化并预加载数据到共享内存
   init_full_data(all_stocks, '1d')
   # 多进程获取 TopN 实例
-  with parallel_backend('loky', n_jobs=worker_count, inner_max_num_threads=1):
+  topn_worker_count = min(os.cpu_count(), len(backtest_datetime_list))
+  with parallel_backend('loky', n_jobs=topn_worker_count, inner_max_num_threads=1):
     topNs = Parallel(
-      n_jobs=worker_count,
+      n_jobs=topn_worker_count,
       prefer='processes',  # 明确指定使用进程而不是线程
       batch_size=1,  # 每次发送1个任务，减少序列化开销
+      verbose=30,
     )(
-      delayed(TopN)(all_stocks,d)
+      delayed(TopN)(all_stocks, d)
       for d in backtest_datetime_list
     )
 
   # 创建共享内存缓存并存入数据
   testback_cache.put('topn_data', topNs)
 
-  testback_logger.info(f"开始回测：{TASK_COUNT}个任务，{worker_count}个进程，共{len(all_stocks)}只股票")
-  with parallel_backend('loky', n_jobs=worker_count, inner_max_num_threads=1):
+  # 任务数量：模拟 GA 一代的评估量（3k，k=24时为72）
+  TASK_COUNT = 72  # 对应 population=24 时一代的评估量
+  testback_logger.info(f'=' * 60)
+  testback_logger.info(f"开始回测：{TASK_COUNT}个任务，{topn_worker_count}个进程，共{len(all_stocks)}只股票")
+  topn_worker_count = min(os.cpu_count(), TASK_COUNT)
+  with parallel_backend('loky', n_jobs=topn_worker_count, inner_max_num_threads=1):
     results = Parallel(
-      n_jobs=worker_count,
+      n_jobs=topn_worker_count,
       prefer='processes',  # 明确指定使用进程而不是线程
       batch_size=1,  # 每次发送1个任务，减少序列化开销
     )(
