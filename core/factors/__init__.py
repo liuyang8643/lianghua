@@ -10,3 +10,4 @@ from .MOM import *
 from .ADX import *
 from .SmallCap import *
 from .Unpopular import *
+from .RetailFlow import *
