@@ -6,9 +6,13 @@ from typing import Optional
 import numpy as np
 from joblib import Parallel, delayed
 from scipy.stats import pearsonr, spearmanr
+from tqdm import tqdm
 
 from core import FactorCtx, core_logger, init_full_data, init_stock_detail_cache
 from core.database import allow_buy_stock_code_list, get_full_market_data, get_stock_detail
+from core.factors.helpers import CacheKey, DiskCache
+from utils.hash import hash_function_code
+from utils.stock.format import format_qmt_datetime
 from utils.stock.time import get_trading_date_span
 
 @dataclass
@@ -78,6 +82,19 @@ def _calculate_daily_correlation(
               for m in m_days_list}
 
     factor = factor_cls()
+    factor_name = factor_cls.__name__
+    
+    # 创建缓存
+    func_hash = hash_function_code(factor.calc)
+    base_datetime = datetime.combine(trade_date, datetime.max.time())
+    cache_key = CacheKey.make_key(
+      [f"factor-{factor_name}-{func_hash}", format_qmt_datetime(base_datetime)], 
+      stocks=stock_codes
+    )
+    
+    # 直接从磁盘加载（内存映射，操作系统页面缓存）
+    cached_factor_stocks = DiskCache.load_pickle(cache_key) or {}
+    
     stock_scores = []
 
     # 计算每只股票的因子得分和收益率
@@ -100,9 +117,17 @@ def _calculate_daily_correlation(
         if trade_date not in time_to_close:
           continue
 
-        # 计算因子得分
-        ctx = FactorCtx(stock_code, datetime.combine(trade_date, datetime.max.time()))
-        result = factor.calc(ctx)
+        # 从缓存获取或计算因子得分
+        cached_stock_value = cached_factor_stocks.get(stock_code)
+        if cached_stock_value is not None:
+          # 命中缓存
+          result = cached_stock_value
+        else:
+          # 计算因子得分
+          ctx = FactorCtx(stock_code, base_datetime)
+          result = factor.calc(ctx)
+          # 保存到缓存
+          cached_factor_stocks[stock_code] = result
 
         if result['score'] is None or np.isnan(result['score']):
           continue
@@ -133,6 +158,9 @@ def _calculate_daily_correlation(
       except:
         continue
 
+    # 保存缓存
+    DiskCache.save_pickle(cache_key, cached_factor_stocks)
+    
     # 为每个持有期计算相关性
     results = {}
     for m in m_days_list:
@@ -192,11 +220,24 @@ def calculate_factor_correlation(
   date_list = get_trading_date_span(start_date, end_date)
   worker_count = min(os.cpu_count() or 4, len(date_list))
 
-  # 并行计算所有日期和持有期
-  daily_results_list = Parallel(n_jobs=worker_count, backend='loky')(
-    delayed(_calculate_daily_correlation)(d, stock_codes, factor_cls, m_days_list, date_list, save_stock_scores)
-    for d in date_list
+  # 并行计算所有日期和持有期（带进度条）
+  parallel_pool = Parallel(
+    return_as='generator',
+    n_jobs=worker_count,
+    backend='loky',
+    prefer='processes',
+    batch_size=1,
+    verbose=0,
   )
+  daily_results_list = list(tqdm(
+    parallel_pool(
+      delayed(_calculate_daily_correlation)(d, stock_codes, factor_cls, m_days_list, date_list, save_stock_scores)
+      for d in date_list
+    ),
+    total=len(date_list),
+    maxinterval=30,
+    desc=f"计算 {factor_cls.__name__} 相关性: {len(stock_codes)}只股票, 持有期{m_days_list}"
+  ))
 
   # 重组结果
   period_daily_results = {m: [] for m in m_days_list}

@@ -12,11 +12,11 @@ if __name__ == '__main__':
 
   report = calculate_factor_correlation(
     factor_cls=SmallCap,
-    start_date=date(2024, 1, 1),
+    start_date=date(2024, 11, 1),
     end_date=date(2024, 12, 1),
     m_days=[5, 10, 20, 30, 60],
-    # stock_codes=stock_list
-    stock_codes=random.sample(stock_list, 1000),
+    stock_codes=stock_list
+    # stock_codes=random.sample(stock_list, 1000),
   )
 
   # 保存Pickle报告
