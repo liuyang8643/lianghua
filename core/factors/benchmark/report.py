@@ -15,8 +15,6 @@ def generate_html_report(report: FactorCorrelationReport) -> str:
   periods_data = []
   for ps in report.period_statistics:
     sorted_daily = sorted(ps.daily_correlations, key=lambda x: x.trade_date)
-    valid_days = [r for r in ps.daily_correlations if r.correlation is not None]
-    pos_days = [r for r in valid_days if r.correlation > 0]
 
     periods_data.append({
       'm_days': ps.m_days,
@@ -24,10 +22,17 @@ def generate_html_report(report: FactorCorrelationReport) -> str:
       'avg_correlation': ps.avg_correlation,
       'median_correlation': ps.median_correlation,
       'avg_rank_correlation': ps.avg_rank_correlation,
-      'positive_count': len(pos_days),
-      'negative_count': len(valid_days) - len(pos_days),
+      'positive_count': ps.positive_samples,
+      'negative_count': ps.negative_samples,
       'valid_days': ps.valid_days,
-      'total_days': len(ps.daily_correlations)
+      'total_days': len(ps.daily_correlations),
+      'total_samples': ps.total_samples,
+      'positive_days': ps.positive_days,
+      'negative_days': ps.negative_days,
+      'ic_mean': ps.ic_mean,
+      'ic_std': ps.ic_std,
+      'ir': ps.ir,
+      'ic_ir': ps.ic_ir,
     })
 
   # 计算平均有效股票数

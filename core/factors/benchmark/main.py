@@ -30,4 +30,5 @@ if __name__ == '__main__':
   print(f"Pickle报告已保存: {pickle_filename} ({os.path.getsize(pickle_filename) / 1024:.2f} KB)")
 
   # 生成HTML报告
-  generate_html_report(report)
+  html_file = generate_html_report(report)
+  print(f"HTML报告已生成: {html_file}")

@@ -1,4 +1,6 @@
 import os
+import pickle
+import sys
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Optional
@@ -41,12 +43,19 @@ class PeriodStatistics:
   """单个持有期的统计结果"""
   m_days: int
   daily_correlations: list[DailyCorrelation]
-  avg_correlation: float
-  median_correlation: float
-  avg_rank_correlation: float
-  positive_days: int
-  negative_days: int
-  valid_days: int
+  avg_correlation: float  # 加权平均Pearson相关系数
+  median_correlation: float  # 中位数Pearson相关系数
+  avg_rank_correlation: float  # 加权平均Spearman秩相关系数
+  positive_days: int  # 正相关天数
+  negative_days: int  # 负相关天数
+  valid_days: int  # 有效天数
+  total_samples: int  # 总样本量（所有有效股票数之和）
+  positive_samples: int  # 正相关样本量
+  negative_samples: int  # 负相关样本量
+  ic_mean: float  # IC均值（Information Coefficient）
+  ic_std: float  # IC标准差
+  ir: float  # 信息比率（IR = IC均值 / IC标准差）
+  ic_ir: float  # ICIR（衡量因子稳定性）
 
 @dataclass
 class FactorCorrelationReport:
@@ -250,21 +259,126 @@ def calculate_factor_correlation(
   for m in m_days_list:
     daily_results = period_daily_results[m]
     valid_results = [r for r in daily_results if r.correlation is not None]
-    valid_correlations = [r.correlation for r in valid_results]
-    valid_rank_correlations = [r.rank_correlation for r in valid_results]
-
-    avg_corr = np.mean(valid_correlations) if valid_correlations else 0.0
-    median_corr = np.median(valid_correlations) if valid_correlations else 0.0
-    avg_rank_corr = np.mean(valid_rank_correlations) if valid_rank_correlations else 0.0
-    pos_days = sum(1 for c in valid_correlations if c > 0)
-    neg_days = sum(1 for c in valid_correlations if c < 0)
-
-    core_logger.info(f"T+{m}日: 相关系数={avg_corr:.4f}, 有效天数={len(valid_results)}/{len(date_list)}")
+    
+    if not valid_results:
+      # 没有有效结果
+      period_statistics.append(PeriodStatistics(
+        m_days=m,
+        daily_correlations=daily_results,
+        avg_correlation=0.0,
+        median_correlation=0.0,
+        avg_rank_correlation=0.0,
+        positive_days=0,
+        negative_days=0,
+        valid_days=0,
+        total_samples=0,
+        positive_samples=0,
+        negative_samples=0,
+        ic_mean=0.0,
+        ic_std=0.0,
+        ir=0.0,
+        ic_ir=0.0
+      ))
+      continue
+    
+    # 使用加权平均：权重为有效股票数量
+    weights = np.array([r.valid_stock_count for r in valid_results])
+    valid_correlations = np.array([r.correlation for r in valid_results])
+    valid_rank_correlations = np.array([r.rank_correlation for r in valid_results])
+    
+    # 加权平均相关系数
+    total_weight = weights.sum()
+    avg_corr = np.average(valid_correlations, weights=weights) if total_weight > 0 else 0.0
+    avg_rank_corr = np.average(valid_rank_correlations, weights=weights) if total_weight > 0 else 0.0
+    
+    # 中位数不使用加权（保持原有逻辑）
+    median_corr = np.median(valid_correlations)
+    
+    # 统计天数和样本量
+    pos_days_list = [r for r in valid_results if r.correlation > 0]
+    neg_days_list = [r for r in valid_results if r.correlation < 0]
+    
+    pos_days = len(pos_days_list)
+    neg_days = len(neg_days_list)
+    
+    positive_samples = sum(r.valid_stock_count for r in pos_days_list)
+    negative_samples = sum(r.valid_stock_count for r in neg_days_list)
+    
+    # 计算IC指标
+    # IC (Information Coefficient) = 因子得分与收益率的相关系数
+    # IC均值：反映因子的平均预测能力
+    # IC标准差：反映因子的稳定性
+    # IR (Information Ratio) = IC均值 / IC标准差：衡量因子的风险调整后收益
+    ic_mean = np.mean(valid_correlations)  # 简单平均IC
+    ic_std = np.std(valid_correlations, ddof=1) if len(valid_correlations) > 1 else 0.0
+    ir = ic_mean / ic_std if ic_std > 0 else 0.0
+    
+    # ICIR = |IC均值| / IC标准差 * sqrt(有效天数)：年化信息比率的近似
+    ic_ir = abs(ic_mean) / ic_std * np.sqrt(len(valid_results)) if ic_std > 0 else 0.0
+    
+    # 计算加权有效天数（等效样本量）
+    # 使用公式: 等效样本量 = (总权重)^2 / (权重平方和)
+    # 这考虑了样本量不均匀的情况
+    effective_days = (total_weight ** 2) / (weights ** 2).sum() if total_weight > 0 else len(valid_results)
+    
+    core_logger.info(
+      f"T+{m}日: 加权相关系数={avg_corr:.4f}, IC={ic_mean:.4f}, IR={ir:.2f}, ICIR={ic_ir:.2f}, "
+      f"有效天数={len(valid_results)}/{len(date_list)}, "
+      f"总样本={int(total_weight)}, 等效天数={effective_days:.1f}"
+    )
 
     period_statistics.append(PeriodStatistics(
-      m, daily_results, avg_corr, median_corr, avg_rank_corr, pos_days, neg_days, len(valid_results)
+      m_days=m,
+      daily_correlations=daily_results,
+      avg_correlation=avg_corr,
+      median_correlation=median_corr,
+      avg_rank_correlation=avg_rank_corr,
+      positive_days=pos_days,
+      negative_days=neg_days,
+      valid_days=len(valid_results),
+      total_samples=int(total_weight),
+      positive_samples=positive_samples,
+      negative_samples=negative_samples,
+      ic_mean=ic_mean,
+      ic_std=ic_std,
+      ir=ir,
+      ic_ir=ic_ir
     ))
 
   return FactorCorrelationReport(
     factor_cls.__name__, start_date, end_date, m_days_list, len(stock_codes), period_statistics
   )
+
+if __name__ == '__main__':
+  """
+  从本地 pkl 文件加载报告并生成 HTML
+  """
+  from core.factors.benchmark.report import generate_html_report
+  
+  # Hardcoded pkl file path
+  pkl_file = "reports/factor-correlation-SmallCap-20251229_010317.pkl"
+  
+  # 检查文件是否存在
+  if not os.path.exists(pkl_file):
+    print(f"错误: 文件不存在: {pkl_file}")
+    sys.exit(1)
+  
+  # 检查文件扩展名
+  if not pkl_file.endswith('.pkl'):
+    print(f"错误: 文件必须是 .pkl 格式")
+    sys.exit(1)
+  
+  # 加载 pkl 文件
+  try:
+    with open(pkl_file, 'rb') as f:
+      report = pickle.load(f)
+    
+    # 生成 HTML 报告
+    html_file = generate_html_report(report)
+    print(f"HTML 报告已生成: {html_file}")
+    
+  except Exception as e:
+    print(f"错误: 加载或生成报告失败: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
