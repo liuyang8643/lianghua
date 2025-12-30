@@ -18,3 +18,6 @@ TRADE_ACCOUNT = '你的账户ID'
 LARK_APP_ID = "你的飞书机器人ID"
 LARK_APP_SECRET = "你的飞书机器人密钥"
 LARK_RECEIVE_ID = "你的飞书邮箱"
+
+# 散户资金流向数据目录
+MONEY_FLOW_DIR = r"C:\Users\doctorl\Downloads\money-flow"

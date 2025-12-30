@@ -36,6 +36,9 @@
     .tab-content.active { display: block; }
     .tab-button { cursor: pointer; transition: all 0.3s; }
     .tab-button.active { background-color: #667eea !important; color: white !important; }
+    .tab-button-stock.active { background-color: #667eea !important; color: white !important; }
+    .stock-tab-content { display: none; }
+    .stock-tab-content.active { display: block; }
     .tooltip {
       position: relative;
       display: inline-block;
@@ -154,35 +157,39 @@
                 <th class="px-4 py-3 text-right">
                   <span class="tooltip">有效样本量
                     <span class="tooltiptext">
-                      <strong>有效样本总量</strong><br>
-                      所有交易日的有效股票数之和<br>
-                      样本越多，统计结果越可靠
+                      <strong>相关性观察次数（有效天数）</strong><br>
+                      成功计算相关性的交易日数量<br>
+                      每个交易日计算一次相关性，得到一个相关系数<br>
+                      样本量 = 有效天数（最多 = 回测天数）
                     </span>
                   </span>
                 </th>
                 <th class="px-4 py-3 text-right">
                   <span class="tooltip">正相关样本量
                     <span class="tooltiptext">
-                      <strong>正相关的股票样本总量</strong><br>
-                      相关系数 > 0 的交易日中，有效股票数之和<br>
-                      表示因子得分高的股票收益更好的总样本量
+                      <strong>正相关观察次数（正相关天数）</strong><br>
+                      相关系数 > 0 的交易日数量<br>
+                      表示因子得分高的股票收益更好的交易日数<br>
+                      样本量 = 正相关天数
                     </span>
                   </span>
                 </th>
                 <th class="px-4 py-3 text-right">
                   <span class="tooltip">负相关样本量
                     <span class="tooltiptext">
-                      <strong>负相关的股票样本总量</strong><br>
-                      相关系数 < 0 的交易日中，有效股票数之和<br>
-                      表示因子得分高的股票收益更差的总样本量
+                      <strong>负相关观察次数（负相关天数）</strong><br>
+                      相关系数 < 0 的交易日数量<br>
+                      表示因子得分高的股票收益更差的交易日数<br>
+                      样本量 = 负相关天数
                     </span>
                   </span>
                 </th>
                 <th class="px-4 py-3 text-right">
                   <span class="tooltip">正样本占比
                     <span class="tooltiptext">
-                      <strong>正相关样本量占比</strong><br>
+                      <strong>正相关观察次数占比</strong><br>
                       正相关样本量 / 总有效样本量<br>
+                      = 正相关天数 / 有效天数<br>
                       > 50% 说明因子整体有效<br>
                       > 60% 说明因子较稳定
                     </span>
@@ -289,24 +296,27 @@
               <div class="text-xs text-gray-500 mb-1">
                 <span class="tooltip">有效样本量
                   <span class="tooltiptext">
-                    所有交易日的有效股票数之和<br>
-                    样本越多统计越可靠
+                    <strong>相关性观察次数（有效天数）</strong><br>
+                    成功计算相关性的交易日数量<br>
+                    每个交易日计算一次相关性，得到一个相关系数<br>
+                    样本量 = 有效天数（最多 = 回测天数）
                   </span>
                 </span>
               </div>
               <div class="text-2xl font-bold text-gray-800">
                 {{ "{:,}".format(period.total_samples) }}
               </div>
-              <div class="text-xs text-gray-500 mt-1">{{ period.valid_days }}个交易日</div>
+              <div class="text-xs text-gray-500 mt-1">{{ period.valid_days }}个交易日 | 数据点总数: {{ "{:,}".format(period.total_data_points) }}</div>
             </div>
 
             <div class="bg-gray-50 rounded-lg p-4">
               <div class="text-xs text-gray-500 mb-1">
                 <span class="tooltip">样本量分布
                   <span class="tooltiptext">
-                    正相关：因子得分高的股票收益更好的样本量<br>
-                    负相关：因子得分高的股票收益更差的样本量<br>
-                    占比 = 正相关样本量 / 总样本量
+                    <strong>正/负相关观察次数分布</strong><br>
+                    正相关：相关系数 > 0 的交易日数<br>
+                    负相关：相关系数 < 0 的交易日数<br>
+                    占比 = 正相关天数 / 有效天数
                   </span>
                 </span>
               </div>
@@ -518,6 +528,203 @@
         {% endfor %}
       </div>
 
+      <!-- 类型2：同一个股票但不同天数的相关性 -->
+      {% if show_stock_correlation %}
+      <div class="bg-white rounded-lg shadow mb-6">
+        <div class="px-6 py-4 border-b">
+          <h2 class="text-xl font-semibold text-gray-800 mb-4">类型2：同一个股票但不同天数的相关性</h2>
+          <p class="text-sm text-gray-600 mb-4">
+            评估因子对特定股票在不同时间点的预测能力。对于每只股票，计算不同买入日期的因子得分与收益的相关性。
+          </p>
+          <div class="flex flex-wrap gap-2">
+            {% for stock_period in stock_periods_data %}
+            <button class="tab-button-stock px-6 py-2 rounded-lg bg-gray-100 text-gray-700 font-medium {% if loop.first %}active{% endif %}"
+                    onclick="switchStockTab({{ loop.index0 }})">
+              T+{{ stock_period.m_days }}日
+            </button>
+            {% endfor %}
+          </div>
+        </div>
+
+        {% for stock_period in stock_periods_data %}
+        <div class="stock-tab-content {% if loop.first %}active{% endif %}" id="stock-tab-{{ loop.index0 }}">
+          <!-- Summary Stats for this period -->
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-6">
+            <div class="bg-gray-50 rounded-lg p-4">
+              <div class="text-xs text-gray-500 mb-1">加权相关系数</div>
+              <div class="text-2xl font-bold {% if stock_period.avg_correlation >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                {{ "%.4f"|format(stock_period.avg_correlation) }}
+              </div>
+              <div class="text-xs text-gray-500 mt-1">IC: {{ "%.4f"|format(stock_period.ic_mean) }}</div>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-4">
+              <div class="text-xs text-gray-500 mb-1">信息比率 (IR)</div>
+              <div class="text-2xl font-bold text-primary">
+                {{ "%.2f"|format(stock_period.ir) }}
+              </div>
+              <div class="text-xs text-gray-500 mt-1">ICIR: {{ "%.2f"|format(stock_period.ic_ir) }}</div>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-4">
+              <div class="text-xs text-gray-500 mb-1">
+                <span class="tooltip">有效样本量
+                  <span class="tooltiptext">
+                    <strong>相关性观察次数（有效股票数）</strong><br>
+                    成功计算相关性的股票数量<br>
+                    每只股票计算一次相关性，得到一个相关系数<br>
+                    样本量 = 有效股票数（最多 = 股票总数）
+                  </span>
+                </span>
+              </div>
+              <div class="text-2xl font-bold text-gray-800">
+                {{ "{:,}".format(stock_period.total_samples) }}
+              </div>
+              <div class="text-xs text-gray-500 mt-1">有效股票数: {{ stock_period.valid_stocks }} / {{ stock_period.total_stocks }} | 数据点总数: {{ "{:,}".format(stock_period.total_data_points) }}</div>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-4">
+              <div class="text-xs text-gray-500 mb-1">
+                <span class="tooltip">样本量分布
+                  <span class="tooltiptext">
+                    <strong>正/负相关观察次数分布</strong><br>
+                    正相关：相关系数 > 0 的股票数<br>
+                    负相关：相关系数 < 0 的股票数<br>
+                    占比 = 正相关股票数 / 有效股票数
+                  </span>
+                </span>
+              </div>
+              <div class="flex items-center gap-3">
+                <div>
+                  <div class="text-sm font-semibold text-positive">正: {{ "{:,}".format(stock_period.positive_count) }}</div>
+                </div>
+                <div>
+                  <div class="text-sm font-semibold text-negative">负: {{ "{:,}".format(stock_period.negative_count) }}</div>
+                </div>
+              </div>
+              <div class="text-xs text-gray-500 mt-1">正样本占比: {{ "%.1f"|format((stock_period.positive_count / stock_period.total_samples * 100) if stock_period.total_samples > 0 else 0) }}%</div>
+            </div>
+          </div>
+
+          <!-- Stock Correlation Table -->
+          <div class="p-6">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold text-gray-800">T+{{ stock_period.m_days }}日 股票相关性详情</h3>
+              <select class="filter-select-stock px-4 py-2 border rounded-lg" data-period="{{ loop.index0 }}">
+                <option value="all">全部</option>
+                <option value="positive">正相关</option>
+                <option value="negative">负相关</option>
+                <option value="invalid">无效</option>
+              </select>
+            </div>
+
+            <table class="w-full">
+              <thead class="bg-gray-50 border-b">
+                <tr>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">股票代码</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">股票名称</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <span class="tooltip">Pearson 相关
+                      <span class="tooltiptext">
+                        线性相关系数，范围 [-1, 1]<br>
+                        正值：因子得分高的日期收益更高<br>
+                        负值：因子得分高的日期收益更低
+                      </span>
+                    </span>
+                  </th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <span class="tooltip">Spearman 秩相关
+                      <span class="tooltiptext">
+                        基于排名的相关系数<br>
+                        更稳健，不受异常值影响
+                      </span>
+                    </span>
+                  </th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">可视化</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <span class="tooltip">P 值
+                      <span class="tooltiptext">
+                        统计显著性检验结果<br>
+                        <span class="text-green-300">P < 0.01: 极显著 **</span><br>
+                        <span class="text-yellow-300">P < 0.05: 显著 *</span><br>
+                        <span class="text-red-300">P ≥ 0.05: 不显著</span>
+                      </span>
+                    </span>
+                  </th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <span class="tooltip">有效日期数
+                      <span class="tooltiptext">
+                        计算相关性的有效样本数<br>
+                        需要 ≥ 10 个日期才计算<br>
+                        样本越多结果越可靠
+                      </span>
+                    </span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="stock-table-body bg-white divide-y divide-gray-200" data-period="{{ loop.index0 }}">
+                {% for stock in stock_period.stock_correlations %}
+                <tr class="stock-row"
+                    data-stock="{{ stock.stock_code }}"
+                    data-correlation="{{ stock.correlation if stock.correlation is not none else 'null' }}"
+                    data-type="{% if stock.correlation is none %}invalid{% elif stock.correlation >= 0 %}positive{% else %}negative{% endif %}">
+                  <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{{ stock.stock_code }}</td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{{ stock.stock_name }}</td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm font-bold">
+                    {% if stock.correlation is not none %}
+                    <span class="{% if stock.correlation >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                      {{ "%.4f"|format(stock.correlation) }}
+                    </span>
+                    {% if stock.correlation|abs >= 0.3 %}
+                    <span class="reliability-indicator reliability-high" title="强相关"></span>
+                    {% elif stock.correlation|abs >= 0.1 %}
+                    <span class="reliability-indicator reliability-medium" title="弱相关"></span>
+                    {% else %}
+                    <span class="reliability-indicator reliability-low" title="无相关"></span>
+                    {% endif %}
+                    {% else %}
+                    <span class="text-gray-400">N/A</span>
+                    {% endif %}
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm font-bold">
+                    {% if stock.rank_correlation is not none %}
+                    <span class="{% if stock.rank_correlation >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                      {{ "%.4f"|format(stock.rank_correlation) }}
+                    </span>
+                    {% else %}
+                    <span class="text-gray-400">N/A</span>
+                    {% endif %}
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap">
+                    {% if stock.correlation is not none %}
+                    <div class="w-32">
+                      <div class="correlation-bar {% if stock.correlation >= 0 %}bg-positive{% else %}bg-negative{% endif %}"
+                           style="width: {{ (stock.correlation|abs * 100)|int }}%;"></div>
+                    </div>
+                    {% else %}
+                    <span class="text-xs text-gray-400">-</span>
+                    {% endif %}
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                    {% if stock.p_value is not none %}
+                    {{ "%.4f"|format(stock.p_value) }}
+                    {% if stock.p_value < 0.01 %}
+                    <span class="text-xs font-bold text-positive">**</span>
+                    {% elif stock.p_value < 0.05 %}
+                    <span class="text-xs font-bold text-positive">*</span>
+                    {% endif %}
+                    {% else %}
+                    <span class="text-gray-400">N/A</span>
+                    {% endif %}
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">{{ stock.valid_date_count }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
     </div>
   </div>
 
@@ -572,7 +779,7 @@
     {% endfor %}
   ];
 
-  // Tab切换
+  // Tab切换（类型1）
   function switchTab(index) {
     // 更新按钮状态
     document.querySelectorAll('.tab-button').forEach((btn, i) => {
@@ -590,6 +797,27 @@
         // 重新渲染该tab的图表
         drawTimeSeriesChart(index);
         drawDistributionChart(index);
+      } else {
+        content.classList.remove('active');
+      }
+    });
+  }
+
+  // Tab切换（类型2）
+  function switchStockTab(index) {
+    // 更新按钮状态
+    document.querySelectorAll('.tab-button-stock').forEach((btn, i) => {
+      if (i === index) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+
+    // 更新内容显示
+    document.querySelectorAll('.stock-tab-content').forEach((content, i) => {
+      if (i === index) {
+        content.classList.add('active');
       } else {
         content.classList.remove('active');
       }
@@ -815,7 +1043,7 @@
     window.addEventListener('resize', () => myChart.resize());
   }
 
-  // 筛选功能
+  // 筛选功能（类型1）
   document.querySelectorAll('.filter-select').forEach(select => {
     select.addEventListener('change', function() {
       const periodIndex = this.dataset.period;
@@ -836,6 +1064,25 @@
             detailRow.style.display = 'none';
             detailRow.classList.remove('show');
           }
+        }
+      });
+    });
+  });
+
+  // 筛选功能（类型2）
+  document.querySelectorAll('.filter-select-stock').forEach(select => {
+    select.addEventListener('change', function() {
+      const periodIndex = this.dataset.period;
+      const filterType = this.value;
+      const tableBody = document.querySelector(`.stock-table-body[data-period="${periodIndex}"]`);
+      const rows = tableBody.querySelectorAll('.stock-row');
+
+      rows.forEach(row => {
+        const type = row.getAttribute('data-type');
+        if (filterType === 'all' || type === filterType) {
+          row.style.display = '';
+        } else {
+          row.style.display = 'none';
         }
       });
     });

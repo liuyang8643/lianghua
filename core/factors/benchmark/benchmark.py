@@ -11,10 +11,10 @@ if __name__ == '__main__':
   stock_list = allow_buy_stock_code_list()
 
   report = calculate_factor_correlation(
-    factor_cls=RetailFlow,
-    start_date=date(2025, 1, 1),
-    end_date=date(2025, 12, 1),
-    m_days=[1,2,3,4,5, 10, 20, 30, 60],
+    factor_cls=RetailFlowMomentum,
+    start_date=date(2024, 6, 1),
+    end_date=date(2024, 7, 1),
+    m_days=[1, 3, 5, 10, 20],
     stock_codes=stock_list
     # stock_codes=random.sample(stock_list, 1000),
   )

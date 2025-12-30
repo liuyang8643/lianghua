@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, Dict, List
 
-from core.factors import MACD, BBI, CCI, Fundamental, TRIXFactor, MOMFactor, ADXFactor, FactorCtx, FactorResult, BatchNormFactor
+from core.factors import MACD, BBI, CCI, Fundamental, TRIXFactor, MOMFactor, ADXFactor, RetailFlow, RetailFlowMomentum, FactorCtx, FactorResult, BatchNormFactor
 from utils.hash import hash_function_code
 from utils.parallel import batch_run_threads
 from utils.stock.format import format_qmt_date, format_qmt_datetime
@@ -35,6 +35,8 @@ class TopN:
       TRIXFactor(),
       MOMFactor(),
       ADXFactor(),
+      RetailFlow(),
+      RetailFlowMomentum(),
     ]
 
     # {factor_name: {stock_code: FactorResult}}

@@ -8,8 +8,12 @@ from typing import Optional
 import pandas as pd
 from functools import lru_cache
 
-# 默认资金流向数据目录
-DEFAULT_MONEY_FLOW_DIR = Path(r"C:\Users\doctorl\Downloads\money-flow")
+try:
+    from configs.env import MONEY_FLOW_DIR
+    DEFAULT_MONEY_FLOW_DIR = Path(MONEY_FLOW_DIR)
+except ImportError:
+    # 如果配置文件不存在，使用默认路径
+    raise ValueError("MONEY_FLOW_DIR 配置不存在")
 
 # 全局配置
 _money_flow_dir: Path = DEFAULT_MONEY_FLOW_DIR
@@ -19,11 +23,6 @@ def set_money_flow_dir(path: str | Path):
     """设置资金流向数据目录"""
     global _money_flow_dir
     _money_flow_dir = Path(path)
-
-
-def get_money_flow_dir() -> Path:
-    """获取资金流向数据目录"""
-    return _money_flow_dir
 
 
 @lru_cache(maxsize=256)

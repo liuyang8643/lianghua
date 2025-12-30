@@ -11,7 +11,7 @@ def generate_html_report(report: FactorCorrelationReport) -> str:
   """生成HTML报告"""
   from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-  # 准备多持有期数据
+  # 准备类型1数据（同一天但不同股票）
   periods_data = []
   for ps in report.period_statistics:
     sorted_daily = sorted(ps.daily_correlations, key=lambda x: x.trade_date)
@@ -22,11 +22,14 @@ def generate_html_report(report: FactorCorrelationReport) -> str:
       'avg_correlation': ps.avg_correlation,
       'median_correlation': ps.median_correlation,
       'avg_rank_correlation': ps.avg_rank_correlation,
-      'positive_count': ps.positive_samples,
-      'negative_count': ps.negative_samples,
+      'positive_count': ps.positive_count,
+      'negative_count': ps.negative_count,
       'valid_days': ps.valid_days,
       'total_days': len(ps.daily_correlations),
       'total_samples': ps.total_samples,
+      'total_data_points': ps.total_data_points,
+      'positive_data_points': ps.positive_data_points,
+      'negative_data_points': ps.negative_data_points,
       'positive_days': ps.positive_days,
       'negative_days': ps.negative_days,
       'ic_mean': ps.ic_mean,
@@ -35,7 +38,34 @@ def generate_html_report(report: FactorCorrelationReport) -> str:
       'ic_ir': ps.ic_ir,
     })
 
-  # 计算平均有效股票数
+  # 准备类型2数据（同一个股票但不同天数）
+  stock_periods_data = []
+  for sps in report.stock_period_statistics:
+    sorted_stocks = sorted(sps.stock_correlations, key=lambda x: x.stock_code)
+
+    stock_periods_data.append({
+      'm_days': sps.m_days,
+      'stock_correlations': sorted_stocks,
+      'avg_correlation': sps.avg_correlation,
+      'median_correlation': sps.median_correlation,
+      'avg_rank_correlation': sps.avg_rank_correlation,
+      'positive_count': sps.positive_count,
+      'negative_count': sps.negative_count,
+      'valid_stocks': sps.valid_stocks,
+      'total_stocks': len(sps.stock_correlations),
+      'total_samples': sps.total_samples,
+      'total_data_points': sps.total_data_points,
+      'positive_data_points': sps.positive_data_points,
+      'negative_data_points': sps.negative_data_points,
+      'positive_stocks': sps.positive_stocks,
+      'negative_stocks': sps.negative_stocks,
+      'ic_mean': sps.ic_mean,
+      'ic_std': sps.ic_std,
+      'ir': sps.ir,
+      'ic_ir': sps.ic_ir,
+    })
+
+  # 计算平均有效股票数（类型1）
   valid_stocks = 0
   if report.period_statistics and report.period_statistics[0].daily_correlations:
     valid_stocks = int(np.mean([dc.valid_stock_count
@@ -48,7 +78,9 @@ def generate_html_report(report: FactorCorrelationReport) -> str:
     'm_days_list': report.m_days_list,
     'total_stocks': report.total_stocks,
     'valid_stocks': valid_stocks,
-    'periods_data': periods_data,
+    'periods_data': periods_data,  # 类型1数据
+    'stock_periods_data': stock_periods_data,  # 类型2数据
+    'show_stock_correlation': report.show_stock_correlation,  # 是否显示类型2
     'generated_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
   }
 

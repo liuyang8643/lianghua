@@ -230,11 +230,11 @@ def _wrap_process_worker(weights: dict[str, float], mem_offset: int, mem_count: 
         continue
 
       # 2. 获取股票价格
+      trade_datetime = datetime.combine(trade_date, datetime.min.time())
       prices = {}
       for stock in top_stocks:
         try:
           # 将 date 转换为 datetime
-          trade_datetime = datetime.combine(trade_date, datetime.min.time())
           data = get_market_data_from_cache(stock, 1, trade_datetime)
           if data is not None and len(data) > 0:
             prices[stock] = float(data.iloc[-1]['close'])
@@ -248,7 +248,7 @@ def _wrap_process_worker(weights: dict[str, float], mem_offset: int, mem_count: 
       target_holdings = set(top_stocks)
       allocations = Sizer.allocate(
         stocks=top_stocks,
-        total_capital=account.current_cash,
+        total_capital=account.calc_assets(trade_datetime).total_asset,
         prices=prices
       )
 

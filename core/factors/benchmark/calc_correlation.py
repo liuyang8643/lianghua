@@ -40,7 +40,7 @@ class DailyCorrelation:
 
 @dataclass
 class PeriodStatistics:
-  """单个持有期的统计结果"""
+  """单个持有期的统计结果（类型1：同一天但不同股票）"""
   m_days: int
   daily_correlations: list[DailyCorrelation]
   avg_correlation: float  # 加权平均Pearson相关系数
@@ -49,13 +49,49 @@ class PeriodStatistics:
   positive_days: int  # 正相关天数
   negative_days: int  # 负相关天数
   valid_days: int  # 有效天数
-  total_samples: int  # 总样本量（所有有效股票数之和）
-  positive_samples: int  # 正相关样本量
-  negative_samples: int  # 负相关样本量
+  total_samples: int  # 总样本量（有效天数，即相关性观察次数）
+  positive_count: int  # 正相关样本量（正相关天数）
+  negative_count: int  # 负相关样本量（负相关天数）
+  total_data_points: int  # 总数据点数（所有有效股票数之和，用于计算相关性的数据点总数）
+  positive_data_points: int  # 正相关数据点数（正相关天的有效股票数之和）
+  negative_data_points: int  # 负相关数据点数（负相关天的有效股票数之和）
   ic_mean: float  # IC均值（Information Coefficient）
   ic_std: float  # IC标准差
   ir: float  # 信息比率（IR = IC均值 / IC标准差）
   ic_ir: float  # ICIR（衡量因子稳定性）
+
+@dataclass
+class StockCorrelation:
+  """单只股票的相关性结果（类型2：同一个股票但不同天数）"""
+  stock_code: str
+  stock_name: str
+  m_days: int
+  correlation: Optional[float]
+  rank_correlation: Optional[float]
+  p_value: Optional[float]
+  valid_date_count: int  # 有效日期数量
+
+@dataclass
+class StockPeriodStatistics:
+  """单个持有期的股票相关性统计结果（类型2）"""
+  m_days: int
+  stock_correlations: list[StockCorrelation]
+  avg_correlation: float  # 加权平均Pearson相关系数
+  median_correlation: float  # 中位数Pearson相关系数
+  avg_rank_correlation: float  # 加权平均Spearman秩相关系数
+  positive_stocks: int  # 正相关股票数
+  negative_stocks: int  # 负相关股票数
+  valid_stocks: int  # 有效股票数
+  total_samples: int  # 总样本量（有效股票数，即相关性观察次数）
+  positive_count: int  # 正相关样本量（正相关股票数）
+  negative_count: int  # 负相关样本量（负相关股票数）
+  total_data_points: int  # 总数据点数（所有有效日期数之和，用于计算相关性的数据点总数）
+  positive_data_points: int  # 正相关数据点数（正相关股票的有效日期数之和）
+  negative_data_points: int  # 负相关数据点数（负相关股票的有效日期数之和）
+  ic_mean: float  # IC均值
+  ic_std: float  # IC标准差
+  ir: float  # 信息比率
+  ic_ir: float  # ICIR
 
 @dataclass
 class FactorCorrelationReport:
@@ -65,7 +101,9 @@ class FactorCorrelationReport:
   end_date: date
   m_days_list: list[int]
   total_stocks: int
-  period_statistics: list[PeriodStatistics]
+  period_statistics: list[PeriodStatistics]  # 类型1：同一天但不同股票
+  stock_period_statistics: list[StockPeriodStatistics]  # 类型2：同一个股票但不同天数
+  show_stock_correlation: bool = False  # 是否显示类型2（股票相关性详情），默认不显示
 
 def _calculate_daily_correlation(
     trade_date: date,
@@ -201,13 +239,119 @@ def _calculate_daily_correlation(
     return {m: DailyCorrelation(trade_date, m, None, None, None, 0, None)
             for m in m_days_list}
 
+def _calculate_stock_correlation(
+    stock_code: str,
+    trade_dates: list[date],
+    factor_cls,
+    m_days_list: list[int],
+    trading_dates: list[date],
+    stock_name: str = None
+) -> dict[int, StockCorrelation]:
+  """计算单只股票在不同买入日期的相关性（类型2：同一个股票但不同天数）"""
+  try:
+    from xtquant import xtdata
+    xtdata.enable_hello = False
+
+    factor = factor_cls()
+    
+    # 获取股票数据
+    full_data = get_full_market_data(stock_code, '1d')
+    if full_data is None or full_data.empty:
+      return {m: StockCorrelation(stock_code, stock_name or stock_code, m, None, None, None, 0)
+              for m in m_days_list}
+
+    # 构建日期到收盘价的映射
+    timestamps = full_data['time'].values
+    closes = full_data['close'].values
+    dates = [datetime.fromtimestamp(ts / 1000).date() for ts in timestamps]
+    time_to_close = dict(zip(dates, closes))
+
+    # 收集该股票在不同买入日期的因子得分和收益
+    stock_scores_by_date = {}  # {trade_date: (factor_score, return_rates)}
+    
+    for trade_date in trade_dates:
+      if trade_date not in time_to_close:
+        continue
+
+      try:
+        # 计算因子得分
+        base_datetime = datetime.combine(trade_date, datetime.max.time())
+        ctx = FactorCtx(stock_code, base_datetime)
+        result = factor.calc(ctx)
+
+        if result['score'] is None or np.isnan(result['score']):
+          continue
+
+        # 计算所有持有期的收益率
+        close_price = time_to_close[trade_date]
+        return_rates = {}
+
+        current_idx = trading_dates.index(trade_date)
+        for m in m_days_list:
+          if current_idx + m < len(trading_dates):
+            future_date = trading_dates[current_idx + m]
+            if future_date in time_to_close:
+              future_close = time_to_close[future_date]
+              return_rates[m] = (future_close - close_price) / close_price
+            else:
+              return_rates[m] = None
+          else:
+            return_rates[m] = None
+
+        if any(r is not None for r in return_rates.values()):
+          stock_scores_by_date[trade_date] = (result['score'], return_rates)
+      except:
+        continue
+
+    if not stock_scores_by_date:
+      return {m: StockCorrelation(stock_code, stock_name or stock_code, m, None, None, None, 0)
+              for m in m_days_list}
+
+    # 获取股票名称
+    if stock_name is None:
+      detail = get_stock_detail(stock_code)
+      stock_name = detail.get('InstrumentName', stock_code) if detail else stock_code
+
+    # 为每个持有期计算相关性
+    results = {}
+    for m in m_days_list:
+      # 收集该持有期的有效数据
+      valid_data = []
+      for trade_date, (factor_score, return_rates) in stock_scores_by_date.items():
+        if return_rates.get(m) is not None:
+          valid_data.append((factor_score, return_rates[m]))
+
+      if len(valid_data) < 10:
+        results[m] = StockCorrelation(
+          stock_code, stock_name, m, None, None, None, len(valid_data)
+        )
+        continue
+
+      factor_scores = np.array([d[0] for d in valid_data])
+      return_rates_array = np.array([d[1] for d in valid_data])
+
+      correlation, p_value = pearsonr(factor_scores, return_rates_array)
+      rank_correlation, _ = spearmanr(factor_scores, return_rates_array)
+
+      results[m] = StockCorrelation(
+        stock_code, stock_name, m, correlation, rank_correlation, p_value, len(valid_data)
+      )
+
+    return results
+
+  except Exception as e:
+    core_logger.error(f"计算股票 {stock_code} 的相关性时出错: {e}")
+    return {m: StockCorrelation(stock_code, stock_name or stock_code, m, None, None, None, 0)
+            for m in m_days_list}
+
 def calculate_factor_correlation(
     factor_cls,
     start_date: date,
     end_date: date,
     m_days: int | list[int] = 5,
     stock_codes: list[str] = None,
-    save_stock_scores: bool = False  # 新增：是否保存详细的 stock_scores（默认否以节省内存）
+    save_stock_scores: bool = False,  # 新增：是否保存详细的 stock_scores（默认否以节省内存）
+    show_stock_correlation: bool = False  # 是否计算并显示类型2（股票相关性详情），默认不显示
 ) -> FactorCorrelationReport:
   """计算因子得分与T+M日收益率的相关性（一次性计算所有持有期）
   
@@ -272,8 +416,11 @@ def calculate_factor_correlation(
         negative_days=0,
         valid_days=0,
         total_samples=0,
-        positive_samples=0,
-        negative_samples=0,
+        positive_count=0,
+        negative_count=0,
+        total_data_points=0,
+        positive_data_points=0,
+        negative_data_points=0,
         ic_mean=0.0,
         ic_std=0.0,
         ir=0.0,
@@ -301,8 +448,15 @@ def calculate_factor_correlation(
     pos_days = len(pos_days_list)
     neg_days = len(neg_days_list)
     
-    positive_samples = sum(r.valid_stock_count for r in pos_days_list)
-    negative_samples = sum(r.valid_stock_count for r in neg_days_list)
+    # 样本量 = 观察次数（天数）
+    total_samples = len(valid_results)
+    positive_count = pos_days
+    negative_count = neg_days
+    
+    # 数据点数 = 用于计算相关性的数据点总数
+    total_data_points = int(total_weight)
+    positive_data_points = sum(r.valid_stock_count for r in pos_days_list)
+    negative_data_points = sum(r.valid_stock_count for r in neg_days_list)
     
     # 计算IC指标
     # IC (Information Coefficient) = 因子得分与收益率的相关系数
@@ -324,7 +478,7 @@ def calculate_factor_correlation(
     core_logger.info(
       f"T+{m}日: 加权相关系数={avg_corr:.4f}, IC={ic_mean:.4f}, IR={ir:.2f}, ICIR={ic_ir:.2f}, "
       f"有效天数={len(valid_results)}/{len(date_list)}, "
-      f"总样本={int(total_weight)}, 等效天数={effective_days:.1f}"
+      f"样本量={total_samples}, 数据点总数={int(total_weight)}, 等效天数={effective_days:.1f}"
     )
 
     period_statistics.append(PeriodStatistics(
@@ -336,17 +490,157 @@ def calculate_factor_correlation(
       positive_days=pos_days,
       negative_days=neg_days,
       valid_days=len(valid_results),
-      total_samples=int(total_weight),
-      positive_samples=positive_samples,
-      negative_samples=negative_samples,
+      total_samples=total_samples,
+      positive_count=positive_count,
+      negative_count=negative_count,
+      total_data_points=total_data_points,
+      positive_data_points=positive_data_points,
+      negative_data_points=negative_data_points,
       ic_mean=ic_mean,
       ic_std=ic_std,
       ir=ir,
       ic_ir=ic_ir
     ))
 
+  # ========== 计算类型2：同一个股票但不同天数的相关性 ==========
+  stock_period_statistics = []
+  if show_stock_correlation:
+    core_logger.info(f"开始计算类型2相关性（同一个股票但不同天数）")
+    
+    # 获取股票名称映射
+    stock_name_map = {}
+    for stock_code in stock_codes:
+      try:
+        detail = get_stock_detail(stock_code)
+        if detail:
+          stock_name_map[stock_code] = detail.get('InstrumentName', stock_code)
+      except:
+        stock_name_map[stock_code] = stock_code
+
+    # 并行计算所有股票的相关性（类型2）
+    stock_worker_count = min(os.cpu_count() or 4, len(stock_codes))
+    stock_parallel_pool = Parallel(
+      return_as='generator',
+      n_jobs=stock_worker_count,
+      backend='loky',
+      prefer='processes',
+      batch_size=1,
+      verbose=0,
+    )
+    stock_results_list = list(tqdm(
+      stock_parallel_pool(
+        delayed(_calculate_stock_correlation)(
+          stock_code, date_list, factor_cls, m_days_list, date_list, stock_name_map.get(stock_code)
+        )
+        for stock_code in stock_codes
+      ),
+      total=len(stock_codes),
+      maxinterval=30,
+      desc=f"计算类型2相关性: {len(stock_codes)}只股票, 持有期{m_days_list}"
+    ))
+
+    # 重组结果（类型2）
+    stock_period_results = {m: [] for m in m_days_list}
+    for stock_dict in stock_results_list:
+      for m, stock_corr in stock_dict.items():
+        stock_period_results[m].append(stock_corr)
+
+    # 计算类型2的统计指标
+    for m in m_days_list:
+      stock_results = stock_period_results[m]
+      valid_results = [r for r in stock_results if r.correlation is not None]
+
+      if not valid_results:
+        stock_period_statistics.append(StockPeriodStatistics(
+          m_days=m,
+          stock_correlations=stock_results,
+          avg_correlation=0.0,
+          median_correlation=0.0,
+          avg_rank_correlation=0.0,
+          positive_stocks=0,
+          negative_stocks=0,
+          valid_stocks=0,
+          total_samples=0,
+          positive_count=0,
+          negative_count=0,
+          total_data_points=0,
+          positive_data_points=0,
+          negative_data_points=0,
+          ic_mean=0.0,
+          ic_std=0.0,
+          ir=0.0,
+          ic_ir=0.0
+        ))
+        continue
+
+      # 使用加权平均：权重为有效日期数量
+      weights = np.array([r.valid_date_count for r in valid_results])
+      valid_correlations = np.array([r.correlation for r in valid_results])
+      valid_rank_correlations = np.array([r.rank_correlation for r in valid_results])
+
+      # 加权平均相关系数
+      total_weight = weights.sum()
+      avg_corr = np.average(valid_correlations, weights=weights) if total_weight > 0 else 0.0
+      avg_rank_corr = np.average(valid_rank_correlations, weights=weights) if total_weight > 0 else 0.0
+
+      # 中位数不使用加权
+      median_corr = np.median(valid_correlations)
+
+      # 统计股票数和样本量
+      pos_stocks_list = [r for r in valid_results if r.correlation > 0]
+      neg_stocks_list = [r for r in valid_results if r.correlation < 0]
+
+      pos_stocks = len(pos_stocks_list)
+      neg_stocks = len(neg_stocks_list)
+
+      # 样本量 = 观察次数（股票数）
+      total_samples = len(valid_results)
+      positive_count = pos_stocks
+      negative_count = neg_stocks
+      
+      # 数据点数 = 用于计算相关性的数据点总数
+      total_data_points = int(total_weight)
+      positive_data_points = sum(r.valid_date_count for r in pos_stocks_list)
+      negative_data_points = sum(r.valid_date_count for r in neg_stocks_list)
+
+      # 计算IC指标
+      ic_mean = np.mean(valid_correlations)
+      ic_std = np.std(valid_correlations, ddof=1) if len(valid_correlations) > 1 else 0.0
+      ir = ic_mean / ic_std if ic_std > 0 else 0.0
+      ic_ir = abs(ic_mean) / ic_std * np.sqrt(len(valid_results)) if ic_std > 0 else 0.0
+
+      core_logger.info(
+        f"类型2 T+{m}日: 加权相关系数={avg_corr:.4f}, IC={ic_mean:.4f}, IR={ir:.2f}, ICIR={ic_ir:.2f}, "
+        f"有效股票数={len(valid_results)}/{len(stock_codes)}, "
+        f"样本量={total_samples}, 数据点总数={int(total_weight)}"
+      )
+
+      stock_period_statistics.append(StockPeriodStatistics(
+        m_days=m,
+        stock_correlations=stock_results,
+        avg_correlation=avg_corr,
+        median_correlation=median_corr,
+        avg_rank_correlation=avg_rank_corr,
+        positive_stocks=pos_stocks,
+        negative_stocks=neg_stocks,
+        valid_stocks=len(valid_results),
+        total_samples=total_samples,
+        positive_count=positive_count,
+        negative_count=negative_count,
+        total_data_points=total_data_points,
+        positive_data_points=positive_data_points,
+        negative_data_points=negative_data_points,
+        ic_mean=ic_mean,
+        ic_std=ic_std,
+        ir=ir,
+        ic_ir=ic_ir
+      ))
+  else:
+    core_logger.info(f"跳过类型2相关性计算（show_stock_correlation=False）")
+
   return FactorCorrelationReport(
-    factor_cls.__name__, start_date, end_date, m_days_list, len(stock_codes), period_statistics
+    factor_cls.__name__, start_date, end_date, m_days_list, len(stock_codes), 
+    period_statistics, stock_period_statistics, show_stock_correlation
   )
 
 if __name__ == '__main__':
