@@ -9,7 +9,6 @@ from core.factors.benchmark import calculate_factor_correlation, generate_html_r
 
 if __name__ == '__main__':
   stock_list = allow_buy_stock_code_list()
-
   report = calculate_factor_correlation(
     factor_cls=RetailFlowMomentum,
     start_date=date(2024, 6, 1),

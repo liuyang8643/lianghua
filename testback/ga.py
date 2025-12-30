@@ -17,6 +17,33 @@ from core.strategies import TopN
 
 # ========== GA 核心函数 ==========
 
+# GA 搜索空间定义（离散值）
+GA_SEARCH_SPACES = {
+  'buy_n': [20, 30, 40],
+  'sell_m': [20, 30, 40, 100, 200, 400, 600, 800],
+  'temperatures': [0.001, 0.01, 0.1, 1, 10, 100],
+  'weights': [i/5 for i in range(-5, 6)]  # [-1.0, -0.8, -0.6, ..., 0.6, 0.8, 1.0]
+}
+
+def _sample_from_space(space: list, current_value=None):
+  """从离散搜索空间中采样，如果提供当前值，则从相邻值中采样"""
+  import random
+  if current_value is None:
+    return random.choice(space)
+  # 找到当前值在空间中的位置
+  try:
+    idx = space.index(current_value)
+    # 在相邻位置采样（允许边界）
+    if idx == 0:
+      return random.choice(space[:2])
+    elif idx == len(space) - 1:
+      return random.choice(space[-2:])
+    else:
+      return random.choice(space[idx-1:idx+2])
+  except ValueError:
+    # 如果当前值不在空间中，随机选择
+    return random.choice(space)
+
 def _individual_config_to_key(config: dict) -> tuple:
   """将Individual_config转换为可哈希的key"""
   import json
@@ -33,15 +60,17 @@ def uniform_crossover(parent1: dict, parent2: dict) -> dict:
     for factor in parent1.keys()
   }
 
-def mutate(individual: dict, mutation_rate: float = 0.2) -> dict:
-  """变异：20%概率，幅度为当前值的±(10%-30%)，限制在[-1,1]"""
+def mutate(individual: dict, mutation_rate: float = 0.2, search_space: list = None) -> dict:
+  """变异：20%概率，从离散搜索空间中采样新值"""
   import random
   mutated = individual.copy()
   for factor in mutated.keys():
     if random.random() < mutation_rate:
-      mutation_amplitude = random.uniform(0.1, 0.3)
-      delta = mutated[factor] * mutation_amplitude * random.choice([-1, 1])
-      mutated[factor] = max(-1, min(1, mutated[factor] + delta))
+      if search_space:
+        mutated[factor] = _sample_from_space(search_space, current_value=mutated[factor])
+      else:
+        # 如果没有提供搜索空间，使用默认的weights空间
+        mutated[factor] = _sample_from_space(GA_SEARCH_SPACES['weights'], current_value=mutated[factor])
   return mutated
 
 # GA 状态（全局）
@@ -105,27 +134,37 @@ def ga_optimizer(results, population_size: int = 24, hall_of_fame_size: int = 24
     child_temperatures = uniform_crossover(p1['temperatures'], p2['temperatures'])
     child_buy_n = p1['buy_n'] if random.random() < 0.5 else p2['buy_n']
     child_sell_m = p1['sell_m'] if random.random() < 0.5 else p2['sell_m']
+    # 确保 sell_m >= buy_n，如果不满足则从搜索空间中选择 >= buy_n 的最小值
     if child_sell_m < child_buy_n:
-      child_sell_m = child_buy_n
+      valid_sell_m = [m for m in GA_SEARCH_SPACES['sell_m'] if m >= child_buy_n]
+      child_sell_m = valid_sell_m[0] if valid_sell_m else child_buy_n
     return {'weights': child_weights, 'buy_n': child_buy_n, 'sell_m': child_sell_m, 'temperatures': child_temperatures}
 
   def mutate_config(config, mutation_rate: float = 0.2):
-    mutated_weights = mutate(config['weights'], mutation_rate)
-    mutated_temperatures = mutate(config['temperatures'], mutation_rate)
+    # weights 和 temperatures 从离散空间采样
+    mutated_weights = mutate(config['weights'], mutation_rate, GA_SEARCH_SPACES['weights'])
+    mutated_temperatures = mutate(config['temperatures'], mutation_rate, GA_SEARCH_SPACES['temperatures'])
+    
     mutated_buy_n = config['buy_n']
     mutated_sell_m = config['sell_m']
-
+    
+    # buy_n 从离散空间采样
     if random.random() < mutation_rate:
-      delta_n = random.choice([-3, -2, -1, 1, 2, 3])
-      mutated_buy_n = max(5, min(50, mutated_buy_n + delta_n))
-
+      mutated_buy_n = _sample_from_space(GA_SEARCH_SPACES['buy_n'], current_value=mutated_buy_n)
+    
+    # sell_m 从离散空间采样，但必须 >= buy_n
     if random.random() < mutation_rate:
-      delta_m = random.choice([-5, -3, -2, -1, 1, 2, 3, 5])
-      mutated_sell_m = max(mutated_buy_n, min(100, mutated_sell_m + delta_m))
-
+      valid_sell_m = [m for m in GA_SEARCH_SPACES['sell_m'] if m >= mutated_buy_n]
+      if valid_sell_m:
+        mutated_sell_m = _sample_from_space(valid_sell_m, current_value=mutated_sell_m)
+      else:
+        mutated_sell_m = mutated_buy_n
+    
+    # 最终检查确保 sell_m >= buy_n
     if mutated_sell_m < mutated_buy_n:
-      mutated_sell_m = mutated_buy_n
-
+      valid_sell_m = [m for m in GA_SEARCH_SPACES['sell_m'] if m >= mutated_buy_n]
+      mutated_sell_m = valid_sell_m[0] if valid_sell_m else mutated_buy_n
+    
     return {'weights': mutated_weights, 'buy_n': mutated_buy_n, 'sell_m': mutated_sell_m, 'temperatures': mutated_temperatures}
 
   children = []
@@ -377,24 +416,15 @@ if __name__ == "__main__":
 
   # 生成初始Individual_config列表
   def generate_initial_config(index: int) -> dict:
-    if index == 0 and initial_weights:
-      weights = initial_weights.copy()
-    elif index == 0:
-      weights = {factor: random.uniform(-1, 1) for factor in ALL_FACTOR_NAMES}
-    else:
-      if initial_weights:
-        mutated = initial_weights.copy()
-        for factor in ALL_FACTOR_NAMES:
-          mutation = random.uniform(-0.3, 0.3)
-          mutated[factor] = max(-1, min(1, mutated[factor] + mutation))
-        weights = mutated
-      else:
-        weights = {factor: random.uniform(-1, 1) for factor in ALL_FACTOR_NAMES}
-
-    buy_n = random.randint(10, 30)
-    sell_m = random.randint(buy_n, min(50, buy_n + 20))
-    temperatures = {factor: random.uniform(0.5, 2.0) for factor in ALL_FACTOR_NAMES}
-
+    import random
+    # 从离散搜索空间采样
+    buy_n = random.choice(GA_SEARCH_SPACES['buy_n'])
+    # sell_m 必须 >= buy_n
+    valid_sell_m = [m for m in GA_SEARCH_SPACES['sell_m'] if m >= buy_n]
+    sell_m = random.choice(valid_sell_m) if valid_sell_m else buy_n
+    # temperatures 和 weights 从离散空间采样
+    temperatures = {factor: random.choice(GA_SEARCH_SPACES['temperatures']) for factor in ALL_FACTOR_NAMES}
+    weights = {factor: random.choice(GA_SEARCH_SPACES['weights']) for factor in ALL_FACTOR_NAMES}
     return {
       'weights': weights,
       'buy_n': buy_n,
