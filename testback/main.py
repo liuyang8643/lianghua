@@ -42,9 +42,9 @@ def mutate(individual: dict, mutation_rate: float = 0.2) -> dict:
 
 # GA 状态（全局）
 _ga_state = {
-  'population': [],       # 当前种群
-  'hall_of_fame': [],     # 历史最优池
-  'fitness_cache': {},    # 适应度缓存
+  'population': [],  # 当前种群
+  'hall_of_fame': [],  # 历史最优池
+  'fitness_cache': {},  # 适应度缓存
 }
 
 def ga_optimizer(results, population_size: int = 24, hall_of_fame_size: int = 24) -> list[dict]:
@@ -247,9 +247,8 @@ def _wrap_process_worker(weights: dict[str, float], mem_offset: int, mem_count: 
       # 3. 计算仓位分配
       target_holdings = set(top_stocks)
       allocations = Sizer.allocate(
-        stocks=top_stocks,
-        total_capital=account.calc_assets(trade_datetime).total_asset,
-        prices=prices
+        [(s, prices[s]) for s in top_stocks],
+        account.calc_assets(trade_datetime).total_asset
       )
 
       # 4. 卖出不在目标持仓中的股票
@@ -367,7 +366,7 @@ if __name__ == "__main__":
 
   # 任务数量：模拟 GA 一代的评估量（3k，k=24时为72）
   GENERATIONS = 1000  # 对应 population=24 时一代的评估量
-  POPULATIONS = 24    # 权重的数量，正常评估一次是24个子代，24个父代，24个历史最优，总计3*N
+  POPULATIONS = 24  # 权重的数量，正常评估一次是24个子代，24个父代，24个历史最优，总计3*N
   GA_PERIOD_SPAN = 25  # 天，模拟每个任务使用不同时间段的数据
   ga_worker_count = min(os.cpu_count(), GENERATIONS)
   data_idx = 0
@@ -389,7 +388,7 @@ if __name__ == "__main__":
       data_idx,
       GA_PERIOD_SPAN
     ]
-    for _ in range(3*POPULATIONS)
+    for _ in range(3 * POPULATIONS)
   ]
   testback_logger.debug(f"开始回测：{GENERATIONS}个任务，{ga_worker_count}个进程，共{len(all_stocks)}只股票")
   with parallel_backend('loky', n_jobs=ga_worker_count):
@@ -401,21 +400,21 @@ if __name__ == "__main__":
       verbose=0,
     )
     for generation in range(GENERATIONS):
-      results=parallel_pool(
+      results = parallel_pool(
         delayed(_wrap_process_worker)(*args)
         for args in new_weights
       )
-      #根据results的结果，去计算下一个需要的优化个体
+      # 根据results的结果，去计算下一个需要的优化个体
       weights = ga_optimizer(results)
-      data_idx = random.randrange(0,len(ordered_topNs)-GA_PERIOD_SPAN)
+      data_idx = random.randrange(0, len(ordered_topNs) - GA_PERIOD_SPAN)
       new_weights = [
-    [
-      weights[i],
-      data_idx,
-      GA_PERIOD_SPAN
-    ]
-    for i in range(3*POPULATIONS)
-  ]
+        [
+          weights[i],
+          data_idx,
+          GA_PERIOD_SPAN
+        ]
+        for i in range(3 * POPULATIONS)
+      ]
 
   # 输出回测结果
   testback_logger.info(f"{'=' * 60}")

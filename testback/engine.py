@@ -91,7 +91,10 @@ class BacktestEngine:
 
         # 2. 计算目标持仓
         total_value = self._get_total_value(prices)
-        allocation = Sizer.allocate(target_stocks, total_value, prices)
+        allocation = Sizer.allocate(
+            [(s, prices[s]) for s in target_stocks],
+            total_value
+        )
 
         # 3. 执行买卖调整
         for stock in target_stocks:

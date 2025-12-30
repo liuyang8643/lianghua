@@ -80,9 +80,8 @@ if __name__ == '__main__':
         trading_logger.warning(f"{code} 价格获取失败: {e}")
     trading_logger.debug(f"开始计算仓位分配...")
     allocations = Sizer.allocate(
-      stocks=buy_n_stocks,
-      total_capital=asset.total_asset,
-      prices=prices
+      [(s, prices[s]) for s in buy_n_stocks],
+      asset.total_asset
     )
     trading_logger.debug(f"计算仓位分配完成: {allocations}")
     positions = {p.stock_code: p for p in store.trader.query_positions()}

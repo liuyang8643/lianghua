@@ -249,9 +249,8 @@ def _wrap_process_worker(individual_config: dict, mem_offset: int, mem_count: in
 
       # 计算仓位分配（基于buy_n只股票，使用总资产）
       allocations = Sizer.allocate(
-        stocks=buy_n_stocks,
-        total_capital=account.calc_assets(trade_datetime).total_asset,
-        prices=prices
+        [(s, prices[s]) for s in buy_n_stocks],
+        account.calc_assets(trade_datetime).total_asset,
       )
 
       # 买入新股票（Top buy_n中不在当前持仓的）
