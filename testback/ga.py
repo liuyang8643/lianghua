@@ -46,9 +46,9 @@ def mutate(individual: dict, mutation_rate: float = 0.2) -> dict:
 
 # GA 状态（全局）
 _ga_state = {
-  'population': [],       # 当前种群
-  'hall_of_fame': [],     # 历史最优池
-  'fitness_cache': {},    # 适应度缓存
+  'population': [],  # 当前种群
+  'hall_of_fame': [],  # 历史最优池
+  'fitness_cache': {},  # 适应度缓存
 }
 
 def ga_optimizer(results, population_size: int = 24, hall_of_fame_size: int = 24) -> list[dict]:
@@ -114,18 +114,18 @@ def ga_optimizer(results, population_size: int = 24, hall_of_fame_size: int = 24
     mutated_temperatures = mutate(config['temperatures'], mutation_rate)
     mutated_buy_n = config['buy_n']
     mutated_sell_m = config['sell_m']
-    
+
     if random.random() < mutation_rate:
       delta_n = random.choice([-3, -2, -1, 1, 2, 3])
       mutated_buy_n = max(5, min(50, mutated_buy_n + delta_n))
-    
+
     if random.random() < mutation_rate:
       delta_m = random.choice([-5, -3, -2, -1, 1, 2, 3, 5])
       mutated_sell_m = max(mutated_buy_n, min(100, mutated_sell_m + delta_m))
-    
+
     if mutated_sell_m < mutated_buy_n:
       mutated_sell_m = mutated_buy_n
-    
+
     return {'weights': mutated_weights, 'buy_n': mutated_buy_n, 'sell_m': mutated_sell_m, 'temperatures': mutated_temperatures}
 
   children = []
@@ -203,36 +203,33 @@ def _wrap_process_worker(individual_config: dict, mem_offset: int, mem_count: in
       min_commission=5.0,  # 最小5元交易费
     )
 
-    # 记录上一日持仓
-    prev_holdings = set()
-
     # 遍历每个交易日
     for topn in topn_list:
       trade_date = topn.base_date
+      trade_datetime = datetime.combine(trade_date, datetime.min.time())
 
-      # 1. 获取当日 Top sell_m 只股票用于判断卖出
-      top_sell_stocks = topn.get_ordered_stocks(
+      # 获取当日 Top sell_m 只股票用于判断卖出
+      sell_m_stocks = topn.get_ordered_stocks(
         n=sell_m,
         weights=weights,
         temperatures=temperatures,
         norm_method='rank'
       )
 
-      # 2. 获取当日 Top buy_n 只股票用于买入
-      top_buy_stocks = topn.get_ordered_stocks(
+      # 获取当日 Top buy_n 只股票用于买入
+      buy_n_stocks = topn.get_ordered_stocks(
         n=buy_n,
         weights=weights,
         temperatures=temperatures,
         norm_method='rank'
       )
 
-      if not top_buy_stocks:
+      all_trade_stocks = list(set(sell_m_stocks + buy_n_stocks))
+      if not all_trade_stocks:
         continue
 
-      # 3. 获取股票价格（需要获取所有可能交易的股票价格）
-      all_trade_stocks = list(set(top_sell_stocks + top_buy_stocks))
-      trade_datetime = datetime.combine(trade_date, datetime.min.time())
-      prices = {}
+      # 获取股票价格（需要获取所有可能交易的股票价格）
+      prices: dict[str, float] = {}
       for stock in all_trade_stocks:
         try:
           # 将 date 转换为 datetime
@@ -242,68 +239,38 @@ def _wrap_process_worker(individual_config: dict, mem_offset: int, mem_count: in
         except Exception as e:
           testback_logger.warning(f"{stock} 价格获取失败: {e}")
 
-      if not prices:
-        continue
+      # 卖出不在Top sell_m中的股票
+      for stock in set([p for p in account.positions.keys()]) - set(sell_m_stocks):
+        account.clear_stock(
+          code=stock,
+          price=prices[stock],
+          clear_date=trade_date,
+        )
 
-      # 5. 计算仓位分配（基于buy_n只股票，使用总资产）
-      target_holdings = set(top_buy_stocks)
+      # 计算仓位分配（基于buy_n只股票，使用总资产）
       allocations = Sizer.allocate(
-        stocks=top_buy_stocks,
+        stocks=buy_n_stocks,
         total_capital=account.calc_assets(trade_datetime).total_asset,
         prices=prices
       )
 
-      # 6. 卖出不在Top sell_m中的股票
-      sell_holdings = set(top_sell_stocks)
-      stocks_to_sell = prev_holdings - sell_holdings
-      for stock in stocks_to_sell:
-        pos = account.get_position(stock)
-        if pos and pos['volume'] > 0:
-          try:
-            sell_price = prices.get(stock)
-            if not sell_price:
-              # 如果没有价格，使用持仓均价
-              sell_price = pos['avg_price']
-            account.sell_stock(
-              code=stock,
-              volume=pos['volume'],
-              price=sell_price,
-              sell_date=trade_date,
-              clear_reason='调仓'
-            )
-          except Exception as e:
-            testback_logger.warning(f"卖出 {stock} 失败: {e}")
-
-      # 7. 买入新股票（Top buy_n中不在当前持仓的）
+      # 买入新股票（Top buy_n中不在当前持仓的）
       for stock, shares in allocations.items():
         if shares <= 0:
           continue
 
-        # 检查是否已持仓
-        pos = account.get_position(stock)
-        if pos:
+        if account.positions[stock]:
           # 已持仓，跳过（不加仓）
           continue
 
-        try:
-          account.buy_stock(
-            code=stock,
-            volume=shares,
-            price=prices[stock],
-            buy_date=trade_date
-          )
-        except Exception as e:
-          # 资金不足或其他错误，跳过
-          testback_logger.debug(f"买入 {stock} 失败: {e}")
+        account.buy_stock(
+          code=stock,
+          volume=shares,
+          price=prices[stock],
+          buy_date=trade_date
+        )
 
-      # 8. 记录当日资产
-      trade_datetime = datetime.combine(trade_date, datetime.min.time())
-      account.calc_assets(trade_datetime)
-
-      # 更新持仓记录
-      prev_holdings = target_holdings
-
-    # 7. 计算最终收益
+    # 计算最终收益
     final_datetime = datetime.combine(topn_list[-1].base_date, datetime.min.time())
     final_assets = account.calc_assets(final_datetime)
     total_return = (final_assets['total_asset'] - account.init_cash) / account.init_cash * 100
@@ -369,6 +336,7 @@ if __name__ == "__main__":
 
   # 可选：从文件加载Individual_config（用于单次回测）
   import argparse
+
   parser = argparse.ArgumentParser()
   parser.add_argument('--individual-config', type=str, default=None, help='Individual_config JSON文件路径')
   parser.add_argument('--period-span', type=int, default=30, help='回测周期天数（默认30天）')
@@ -376,12 +344,13 @@ if __name__ == "__main__":
 
   if args.individual_config:
     import json
+
     with open(args.individual_config, 'r', encoding='utf-8') as f:
       config_data = json.load(f)
     individual_config = config_data['individual_config']
     testback_logger.info(f"从文件加载Individual_config: {args.individual_config}")
     testback_logger.info(f"使用配置进行单次回测: buy_n={individual_config['buy_n']}, sell_m={individual_config['sell_m']}")
-    
+
     data_idx = 0
     period_span = args.period_span
     result = _wrap_process_worker(individual_config, data_idx, period_span)
@@ -422,11 +391,11 @@ if __name__ == "__main__":
         weights = mutated
       else:
         weights = {factor: random.uniform(-1, 1) for factor in ALL_FACTOR_NAMES}
-    
+
     buy_n = random.randint(10, 30)
     sell_m = random.randint(buy_n, min(50, buy_n + 20))
     temperatures = {factor: random.uniform(0.5, 2.0) for factor in ALL_FACTOR_NAMES}
-    
+
     return {
       'weights': weights,
       'buy_n': buy_n,
@@ -435,7 +404,7 @@ if __name__ == "__main__":
     }
 
   new_params = []
-  for i in range(3*POPULATIONS):
+  for i in range(3 * POPULATIONS):
     config = generate_initial_config(i)
     new_params.append([config, data_idx, GA_PERIOD_SPAN])
   testback_logger.debug(f"开始回测：{GENERATIONS}个任务，{ga_worker_count}个进程，共{len(all_stocks)}只股票")
@@ -453,21 +422,21 @@ if __name__ == "__main__":
     testback_logger.info(f"\n{'=' * 60}")
     testback_logger.info(f"GA 第 {generation + 1}/{GENERATIONS} 代")
     testback_logger.info(f"{'=' * 60}")
-    
+
     results = parallel_pool(
       delayed(_wrap_process_worker)(*args)
       for args in new_params
     )
     # 将生成器转换为列表
     results_list = list(results)
-    
+
     # 为每个结果添加代数信息和适应度
     for result in results_list:
       result['generation'] = generation
       result['fitness'] = result['total_return']
-    
+
     all_results.extend(results_list)
-    
+
     # 保存该代的统计信息
     fitnesses = [ind['fitness'] for ind in results_list]
     generation_stats = {
@@ -480,7 +449,7 @@ if __name__ == "__main__":
       'all_individuals': results_list
     }
     generation_results.append(generation_stats)
-    
+
     next_configs = ga_optimizer(results_list)
     data_idx = random.randrange(0, len(ordered_topNs) - GA_PERIOD_SPAN)
     new_params = [[config, data_idx, GA_PERIOD_SPAN] for config in next_configs]
@@ -488,14 +457,14 @@ if __name__ == "__main__":
   # 保存详细结果
   import pickle
   from pathlib import Path
-  
+
   # 创建结果目录
   results_dir = Path('results')
   results_dir.mkdir(exist_ok=True)
   timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
   ga_result_dir = results_dir / f'ga_{timestamp}'
   ga_result_dir.mkdir(exist_ok=True)
-  
+
   # 保存所有个体的详细信息（Individual_config列表）
   all_individual_configs = []
   for gen_stat in generation_results:
@@ -512,23 +481,24 @@ if __name__ == "__main__":
         'cleared_positions_count': ind['cleared_positions_count'],
         'current_positions_count': ind['current_positions_count'],
       })
-  
+
   # 保存为JSON格式
   import json
+
   with open(ga_result_dir / 'all_individuals.json', 'w', encoding='utf-8') as f:
     json.dump(all_individual_configs, f, indent=2, ensure_ascii=False)
   testback_logger.info(f"已保存所有个体配置: {ga_result_dir / 'all_individuals.json'}")
-  
+
   # 保存按代的结果（pickle格式，用于分析）
   with open(ga_result_dir / 'generation_results.pkl', 'wb') as f:
     pickle.dump(generation_results, f)
   testback_logger.info(f"已保存按代结果: {ga_result_dir / 'generation_results.pkl'}")
-  
+
   # 保存最优Individual_config
   best_config = _ga_state['hall_of_fame'][0]
   key = _individual_config_to_key(best_config)
   best_fitness = _ga_state['fitness_cache'][key]
-  
+
   best_result = {
     'individual_config': best_config,
     'fitness': best_fitness,
@@ -539,7 +509,7 @@ if __name__ == "__main__":
   with open(ga_result_dir / 'best_individual_config.json', 'w', encoding='utf-8') as f:
     json.dump(best_result, f, indent=2, ensure_ascii=False)
   testback_logger.info(f"已保存最优个体配置: {ga_result_dir / 'best_individual_config.json'}")
-  
+
   testback_logger.info(f"\n最优参数已保存:")
   testback_logger.info(f"  - {ga_result_dir / 'best_individual_config.json'}")
   testback_logger.info(f"最优收益率: {best_fitness:.2f}%")
@@ -547,7 +517,7 @@ if __name__ == "__main__":
 
   testback_logger.info(f"\n{'=' * 60}")
   testback_logger.info(f"回测执行完成")
-  
+
   returns = [r['total_return'] for r in all_results]
   testback_logger.info(f"\n统计信息:")
   testback_logger.info(f"  总回测次数: {len(all_results)}")

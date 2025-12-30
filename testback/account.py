@@ -1,4 +1,4 @@
-from typing import Dict, TypedDict
+from typing import Dict, Optional, TypedDict
 from datetime import date as sys_date, datetime
 
 from core.database import get_market_data_from_cache
@@ -16,7 +16,7 @@ class MockStockClearedPosition(TypedDict):
   income: float
   clear_date: sys_date
   clear_price: float
-  clear_reason: str
+  clear_reason: Optional[str]
   pos: MockStockPosition
 
 class StockAccountMocker:
@@ -66,7 +66,7 @@ class StockAccountMocker:
         'avg_price': price,
       }
 
-  def sell_stock(self, code: str, volume: int, price: float, sell_date: sys_date, clear_reason: str):
+  def sell_stock(self, code: str, volume: int, price: float, sell_date: sys_date, clear_reason: str = None):
     """ 卖出股票 """
     if code not in self.positions:
       raise Exception(f'Position not found for code: {code}')
@@ -92,6 +92,12 @@ class StockAccountMocker:
           'clear_reason': clear_reason,
         }
       )
+
+  def clear_stock(self, code: str, price: float, clear_date: sys_date, clear_reason: str = None):
+    """ 清仓股票 """
+    if code not in self.positions:
+      raise Exception(f'Position not found for code: {code}')
+    self.sell_stock(code, self.positions[code]['volume'], price, clear_date, clear_reason)
 
   def calc_position_values(self, cur_time: datetime):
     """ 获取持仓 """

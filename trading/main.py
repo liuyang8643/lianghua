@@ -1,17 +1,17 @@
-from core import allow_buy_stock_code_list
+from core import allow_buy_stock_code_list, get_market_data, get_market_data_batch
 from core.strategies import TopN
+from core.strategies.sizers import Sizer
+from utils.stock.time import is_current_trading
 
 if __name__ == '__main__':
   import threading
   import json
   import argparse
-  from pathlib import Path
-  from xtquant import xtdata
+  from xtquant import xtconstant, xtdata
   from datetime import datetime, date, time
 
   from configs import TRADE_ACCOUNT
   from trading.logger import trading_logger
-  from core.strategies.sizers.sizer import MIN_BUY_AMOUNT
   from utils.recorder import recorder
   from .lark.receiver import create_lark_handler
   from .scheduler import TradingScheduler
@@ -38,29 +38,66 @@ if __name__ == '__main__':
 
   def before_trade(store: TradingScheduler):
     store.whole_sub_id = xtdata.subscribe_whole_quote(['SH', 'SZ'])
+    ''' 选股 '''
+    asset = store.trader.query_asset()
+    trading_logger.debug(f"开始选股")
+    recorder.mark(f"开始选股")
 
-  def buy_task(store: TradingScheduler):
-    if (
-        not store.finding_stocks
-        and time(14, 40) <= datetime.now().time() <= time(14, 55)
-    ):
+    all_stocks = allow_buy_stock_code_list(date.today())
+    get_market_data_batch(all_stocks, 2, dividend_type='front')  # 预加载数据
+
+    # 获取当日 Top sell_m 只股票用于判断卖出
+    sell_m_stocks = TopN(all_stocks, datetime.now()).get_ordered_stocks(
+      n=sell_m,
+      weights=weights,
+      temperatures=temperatures,
+      norm_method='rank'
+    )
+    trading_logger.debug(f"待卖出前 {sell_m} 名股票: {sell_m_stocks}")
+
+    # 卖出不在Top sell_m中的股票
+    for code in set([p.stock_code for p in store.trader.query_positions()]) - set(sell_m_stocks):
+      store.trader.clear_position(code)
+      trading_logger.info(f"已清仓股票: {code}")
+      recorder.mark("清仓股票")
+
+    # 获取当日 Top buy_n 只股票用于买入
+    buy_n_stocks = TopN(all_stocks, datetime.now()).get_ordered_stocks(
+      n=buy_n,
+      weights=weights,
+      temperatures=temperatures,
+      norm_method='rank'
+    )
+
+    trading_logger.debug(f"待买入前 {buy_n} 名股票: {buy_n_stocks}")
+    prices = {}
+    for code in buy_n_stocks:
       try:
-        store.finding_stocks = True
-        asset = store.trader.query_asset()
-        if asset.cash > MIN_BUY_AMOUNT * 1.1 if asset else False:
-          trading_logger.debug(f"开始选股")
-          recorder.mark(f"开始选股")
-          all_stocks = allow_buy_stock_code_list(date.today())
-          topn = TopN(all_stocks, datetime.now())
-          sorted_stocks = topn.get_ordered_stocks(
-            n=buy_n,
-            weights=weights,
-            temperatures=temperatures,
-            norm_method='rank'
-          )
-          trading_logger.debug(f"选股结束! 选出{len(sorted_stocks)}只股票")
-      finally:
-        store.finding_stocks = False
+        data = get_market_data(code, 1, dividend_type='front')
+        if data is not None and len(data) > 0:
+          prices[code] = float(data.iloc[-1]['close'])
+      except Exception as e:
+        trading_logger.warning(f"{code} 价格获取失败: {e}")
+    trading_logger.debug(f"开始计算仓位分配...")
+    allocations = Sizer.allocate(
+      stocks=buy_n_stocks,
+      total_capital=asset.total_asset,
+      prices=prices
+    )
+    trading_logger.debug(f"计算仓位分配完成: {allocations}")
+    positions = {p.stock_code: p for p in store.trader.query_positions()}
+    for code, shares in allocations.items():
+      if shares <= 0:
+        continue
+      if positions[code]:
+        continue
+      if is_current_trading():
+        store.trader.order(xtconstant.STOCK_BUY, code, shares, None)
+        trading_logger.info(f"下单买入 {code} * {shares} 股")
+        recorder.mark("下单买入股票")
+      else:
+        trading_logger.warning(f"{code}当前非交易时间，中断买入...")
+    trading_logger.debug(f"选股结束! ")
 
   def after_trade(store: TradingScheduler):
     # 取消订阅
@@ -70,7 +107,7 @@ if __name__ == '__main__':
   scheduler = TradingScheduler(
     td,
     before_trade=before_trade,
-    while_trade=[buy_task],
+    while_trade=[],
     after_trade=after_trade,
   )
 

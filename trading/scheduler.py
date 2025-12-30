@@ -30,7 +30,6 @@ class TradingScheduler:
     self.check_interval = check_interval
 
     """ Stores"""
-    self.finding_stocks = False  # 是否正在运行查找股票
     self.whole_sub_id = None  # 全市场行情订阅 ID
 
   def start_check_trading(self):
