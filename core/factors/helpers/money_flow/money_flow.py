@@ -10,7 +10,7 @@ from functools import lru_cache
 import boto3
 
 try:
-  from configs.env import S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY
+  from configs.env import S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY
 except ImportError:
   raise ValueError("S3 配置不存在，请检查 configs/env.py")
 
@@ -51,7 +51,7 @@ def get_money_flow_data(target_date: date | datetime) -> Optional[pd.DataFrame]:
   cache_path.parent.mkdir(parents=True, exist_ok=True)
   s3_key = f"{year}/{month:02d}/{date_str}.csv"
 
-  _s3_client.download_file(S3_BUCKET, s3_key, str(cache_path))
+  _s3_client.download_file('wbr-money-flow', s3_key, str(cache_path))
   df = pd.read_csv(cache_path, encoding='utf-8-sig')
   df['code'] = df['code'].astype(str).str.replace('.0', '', regex=False).str.zfill(6)
   return df
