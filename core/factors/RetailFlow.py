@@ -1,5 +1,5 @@
 from .helpers import *
-from .helpers.money_flow import get_retail_flow_amount
+from core.database.money_flow import *
 
 
 class RetailFlow(BaseFactor):
