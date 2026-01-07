@@ -8,12 +8,9 @@
 """
 import akshare as ak
 import pandas as pd
-from datetime import datetime
-from typing import Optional, TYPE_CHECKING
-from core.factors.helpers.interface import BaseFactor, FactorResult
 
-if TYPE_CHECKING:
-    from core.factors.helpers.indicators import FactorCtx
+from datetime import datetime
+from .helpers import *
 
 
 class Fundamental(BaseFactor):

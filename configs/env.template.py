@@ -1,5 +1,3 @@
-""" 本文件用于存放全局配置参数 """
-
 import os
 
 # 日志文件存放路径
@@ -8,6 +6,7 @@ LOGGER_PATH = os.path.join(current_work_dir, 'logs')
 
 # 国金 QMT 安装路径列表（使用第一个存在的目录）
 QMT_ROOT_DIR = [
+  'Z:\\gjqmt\\bin.x64',
   'D:\\gjqmt\\bin.x64',
 ]
 
@@ -19,5 +18,8 @@ LARK_APP_ID = "你的飞书机器人ID"
 LARK_APP_SECRET = "你的飞书机器人密钥"
 LARK_RECEIVE_ID = "你的飞书邮箱"
 
-# 散户资金流向数据目录
-MONEY_FLOW_DIR = r"C:\Users\doctorl\Downloads\money-flow"
+# Cloudflare R2 配置
+S3_ENDPOINT = "https://bf90e1d5cc9c2d3364738f6a73d4ae2d.r2.cloudflarestorage.com"
+S3_BUCKET = "wbr-money_flow"
+S3_ACCESS_KEY = "你的R2 Access Key"
+S3_SECRET_KEY = "你的R2 Secret Key"

@@ -1,6 +1,5 @@
 from typing import Optional, TypedDict
-
-from .indicators import FactorCtx
+from core.factors.helpers.indicators import FactorCtx
 
 class FactorResult(TypedDict):
   # 计算得分，如果计算出错则为 None
