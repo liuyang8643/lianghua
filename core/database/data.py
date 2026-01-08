@@ -9,7 +9,7 @@ from utils.shared_memory import SharedMemoryCache
 from utils.stock.format import format_qmt_datetime
 from utils.stock.time import get_latest_trading_time, is_latest_data
 from .history import check_stocks_need_fix, get_history_data, get_history_data_after_download
-from .detail import check_stock_date_valid, get_stock_detail
+from .stock_list import check_stock_valid_at_date
 
 # 全局历史数据缓存，以股票代码为key，存储完整历史数据
 _GLOBAL_DAILY_CACHE = SharedMemoryCache('daily')
@@ -65,13 +65,13 @@ def get_full_market_data(
     if cached_data is not None:
       return cached_data
 
-  # 缓存中没有，需要加载数据
-  data = get_market_data(stock_code, None, target_time, period, allow_tainted=allow_tainted, dividend_type=dividend_type)
-
-  # 缓存数据
-  cache.put(stock_code, data)
-
-  return data
+  try:
+    # 缓存中没有，需要加载数据
+    data = get_market_data(stock_code, None, target_time, period, allow_tainted=allow_tainted, dividend_type=dividend_type)
+    cache.put(stock_code, data) # 缓存数据
+    return data
+  except Exception:
+    return None
 
 def get_market_data_from_cache(
     stock_code: str,
@@ -92,7 +92,8 @@ def get_market_data_from_cache(
   full_data = get_full_market_data(stock_code, period, allow_tainted=allow_tainted, dividend_type=dividend_type)
 
   # 检查股票日期有效性
-  check_stock_date_valid(stock_code, base_time, count, period)
+  if not check_stock_valid_at_date(stock_code, base_time.date()):
+    raise ValueError(f'{stock_code} 获取 {format_qmt_datetime(base_time)} {count}*{period} 失败：股票不存在或在该时间点无效')
 
   if full_data is None or full_data.empty:
     return None
@@ -136,7 +137,8 @@ def get_market_data(
 ) -> Optional[pd.DataFrame]:
   """ deprecated, use get_market_data_batch instead """
   # 检查股票日期有效性
-  check_stock_date_valid(stock_code, base_time, count, period)
+  if not check_stock_valid_at_date(stock_code, base_time.date()):
+    raise ValueError(f'{stock_code} 获取 {format_qmt_datetime(base_time)} {count}*{period} 失败：股票不存在或在该时间点无效')
 
   history_data = get_market_data_batch(
     [stock_code], count, base_time, period, allow_tainted, dividend_type

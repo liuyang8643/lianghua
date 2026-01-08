@@ -41,7 +41,7 @@ from core.factors import MACD
 from core.database import allow_buy_stock_code_list
 
 # 获取股票列表
-stock_list = allow_buy_stock_code_list()
+stock_list = get_all_stock_code_list()
 
 # 计算MACD因子与T+5日收益率的相关性
 report = calculate_factor_correlation(

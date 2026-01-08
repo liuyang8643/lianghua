@@ -43,7 +43,7 @@ if __name__ == '__main__':
     trading_logger.debug(f"开始选股")
     recorder.mark(f"开始选股")
 
-    all_stocks = allow_buy_stock_code_list(date.today())
+    all_stocks = allow_buy_stock_code_list()
     get_market_data_batch(all_stocks, 2, dividend_type='front')  # 预加载数据
 
     # 获取当日 Top sell_m 只股票用于判断卖出

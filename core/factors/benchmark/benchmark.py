@@ -3,12 +3,12 @@ import pickle
 import random
 from datetime import date, datetime
 
-from core.database import allow_buy_stock_code_list, init_stock_detail_cache
+from core.database import get_all_stock_code_list
 from core.factors import *
 from core.factors.benchmark import calculate_factor_correlation, generate_html_report
 
 if __name__ == '__main__':
-  stock_list = allow_buy_stock_code_list()
+  stock_list = get_all_stock_code_list()
   report = calculate_factor_correlation(
     factor_cls=RetailFlowMomentum,
     start_date=date(2024, 6, 1),

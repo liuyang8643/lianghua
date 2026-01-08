@@ -1,7 +1,8 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from core.database import StockDetail, StockTradingData
+if TYPE_CHECKING:
+  from core.database import StockDetail, StockTradingData
 
 def get_stock_estimate_up_limit(stock_code: str, current_price: float) -> float:
   up_limit_rate = 1.199 if is_cyb_stock(stock_code) else 1.099
@@ -11,7 +12,7 @@ def get_stock_estimate_down_limit(stock_code: str, current_price: float) -> floa
   down_limit_rate = 0.801 if is_cyb_stock(stock_code) else 0.901
   return current_price * down_limit_rate
 
-def is_stock_trading(detail: Optional[StockDetail]) -> bool:
+def is_stock_trading(detail: Optional['StockDetail']) -> bool:
   """ 判断股票是否正常交易 """
 
   if detail is None:
@@ -27,6 +28,18 @@ def is_cyb_stock(stock_code: str) -> bool:
   """ 判断股票是否为创业板股票 """
   return stock_code.startswith('300') or stock_code.startswith('301')
 
+def is_kcb_stock(stock_code: str) -> bool:
+  """ 判断股票是否为科创板股票 """
+  return stock_code.startswith('688')
+
+def is_bse_stock(stock_code: str) -> bool:
+  """ 判断股票是否为北交所股票 """
+  return stock_code.startswith('43') or stock_code.startswith('83')
+
+def is_b_stock(stock_code: str) -> bool:
+  """ 判断股票是否为B股 """
+  return stock_code.startswith('900') or stock_code.startswith('200')
+
 def is_convertible_bond(stock_code: str) -> bool:
   """ 判断股票是否为可转债 """
   return stock_code.startswith('11') or stock_code.startswith('12') or stock_code.startswith('13')
@@ -34,7 +47,7 @@ def is_convertible_bond(stock_code: str) -> bool:
 # baseline_stock_code = '000300.SH'  # 基准股票代码，沪深300
 baseline_stock_code = '000852.SH'  # 基准股票代码，中证1000
 
-def get_baseline_data(base_time: datetime = None) -> Optional[StockTradingData]:
+def get_baseline_data(base_time: datetime = None) -> Optional['StockTradingData']:
   """ 获取基准价格 """
   from core.database import get_market_data_from_cache
 

@@ -332,11 +332,11 @@ def _wrap_process_worker(individual_config: dict, mem_offset: int, mem_count: in
 
 if __name__ == "__main__":
   import random
-  from core.database import allow_buy_stock_code_list
+  from core.database import get_all_stock_code_list
   from utils.stock.time import get_trading_date_span
 
   ts = datetime.now()
-  all_stocks = allow_buy_stock_code_list()
+  all_stocks = get_all_stock_code_list()
 
   # 预加载股票详情到共享内存缓存
   init_stock_detail_cache(all_stocks)

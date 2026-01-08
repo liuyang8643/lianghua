@@ -11,7 +11,7 @@ from scipy.stats import pearsonr, spearmanr
 from tqdm import tqdm
 
 from core import FactorCtx, core_logger, init_full_data, init_stock_detail_cache
-from core.database import allow_buy_stock_code_list, get_full_market_data, get_stock_detail
+from core.database import get_full_market_data, get_stock_detail
 from core.factors.helpers import CacheKey, DiskCache
 from utils.hash import hash_function_code
 from utils.stock.format import format_qmt_datetime
@@ -130,18 +130,18 @@ def _calculate_daily_correlation(
 
     factor = factor_cls()
     factor_name = factor_cls.__name__
-    
+
     # 创建缓存
     func_hash = hash_function_code(factor.calc)
     base_datetime = datetime.combine(trade_date, datetime.max.time())
     cache_key = CacheKey.make_key(
-      [f"factor-{factor_name}-{func_hash}", format_qmt_datetime(base_datetime)], 
+      [f"factor-{factor_name}-{func_hash}", format_qmt_datetime(base_datetime)],
       stocks=stock_codes
     )
-    
+
     # 直接从磁盘加载（内存映射，操作系统页面缓存）
     cached_factor_stocks = DiskCache.load_pickle(cache_key) or {}
-    
+
     stock_scores = []
 
     # 计算每只股票的因子得分和收益率
@@ -207,7 +207,7 @@ def _calculate_daily_correlation(
 
     # 保存缓存
     DiskCache.save_pickle(cache_key, cached_factor_stocks)
-    
+
     # 为每个持有期计算相关性
     results = {}
     for m in m_days_list:
@@ -216,7 +216,7 @@ def _calculate_daily_correlation(
       if len(valid_scores) < 10:
         # 不保存 stock_scores 以节省内存
         results[m] = DailyCorrelation(
-          trade_date, m, None, None, None, len(valid_scores), 
+          trade_date, m, None, None, None, len(valid_scores),
           stock_scores if save_stock_scores else None
         )
         continue
@@ -253,7 +253,7 @@ def _calculate_stock_correlation(
     xtdata.enable_hello = False
 
     factor = factor_cls()
-    
+
     # 获取股票数据
     full_data = get_full_market_data(stock_code, '1d')
     if full_data is None or full_data.empty:
@@ -268,7 +268,7 @@ def _calculate_stock_correlation(
 
     # 收集该股票在不同买入日期的因子得分和收益
     stock_scores_by_date = {}  # {trade_date: (factor_score, return_rates)}
-    
+
     for trade_date in trade_dates:
       if trade_date not in time_to_close:
         continue
@@ -358,8 +358,7 @@ def calculate_factor_correlation(
   注意：该函数会在内部使用多进程并行计算，共享内存缓存已自动启用。
   如果在外部多进程环境中调用，请确保主进程已调用 init_full_data()
   """
-  
-  stock_codes = stock_codes or allow_buy_stock_code_list()
+
   m_days_list = [m_days] if isinstance(m_days, int) else sorted(m_days)
 
   # 预加载股票详情到共享内存缓存
@@ -403,7 +402,7 @@ def calculate_factor_correlation(
   for m in m_days_list:
     daily_results = period_daily_results[m]
     valid_results = [r for r in daily_results if r.correlation is not None]
-    
+
     if not valid_results:
       # 没有有效结果
       period_statistics.append(PeriodStatistics(
@@ -427,37 +426,37 @@ def calculate_factor_correlation(
         ic_ir=0.0
       ))
       continue
-    
+
     # 使用加权平均：权重为有效股票数量
     weights = np.array([r.valid_stock_count for r in valid_results])
     valid_correlations = np.array([r.correlation for r in valid_results])
     valid_rank_correlations = np.array([r.rank_correlation for r in valid_results])
-    
+
     # 加权平均相关系数
     total_weight = weights.sum()
     avg_corr = np.average(valid_correlations, weights=weights) if total_weight > 0 else 0.0
     avg_rank_corr = np.average(valid_rank_correlations, weights=weights) if total_weight > 0 else 0.0
-    
+
     # 中位数不使用加权（保持原有逻辑）
     median_corr = np.median(valid_correlations)
-    
+
     # 统计天数和样本量
     pos_days_list = [r for r in valid_results if r.correlation > 0]
     neg_days_list = [r for r in valid_results if r.correlation < 0]
-    
+
     pos_days = len(pos_days_list)
     neg_days = len(neg_days_list)
-    
+
     # 样本量 = 观察次数（天数）
     total_samples = len(valid_results)
     positive_count = pos_days
     negative_count = neg_days
-    
+
     # 数据点数 = 用于计算相关性的数据点总数
     total_data_points = int(total_weight)
     positive_data_points = sum(r.valid_stock_count for r in pos_days_list)
     negative_data_points = sum(r.valid_stock_count for r in neg_days_list)
-    
+
     # 计算IC指标
     # IC (Information Coefficient) = 因子得分与收益率的相关系数
     # IC均值：反映因子的平均预测能力
@@ -466,15 +465,15 @@ def calculate_factor_correlation(
     ic_mean = np.mean(valid_correlations)  # 简单平均IC
     ic_std = np.std(valid_correlations, ddof=1) if len(valid_correlations) > 1 else 0.0
     ir = ic_mean / ic_std if ic_std > 0 else 0.0
-    
+
     # ICIR = |IC均值| / IC标准差 * sqrt(有效天数)：年化信息比率的近似
     ic_ir = abs(ic_mean) / ic_std * np.sqrt(len(valid_results)) if ic_std > 0 else 0.0
-    
+
     # 计算加权有效天数（等效样本量）
     # 使用公式: 等效样本量 = (总权重)^2 / (权重平方和)
     # 这考虑了样本量不均匀的情况
     effective_days = (total_weight ** 2) / (weights ** 2).sum() if total_weight > 0 else len(valid_results)
-    
+
     core_logger.info(
       f"T+{m}日: 加权相关系数={avg_corr:.4f}, IC={ic_mean:.4f}, IR={ir:.2f}, ICIR={ic_ir:.2f}, "
       f"有效天数={len(valid_results)}/{len(date_list)}, "
@@ -506,7 +505,7 @@ def calculate_factor_correlation(
   stock_period_statistics = []
   if show_stock_correlation:
     core_logger.info(f"开始计算类型2相关性（同一个股票但不同天数）")
-    
+
     # 获取股票名称映射
     stock_name_map = {}
     for stock_code in stock_codes:
@@ -597,7 +596,7 @@ def calculate_factor_correlation(
       total_samples = len(valid_results)
       positive_count = pos_stocks
       negative_count = neg_stocks
-      
+
       # 数据点数 = 用于计算相关性的数据点总数
       total_data_points = int(total_weight)
       positive_data_points = sum(r.valid_date_count for r in pos_stocks_list)
@@ -639,7 +638,7 @@ def calculate_factor_correlation(
     core_logger.info(f"跳过类型2相关性计算（show_stock_correlation=False）")
 
   return FactorCorrelationReport(
-    factor_cls.__name__, start_date, end_date, m_days_list, len(stock_codes), 
+    factor_cls.__name__, start_date, end_date, m_days_list, len(stock_codes),
     period_statistics, stock_period_statistics, show_stock_correlation
   )
 
@@ -648,31 +647,32 @@ if __name__ == '__main__':
   从本地 pkl 文件加载报告并生成 HTML
   """
   from core.factors.benchmark.report import generate_html_report
-  
+
   # Hardcoded pkl file path
   pkl_file = "reports/factor-correlation-SmallCap-20251229_010317.pkl"
-  
+
   # 检查文件是否存在
   if not os.path.exists(pkl_file):
     print(f"错误: 文件不存在: {pkl_file}")
     sys.exit(1)
-  
+
   # 检查文件扩展名
   if not pkl_file.endswith('.pkl'):
     print(f"错误: 文件必须是 .pkl 格式")
     sys.exit(1)
-  
+
   # 加载 pkl 文件
   try:
     with open(pkl_file, 'rb') as f:
       report = pickle.load(f)
-    
+
     # 生成 HTML 报告
     html_file = generate_html_report(report)
     print(f"HTML 报告已生成: {html_file}")
-    
+
   except Exception as e:
     print(f"错误: 加载或生成报告失败: {e}")
     import traceback
+
     traceback.print_exc()
     sys.exit(1)
