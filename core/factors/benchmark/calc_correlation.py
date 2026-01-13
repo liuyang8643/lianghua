@@ -177,6 +177,7 @@ def _calculate_daily_correlation(
           cached_factor_stocks[stock_code] = result
 
         if result['score'] is None or np.isnan(result['score']):
+          core_logger.warning(f"股票 {stock_code} 在日期 {trade_date} 的因子得分无效：{result['err']}")
           continue
 
         # 计算所有持有期的收益率
@@ -280,6 +281,7 @@ def _calculate_stock_correlation(
         result = factor.calc(ctx)
 
         if result['score'] is None or np.isnan(result['score']):
+          core_logger.warning(f"股票 {stock_code} 在日期 {trade_date} 的因子得分无效：${result['err']}")
           continue
 
         # 计算所有持有期的收益率

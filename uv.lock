@@ -345,6 +345,15 @@ wheels = [
 ]
 
 [[package]]
+name = "filelock"
+version = "3.20.3"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/1d/65/ce7f1b70157833bf3cb851b556a37d4547ceafc158aa9b34b36782f23696/filelock-3.20.3.tar.gz", hash = "sha256:18c57ee915c7ec61cff0ecf7f0f869936c7c30191bb0cf406f1341778d0834e1", size = 19485, upload-time = "2026-01-09T17:55:05.421Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b5/36/7fb70f04bf00bc646cd5bb45aa9eddb15e19437a28b8fb2b4a5249fac770/filelock-3.20.3-py3-none-any.whl", hash = "sha256:4b0dda527ee31078689fc205ec4f1c1bf7d56cf88b6dc9426c4f230e46c2dce1", size = 16701, upload-time = "2026-01-09T17:55:04.334Z" },
+]
+
+[[package]]
 name = "frozenlist"
 version = "1.8.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -1464,6 +1473,7 @@ dependencies = [
     { name = "akshare" },
     { name = "boto3" },
     { name = "deap" },
+    { name = "filelock" },
     { name = "jinja2" },
     { name = "joblib" },
     { name = "lark-oapi" },
@@ -1486,6 +1496,7 @@ requires-dist = [
     { name = "akshare", specifier = ">=1.14.0" },
     { name = "boto3", specifier = "~=1.42.23" },
     { name = "deap", specifier = ">=1.4.3" },
+    { name = "filelock", specifier = "~=3.20.3" },
     { name = "jinja2", specifier = "~=3.1.6" },
     { name = "joblib", specifier = "~=1.5.3" },
     { name = "lark-oapi", specifier = "~=1.4.23" },

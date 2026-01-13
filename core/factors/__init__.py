@@ -12,3 +12,4 @@ from .SmallCap import *
 from .Unpopular import *
 from .RetailFlow import *
 from .RetailFlowMomentum import *
+from .MainFundVolatility import *

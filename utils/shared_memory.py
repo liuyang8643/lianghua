@@ -192,6 +192,50 @@ class SharedMemoryCache(Generic[T]):
     """返回所有缓存键（无锁设计）"""
     return list(self._shm_registry.keys())
   
+  def stat(self) -> dict[str, Any]:
+    """查看当前占用的内存大小（无锁设计）
+    
+    Returns:
+      统计信息字典:
+        - total_size: 总占用内存（字节）
+        - total_size_mb: 总占用内存（MB）
+        - count: 缓存键数量
+        - keys: 各键的详细信息列表
+          - key: 缓存键名
+          - size: 占用内存（字节）
+          - size_mb: 占用内存（MB）
+          - compressed: 是否压缩
+    """
+    total_size = 0
+    keys_info = []
+    
+    for key, shm in self._shm_registry.items():
+      try:
+        # 读取数据大小和压缩标志
+        data_size = struct.unpack('I', bytes(shm.buf[0:4]))[0]
+        is_compressed = bool(struct.unpack('B', bytes(shm.buf[4:5]))[0])
+        
+        # 总大小 = 头部(5字节) + 数据大小
+        key_size = 5 + data_size
+        total_size += key_size
+        
+        keys_info.append({
+          'key': key,
+          'size': key_size,
+          'size_mb': key_size / (1024 * 1024),
+          'compressed': is_compressed,
+        })
+      except:
+        # 忽略损坏的共享内存
+        pass
+    
+    return {
+      'total_size': total_size,
+      'total_size_mb': total_size / (1024 * 1024),
+      'count': len(keys_info),
+      'keys': keys_info,
+    }
+  
   def __len__(self) -> int:
     """返回缓存中的键数量（无锁设计）"""
     return len(self._shm_registry)

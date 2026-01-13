@@ -35,6 +35,12 @@ def init_full_data(stock_codes: list[str] = None, period: str = '1d'):
   get_full_market_data(baseline_stock_code, period)
 
   core_logger.debug(f"预加载 {len(stock_codes)} 只股票的 【{period} 数据】完成。")
+  if period == '1d':
+    stat=_GLOBAL_DAILY_CACHE.stat()
+    core_logger.debug(f"_GLOBAL_DAILY_CACHE 包含 {stat['count']} 条数据，共计 {stat['total_size_mb']:.2f} MB。")
+  else:
+    stat=_GLOBAL_MINUTE_CACHE.stat()
+    core_logger.debug(f"_GLOBAL_MINUTE_CACHE 包含 {stat['count']} 条数据，共计 {stat['total_size_mb']:.2f} MB。")
 
 def cleanup_shared_cache():
   """清理共享缓存（在主进程退出时调用）"""
@@ -68,6 +74,13 @@ def get_full_market_data(
   try:
     # 缓存中没有，需要加载数据
     data = get_market_data(stock_code, None, target_time, period, allow_tainted=allow_tainted, dividend_type=dividend_type)
+    
+    # 过滤停牌数据（suspendFlag == 1）
+    if data is not None and not data.empty and 'suspendFlag' in data.columns:
+      # 使用 numpy 向量化操作，比 pandas boolean indexing 更快
+      suspend_mask = data['suspendFlag'].values == 0
+      data = data[suspend_mask]
+    
     cache.put(stock_code, data) # 缓存数据
     return data
   except Exception:

@@ -15,6 +15,8 @@ def init_stock_detail_cache(stock_codes: list[str]):
   for stock_code in stock_codes:
     get_stock_detail(stock_code)
   core_logger.debug(f"预加载 {len(stock_codes)} 只股票的【详情数据】预加载完成。")
+  stat = _DETAIL_CACHE.stat()
+  core_logger.debug(f"_DETAIL_CACHE 包含 {stat['count']} 条数据，共计 {stat['total_size_mb']:.2f} MB。")
 
 def get_stock_detail(stock_code: str) -> Optional[StockDetail]:
   """获取股票详情（优先从缓存，支持退市股票）
