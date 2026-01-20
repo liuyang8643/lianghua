@@ -1,6 +1,7 @@
 import os
 import pickle
 import sys
+import traceback
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Optional
@@ -204,6 +205,7 @@ def _calculate_daily_correlation(
             return_rates=return_rates
           ))
       except:
+        core_logger.error(f"股票 {stock_code} 在日期 {trade_date} 计算因子时异常：\n{traceback.format_exc()}")
         continue
 
     # 保存缓存
@@ -302,7 +304,8 @@ def _calculate_stock_correlation(
 
         if any(r is not None for r in return_rates.values()):
           stock_scores_by_date[trade_date] = (result['score'], return_rates)
-      except:
+      except Exception as e:
+        core_logger.error(f"股票 {stock_code} 在日期 {trade_date} 计算因子时异常：\n{traceback.format_exc()}")
         continue
 
     if not stock_scores_by_date:

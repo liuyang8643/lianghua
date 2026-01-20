@@ -77,9 +77,11 @@ class FactorCtx:
     bar_count_pass = get_trading_pass_minute(latest_time) + 1
     return [sum(history_data['amount'].iloc[- bar_count_pass - d * bar_count:(-d * bar_count) if d else None]) for d in reversed(range(pass_days))]
 
-  def get_wma(self, period: int) -> DataFrame:
+  def get_wma(self, period: int) -> Optional[DataFrame]:
     """获取WMA指标"""
     history_data = self.get_daily_data(period * 2)
+    if history_data is None or len(history_data) < period:
+      return None
     return ((history_data['open'] + history_data['close'] + history_data['low'] + history_data['high']) / 4 * history_data['amount']).rolling(window=period).mean() / \
       history_data['amount'].rolling(window=period).mean()
 
