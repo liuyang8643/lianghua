@@ -11,9 +11,9 @@ if __name__ == '__main__':
   stock_list = get_all_stock_code_list()
   report = calculate_factor_correlation(
     factor_cls=MainFundVolatility,
-    start_date=date(2025, 1, 1),
+    start_date=date(2024, 5, 1),
     end_date=date(2025, 5, 1),
-    m_days=[1, 3, 5, 10, 20],
+    m_days=[1, 3, 5, 10, 20, 30, 60],
     stock_codes=stock_list
     # stock_codes=random.sample(stock_list, 1000),
   )
