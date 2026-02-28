@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -49,7 +50,7 @@ class TopN:
     batch_run_threads(
       func=self._calculate_factor_score,
       args_list=[[f] for f in self.factors],
-      max_workers=64,
+      max_workers=max(1, os.cpu_count() - 1),
     )
 
   def _calculate_factor_score(self, f: BaseFactor):
