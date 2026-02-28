@@ -4,11 +4,16 @@ from typing import Optional, TYPE_CHECKING
 if TYPE_CHECKING:
   from core.database import StockDetail, StockTradingData
 
+
 def get_stock_estimate_up_limit(stock_code: str, current_price: float) -> float:
+  if is_st_stock(stock_code):
+    return current_price * 1.049  # ST ±5%
   up_limit_rate = 1.199 if is_cyb_stock(stock_code) else 1.099
   return current_price * up_limit_rate
 
 def get_stock_estimate_down_limit(stock_code: str, current_price: float) -> float:
+  if is_st_stock(stock_code):
+    return current_price * 0.951  # ST ±5%
   down_limit_rate = 0.801 if is_cyb_stock(stock_code) else 0.901
   return current_price * down_limit_rate
 
@@ -23,6 +28,12 @@ def is_stock_trading(detail: Optional['StockDetail']) -> bool:
       # 未退市
       and (detail['ExpireDate'] in ('0', '99999999'))
   )
+
+def is_st_stock(stock_code: str) -> bool:
+  """ 判断股票名称是否含 ST（*ST / ST 等） """
+  from core.database import get_stock_detail
+  detail = get_stock_detail(stock_code)
+  return bool(detail and 'ST' in detail.get('InstrumentName', ''))
 
 def is_cyb_stock(stock_code: str) -> bool:
   """ 判断股票是否为创业板股票 """

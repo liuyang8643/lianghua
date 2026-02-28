@@ -4,7 +4,7 @@ from typing import Optional, Union
 from xtquant import xtdata
 
 from core.logger import core_logger
-from utils.stock.info import is_kcb_stock, is_bse_stock, is_b_stock
+from utils.stock.info import is_kcb_stock, is_bse_stock, is_b_stock, is_st_stock
 from .detail import get_stock_detail
 from .delist import get_delist_stock_info
 
@@ -125,7 +125,7 @@ def allow_buy_stock_code_list() -> list[str]:
   for sector in ["科创板", "沪深风险警示", "沪深退市整理"]:
     exclude.update(_get_sector_stocks(sector))
 
-  result = sorted(all_a - exclude)
+  result = [code for code in all_a - exclude if not is_st_stock(code)]
 
   if not result:
     core_logger.error('获取可买股票失败，返回空列表')
