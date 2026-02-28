@@ -73,7 +73,7 @@ class StockAccountMocker:
     pos = self.positions[code]
     if pos['volume'] < volume:
       raise Exception(f'Volume not enough, volume: {volume}, position volume: {pos["volume"]}')
-    gain = volume * price
+    gain = volume * price if price is not None else 0
     commission = self.calc_commission(gain)
     total_gain = gain - commission
     self.current_cash += total_gain
@@ -82,16 +82,14 @@ class StockAccountMocker:
     pos['commission'] += commission
     if pos['volume'] == 0:
       del self.positions[code]
-      self.cleared_positions.append(
-        {
-          'code': code,
-          'income': gain,
-          'clear_date': sell_date,
-          'clear_price': price,
-          'pos': pos,
-          'clear_reason': clear_reason,
-        }
-      )
+      self.cleared_positions.append(MockStockClearedPosition(
+        code=code,
+        income=total_gain - pos['cost'],
+        clear_date=sell_date,
+        clear_price=price,
+        pos=pos,
+        clear_reason=clear_reason,
+      ))
 
   def clear_stock(self, code: str, price: float, clear_date: sys_date, clear_reason: str = None):
     """ 清仓股票 """
@@ -102,16 +100,22 @@ class StockAccountMocker:
   def calc_position_values(self, cur_time: datetime):
     """ 获取持仓 """
     res = []
-    for pos in self.positions.values():
+    for code, pos in self.positions.items():
       latest_data = get_market_data_from_cache(pos['code'], 1, cur_time)
-      current_price = latest_data.iloc[-1]['close'] if latest_data is not None and latest_data.size > 0 else pos['avg_price']
-      res.append(
-        {
-          **pos,
-          'current_price': current_price,
-          'current_value': current_price * pos['volume']
-        }
-      )
+      if latest_data is not None and latest_data.size > 0:
+        # 股票正常交易，使用最新价格计算市值
+        current_price = latest_data.iloc[-1]['close']
+        res.append(
+          {
+            **pos,
+            'current_price': current_price,
+            'current_value': current_price * pos['volume']
+          }
+        )
+      else:
+        # 已退市
+        pass
+
     return res
 
   def get_position(self, code: str):
