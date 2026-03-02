@@ -13,3 +13,4 @@ from .Unpopular import *
 from .RetailFlow import *
 from .RetailFlowMomentum import *
 from .MainFundVolatility import *
+from .WMACross import *

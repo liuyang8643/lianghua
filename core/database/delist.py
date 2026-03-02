@@ -4,7 +4,6 @@ from functools import lru_cache
 from typing import NamedTuple
 
 from core.logger import core_logger
-from core.factors.helpers.cache import DiskCache, CacheKey
 
 class DelistStockInfo(NamedTuple):
   """退市股票信息"""
@@ -20,6 +19,7 @@ def get_delist_stock_info() -> dict[str, DelistStockInfo]:
     {股票代码: DelistStockInfo(name, list_date, delist_date)}
   """
   # L2: 跨进程磁盘缓存（每日 key，次日自动失效）
+  from core.factors.helpers.cache import DiskCache, CacheKey
   cache_key = CacheKey.make_key(['delist', date.today().strftime('%Y%m%d')])
   cached = DiskCache.load_pickle(cache_key)
   if cached is not None:
