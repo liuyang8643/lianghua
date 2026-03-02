@@ -28,6 +28,37 @@ _s3_client = boto3.client(
   region_name='auto'
 )
 
+# CSV 列名 → 类型映射，确保 read_csv 后类型正确
+_COLUMN_DTYPES = {
+  'code': str,
+  'name': str,
+  'date': str,
+  '主动买入特大单金额（元）': float,
+  '被动买入特大单金额（元）': float,
+  '主动买入大单金额（元）': float,
+  '被动买入大单金额（元）': float,
+  '主动买入中单金额（元）': float,
+  '被动买入中单金额（元）': float,
+  '主动卖出特大单金额（元）': float,
+  '被动卖出特大单金额（元）': float,
+  '主动卖出大单金额（元）': float,
+  '被动卖出大单金额（元）': float,
+  '主动卖出中单金额（元）': float,
+  '被动卖出中单金额（元）': float,
+  '小单买入金额（元）': float,
+  '小单卖出金额（元）': float,
+  'DDE大单净额（元）': float,
+  '金额流入率（%）': float,
+  '大单净量（流通股%）': float,
+}
+
+def _read_money_flow_csv(path: Path) -> pd.DataFrame:
+  """读取资金流向 CSV 并确保列类型正确"""
+  df = pd.read_csv(path, encoding='utf-8-sig', dtype=_COLUMN_DTYPES)
+  # code 列：去掉可能的 '.0' 后缀并补齐 6 位
+  df['code'] = df['code'].str.replace('.0', '', regex=False).str.zfill(6)
+  return df
+
 @lru_cache(maxsize=256)
 def get_money_flow_data(target_date: date | datetime) -> Optional[pd.DataFrame]:
   """获取指定日期的资金流向数据（优先本地缓存，否则从 S3 下载）"""
@@ -47,18 +78,14 @@ def get_money_flow_data(target_date: date | datetime) -> Optional[pd.DataFrame]:
   with FileLock(str(lock_path), timeout=30):
     # 检查本地缓存
     if cache_path.exists():
-      df = pd.read_csv(cache_path, encoding='utf-8-sig')
-      df['code'] = df['code'].astype(str).str.replace('.0', '', regex=False).str.zfill(6)
-      return df
+      return _read_money_flow_csv(cache_path)
 
     # 从 S3 下载
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     s3_key = f"{year}/{month:02d}/{date_str}.csv"
 
     _s3_client.download_file('wbr-money-flow', s3_key, str(cache_path))
-    df = pd.read_csv(cache_path, encoding='utf-8-sig')
-    df['code'] = df['code'].astype(str).str.replace('.0', '', regex=False).str.zfill(6)
-    return df
+    return _read_money_flow_csv(cache_path)
 
 def get_retail_flow_amount(stock_code: str, target_date: date | datetime) -> Optional[float]:
   """
@@ -84,7 +111,34 @@ def get_retail_flow_amount(stock_code: str, target_date: date | datetime) -> Opt
 
   try:
     data = row.iloc[0]
-    return float(data['小单买入金额（元）']) + float(data['小单卖出金额（元）'])
+    return data['小单买入金额（元）'] + data['小单卖出金额（元）']
+  except (KeyError, ValueError, TypeError):
+    return None
+
+def get_retail_net_flow(stock_code: str, target_date: date | datetime) -> Optional[float]:
+  """
+  获取散户资金净流入（小单买入 - 小单卖出）
+
+  Args:
+      stock_code: 股票代码（支持 '000001' 或 '000001.SZ' 格式）
+      target_date: 目标日期
+
+  Returns:
+      散户净流入金额（元），正值=散户净买入，负值=散户净卖出，或 None
+  """
+  df = get_money_flow_data(target_date)
+  if df is None:
+    return None
+
+  code = stock_code.split('.')[0].zfill(6)
+
+  row = df[df['code'] == code]
+  if row.empty:
+    return None
+
+  try:
+    data = row.iloc[0]
+    return data['小单买入金额（元）'] - data['小单卖出金额（元）']
   except (KeyError, ValueError, TypeError):
     return None
 
@@ -113,8 +167,10 @@ def get_main_fund_net_inflow(stock_code: str, target_date: date | datetime) -> O
   try:
     data = row.iloc[0]
     # 主力资金 = 超大单 + 大单
-    buy = float(data['主动买入特大单金额（元）']) + float(data['被动买入特大单金额（元）'])+ float(data['主动买入大单金额（元）']) + float(data['被动买入大单金额（元）'])
-    sell = float(data['主动卖出特大单金额（元）']) + float(data['被动卖出特大单金额（元）'])+ float(data['主动卖出大单金额（元）']) + float(data['被动卖出大单金额（元）'])
+    buy = (data['主动买入特大单金额（元）'] + data['被动买入特大单金额（元）']
+           + data['主动买入大单金额（元）'] + data['被动买入大单金额（元）'])
+    sell = (data['主动卖出特大单金额（元）'] + data['被动卖出特大单金额（元）']
+            + data['主动卖出大单金额（元）'] + data['被动卖出大单金额（元）'])
     return buy - sell
   except (KeyError, ValueError, TypeError):
     return None

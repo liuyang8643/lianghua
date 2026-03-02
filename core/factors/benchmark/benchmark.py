@@ -10,8 +10,8 @@ from core.factors.benchmark import calculate_factor_correlation, generate_html_r
 if __name__ == '__main__':
   stock_list = get_all_stock_code_list()
   report = calculate_factor_correlation(
-    factor_cls=MainFundVolatility,
-    start_date=date(2024, 5, 1),
+    factor_cls=WMACross,
+    start_date=date(2020, 5, 1),
     end_date=date(2025, 5, 1),
     m_days=[1, 3, 5, 10, 20, 30, 60],
     stock_codes=stock_list
