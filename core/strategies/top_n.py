@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from typing import Optional, Dict, List
 
-from core.factors import MACD, BBI, CCI, Fundamental, TRIXFactor, MOMFactor, ADXFactor, RetailFlow, RetailFlowMomentum, FactorCtx, FactorResult, BatchNormFactor
+from core.factors import SmallCap, WMACross, FactorCtx, FactorResult, BatchNormFactor
 from utils.hash import hash_function_code
 from utils.parallel import batch_run_threads
 from utils.stock.format import format_qmt_date, format_qmt_datetime
@@ -27,17 +27,10 @@ class TopN:
     self.stock_list = stock_list
     self.base_date = base_date
 
-    # 初始化因子列表（暂时移除Fundamental以加快测试）
+    # 初始化因子列表
     self.factors = [
-      MACD(),
-      BBI(),
-      CCI(),
-      # Fundamental(),  # 暂时注释，API调用慢
-      TRIXFactor(),
-      MOMFactor(),
-      ADXFactor(),
-      RetailFlow(),
-      RetailFlowMomentum(),
+      SmallCap(),
+      WMACross(),
     ]
 
     # {factor_name: {stock_code: FactorResult}}

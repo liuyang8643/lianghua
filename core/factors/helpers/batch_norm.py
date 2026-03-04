@@ -29,8 +29,10 @@ class BatchNormFactor:
         # 1. 提取有效分数（排除计算失败的）
         valid_scores = {}
         for stock, result in raw_scores.items():
-            if result['err'] is None and result['score'] is not None:
-                valid_scores[stock] = result['score']
+            err = result.get('err') if isinstance(result, dict) else result.get('err')
+            score = result.get('score') if isinstance(result, dict) else result.get('score')
+            if err is None and score is not None:
+                valid_scores[stock] = score
 
         if not valid_scores:
             return {}

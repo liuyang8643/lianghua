@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from joblib import Parallel, delayed, parallel_backend
 from tqdm import tqdm
@@ -21,7 +22,7 @@ from core.strategies import TopN
 GA_SEARCH_SPACES = {
   'buy_n': [20, 30, 40],
   'sell_m': [20, 30, 40, 100, 200, 400, 600, 800],
-  'temperatures': [0.001, 0.01, 0.1, 1, 10, 100],
+  'temperatures': [1],
   'weights': [i/5 for i in range(-5, 6)]  # [-1.0, -0.8, -0.6, ..., 0.6, 0.8, 1.0]
 }
 
@@ -280,6 +281,8 @@ def _wrap_process_worker(individual_config: dict, mem_offset: int, mem_count: in
 
       # 卖出不在Top sell_m中的股票
       for stock in set([p for p in account.positions.keys()]) - set(sell_m_stocks):
+        if stock not in prices:
+          continue  # 跳过没有价格的股票
         account.clear_stock(
           code=stock,
           price=prices[stock],
@@ -287,9 +290,13 @@ def _wrap_process_worker(individual_config: dict, mem_offset: int, mem_count: in
         )
 
       # 计算仓位分配（基于buy_n只股票，使用总资产）
+      # 只选择有价格的股票
+      buy_n_stocks_with_price = [s for s in buy_n_stocks if s in prices]
+      if not buy_n_stocks_with_price:
+        continue
       allocations = Sizer.allocate(
-        [(s, prices[s]) for s in buy_n_stocks],
-        account.calc_assets(trade_datetime).total_asset,
+        [(s, prices[s]) for s in buy_n_stocks_with_price],
+        account.calc_assets(trade_datetime)['total_asset'],
       )
 
       # 买入新股票（Top buy_n中不在当前持仓的）
@@ -297,16 +304,19 @@ def _wrap_process_worker(individual_config: dict, mem_offset: int, mem_count: in
         if shares <= 0:
           continue
 
-        if account.positions[stock]:
+        if stock in account.positions:
           # 已持仓，跳过（不加仓）
           continue
 
-        account.buy_stock(
-          code=stock,
-          volume=shares,
-          price=prices[stock],
-          buy_date=trade_date
-        )
+        try:
+          account.buy_stock(
+            code=stock,
+            volume=shares,
+            price=prices[stock],
+            buy_date=trade_date
+          )
+        except Exception as e:
+          testback_logger.warning(f"买入失败 {stock}: {e}")
 
     # 计算最终收益
     final_datetime = datetime.combine(topn_list[-1].base_date, datetime.min.time())
@@ -345,7 +355,7 @@ if __name__ == "__main__":
 
   backtest_datetime_list = [
     datetime.combine(d, datetime.min.time())
-    for d in get_trading_date_span(date(2025, 11, 1), date(2025, 12, 15))]
+    for d in get_trading_date_span(date(2020, 6, 30), date(2024, 12, 31))]
 
   # 多进程获取 TopN 实例 预加载不包含weights
   topn_worker_count = min(os.cpu_count(), len(backtest_datetime_list))
@@ -396,20 +406,16 @@ if __name__ == "__main__":
     exit(0)
 
   # GA优化模式
-  GENERATIONS = 3
-  POPULATIONS = 4
-  GA_PERIOD_SPAN = 4
-  ga_worker_count = min(os.cpu_count(), GENERATIONS)
+  GENERATIONS = 1000
+  # 种群大小根据 CPU 核心数向下取双数倍
+  cpu_count = os.cpu_count() or 4
+  POPULATIONS = (cpu_count // 2) * 2  # 向下取双数倍，如 12->10, 8->8, 6->6, 4->4
+  GA_PERIOD_SPAN = 30
+  ga_worker_count = min(cpu_count, GENERATIONS)
   data_idx = 0
   ALL_FACTOR_NAMES = [
-    'MACD',
-    'BBI',
-    'CCI',
-    'TRIXFactor',
-    'MOMFactor',
-    'ADXFactor',
     'SmallCap',
-    'Unpopular'
+    'WMACross',
   ]
 
   initial_weights = None
@@ -447,6 +453,14 @@ if __name__ == "__main__":
     )
   all_results = []
   generation_results = []  # 按代保存的结果
+
+  # 创建结果目录
+  results_dir = Path('results')
+  results_dir.mkdir(exist_ok=True)
+  timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+  ga_result_dir = results_dir / f'ga_{timestamp}'
+  ga_result_dir.mkdir(exist_ok=True)
+
   for generation in range(GENERATIONS):
     testback_logger.info(f"\n{'=' * 60}")
     testback_logger.info(f"GA 第 {generation + 1}/{GENERATIONS} 代")
@@ -479,20 +493,27 @@ if __name__ == "__main__":
     }
     generation_results.append(generation_stats)
 
+    # 每代保存结果（防止中断丢失数据）
+    import pickle
+    import json
+    with open(ga_result_dir / 'generation_results.pkl', 'wb') as f:
+      pickle.dump(generation_results, f)
+    # 保存当前最优
+    best_in_gen = max(results_list, key=lambda x: x['fitness'])
+    best_result = {
+      'individual_config': best_in_gen['individual_config'],
+      'fitness': best_in_gen['fitness'],
+      'generation': generation + 1,
+      'generation_time': generation_stats['generation_time'],
+      'population_size': len(results_list),
+      'all_factor_names': ALL_FACTOR_NAMES
+    }
+    with open(ga_result_dir / 'best_individual_config.json', 'w', encoding='utf-8') as f:
+      json.dump(best_result, f, indent=2, ensure_ascii=False)
+
     next_configs = ga_optimizer(results_list)
     data_idx = random.randrange(0, len(ordered_topNs) - GA_PERIOD_SPAN)
     new_params = [[config, data_idx, GA_PERIOD_SPAN] for config in next_configs]
-
-  # 保存详细结果
-  import pickle
-  from pathlib import Path
-
-  # 创建结果目录
-  results_dir = Path('results')
-  results_dir.mkdir(exist_ok=True)
-  timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-  ga_result_dir = results_dir / f'ga_{timestamp}'
-  ga_result_dir.mkdir(exist_ok=True)
 
   # 保存所有个体的详细信息（Individual_config列表）
   all_individual_configs = []
@@ -518,12 +539,7 @@ if __name__ == "__main__":
     json.dump(all_individual_configs, f, indent=2, ensure_ascii=False)
   testback_logger.info(f"已保存所有个体配置: {ga_result_dir / 'all_individuals.json'}")
 
-  # 保存按代的结果（pickle格式，用于分析）
-  with open(ga_result_dir / 'generation_results.pkl', 'wb') as f:
-    pickle.dump(generation_results, f)
-  testback_logger.info(f"已保存按代结果: {ga_result_dir / 'generation_results.pkl'}")
-
-  # 保存最优Individual_config
+  # 最终更新最优配置（hall_of_fame）
   best_config = _ga_state['hall_of_fame'][0]
   key = _individual_config_to_key(best_config)
   best_fitness = _ga_state['fitness_cache'][key]
@@ -537,7 +553,6 @@ if __name__ == "__main__":
   }
   with open(ga_result_dir / 'best_individual_config.json', 'w', encoding='utf-8') as f:
     json.dump(best_result, f, indent=2, ensure_ascii=False)
-  testback_logger.info(f"已保存最优个体配置: {ga_result_dir / 'best_individual_config.json'}")
 
   testback_logger.info(f"\n最优参数已保存:")
   testback_logger.info(f"  - {ga_result_dir / 'best_individual_config.json'}")

@@ -6,11 +6,16 @@ class SmallCap(BaseFactor):
 
   def calc(self, ctx: FactorCtx) -> FactorResult:
     history_data = ctx.get_daily_data(60)
-    avg_amount_yi = history_data['amount'].values.mean() / 1e8
 
-    # 过滤: 3000万 < 日均成交额 < 20亿
-    if avg_amount_yi < 0.3 or avg_amount_yi > 20:
-      return FactorResult(score=0, err=f"filtered:{avg_amount_yi:.2f}亿")
+    # 检查数据是否存在
+    if history_data is None or history_data.empty:
+      return FactorResult(score=None, err="no data")
+
+    amount_col = history_data.get('amount')
+    if amount_col is None or amount_col.empty:
+      return FactorResult(score=None, err="no amount data")
+
+    avg_amount_yi = amount_col.values.mean() / 1e8
 
     # 成交额越小分数越高 (指数衰减)
     score = 100 * np.exp(-(avg_amount_yi / 5))
