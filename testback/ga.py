@@ -190,8 +190,124 @@ def ga_optimizer(results, population_size: int = 24, hall_of_fame_size: int = 24
 # 全局缓存
 testback_cache = SharedMemoryCache[list[TopN]]('testback_cache', compress_level=6)
 
+def _backtest_with_config(topn_list, weights, buy_n, sell_m, temperatures):
+  """ 独立回测函数，计算给定配置的收益
+
+  Args:
+    topn_list: TopN 实例列表
+    weights: 因子权重
+    buy_n: 买入股票数
+    sell_m: 卖出股票数（用于判断哪些需要卖出）
+    temperatures: 温度参数
+
+  Returns:
+    total_return: 收益率(%)
+    cleared_positions_count: 清仓次数
+    current_positions_count: 最终持仓数
+  """
+  from core.strategies.sizers.sizer import Sizer
+  from core.database import get_market_data
+
+  # 创建账户模拟器
+  account = StockAccountMocker(
+    cash=500_000.0,  # 初始资金50万元
+    commission=2 / 1000,  # 千2交易费率
+    min_commission=5.0,  # 最小5元交易费
+  )
+
+  # 遍历每个交易日
+  for topn in topn_list:
+    trade_date = topn.base_date
+    trade_datetime = datetime.combine(trade_date, datetime.min.time())
+
+    # 获取当日 Top sell_m 只股票用于判断卖出
+    sell_m_stocks = topn.get_ordered_stocks(
+      n=sell_m,
+      weights=weights,
+      temperatures=temperatures,
+      norm_method='rank'
+    )
+
+    # 获取当日 Top buy_n 只股票用于买入
+    buy_n_stocks = topn.get_ordered_stocks(
+      n=buy_n,
+      weights=weights,
+      temperatures=temperatures,
+      norm_method='rank'
+    )
+
+    all_trade_stocks = list(set(sell_m_stocks + buy_n_stocks))
+    if not all_trade_stocks:
+      continue
+
+    # 获取股票价格（需要获取所有可能交易的股票价格）
+    prices: dict[str, float] = {}
+    for stock in all_trade_stocks:
+      try:
+        # 将 date 转换为 datetime
+        data = get_market_data_from_cache(stock, 1, trade_datetime)
+        if data is not None and len(data) > 0:
+          prices[stock] = float(data.iloc[-1]['close'])
+      except Exception as e:
+        testback_logger.warning(f"{stock} 价格获取失败: {e}")
+
+    # 卖出不在Top sell_m中的股票
+    for stock in set([p for p in account.positions.keys()]) - set(sell_m_stocks):
+      if stock not in prices:
+        continue  # 跳过没有价格的股票
+      account.clear_stock(
+        code=stock,
+        price=prices[stock],
+        clear_date=trade_date,
+      )
+
+    # 计算仓位分配（基于buy_n只股票，使用总资产）
+    # 只选择有价格的股票
+    buy_n_stocks_with_price = [s for s in buy_n_stocks if s in prices]
+    if not buy_n_stocks_with_price:
+      continue
+    allocations = Sizer.allocate(
+      [(s, prices[s]) for s in buy_n_stocks_with_price],
+      account.calc_assets(trade_datetime)['total_asset'],
+    )
+
+    # 买入新股票（Top buy_n中不在当前持仓的）
+    for stock, shares in allocations.items():
+      if shares <= 0:
+        continue
+
+      if stock in account.positions:
+        # 已持仓，跳过（不加仓）
+        continue
+
+      try:
+        account.buy_stock(
+          code=stock,
+          volume=shares,
+          price=prices[stock],
+          buy_date=trade_date
+        )
+      except Exception as e:
+        testback_logger.warning(f"买入失败 {stock}: {e}")
+
+  # 计算最终收益
+  final_datetime = datetime.combine(topn_list[-1].base_date, datetime.min.time())
+  final_assets = account.calc_assets(final_datetime)
+  total_return = (final_assets['total_asset'] - account.init_cash) / account.init_cash * 100
+
+  return {
+    'total_return': total_return,
+    'cleared_positions_count': len(account.cleared_positions),
+    'current_positions_count': len(account.positions),
+  }
+
+
 def _wrap_process_worker(individual_config: dict, mem_offset: int, mem_count: int):
   """ 独立进程计算最终收益 - 从共享内存读取数据
+
+  双目标回测：
+  - 目标1：使用原始 buy_n, sell_m 配置
+  - 目标2：使用 buy_n == sell_m（每天调仓）
 
   Args:
     individual_config: Individual_config JSON，包含 weights, buy_n, sell_m, temperatures
@@ -236,102 +352,26 @@ def _wrap_process_worker(individual_config: dict, mem_offset: int, mem_count: in
       f"周期: {topn_list[0].base_date} ~ {topn_list[-1].base_date}"
     )
 
-    # 创建账户模拟器
-    account = StockAccountMocker(
-      cash=500_000.0,  # 初始资金50万元
-      commission=2 / 1000,  # 千2交易费率
-      min_commission=5.0,  # 最小5元交易费
-    )
+    # ===== 目标1：原始配置 (buy_n, sell_m) =====
+    result1 = _backtest_with_config(topn_list, weights, buy_n, sell_m, temperatures)
 
-    # 遍历每个交易日
-    for topn in topn_list:
-      trade_date = topn.base_date
-      trade_datetime = datetime.combine(trade_date, datetime.min.time())
-
-      # 获取当日 Top sell_m 只股票用于判断卖出
-      sell_m_stocks = topn.get_ordered_stocks(
-        n=sell_m,
-        weights=weights,
-        temperatures=temperatures,
-        norm_method='rank'
-      )
-
-      # 获取当日 Top buy_n 只股票用于买入
-      buy_n_stocks = topn.get_ordered_stocks(
-        n=buy_n,
-        weights=weights,
-        temperatures=temperatures,
-        norm_method='rank'
-      )
-
-      all_trade_stocks = list(set(sell_m_stocks + buy_n_stocks))
-      if not all_trade_stocks:
-        continue
-
-      # 获取股票价格（需要获取所有可能交易的股票价格）
-      prices: dict[str, float] = {}
-      for stock in all_trade_stocks:
-        try:
-          # 将 date 转换为 datetime
-          data = get_market_data_from_cache(stock, 1, trade_datetime)
-          if data is not None and len(data) > 0:
-            prices[stock] = float(data.iloc[-1]['close'])
-        except Exception as e:
-          testback_logger.warning(f"{stock} 价格获取失败: {e}")
-
-      # 卖出不在Top sell_m中的股票
-      for stock in set([p for p in account.positions.keys()]) - set(sell_m_stocks):
-        if stock not in prices:
-          continue  # 跳过没有价格的股票
-        account.clear_stock(
-          code=stock,
-          price=prices[stock],
-          clear_date=trade_date,
-        )
-
-      # 计算仓位分配（基于buy_n只股票，使用总资产）
-      # 只选择有价格的股票
-      buy_n_stocks_with_price = [s for s in buy_n_stocks if s in prices]
-      if not buy_n_stocks_with_price:
-        continue
-      allocations = Sizer.allocate(
-        [(s, prices[s]) for s in buy_n_stocks_with_price],
-        account.calc_assets(trade_datetime)['total_asset'],
-      )
-
-      # 买入新股票（Top buy_n中不在当前持仓的）
-      for stock, shares in allocations.items():
-        if shares <= 0:
-          continue
-
-        if stock in account.positions:
-          # 已持仓，跳过（不加仓）
-          continue
-
-        try:
-          account.buy_stock(
-            code=stock,
-            volume=shares,
-            price=prices[stock],
-            buy_date=trade_date
-          )
-        except Exception as e:
-          testback_logger.warning(f"买入失败 {stock}: {e}")
-
-    # 计算最终收益
-    final_datetime = datetime.combine(topn_list[-1].base_date, datetime.min.time())
-    final_assets = account.calc_assets(final_datetime)
-    total_return = (final_assets['total_asset'] - account.init_cash) / account.init_cash * 100
+    # ===== 目标2：buy_n == sell_m（每天调仓）=====
+    # 使用 sell_m 作为新的 buy_n（等于 sell_m，形成每天调仓）
+    target2_buy_n = sell_m
+    result2 = _backtest_with_config(topn_list, weights, target2_buy_n, target2_buy_n, temperatures)
 
     return {
       'individual_config': individual_config,
-      'init_cash': account.init_cash,
-      'final_cash': final_assets['cash'],
-      'final_market_value': final_assets['market_value'],
-      'final_total_asset': final_assets['total_asset'],
-      'total_return': total_return,
-      'cleared_positions_count': len(account.cleared_positions),
-      'current_positions_count': len(account.positions),
+      'init_cash': 500_000.0,
+      'final_cash': 0,  # 使用目标1的最终现金
+      'final_market_value': 0,
+      'final_total_asset': 0,
+      'total_return': result1['total_return'],  # 目标1收益率
+      'target2_total_return': result2['total_return'],  # 目标2收益率（buy_n==sell_m）
+      'target2_cleared_positions_count': result2['cleared_positions_count'],  # 目标2清仓次数
+      'target2_current_positions_count': result2['current_positions_count'],  # 目标2持仓数
+      'cleared_positions_count': result1['cleared_positions_count'],
+      'current_positions_count': result1['current_positions_count'],
     }
 
   except Exception as e:
@@ -476,12 +516,14 @@ if __name__ == "__main__":
     # 为每个结果添加代数信息和适应度
     for result in results_list:
       result['generation'] = generation
-      result['fitness'] = result['total_return']
+      result['fitness'] = result['total_return']  # 目标1：原始配置收益
+      result['target2_fitness'] = result.get('target2_total_return', 0)  # 目标2：buy_n==sell_m 收益
 
     all_results.extend(results_list)
 
     # 保存该代的统计信息
     fitnesses = [ind['fitness'] for ind in results_list]
+    target2_fitnesses = [ind.get('target2_fitness', 0) for ind in results_list]
     generation_stats = {
       'generation': generation,
       'generation_time': 0,
@@ -489,6 +531,9 @@ if __name__ == "__main__":
       'max_fitness': max(fitnesses),
       'mean_fitness': sum(fitnesses) / len(fitnesses),
       'min_fitness': min(fitnesses),
+      'max_target2_fitness': max(target2_fitnesses),
+      'mean_target2_fitness': sum(target2_fitnesses) / len(target2_fitnesses),
+      'min_target2_fitness': min(target2_fitnesses),
       'all_individuals': results_list
     }
     generation_results.append(generation_stats)

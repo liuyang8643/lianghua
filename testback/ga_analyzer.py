@@ -57,13 +57,24 @@ class GAAnalyzer:
         generation_results_file = self.result_dir / 'generation_results.pkl'
 
         data = {}
-        with open(all_individuals_file, 'r', encoding='utf-8') as f:
-            data['all_individuals'] = json.load(f)
-        logger.info(f"加载结果文件: {all_individuals_file}")
 
+        # 优先从 generation_results.pkl 加载（更完整）
         with open(generation_results_file, 'rb') as f:
             data['generation_results'] = pickle.load(f)
         logger.info(f"加载结果文件: {generation_results_file}")
+
+        # 从 pkl 中提取 all_individuals
+        all_individuals = []
+        for gen_stat in data['generation_results']:
+            for ind in gen_stat.get('all_individuals', []):
+                all_individuals.append(ind)
+        data['all_individuals'] = all_individuals
+
+        # 如果 JSON 文件存在，也加载（备用）
+        if all_individuals_file.exists():
+            with open(all_individuals_file, 'r', encoding='utf-8') as f:
+                data['all_individuals_json'] = json.load(f)
+            logger.info(f"加载结果文件: {all_individuals_file}")
 
         return data
 
@@ -71,6 +82,9 @@ class GAAnalyzer:
         """收集所有代数的所有个体"""
         # 从JSON文件加载所有个体
         for ind in self.data['all_individuals']:
+            # 为旧结果添加默认值
+            if 'target2_fitness' not in ind:
+                ind['target2_fitness'] = 0
             self.all_individuals.append(ind)
 
         # 从generation_results加载统计信息
@@ -82,6 +96,10 @@ class GAAnalyzer:
                 'mean_fitness': gen_stat['mean_fitness'],
                 'min_fitness': gen_stat['min_fitness'],
                 'population_size': gen_stat['population_size'],
+                # 目标2（兼容旧结果）
+                'max_target2_fitness': gen_stat.get('max_target2_fitness', 0),
+                'mean_target2_fitness': gen_stat.get('mean_target2_fitness', 0),
+                'min_target2_fitness': gen_stat.get('min_target2_fitness', 0),
             }
             self.generation_stats.append(stats)
 
@@ -167,34 +185,65 @@ class GAAnalyzer:
         mean_fitness = df_gen['mean_fitness'].tolist()
         min_fitness = df_gen['min_fitness'].tolist()
 
-        # 创建Plotly图表（3行：fitness曲线、因子权重、重复个体统计）
+        # 目标2（buy_n==sell_m）
+        max_target2_fitness = df_gen['max_target2_fitness'].tolist()
+        mean_target2_fitness = df_gen['mean_target2_fitness'].tolist()
+        min_target2_fitness = df_gen['min_target2_fitness'].tolist()
+
+        # 创建Plotly图表（4行：目标1、目标2、因子权重、重复个体统计）
         fig = make_subplots(
-            rows=3, cols=1,
-            subplot_titles=('Fitness随着代数迭代曲线', '各个因子值变化曲线', '重复个体统计'),
-            vertical_spacing=0.08,
-            row_heights=[0.4, 0.3, 0.3]
+            rows=4, cols=1,
+            subplot_titles=(
+                '目标1 Fitness: 原始配置 (buy_n, sell_m)',
+                '目标2 Fitness: 每天调仓 (buy_n==sell_m)',
+                '各个因子值变化曲线',
+                '重复个体统计'
+            ),
+            vertical_spacing=0.06,
+            row_heights=[0.25, 0.25, 0.25, 0.25]
         )
 
-        # === Fitness进化曲线 ===
+        # === 目标1 Fitness进化曲线 ===
         max_fitness_smooth = self.smooth_curve(max_fitness, smooth_window)
         mean_fitness_smooth = self.smooth_curve(mean_fitness, smooth_window)
         min_fitness_smooth = self.smooth_curve(min_fitness, smooth_window)
 
         fig.add_trace(go.Scatter(
             x=generations, y=max_fitness_smooth,
-            mode='lines', name='最大Fitness',
+            mode='lines', name='目标1-最大',
             line=dict(color='#2E7D32', width=2)
         ), row=1, col=1)
         fig.add_trace(go.Scatter(
             x=generations, y=mean_fitness_smooth,
-            mode='lines', name='平均Fitness',
+            mode='lines', name='目标1-平均',
             line=dict(color='#4CAF50', width=1, dash='dash')
         ), row=1, col=1)
         fig.add_trace(go.Scatter(
             x=generations, y=min_fitness_smooth,
-            mode='lines', name='最小Fitness',
+            mode='lines', name='目标1-最小',
             line=dict(color='#81C784', width=1, dash='dot')
         ), row=1, col=1)
+
+        # === 目标2 Fitness进化曲线 ===
+        max_target2_smooth = self.smooth_curve(max_target2_fitness, smooth_window)
+        mean_target2_smooth = self.smooth_curve(mean_target2_fitness, smooth_window)
+        min_target2_smooth = self.smooth_curve(min_target2_fitness, smooth_window)
+
+        fig.add_trace(go.Scatter(
+            x=generations, y=max_target2_smooth,
+            mode='lines', name='目标2-最大',
+            line=dict(color='#1565C0', width=2)
+        ), row=2, col=1)
+        fig.add_trace(go.Scatter(
+            x=generations, y=mean_target2_smooth,
+            mode='lines', name='目标2-平均',
+            line=dict(color='#42A5F5', width=1, dash='dash')
+        ), row=2, col=1)
+        fig.add_trace(go.Scatter(
+            x=generations, y=min_target2_smooth,
+            mode='lines', name='目标2-最小',
+            line=dict(color='#90CAF9', width=1, dash='dot')
+        ), row=2, col=1)
 
         # === 因子权重进化 ===
         all_factor_keys = set()
@@ -222,7 +271,7 @@ class GAAnalyzer:
                 x=factor_generations, y=factor_values_smooth,
                 mode='lines', name=factor_key,
                 line=dict(color=color, width=1.5)
-            ), row=2, col=1)
+            ), row=3, col=1)
 
         # === 重复个体统计 ===
         unique_map = self._find_unique_individuals()
@@ -237,20 +286,22 @@ class GAAnalyzer:
                 x=repeat_nums, y=repeat_freqs,
                 name='重复次数分布',
                 marker=dict(color='#2196F3')
-            ), row=3, col=1)
+            ), row=4, col=1)
 
         # 设置坐标轴标签
         fig.update_xaxes(title_text="代数", row=1, col=1)
         fig.update_yaxes(title_text="Fitness", row=1, col=1)
         fig.update_xaxes(title_text="代数", row=2, col=1)
-        fig.update_yaxes(title_text="因子平均权重", row=2, col=1)
-        fig.update_xaxes(title_text="重复次数", row=3, col=1)
-        fig.update_yaxes(title_text="个体数量", row=3, col=1)
+        fig.update_yaxes(title_text="Fitness", row=2, col=1)
+        fig.update_xaxes(title_text="代数", row=3, col=1)
+        fig.update_yaxes(title_text="因子平均权重", row=3, col=1)
+        fig.update_xaxes(title_text="重复次数", row=4, col=1)
+        fig.update_yaxes(title_text="个体数量", row=4, col=1)
 
         run_id = self.result_dir.name
         fig.update_layout(
             title=dict(text=f"GA进化分析 - {run_id}", x=0.5, font=dict(size=20)),
-            height=1400,
+            height=1800,
             showlegend=True,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
@@ -266,6 +317,10 @@ class GAAnalyzer:
                 'avg_fitness': np.mean(fitnesses),
                 'max_fitness': max(fitnesses),
                 'min_fitness': min(fitnesses),
+                # 目标2数据
+                'avg_target2_fitness': np.mean([ind.get('target2_fitness', 0) for ind in ind_list]),
+                'max_target2_fitness': max([ind.get('target2_fitness', 0) for ind in ind_list]),
+                'min_target2_fitness': min([ind.get('target2_fitness', 0) for ind in ind_list]),
                 'individuals': ind_list
             })
 
@@ -305,6 +360,9 @@ class GAAnalyzer:
 <td class="num-cell">{stat['avg_fitness']:.2f}</td>
 <td class="num-cell">{stat['max_fitness']:.2f}</td>
 <td class="num-cell">{stat['min_fitness']:.2f}</td>
+<td class="num-cell" style="color:#1565C0">{stat['avg_target2_fitness']:.2f}</td>
+<td class="num-cell" style="color:#1565C0">{stat['max_target2_fitness']:.2f}</td>
+<td class="num-cell" style="color:#1565C0">{stat['min_target2_fitness']:.2f}</td>
 <td>
 <button class="detail-btn" data-row="{row_id}">详情</button>
 <button class="config-btn" data-config="{config_json}" data-row="{row_id}">配置</button>
@@ -364,9 +422,12 @@ class GAAnalyzer:
                 <th>buy_n</th>
                 <th>sell_m</th>
                 <th>重复次数</th>
-                <th>平均Fitness</th>
-                <th>最大Fitness</th>
-                <th>最小Fitness</th>
+                <th>目标1-平均</th>
+                <th>目标1-最大</th>
+                <th>目标1-最小</th>
+                <th>目标2-平均</th>
+                <th>目标2-最大</th>
+                <th>目标2-最小</th>
                 <th>操作</th>
             </tr></thead>
             <tbody id="tableBody">{table_html}</tbody>
