@@ -1,0 +1,3 @@
+# secrets
+configs/env.py
+*.json

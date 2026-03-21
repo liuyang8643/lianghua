@@ -1,5 +1,7 @@
 # Cached files
 .cache/
+*.log
+tmp_*
 
 # Python
 .venv/
@@ -24,9 +26,3 @@ reports/
 
 # secrets
 configs/env.py
-
-# Claude Code local settings
-.claude/
-*.json
-*.pkl
-*.html
