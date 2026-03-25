@@ -1,5 +1,5 @@
 """
-WMA短周期均值回归因子 - 2/18成交额加权均线偏离 + 1日偏离扩张确认 + 极轻散户追涨杀跌放大
+WMA短周期均值回归因子 - 2/28成交额加权均线偏离 + 1日偏离扩张确认 + 极轻散户追涨杀跌放大
 
 设计目标:
   1. 面向全市场日频打分 + TopN 选股场景。
@@ -8,7 +8,7 @@ WMA短周期均值回归因子 - 2/18成交额加权均线偏离 + 1日偏离扩
      - 短周期机会足够敏感，能尽快识别超买/超卖后的反转；
      - 分数变化不能过于跳跃，避免轻微噪声导致TopN频繁洗牌。
 
-  2. 使用更短的 2/18 WMA 结构。
+  2. 使用更短的 2/28 WMA 结构。
      该组合比传统 5/20 更偏短线，能更快捕捉短期拥挤和超调，实测在当前
      step=5 样本 benchmark 上，对 T+3/T+5/T+10 的相关性更高。
 
@@ -65,7 +65,7 @@ import numpy as np
 # 交互项的归一化尺度。
 #
 # interaction = spread_pct * avg_retail_net_pct
-# - spread_pct 在当前 2/18 结构下，常见量级大约在 ±1% ~ ±3%
+# - spread_pct 在当前 2/28 结构下，常见量级大约在 ±1% ~ ±3%
 # - retail_net_pct 常见量级大约在 ±0.5% ~ ±1%
 # - 因此二者乘积通常在 1e-4 ~ 1e-3 量级
 #
@@ -79,7 +79,7 @@ _INTERACTION_SCALE = 0.001
 # 少数极端样本会导致分数骤变。这里用 tanh(x / _MOMENTUM_SCALE) 做饱和：
 # - 小变化仍保留方向信息
 # - 大变化逐步饱和，避免单日异常把排序拉爆
-_MOMENTUM_SCALE = 0.0068
+_MOMENTUM_SCALE = 0.0058
 
 # spread_pct -> spread_strength 的缩放尺度。
 #
@@ -112,20 +112,20 @@ _RETAIL_GATE = 0.00
 #
 # 数值越大，因子越偏向追踪极短期拥挤反转；
 # 数值过大则会让分数对单日变动过于敏感。
-_BONUS_MULT = 1.00
+_BONUS_MULT = 0.96
 
 # “偏离开始修复”时，对 base_score 的减弱速度。
 #
 # 这里刻意设得较小：
 # - 一旦偏离停止扩大，不代表马上失效
 # - TopN 场景里，更希望分数平缓衰减，而不是一天内剧烈翻转
-_DRAG_MULT = 0.03
+_DRAG_MULT = 0.02
 
 # base_score 的最小保留比例。
 #
 # 当 reversion_drag 很大时，减弱也不能无限向下压，否则会因为短暂修复就
-# 让分数塌陷。0.975 表示即使进入“开始修复”阶段，主信号仍保留至少 97.5%。
-_DRAG_FLOOR = 0.975
+# 让分数塌陷。0.986 表示即使进入“开始修复”阶段，主信号仍保留至少 98.6%。
+_DRAG_FLOOR = 0.986
 
 
 class WMACross(BaseFactor):
@@ -133,7 +133,7 @@ class WMACross(BaseFactor):
   WMA短周期均值回归因子（含偏离扩张确认与散户放大）
 
   因子计算顺序:
-  1. 用 2/18 成交额加权典型价格均线计算 spread_pct
+  1. 用 2/28 成交额加权典型价格均线计算 spread_pct
   2. 用 1 日前的 spread_pct 计算 spread_momentum
   3. 将 momentum 拆成:
      - extension_bonus: 偏离继续扩大
@@ -151,20 +151,20 @@ class WMACross(BaseFactor):
 
   def __init__(self,
                fast_period: int = 2,
-               slow_period: int = 18,
+               slow_period: int = 28,
                momentum_lookback: int = 1,
                momentum_weight: float = 1.0,
-               contrarian_weight: float = 0.1,
+               contrarian_weight: float = 0.03,
                retail_smooth_days: int = 1):
     """
     :param fast_period: 快线WMA周期（默认2日）
-    :param slow_period: 慢线WMA周期（默认18日）
+    :param slow_period: 慢线WMA周期（默认28日）
     :param momentum_lookback: 计算价差动量的回溯天数（默认1日）
     :param momentum_weight: 价差动量权重（默认1.0）
-    :param contrarian_weight: 散户追涨杀跌放大系数（默认0.1）
+    :param contrarian_weight: 散户追涨杀跌放大系数（默认0.03）
         - 0: 禁用散户信号，退化为纯WMA因子
-        - 0.1: 极轻放大（默认，优先保证横截面稳定性）
-        - 0.25: 轻度放大（更偏激进）
+        - 0.03: 极轻放大（默认，优先保证横截面稳定性）
+        - 0.1: 轻度放大（更偏激进）
         可通过 GA 优化搜索最优值
     :param retail_smooth_days: 散户净流向平滑天数（默认1日，更强调信号新鲜度）
     """
