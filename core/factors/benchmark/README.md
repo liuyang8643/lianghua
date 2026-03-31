@@ -1,195 +1,147 @@
-# 因子相关性分析模块（日度截面分析）
+# 因子 Benchmark 模块
 
-## 功能说明
+本模块用于分析因子分数与未来收益率之间的相关性，核心是按交易日做横截面相关性统计，并可选地按股票做时间序列相关性统计。
 
-本模块用于分析因子得分排名与T+M日收益率的相关性，采用日度截面相关性分析方法，使用皮尔逊相关系数和斯皮尔曼等级相关系数进行统计分析。
+## 公开接口
 
-## 分析原理
+```python
+from core.factors.benchmark import calculate_factor_correlation, generate_html_report
+```
 
-### 日度截面相关性
+- `calculate_factor_correlation(...)` 计算相关性并返回 `FactorCorrelationReport`
+- `generate_html_report(report)` 把结果渲染成 HTML
 
-不同于传统的单股票时间序列相关性，本模块采用**日度截面相关性**分析方法：
+## 分析类型
 
-1. 对于每个交易日（如9月1日）：
-   - 计算所有股票（如A、B、C）的因子得分（A1, B1, C1）
-   - 计算每只股票从当日到T+M日（如T+5日，即9月6日）的收益率（Aa1, Ba1, Ca1）
-   - 计算因子得分与T+M日收益率的相关系数
+### 类型 1：同一天、不同股票
 
-2. 重复以上步骤计算每个交易日的相关性
+默认路径。对每个交易日：
 
-3. 最终汇总所有交易日的平均相关性
+1. 计算股票池里所有股票的因子分数
+2. 计算这些股票在 `T+M` 日的收益率
+3. 对“因子分数 vs. 未来收益率”计算 Pearson / Spearman 相关系数
 
-这种方法能够评估因子在**横截面上**的预测能力，即因子能否区分同一时间点不同股票的未来表现。
+最终输出每个持有期的：
 
-## 主要特性
+- 加权平均相关系数
+- 中位数相关系数
+- IC / IR / ICIR
+- 正负相关分布
 
-- **日度截面分析**: 每日计算股票池的因子排名与未来收益率的相关性
-- **T+M日收益率**: 可自定义持有期（默认T+5日）
-- **双重相关系数**: 同时计算Pearson和Spearman相关系数
-- **并行计算**: 利用多核CPU实现高效的批量计算
-- **可视化报告**: 生成交互式HTML报告，包含时间序列图、分布图和详细数据
-- **股票详情展开**: 点击每日数据可查看当日所有股票的因子得分和收益率
+### 类型 2：同一股票、不同日期
 
-## 使用方法
+设置 `show_stock_correlation=True` 后启用。它会对每只股票在不同买入日上的因子分数与未来收益率做相关性统计。
 
-### 基本用法
+## 使用示例
 
 ```python
 from datetime import date
-from core.factors.benchmark import calculate_factor_correlation, generate_html_report
-from core.factors import MACD
-from core.database import allow_buy_stock_code_list
 
-# 获取股票列表
+from core.database import get_all_stock_code_list
+from core.factors import WMACross
+from core.factors.benchmark import calculate_factor_correlation, generate_html_report
+
 stock_list = get_all_stock_code_list()
 
-# 计算MACD因子与T+5日收益率的相关性
 report = calculate_factor_correlation(
-  factor_cls=MACD,
-  start_date=date(2024, 1, 1),
-  end_date=date(2024, 12, 31),
-  m_days=5,  # T+5日收益率
-  stock_codes=stock_list  # 可选，默认使用允许买入的股票列表
+    factor_cls=WMACross,
+    start_date=date(2024, 1, 1),
+    end_date=date(2024, 12, 31),
+    m_days=[1, 3, 5, 10, 20],
+    stock_codes=stock_list,
+    save_stock_scores=False,
+    show_stock_correlation=False,
 )
 
-# 生成HTML报告
 html_file = generate_html_report(report)
-print(f"报告已生成: {html_file}")
+print(html_file)
 ```
 
-### 直接运行
+## 当前入口脚本
 
-```bash
-cd C:\Users\Sleaf\PycharmProjects\WBR
-python -m core.factors.benchmark.main
+### 1. 运行当前 benchmark 入口
+
+```powershell
+python -m core.factors.benchmark.benchmark
 ```
 
-## 报告内容
+`benchmark.py` 当前会：
 
-生成的HTML报告包含以下内容：
+- 读取全部股票列表，然后按环境变量决定是否抽样
+- 用 `WMACross` 作为默认 benchmark 因子
+- 默认分析 `2024-05-01` 到 `2025-05-01`
+- 计算 `T+1/3/5/10/20/30/60`
+- 总是保存 `.pkl` 报告到 `reports/`
+- 在控制台打印每个持有期的汇总统计
+- 仅在 `BENCHMARK_GENERATE_HTML=1/true/yes` 时生成 HTML
 
-1. **汇总统计**
-   - 分析时间范围
-   - 收益率周期（T+M日）
-   - 股票总数和有效交易日数
-   - 平均相关系数和中位数
-   - 正负相关天数分布
+可用环境变量：
 
-2. **每日相关系数时间序列图**
-   - 展示Pearson和Spearman相关系数的时间变化趋势
-   - 支持缩放和数据选择
+- `BENCHMARK_START_DATE`
+- `BENCHMARK_END_DATE`
+- `BENCHMARK_SAMPLE_STEP`
+- `BENCHMARK_SAMPLE_SIZE`
+- `BENCHMARK_GENERATE_HTML`
 
-3. **相关系数分布图**
-   - 直方图展示相关系数的分布情况
-   - 绿色表示正相关，红色表示负相关
+### 2. 从现有 `.pkl` 重新生成 HTML
 
-4. **每日相关性详情表**
-   - 交易日期
-   - Pearson相关系数
-   - Spearman等级相关系数
-   - 可视化条形图
-   - P值（显著性检验，P < 0.05表示统计学显著）
-   - 有效股票数量
-   - 点击可展开查看当日所有股票的因子得分和收益率
+```powershell
+python -m core.factors.benchmark.calc_correlation
+```
 
-5. **股票明细（可展开）**
-   - 股票代码和名称
-   - 因子得分
-   - 当日收盘价
-   - T+M日收盘价
-   - 收益率
+注意：`calc_correlation.py` 底部当前使用的是硬编码 `pkl_file` 路径，运行前需要先改成目标文件。
 
-6. **交互功能**
-   - 过滤：按相关性类型（正/负/无效）筛选
-   - 展开/收起：查看每日股票详情
+### 3. 启动因子可视化 Web 页面
 
-## 依赖项
+```powershell
+python -m core.factors.benchmark.web_chart
+python -m core.factors.benchmark.web_chart --port 9090
+python -m core.factors.benchmark.web_chart --code 600000.SH
+```
 
-- `scipy`: 相关系数计算（pearsonr, spearmanr）
-- `joblib`: 并行计算
-- `jinja2`: HTML模板渲染
-- `numpy`: 数值计算
-- `pandas`: 数据处理
+`web_chart.py` 当前会：
 
-## 技术说明
+- 默认随机选择一只 `allow_buy_stock_code_list()` 中的股票并启动本地 HTTP 服务
+- 在页面中展示 K 线、成交量、MA5、MA20 和因子得分
+- 当前仅计算并展示 `WMACross`
+- 当前把图表时间范围限制在 `2021-01-01` 到 `2022-12-31`
+- 使用浏览器端 `ECharts` 渲染图表
 
-### 相关性计算方法
+## 输出位置
 
-1. 获取指定时间范围内的所有交易日
-2. 对每个交易日并行计算：
-   - 确定T+M日（如T+5日）
-   - 计算所有股票的因子得分
-   - 获取当日和T+M日的收盘价
-   - 计算T+M日收益率 = (T+M日收盘价 - 当日收盘价) / 当日收盘价
-   - 计算因子得分与收益率的Pearson和Spearman相关系数
-3. 汇总统计所有交易日的平均相关性
+`benchmark.py` 和 `calc_correlation.py` 的报告输出写入当前工作目录下的 `reports/` 目录，而不是固定写到模块目录。
 
-### 性能优化
+常见产物：
 
-- 使用`joblib`并行处理多个交易日
-- 利用项目现有的历史数据缓存机制
-- 工作进程数自动适配CPU核心数和交易日数量
+- `factor-correlation-<factor>-<timestamp>.pkl`
+- `factor-correlation-<factor>-T+<m_days>-<timestamp>.html`
 
-### 数据质量
-
-- 至少需要10只股票有效数据才计算相关性
-- 自动过滤NaN和无效数据
-- 自动处理停牌等特殊情况
+`web_chart.py` 在 `--code` 模式下会把 HTML 临时写到系统临时目录，然后自动打开浏览器；服务模式下不会固定落库到仓库目录。
 
 ## 参数说明
 
-### calculate_factor_correlation
+`calculate_factor_correlation(...)` 主要参数：
 
-- `factor_cls`: 因子类（如MACD, KDJ等）
-- `start_date`: 分析开始日期
-- `end_date`: 分析结束日期
-- `m_days`: T+M日收益率的M值（默认5，表示T+5日）
-- `stock_codes`: 股票代码列表（可选，默认使用允许买入列表）
+- `factor_cls`: 因子类
+- `start_date`: 开始日期
+- `end_date`: 结束日期
+- `m_days`: 单个持有期或持有期列表
+- `stock_codes`: 股票代码列表
+- `save_stock_scores`: 是否把单日股票明细保存在报告对象里
+- `show_stock_correlation`: 是否计算类型 2 结果
 
-## 示例场景
+## 实现要点
 
-### 场景1：评估MACD因子的预测能力
-
-```python
-# 计算MACD因子能否预测未来5日的收益
-report = calculate_factor_correlation(
-  factor_cls=MACD,
-  start_date=date(2024, 1, 1),
-  end_date=date(2024, 12, 31),
-  m_days=5
-)
-# 如果平均相关系数为正且显著，说明MACD高的股票未来5日表现更好
-```
-
-### 场景2：对比不同持有期
-
-```python
-# 对比T+1, T+5, T+10日的预测能力
-for m in [1, 5, 10]:
-  report = calculate_factor_correlation(
-    factor_cls=KDJ,
-    start_date=date(2024, 1, 1),
-    end_date=date(2024, 12, 31),
-    m_days=m
-  )
-  print(f"T+{m}日平均相关性: {report.avg_correlation:.4f}")
-```
-- 详细记录计算失败原因
+- 会在内部调用 `init_stock_detail_cache()` 和 `init_full_data()`
+- 使用 `joblib` 多进程并行
+- 因子分数会复用 `core/factors/helpers/.cache/` 中的磁盘缓存
+- HTML 由 `report.py` 使用 Jinja2 模板生成
 
 ## 注意事项
 
-1. 首次运行可能需要下载大量历史数据，耗时较长
-2. 建议在非交易时间运行，避免数据更新影响
-3. 相关性不等于因果关系，需结合其他指标综合判断
-4. P值 < 0.05 表示相关性具有统计学意义
-
-## 示例输出
-
-报告文件保存在 `./logs` 目录下，文件名格式：
-
-```
-factor-correlation-{因子名称}-{时间戳}.html
-```
-
-报告生成后会自动在默认浏览器中打开。
-
+- 股票池过大、持有期过多时，计算会很慢
+- `BENCHMARK_SAMPLE_STEP` 和 `BENCHMARK_SAMPLE_SIZE` 可以先把股票池缩小，再做试跑
+- `save_stock_scores=True` 会明显增加内存和 pickle 体积
+- `benchmark.py` 默认不会生成 HTML，需要显式设置 `BENCHMARK_GENERATE_HTML`
+- `web_chart.py` 当前模块注释写的是更宽的时间范围，但实际代码只展示 `2021-01-01` 到 `2022-12-31`
+- 相关性只表示统计关系，不表示因果关系

@@ -1,36 +1,130 @@
-# Repository Guidelines
+# WBR Agent Guide
 
-## Project Structure & Module Organization
-- `core/` contains shared market-data access, factor implementations, ranking logic, and sizing utilities.
-- `trading/` holds live-trading entrypoints such as `main.py`, `watchdog.py`, and Lark notification handlers.
-- `testback/` contains backtesting and GA optimization code.
-- `utils/` stores reusable helpers plus small test modules like `utils/stock/test_time.py`.
-- `configs/` holds runtime configuration. Copy `configs/env.template.py` to `configs/env.py`; treat `best_individual_config.json` as generated output.
-- `reports/` and `core/factors/helpers/.cache/` contain generated artifacts and should not be treated as source.
+## Overview
 
-## Build, Test, and Development Commands
-- `uv sync --locked`: create or update the local `.venv` from `pyproject.toml` and `uv.lock`.
-- `$env:PYTHONPATH = (Get-Location).Path`: set the repo root before running scripts directly.
-- `python testback/ga.py`: run backtests and GA parameter search.
-- `python trading/main.py --individual-config configs/best_individual_config.json`: start trading logic manually.
-- `.\run.ps1`: production helper that fetches `origin/main`, hard-resets to it, installs deps, and starts `trading/watchdog.py`. Do not use it for normal feature development.
+WBR is a Windows-only Python 3.12 quantitative trading project built around QMT (`xtquant`). The repository currently covers:
 
-## Coding Style & Naming Conventions
-- Target Python 3.12 on Windows. Follow the existing 2-space indentation style.
-- Use `snake_case` for functions, modules, and variables; use `PascalCase` for classes such as `TopN` and factor classes.
-- Reuse module loggers (`core_logger`, `trading_logger`, `testback_logger`) instead of `print`.
-- New factors belong under `core/factors/`; when adding one, export it in `core/factors/__init__.py` and register defaults in `core/strategies/`.
+- Live trading entrypoints under `trading/`
+- Data access, factor implementations, and benchmark helpers under `core/`
+- GA optimization and result analysis under `testback/`
+- Shared utilities under `utils/`
+- Runtime configuration under `configs/`
+- Generated reports under `reports/`
 
-## Testing Guidelines
-- Tests use `unittest` and live near the code as `test_*.py`.
-- Run targeted tests with commands such as `python -m unittest utils.stock.test_time` and `python -m unittest core.database.test_stock_list_new`.
-- No coverage gate is configured. Add focused tests when changing date handling, factor scoring, cache behavior, or order-sizing logic.
+Read this file before making changes. Tool-specific notes should defer to this file.
 
-## Commit & Pull Request Guidelines
-- Recent commits use short, specific, imperative subjects, often in Chinese, for example `优化WMACross` or `修正有效股票列表不包含st`.
-- Keep the first line concise and scoped to one change.
-- PRs should explain trading or data impact, list local test commands, link the related task, and include screenshots or report paths for visual or benchmark output changes.
+## Agent Files
 
-## Security & Configuration Tips
-- Never commit `configs/env.py`, account credentials, QMT login artifacts, or temporary logs.
-- Treat `reports/`, `.cache/`, `tmp_*.log`, and generated JSON/HTML/PKL files as disposable unless the change explicitly requires them.
+- Primary repository instructions live in this root `AGENTS.md`.
+- `CLAUDE.md` should be a symlink to `AGENTS.md`.
+- Shared project skills live under `.agents/skills/`.
+- `.claude/skills` should be a symlink to `.agents/skills`.
+- `.github/copilot-instructions.md` is a pointer note and should not diverge from this file.
+
+## Environment
+
+- OS: Windows only
+- Python: 3.12+
+- Package manager: `uv`
+- External dependency: QMT client must be installed locally
+
+Install dependencies with:
+
+```powershell
+uv sync --locked
+```
+
+Create local runtime config by copying `configs/env.template.py` to `configs/env.py` and filling in account, Feishu, and QMT paths.
+
+## Common Commands
+
+Run live trading:
+
+```powershell
+python -m trading.main --individual-config configs/best_individual_config.json
+```
+
+Run GA:
+
+```powershell
+python testback/ga.py
+python testback/ga.py --individual-config configs/best_individual_config.json --period-span 30
+```
+
+Analyze GA output:
+
+```powershell
+python testback/ga_analyzer.py results/ga_<timestamp>
+```
+
+Run factor benchmark with the current default `WMACross` setup:
+
+```powershell
+python -m core.factors.benchmark.benchmark
+```
+
+Override benchmark date range, sample size, or HTML generation through environment variables:
+
+```powershell
+$env:BENCHMARK_START_DATE = '2024-01-01'
+$env:BENCHMARK_END_DATE = '2024-12-31'
+$env:BENCHMARK_SAMPLE_STEP = '5'
+$env:BENCHMARK_SAMPLE_SIZE = '1000'
+$env:BENCHMARK_GENERATE_HTML = '1'
+python -m core.factors.benchmark.benchmark
+```
+
+Launch the factor visualization tool:
+
+```powershell
+python -m core.factors.benchmark.web_chart
+python -m core.factors.benchmark.web_chart --port 9090
+python -m core.factors.benchmark.web_chart --code 600000.SH
+```
+
+## Architecture Notes
+
+- `core/database/` contains market, financial, and money-flow data access layers.
+- `core/factors/` contains factor implementations plus benchmark helpers. The current benchmark focus is `WMACross`, a short-horizon 2/28 WMA mean-reversion factor with a retail money-flow amplifier.
+- `core/factors/benchmark/benchmark.py` currently defaults to `WMACross`, supports benchmark date/sample overrides via environment variables, always saves a pickle report, and only generates HTML when `BENCHMARK_GENERATE_HTML` is enabled.
+- `core/factors/benchmark/web_chart.py` provides an ECharts-based browser view for K-line, moving averages, volume, and factor scores. It currently visualizes `WMACross` only and filters chart data to `2021-01-01` through `2022-12-31`.
+- `core/strategies/` contains position-sizing and strategy selection logic.
+- `trading/main.py` is the explicit live-trading CLI entrypoint and currently requires `--individual-config`.
+- `trading/watchdog.py` does not currently match the `trading.main` CLI contract and should be treated carefully.
+- `testback/` contains GA search and analysis scripts rather than a separate packaged service.
+
+## Dependency Notes
+
+Key runtime dependencies declared in `pyproject.toml` include:
+
+- Trading and data: `xtquant`, `akshare`, `pandas`, `numpy`, `scipy`, `ta-lib`
+- Optimization and parallelism: `deap`, `joblib`, `loky`, `filelock`
+- Reporting and integration: `plotly`, `jinja2`, `boto3`, `lark-oapi`, `pyyaml`, `loguru`, `psutil`, `pyarrow`
+
+Additional runtime behavior to remember:
+
+- `WMACross` now depends on retail money-flow data from `core/database/money_flow/`.
+- `core.factors.benchmark.web_chart` loads `echarts@5` from a CDN in the browser.
+
+When these dependencies change, keep this section aligned with `pyproject.toml` and the runtime workflow.
+
+## Maintenance Rule
+
+If a change affects project architecture, directory ownership, entrypoints, workflows, or dependency relationships, update this `AGENTS.md` in the same change.
+
+Examples that require an `AGENTS.md` update:
+
+- Adding, removing, or repurposing top-level modules or major subpackages
+- Changing the main way live trading, GA, benchmark, or visualization flows are started
+- Introducing, removing, or materially reclassifying runtime dependencies
+- Changing configuration locations or required local setup steps
+- Changing where shared agent instructions or skills live
+
+The goal is to keep future AI agents aligned with the current repository shape without re-discovering the whole project from scratch.
+
+## Current Risks
+
+- `run.ps1` performs `git fetch origin main` followed by `git reset --hard origin/main`, which discards local uncommitted work.
+- The checked-in `configs/best_individual_config.json` reflects an older factor set and may not match the current `TopN` and GA assumptions.
+- `core/factors/benchmark/web_chart.py` advertises a wider date span in its module docstring, but the implementation currently filters to `2021-01-01` through `2022-12-31`.
+- The repository currently has no configured automated test or lint pipeline.
