@@ -104,43 +104,39 @@ class SharedMemoryCache(Generic[T]):
   
   def get(self, key: str) -> Optional[T]:
     """从缓存获取（主进程和子进程都可调用，无锁设计）
-    
+
     Args:
       key: 缓存键
-      
+
     Returns:
       缓存的对象，不存在则返回 None
     """
     shm_name = self._get_shm_name(key)
     shm = None
-    
+
     try:
       # 连接共享内存
       shm = shared_memory.SharedMemory(name=shm_name)
-      
+
       # 读取头部
       data_size = struct.unpack('I', bytes(shm.buf[0:4]))[0]
       is_compressed = bool(struct.unpack('B', bytes(shm.buf[4:5]))[0])
-      
+
       # 读取并反序列化数据
       serialized = bytes(shm.buf[5:5+data_size])
       data = self._deserialize(serialized, is_compressed)
-      
-      # 主进程：记录引用（用于后续清理）
-      # 子进程：立即关闭（避免资源泄漏）
-      if key not in self._shm_registry:
-        self._shm_registry[key] = shm
-      else:
-        shm.close()
-      
+
+      # 仅 put() 创建的句柄保留在注册表中用于后续 cleanup。
+      # get() 打开的临时句柄在读取完成后立即关闭，避免子进程长时间持有命名共享内存。
+      shm.close()
       return data
-      
+
     except FileNotFoundError:
       # 共享内存不存在
       if shm:
         shm.close()
       return None
-      
+
     except Exception:
       # 其他错误（损坏的数据等）
       if shm:

@@ -41,7 +41,7 @@ class Fundamental(BaseFactor):
         financial = self._get_financial(ctx.code, ctx.base_time)
 
         if financial is None:
-            return FactorResult(score=0.5, err="无财务数据")
+            raise ValueError(f"无财务数据: {ctx.code}")
 
         # 计算分数
         score = 0.0
@@ -91,7 +91,7 @@ class Fundamental(BaseFactor):
         if pd.notna(cash_flow) and cash_flow > 0:
             score += 0.10
 
-        return FactorResult(score=score)
+        return FactorResult(score=score, err=None)
 
     def _get_financial(self, stock_code: str, date: datetime) -> Optional[pd.Series]:
         """
@@ -108,12 +108,8 @@ class Fundamental(BaseFactor):
         # 检查类变量缓存
         if report_period not in self._market_cache:
             # 首次查询：调用 API 获取全市场数据
-            try:
-                df = ak.stock_yjbb_em(date=report_period)
-                self._market_cache[report_period] = df
-            except Exception as e:
-                print(f"获取财务数据失败 (报告期: {report_period}): {e}")
-                return None
+            df = ak.stock_yjbb_em(date=report_period)
+            self._market_cache[report_period] = df
 
         # 从缓存中提取当前股票
         df = self._market_cache[report_period]

@@ -44,6 +44,14 @@ Run live trading:
 python -m trading.main --individual-config configs/best_individual_config.json
 ```
 
+Run one-shot manual trading with interactive confirmation:
+
+```powershell
+python -m trading.main --individual-config configs/best_individual_config.json --buy
+python -m trading.main --individual-config configs/best_individual_config.json --sell
+python -m trading.main --individual-config configs/best_individual_config.json --buy --sell
+```
+
 Run GA:
 
 ```powershell
@@ -89,7 +97,7 @@ python -m core.factors.benchmark.web_chart --code 600000.SH
 - `core/factors/benchmark/benchmark.py` currently defaults to `WMACross`, supports benchmark date/sample overrides via environment variables, always saves a pickle report, and only generates HTML when `BENCHMARK_GENERATE_HTML` is enabled.
 - `core/factors/benchmark/web_chart.py` provides an ECharts-based browser view for K-line, moving averages, volume, and factor scores. It currently visualizes `WMACross` only and filters chart data to `2021-01-01` through `2022-12-31`.
 - `core/strategies/` contains position-sizing and strategy selection logic.
-- `trading/main.py` is the explicit live-trading CLI entrypoint and currently requires `--individual-config`.
+- `trading/main.py` is the explicit live-trading CLI entrypoint and currently requires `--individual-config`. It also supports one-shot manual `--buy` / `--sell` execution with terminal confirmation.
 - `trading/watchdog.py` does not currently match the `trading.main` CLI contract and should be treated carefully.
 - `testback/` contains GA search and analysis scripts rather than a separate packaged service.
 

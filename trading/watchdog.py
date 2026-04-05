@@ -1,3 +1,5 @@
+import argparse
+import os
 import signal
 import subprocess
 import time
@@ -8,11 +10,23 @@ from trading.qmt import start_qmt
 from utils.stock.holiday import is_trading_day
 from utils.sys import terminate_process_tree
 
-def monitor_main(child_script: str):
+REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+MAIN_MODULE = 'trading.main'
+DEFAULT_INDIVIDUAL_CONFIG = os.path.join(REPO_ROOT, 'configs', 'best_individual_config.json')
+
+
+def _resolve_path(path: str) -> str:
+  if os.path.isabs(path):
+    return path
+  return os.path.abspath(os.path.join(REPO_ROOT, path))
+
+
+def monitor_main(individual_config: str):
   """
   监控并管理QMT交易程序的主函数
-  :param child_script: 要执行的子脚本路径
+  :param individual_config: Individual_config JSON 文件路径
   """
+  resolved_individual_config = _resolve_path(individual_config)
   terminate_flag = False
   restart_delay = 10  # 初始重启延迟（秒）
   process_start_time = datetime.time(9, 0)  # 进程启动时间（开盘前）
@@ -51,8 +65,15 @@ def monitor_main(child_script: str):
       qmt_process = start_qmt()
       print(f"QMT平台已启动 (进程ID: {qmt_process.pid})")
       time.sleep(5)  # 等待QMT初始化
-      print("正在启动主交易进程...")
-      main_process = subprocess.Popen([sys.executable, child_script])
+      print(f"正在启动主交易进程，配置文件: {resolved_individual_config}")
+      main_command = [
+        sys.executable,
+        '-m',
+        MAIN_MODULE,
+        '--individual-config',
+        resolved_individual_config,
+      ]
+      main_process = subprocess.Popen(main_command)
       print(f"主交易进程已启动 (进程ID: {main_process.pid})")
       restart_delay = 10  # 重置重启延迟
     except Exception as setup_e:
@@ -109,6 +130,15 @@ def monitor_main(child_script: str):
     sys.exit(1)
 
 if __name__ == "__main__":
-  # 监控主程序的入口点
+  parser = argparse.ArgumentParser()
+  parser.add_argument(
+    '--individual-config',
+    type=str,
+    default=DEFAULT_INDIVIDUAL_CONFIG,
+    help='Individual_config JSON文件路径'
+  )
+  args = parser.parse_args()
+
   print('QMT Watchdog 启动，开始监控主程序...')
-  monitor_main('./main.py')
+  print(f'使用配置文件: {_resolve_path(args.individual_config)}')
+  monitor_main(args.individual_config)

@@ -15,7 +15,7 @@ class Unpopular(BaseFactor):
     # 大盘相关性
     benchmark_pct = ctx.get_benchmark_pct_change(period)
     if benchmark_pct is None:
-      return FactorResult(score=0, err="no_benchmark")
+      raise ValueError(f"无法获取大盘数据: {ctx.code}")
 
     min_len = min(len(pct_changes), len(benchmark_pct))
     corr_60d = np.corrcoef(pct_changes[-min_len:], benchmark_pct[-min_len:])[0, 1]
@@ -45,6 +45,7 @@ class Unpopular(BaseFactor):
 
     return FactorResult(
       score=final_score,
+      err=None,
       raw_value=unpopularity,
       metadata={
         'corr_60d': corr_60d,

@@ -19,23 +19,19 @@ class RetailFlow(BaseFactor):
         super().__init__()
 
     def calc(self, ctx: FactorCtx) -> FactorResult:
-        try:
-            # 1. 获取散户资金金额（小单买入 + 小单卖出）
-            retail_amount = get_retail_flow_amount(ctx.code, ctx.base_time)
-            if retail_amount is None:
-                return FactorResult(score=None, err=ValueError(f"无资金流向数据: {ctx.code}"))
+        # 1. 获取散户资金金额（小单买入 + 小单卖出）
+        retail_amount = get_retail_flow_amount(ctx.code, ctx.base_time)
+        if retail_amount is None:
+            raise ValueError(f"无资金流向数据: {ctx.code}")
 
-            # 2. 获取当日总成交额（从 K 线数据）
-            today_data = ctx.get_today_data()
-            total_amount = float(today_data['amount'])
+        # 2. 获取当日总成交额（从 K 线数据）
+        today_data = ctx.get_today_data()
+        total_amount = float(today_data['amount'])
 
-            if total_amount <= 0:
-                return FactorResult(score=None, err=ValueError(f"成交额异常: {ctx.code}"))
+        if total_amount <= 0:
+            raise ValueError(f"成交额异常: {ctx.code}")
 
-            # 3. 计算散户占比（百分比形式）
-            retail_ratio = (retail_amount / total_amount) * 100
+        # 3. 计算散户占比（百分比形式）
+        retail_ratio = (retail_amount / total_amount) * 100
 
-            return FactorResult(score=retail_ratio, err=None)
-
-        except Exception as e:
-            return FactorResult(score=None, err=e)
+        return FactorResult(score=retail_ratio, err=None)

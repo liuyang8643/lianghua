@@ -9,8 +9,5 @@ class MACD(BaseFactor):
     super().__init__()
 
   def calc(self, ctx: FactorCtx) -> FactorResult:
-    try:
-      macd, signal, hist = ctx.get_macd()
-      return FactorResult(score=macd, err=None)
-    except Exception as e:
-      return FactorResult(score=None, err=e)
+    macd, signal, hist = ctx.get_macd()
+    return FactorResult(score=macd, err=None)

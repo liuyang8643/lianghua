@@ -9,7 +9,7 @@ TRIX因子 - 加法混合设计
 - TRIX上穿0: 趋势由空转多 → 强买入信号
 
 评分设计:
-- base_score (50%): TRIX正值强度 (连续值，负值返回0)
+- base_score: TRIX正值强度 (连续值，负值返回0，不加限制)
 - signal_bonus (50%): TRIX上穿零轴 (离散信号)
 
 注意: 本因子输出原始分数，需要在框架层使用batch_norm进行归一化
@@ -31,7 +31,7 @@ class TRIXFactor(BaseFactor):
     TRIX因子（三重指数平滑平均线）
 
     评分逻辑:
-    1. base_score (50%): TRIX正值强度 (连续值，负值返回0)
+    1. base_score: TRIX正值强度 (连续值，负值返回0，不加限制)
     2. signal_bonus (50%): TRIX上穿零轴 (离散信号)
 
     输出: 原始分数 [0, 1]，由框架层进行batch norm归一化
@@ -52,54 +52,54 @@ class TRIXFactor(BaseFactor):
         self.trix_center = trix_center
 
     def calc(self, ctx: FactorCtx) -> FactorResult:
-        try:
-            # 获取TRIX指标
-            trix_value = ctx.get_trix(period=self.trix_period)
+        # 获取TRIX指标
+        trix_value = ctx.get_trix(period=self.trix_period)
 
-            # === 1. 连续基础分 (50%) ===
-            # 只有TRIX>0才有正向贡献
-            if trix_value > 0:
-                # 使用sigmoid平滑映射，避免硬阈值
-                # trix_value范围通常在[-0.01, 0.01]
-                # sigmoid中心设在0.005（中等强度）
-                x = (trix_value - self.trix_center) / self.trix_center  # 标准化到sigmoid合理区间
-                base_score = safe_sigmoid(x * 2) * 0.5  # sigmoid映射到[0, 0.5]
-            else:
-                base_score = 0.0  # 下跌趋势不给基础分
+        # === 1. 连续基础分（不加限制） ===
+        # 只有TRIX>0才有正向贡献
+        if trix_value > 0:
+            # 使用sigmoid平滑映射，避免硬阈值
+            # trix_value范围通常在[-0.01, 0.01]
+            # sigmoid中心设在0.005（中等强度）
+            x = (trix_value - self.trix_center) / self.trix_center  # 标准化到sigmoid合理区间
+            base_score = safe_sigmoid(x * 2)  # sigmoid映射，连续分数不加限制
+        else:
+            base_score = 0.0  # 下跌趋势不给基础分
 
-            # === 2. 信号加成 (50%) ===
-            signal_bonus = 0.0
+        # === 2. 信号加成 (50%) ===
+        signal_bonus = 0.0
 
-            # TRIX上穿零轴检测
-            history_data = ctx.get_daily_data(self.cross_valid_days + self.trix_period * 3 + 1)
+        # TRIX上穿零轴检测
+        required_days = self.cross_valid_days + self.trix_period * 3 + 1
+        history_data = ctx.get_daily_data(required_days)
+        if len(history_data) < required_days:
+            raise ValueError(f"历史数据不足: 需要{required_days}天，实际{len(history_data)}天")
 
-            if len(history_data) >= self.cross_valid_days + self.trix_period * 3 + 1:
-                close = np.array(history_data['close'].values, dtype=np.float64)
-                trix_series = talib.TRIX(close, timeperiod=self.trix_period)
+        close = np.array(history_data['close'].values, dtype=np.float64)
+        trix_series = talib.TRIX(close, timeperiod=self.trix_period)
 
-                # 提取最近的有效数据（去掉NaN）
-                valid_mask = ~np.isnan(trix_series)
-                valid_trix = trix_series[valid_mask]
+        # 提取最近的有效数据（去掉NaN）
+        valid_mask = ~np.isnan(trix_series)
+        valid_trix = trix_series[valid_mask]
 
-                if len(valid_trix) >= self.cross_valid_days + 1:
-                    trix_history = valid_trix[-(self.cross_valid_days + 1):]
-                    zero_line = np.zeros_like(trix_history)
+        if len(valid_trix) < self.cross_valid_days + 1:
+            raise ValueError(f"有效TRIX数据不足: 需要{self.cross_valid_days + 1}个点，实际{len(valid_trix)}个")
 
-                    golden_cross = detect_golden_cross(
-                        trix_history,
-                        zero_line,
-                        lookback=self.cross_valid_days
-                    )
+        trix_history = valid_trix[-(self.cross_valid_days + 1):]
+        zero_line = np.zeros_like(trix_history)
 
-                    if golden_cross['exists']:
-                        # 使用时间衰减，不依赖TRIX当前值（因为刚穿过时TRIX接近0）
-                        time_factor = time_decay(golden_cross['days_ago'], valid_period=self.cross_valid_days)
-                        signal_bonus = time_factor * 0.5
+        golden_cross = detect_golden_cross(
+            trix_history,
+            zero_line,
+            lookback=self.cross_valid_days
+        )
 
-            # === 3. 最终分数 = base + bonus ===
-            final_score = base_score + signal_bonus
+        if golden_cross['exists']:
+            # 使用时间衰减，不依赖TRIX当前值（因为刚穿过时TRIX接近0）
+            time_factor = time_decay(golden_cross['days_ago'], valid_period=self.cross_valid_days)
+            signal_bonus = time_factor * 0.5
 
-            return FactorResult(score=final_score, err=None)
+        # === 3. 最终分数 = base + bonus ===
+        final_score = base_score + signal_bonus
 
-        except Exception as e:
-            return FactorResult(score=None, err=e)
+        return FactorResult(score=final_score, err=None)

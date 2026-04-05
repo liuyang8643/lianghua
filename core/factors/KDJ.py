@@ -45,10 +45,7 @@ class KDJ(BaseFactor):
     return score[-1]
 
   def calc(self, ctx: FactorCtx) -> FactorResult:
-    try:
-      k, d, j = ctx.get_kdj(self.period)
-      score = self.calculate_cross_score(k, d, j)
-      return FactorResult(score=score, err=None)
-    except Exception as e:
-      return FactorResult(score=None, err=e)
+    k, d, j = ctx.get_kdj(self.period)
+    score = self.calculate_cross_score(k, d, j)
+    return FactorResult(score=score, err=None)
 

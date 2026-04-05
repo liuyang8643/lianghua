@@ -9,9 +9,10 @@ from core.database import StockDetail, StockTradingData
 class FactorCtx:
   """判断上下文，包含股票代码、时间"""
 
-  def __init__(self, code: str, base_time: datetime):
+  def __init__(self, code: str, base_time: datetime, dividend_type: str = 'back'):
     self.code = code
     self.base_time = base_time
+    self.dividend_type = dividend_type
 
   def get_stock_detail(self) -> StockDetail:
     """获取股票详情"""
@@ -26,7 +27,7 @@ class FactorCtx:
     """获取日线数据"""
     from core.database import get_market_data_from_cache
 
-    return get_market_data_from_cache(self.code, pass_days, self.base_time, '1d')
+    return get_market_data_from_cache(self.code, pass_days, self.base_time, '1d', dividend_type=self.dividend_type)
 
   def get_today_data(self) -> StockTradingData:
     """获取今日数据"""
@@ -36,6 +37,21 @@ class FactorCtx:
     """获取当前价格"""
     return self.get_today_data()['close']
 
+  def get_raw_close(self) -> Optional[float]:
+    """获取不复权收盘价（实际交易价格，用于面值退市风险判断）"""
+    from core.database import get_market_data_from_cache
+
+    try:
+      data = get_market_data_from_cache(
+        self.code, 1, self.base_time, '1d',
+        allow_tainted=True, dividend_type='none',
+      )
+      if data is not None and not data.empty:
+        return float(data.iloc[-1]['close'])
+    except Exception:
+      pass
+    return None
+
   def get_yesterday_data(self) -> StockTradingData:
     """获取昨日数据"""
     return self.get_daily_data(2).iloc[-2]
@@ -44,7 +60,7 @@ class FactorCtx:
     """获取分钟数据"""
     from core.database import get_market_data_from_cache
 
-    return get_market_data_from_cache(self.code, pass_minutes, self.base_time, '1m')
+    return get_market_data_from_cache(self.code, pass_minutes, self.base_time, '1m', dividend_type=self.dividend_type)
 
   def get_minute_data_today(self, base_datetime: datetime) -> Optional[DataFrame]:
     """获取今日分钟数据"""
@@ -349,7 +365,14 @@ class FactorCtx:
     from core.database import get_market_data_from_cache
     from utils.stock.info import baseline_stock_code
 
-    benchmark_data = get_market_data_from_cache(baseline_stock_code, period, self.base_time, '1d', allow_tainted=True)
+    benchmark_data = get_market_data_from_cache(
+      baseline_stock_code,
+      period,
+      self.base_time,
+      '1d',
+      allow_tainted=True,
+      dividend_type=self.dividend_type,
+    )
     if benchmark_data is None or benchmark_data.empty:
       return None
 

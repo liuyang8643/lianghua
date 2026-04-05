@@ -1,4 +1,3 @@
-# from line_profiler_pycharm import profile
 from datetime import datetime
 from typing import Optional
 from pandas import DataFrame
@@ -32,18 +31,39 @@ def get_history_data_after_download(
     period: str,
     dividend_type: str = 'back',
 ) -> dict[str, Optional[DataFrame]]:
-  # 当count为None时，使用一个大的默认值（约10年数据）
+  # 先检查数据是否已完整（缓存命中则跳过下载）
+  existing = get_history_data(stock_codes, count, base_time, period, dividend_type)
   actual_count = 2500 if count is None else count
 
+  stocks_need_download = []
   for code in stock_codes:
-    xtdata.download_history_data(
-      code,
-      period,
-      start_time=format_qmt_date(get_target_period_backward(base_time, period, actual_count)),
-      end_time=format_qmt_date(base_time),
+    data = existing.get(code)
+    if data is None or data.empty:
+      stocks_need_download.append(code)
+      continue
+    if len(data) < actual_count:
+      stocks_need_download.append(code)
+      continue
+    # 检查最新日期
+    if len(data) > 0:
+      last_ts = data.iloc[-1]['time']
+      last_dt = datetime.fromtimestamp(last_ts // 1000)
+      if not is_latest_data(last_dt, base_time, period):
+        stocks_need_download.append(code)
+
+  if stocks_need_download:
+    start_time_str = format_qmt_date(get_target_period_backward(base_time, period, actual_count))
+    end_time_str = format_qmt_date(base_time)
+    xtdata.download_history_data2(
+      stocks_need_download, period,
+      start_time=start_time_str,
+      end_time=end_time_str,
       incrementally=True
     )
-  return get_history_data(stock_codes, count, base_time, period, dividend_type)
+    # 下载后重新获取
+    existing = get_history_data(stock_codes, count, base_time, period, dividend_type)
+
+  return existing
 
 # @profile
 def check_stocks_need_fix(

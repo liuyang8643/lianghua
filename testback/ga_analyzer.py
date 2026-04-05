@@ -18,6 +18,13 @@ import pandas as pd
 from collections import Counter, defaultdict
 from datetime import datetime
 import pickle
+from html import escape
+
+try:
+    from plotly.subplots import make_subplots
+    import plotly.graph_objects as go
+except ImportError:
+    pass
 
 try:
     from core.logger import get_logger
@@ -337,6 +344,14 @@ class GAAnalyzer:
             weights = config['weights']
             sorted_weights = sorted(weights.items(), key=lambda x: abs(x[1]), reverse=True)
             weight_sig = ', '.join([f"{k}={v:.2f}" for k, v in sorted_weights[:5]])
+            weight_title = escape(
+                ', '.join([f'{k}={v:.4f}' for k, v in sorted(weights.items(), key=lambda x: abs(x[1]), reverse=True)]),
+                quote=True
+            )
+            weight_sort_key = escape(
+                '|'.join([f'{k}={v:.4f}' for k, v in sorted(weights.items(), key=lambda x: abs(x[1]), reverse=True)]),
+                quote=True
+            )
             config_json = json.dumps(config).replace('"', '&quot;')
 
             detail_records = []
@@ -351,19 +366,19 @@ class GAAnalyzer:
                 })
             all_details_data.append(detail_records)
 
-            row_html = f"""<tr data-row-id="{row_id}">
-<td>{row_id}</td>
-<td class="weight-cell" title="{', '.join([f'{k}={v:.4f}' for k, v in sorted(weights.items(), key=lambda x: abs(x[1]), reverse=True)])}">{weight_sig}</td>
-<td>{config['buy_n']}</td>
-<td>{config['sell_m']}</td>
-<td>{stat['count']}</td>
-<td class="num-cell">{stat['avg_fitness']:.2f}</td>
-<td class="num-cell">{stat['max_fitness']:.2f}</td>
-<td class="num-cell">{stat['min_fitness']:.2f}</td>
-<td class="num-cell" style="color:#1565C0">{stat['avg_target2_fitness']:.2f}</td>
-<td class="num-cell" style="color:#1565C0">{stat['max_target2_fitness']:.2f}</td>
-<td class="num-cell" style="color:#1565C0">{stat['min_target2_fitness']:.2f}</td>
-<td>
+            row_html = f"""<tr data-row-id="{row_id}" data-original-index="{idx}">
+<td data-sort-value="{row_id}">{row_id}</td>
+<td class="weight-cell" data-sort-value="{weight_sort_key}" title="{weight_title}">{weight_sig}</td>
+<td data-sort-value="{config['buy_n']}">{config['buy_n']}</td>
+<td data-sort-value="{config['sell_m']}">{config['sell_m']}</td>
+<td data-sort-value="{stat['count']}">{stat['count']}</td>
+<td class="num-cell" data-sort-value="{stat['avg_fitness']:.6f}">{stat['avg_fitness']:.2f}</td>
+<td class="num-cell" data-sort-value="{stat['max_fitness']:.6f}">{stat['max_fitness']:.2f}</td>
+<td class="num-cell" data-sort-value="{stat['min_fitness']:.6f}">{stat['min_fitness']:.2f}</td>
+<td class="num-cell" data-sort-value="{stat['avg_target2_fitness']:.6f}" style="color:#1565C0">{stat['avg_target2_fitness']:.2f}</td>
+<td class="num-cell" data-sort-value="{stat['max_target2_fitness']:.6f}" style="color:#1565C0">{stat['max_target2_fitness']:.2f}</td>
+<td class="num-cell" data-sort-value="{stat['min_target2_fitness']:.6f}" style="color:#1565C0">{stat['min_target2_fitness']:.2f}</td>
+<td data-sort-value="详情 配置">
 <button class="detail-btn" data-row="{row_id}">详情</button>
 <button class="config-btn" data-config="{config_json}" data-row="{row_id}">配置</button>
 </td>
@@ -383,11 +398,17 @@ class GAAnalyzer:
         body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}
         .container {{ max-width: 100%; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
         h2 {{ color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px; }}
-        #mainTable {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-        #mainTable th {{ background: #e0f7fa; padding: 8px 5px; border: 1px solid #ddd; cursor: pointer; white-space: nowrap; }}
+        .table-hint {{ color: #666; margin-bottom: 10px; }}
+        .table-wrapper {{ overflow: auto; max-height: 70vh; border: 1px solid #ddd; border-radius: 6px; }}
+        #mainTable {{ width: 100%; min-width: 1180px; border-collapse: collapse; font-size: 13px; }}
+        #mainTable th {{ background: #e0f7fa; padding: 8px 5px; border: 1px solid #ddd; white-space: nowrap; position: sticky; top: 0; z-index: 2; }}
         #mainTable th:hover {{ background: #b2ebf2; }}
         #mainTable td {{ padding: 6px 5px; border: 1px solid #ddd; text-align: center; }}
         #mainTable tr:hover {{ background: #f0f8ff; }}
+        .sortable-header {{ cursor: pointer; user-select: none; }}
+        .sortable-header::after {{ content: ' ↕'; font-size: 11px; color: #78909C; }}
+        .sortable-header.sorted-asc::after {{ content: ' ↑'; color: #1565C0; }}
+        .sortable-header.sorted-desc::after {{ content: ' ↓'; color: #1565C0; }}
         .weight-cell {{ text-align: left !important; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
         .num-cell {{ font-family: monospace; }}
         .detail-btn {{ background: #2196F3; color: white; border: none; padding: 3px 8px; border-radius: 3px; cursor: pointer; font-size: 11px; margin-right: 3px; }}
@@ -400,9 +421,9 @@ class GAAnalyzer:
         .modal-header {{ padding: 15px 20px; background: #4CAF50; color: white; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; }}
         .modal-header h3 {{ margin: 0; }}
         .modal-close {{ background: none; border: none; color: white; font-size: 24px; cursor: pointer; }}
-        .modal-body {{ padding: 20px; }}
+        .modal-body {{ padding: 20px; max-height: 65vh; overflow: auto; }}
         .modal-table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-        .modal-table th {{ background: #f5f5f5; padding: 10px; border: 1px solid #ddd; }}
+        .modal-table th {{ background: #f5f5f5; padding: 10px; border: 1px solid #ddd; position: sticky; top: 0; z-index: 1; }}
         .modal-table td {{ padding: 8px; border: 1px solid #ddd; text-align: center; }}
         .modal-table tr:nth-child(even) {{ background: #fafafa; }}
         .modal-table tr:hover {{ background: #e3f2fd; }}
@@ -413,25 +434,27 @@ class GAAnalyzer:
         <div>{fig.to_html(full_html=False, include_plotlyjs='cdn')}</div>
 
         <h2>所有重复个体统计（共{len(unique_stats)}种唯一配置）</h2>
-        <p style="color:#666;margin-bottom:10px;">点击"详情"查看该配置的所有历史记录。</p>
+        <p class="table-hint">点击任意表头可排序，再次点击可切换升序/降序；点击"详情"查看该配置的所有历史记录。</p>
 
-        <table id="mainTable">
-            <thead><tr>
-                <th>排名</th>
-                <th>权重配置(前5)</th>
-                <th>buy_n</th>
-                <th>sell_m</th>
-                <th>重复次数</th>
-                <th>目标1-平均</th>
-                <th>目标1-最大</th>
-                <th>目标1-最小</th>
-                <th>目标2-平均</th>
-                <th>目标2-最大</th>
-                <th>目标2-最小</th>
-                <th>操作</th>
-            </tr></thead>
-            <tbody id="tableBody">{table_html}</tbody>
-        </table>
+        <div class="table-wrapper">
+            <table id="mainTable">
+                <thead><tr>
+                    <th class="sortable-header" data-sort-type="number">排名</th>
+                    <th class="sortable-header" data-sort-type="text">权重配置(前5)</th>
+                    <th class="sortable-header" data-sort-type="number">buy_n</th>
+                    <th class="sortable-header" data-sort-type="number">sell_m</th>
+                    <th class="sortable-header" data-sort-type="number">重复次数</th>
+                    <th class="sortable-header" data-sort-type="number">目标1-平均</th>
+                    <th class="sortable-header" data-sort-type="number">目标1-最大</th>
+                    <th class="sortable-header" data-sort-type="number">目标1-最小</th>
+                    <th class="sortable-header" data-sort-type="number">目标2-平均</th>
+                    <th class="sortable-header" data-sort-type="number">目标2-最大</th>
+                    <th class="sortable-header" data-sort-type="number">目标2-最小</th>
+                    <th class="sortable-header" data-sort-type="text">操作</th>
+                </tr></thead>
+                <tbody id="tableBody">{table_html}</tbody>
+            </table>
+        </div>
     </div>
 
     <div id="detailModal" class="modal">
@@ -441,9 +464,13 @@ class GAAnalyzer:
                 <button class="modal-close" onclick="closeModal()">&times;</button>
             </div>
             <div class="modal-body">
-                <table class="modal-table">
+                <table id="detailTable" class="modal-table">
                     <thead><tr>
-                        <th>代数</th><th>Fitness</th><th>总收益%</th><th>buy_n</th><th>sell_m</th>
+                        <th class="sortable-header" data-sort-type="number">代数</th>
+                        <th class="sortable-header" data-sort-type="number">Fitness</th>
+                        <th class="sortable-header" data-sort-type="number">总收益%</th>
+                        <th class="sortable-header" data-sort-type="number">buy_n</th>
+                        <th class="sortable-header" data-sort-type="number">sell_m</th>
                     </tr></thead>
                     <tbody id="modalBody"></tbody>
                 </table>
@@ -455,6 +482,15 @@ class GAAnalyzer:
         const allDetails = {all_details_json};
 
         document.addEventListener('DOMContentLoaded', function() {{
+            document.querySelectorAll('th[data-sort-type]').forEach((th) => {{
+                th.addEventListener('click', function() {{
+                    const table = this.closest('table');
+                    if (!table) return;
+                    const columnIndex = Array.from(this.parentElement.children).indexOf(this);
+                    sortTable(table.id, columnIndex, this.dataset.sortType);
+                }});
+            }});
+
             document.addEventListener('click', function(e) {{
                 if (e.target.classList.contains('detail-btn')) {{
                     const rowId = parseInt(e.target.dataset.row);
@@ -470,20 +506,94 @@ class GAAnalyzer:
             document.getElementById('detailModal').addEventListener('click', function(e) {{
                 if (e.target === this) closeModal();
             }});
+
+            document.addEventListener('keydown', function(e) {{
+                if (e.key === 'Escape') closeModal();
+            }});
+
+            setSortState('mainTable', 0, 'asc');
+            setSortState('detailTable', 0, 'asc');
         }});
 
+        function getCellSortValue(cell, sortType) {{
+            const rawValue = (cell.dataset.sortValue ?? cell.textContent ?? '').trim();
+            if (sortType === 'number') {{
+                const parsed = Number(rawValue.replace(/,/g, '').replace('%', ''));
+                return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+            }}
+            return rawValue.toLowerCase();
+        }}
+
+        function compareSortValues(leftValue, rightValue, sortType, order) {{
+            if (sortType === 'number') {{
+                return order === 'asc' ? leftValue - rightValue : rightValue - leftValue;
+            }}
+            const leftText = String(leftValue);
+            const rightText = String(rightValue);
+            return order === 'asc'
+                ? leftText.localeCompare(rightText, 'zh', {{ numeric: true, sensitivity: 'base' }})
+                : rightText.localeCompare(leftText, 'zh', {{ numeric: true, sensitivity: 'base' }});
+        }}
+
+        function setSortState(tableId, columnIndex, order) {{
+            const table = document.getElementById(tableId);
+            if (!table) return;
+            table.dataset.sortColumn = String(columnIndex);
+            table.dataset.sortOrder = order;
+            table.querySelectorAll('thead th').forEach((th, idx) => {{
+                th.classList.remove('sorted-asc', 'sorted-desc');
+                if (idx === columnIndex) {{
+                    th.classList.add(order === 'asc' ? 'sorted-asc' : 'sorted-desc');
+                }}
+            }});
+        }}
+
+        function sortTable(tableId, columnIndex, sortType, forcedOrder = null) {{
+            const table = document.getElementById(tableId);
+            if (!table || !table.tBodies.length) return;
+
+            const currentColumn = Number(table.dataset.sortColumn ?? -1);
+            const currentOrder = table.dataset.sortOrder ?? '';
+            const nextOrder = forcedOrder || (currentColumn === columnIndex && currentOrder === 'asc' ? 'desc' : 'asc');
+            const tbody = table.tBodies[0];
+            const rows = Array.from(tbody.rows).map((row, index) => ({{ row, index }}));
+
+            rows.sort((left, right) => {{
+                const leftCell = left.row.cells[columnIndex];
+                const rightCell = right.row.cells[columnIndex];
+                const leftValue = getCellSortValue(leftCell, sortType);
+                const rightValue = getCellSortValue(rightCell, sortType);
+                const result = compareSortValues(leftValue, rightValue, sortType, nextOrder);
+                if (result !== 0) return result;
+
+                const leftOriginal = Number(left.row.dataset.originalIndex ?? left.index);
+                const rightOriginal = Number(right.row.dataset.originalIndex ?? right.index);
+                return leftOriginal - rightOriginal;
+            }});
+
+            rows.forEach((item) => tbody.appendChild(item.row));
+            setSortState(tableId, columnIndex, nextOrder);
+        }}
+
         function showDetail(rowId) {{
-            const details = allDetails[rowId - 1];
+            const details = allDetails[rowId - 1] || [];
             const tbody = document.getElementById('modalBody');
             document.getElementById('modalTitle').textContent = `详细记录（共${{details.length}}条）`;
 
-            tbody.innerHTML = details.map(d => {{
+            tbody.innerHTML = details.map((d, index) => {{
                 return `<tr>
-                <td>${{d.gen}}</td><td>${{d.fitness}}</td><td>${{d.total_return}}%</td>
-                <td>${{d.buy_n}}</td><td>${{d.sell_m}}</td>
+                <td data-sort-value="${{d.gen}}">${{d.gen}}</td>
+                <td data-sort-value="${{d.fitness}}">${{d.fitness}}</td>
+                <td data-sort-value="${{d.total_return}}">${{d.total_return}}%</td>
+                <td data-sort-value="${{d.buy_n}}">${{d.buy_n}}</td>
+                <td data-sort-value="${{d.sell_m}}">${{d.sell_m}}</td>
             </tr>`;
             }}).join('');
 
+            Array.from(tbody.rows).forEach((row, index) => {{
+                row.dataset.originalIndex = index;
+            }});
+            sortTable('detailTable', 0, 'number', 'asc');
             document.getElementById('detailModal').classList.add('show');
         }}
 
@@ -536,6 +646,76 @@ class GAAnalyzer:
         logger.info("=" * 80)
 
 
+class SingleRunAnalyzer:
+    """单次回测结果分析器 - 生成可视化报告"""
+
+    def __init__(self, result_dir: str):
+        """
+        Args:
+            result_dir: 单次回测结果目录
+        """
+        self.result_dir = Path(result_dir)
+        self.data = self._load_result()
+        self.hs300_returns = self._load_hs300_baseline()
+
+    def _load_result(self) -> dict:
+        """加载单次回测结果"""
+        # 尝试加载 JSON 格式结果
+        json_files = list(self.result_dir.glob('*.json'))
+        if json_files:
+            with open(json_files[0], 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return {}
+
+    def _load_hs300_baseline(self) -> Tuple[List[str], List[float]]:
+        """加载沪深300基准数据
+
+        Returns:
+            (dates, cumulative_returns): 日期列表和累计收益率(%)
+        """
+        # 复用 report.py 中的逻辑
+        from testback.report import get_hs300_daily_returns
+        trade_dates = self.data.get('trade_dates', [])
+        if trade_dates:
+            returns = get_hs300_daily_returns(trade_dates)
+            return trade_dates, returns
+        return [], []
+
+    def generate_report(self, output_path: str = None):
+        """生成单次回测的交互式HTML报告"""
+        if output_path is None:
+            output_path = self.result_dir / 'single_report.html'
+        else:
+            output_path = Path(output_path)
+
+        # 调用 report.py 的报告生成函数
+        from testback.report import generate_single_report
+        generate_single_report(self.data, self.result_dir)
+
+    def print_summary(self):
+        """打印回测摘要"""
+        logger.info("=" * 80)
+        logger.info("单次回测结果摘要")
+        logger.info("=" * 80)
+
+        config = self.data.get('individual_config', {})
+        weights = config.get('weights', {})
+
+        logger.info(f"配置: buy_n={config.get('buy_n')}, sell_m={config.get('sell_m')}")
+        logger.info(f"因子权重: {weights}")
+        logger.info(f"初始资金: {self.data.get('init_cash', 0):,.2f}")
+        logger.info(f"总收益率: {self.data.get('total_return', 0):.2f}%")
+
+        if self.data.get('daily_returns'):
+            import numpy as np
+            returns = self.data['daily_returns']
+            logger.info(f"年化收益率: {np.mean(returns) * 252:.2f}% (估算)")
+            logger.info(f"日均收益率: {np.mean(returns):.4f}%")
+            logger.info(f"收益率标准差: {np.std(returns):.4f}%")
+
+        logger.info("=" * 80)
+
+
 def main():
     """命令行工具"""
     parser = argparse.ArgumentParser(description='GA结果分析工具 - HTML报告生成')
@@ -545,6 +725,20 @@ def main():
     parser.add_argument('--smooth-window', type=int, default=5, help='平滑窗口大小（默认5）')
 
     args = parser.parse_args()
+
+    # 检查是否是 single 模式结果目录
+    result_files = list(Path(args.result_dir).glob('*.json'))
+    if result_files:
+        with open(result_files[0], 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        # 如果是 single 模式结果（有 daily_returns 但没有 generation）
+        if 'daily_returns' in data and 'generation' not in data:
+            logger.info("检测到单次回测结果，使用 SingleRunAnalyzer")
+            analyzer = SingleRunAnalyzer(args.result_dir)
+            analyzer.print_summary()
+            if args.output:
+                analyzer.generate_report(args.output)
+            return
 
     analyzer = GAAnalyzer(args.result_dir)
     analyzer.print_summary()

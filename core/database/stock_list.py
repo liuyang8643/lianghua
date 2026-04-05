@@ -4,7 +4,7 @@ from typing import Optional, Union
 from xtquant import xtdata
 
 from core.logger import core_logger
-from utils.stock.info import is_kcb_stock, is_bse_stock, is_b_stock, is_st_stock
+from utils.stock.info import is_kcb_stock, is_bse_stock, is_b_stock
 from .detail import get_stock_detail
 from .delist import get_delist_stock_info
 
@@ -76,7 +76,7 @@ def _get_sector_stocks(sector_name: str) -> tuple[str, ...]:
 
 def get_all_stock_code_list(target_date: Optional[Union[datetime, date]] = None) -> list[str]:
   """获取所有A股股票列表（不含科创板和北交所）
-  
+
   Args:
     target_date: 可选，指定日期。支持 datetime 或 date 类型。如果传入则按日期过滤有效股票，否则返回所有股票
   """
@@ -117,19 +117,20 @@ def get_all_stock_code_list(target_date: Optional[Union[datetime, date]] = None)
 
   return list(result)
 
+
 def allow_buy_stock_code_list() -> list[str]:
-  """获取当前可买入的股票列表（排除ST、科创板、北交所、退市股）"""
+  """获取当前可买入的股票列表（排除科创板、北交所、退市股；ST 过滤由因子控制）"""
   all_a = set(_get_sector_stocks("沪深A股"))
 
   exclude = set()
-  for sector in ["科创板", "沪深风险警示", "沪深退市整理"]:
+  for sector in ["科创板"]:
     exclude.update(_get_sector_stocks(sector))
 
-  result = [code for code in all_a - exclude if not is_st_stock(code)]
+  result = list(all_a - exclude)
 
   if not result:
     core_logger.error('获取可买股票失败，返回空列表')
     return []
 
-  core_logger.info(f'可买股票筛选完成：{len(all_a)} -> {len(result)} 只（排除ST/科创板/退市）')
+  core_logger.info(f'可买股票筛选完成：{len(all_a)} -> {len(result)} 只（排除科创板）')
   return result

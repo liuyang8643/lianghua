@@ -13,8 +13,11 @@ __pycache__/
 *.so
 *.egg
 *.egg-info/
+
+# Temp files
 logs*/
 reports/
+results/
 *.pclprof
 
 # IDE

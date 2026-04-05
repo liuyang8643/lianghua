@@ -82,64 +82,57 @@ class RetailFlowMomentum(BaseFactor):
         self._required_days = max(momentum_period, accel_period) + 5
 
     def calc(self, ctx: FactorCtx) -> FactorResult:
-        try:
-            # 1. 获取散户占比历史序列
-            ratios = _get_retail_ratio_series(ctx.code, ctx.base_time, self._required_days)
-            if ratios is None or len(ratios) < self._required_days:
-                return FactorResult(score=None, err=ValueError(f"散户占比历史数据不足: {ctx.code}"))
+        # 1. 获取散户占比历史序列
+        ratios = _get_retail_ratio_series(ctx.code, ctx.base_time, self._required_days)
+        if ratios is None or len(ratios) < self._required_days:
+            raise ValueError(f"散户占比历史数据不足: {ctx.code}，需要{self._required_days}天，实际{len(ratios) if ratios is not None else 0}天")
 
-            # 2. 计算主动量：(today - MA) / MA * 100
-            today_ratio = ratios[-1]
-            ma = np.mean(ratios[-self.momentum_period:])
+        # 2. 计算主动量：(today - MA) / MA * 100
+        today_ratio = ratios[-1]
+        ma = np.mean(ratios[-self.momentum_period:])
 
-            if ma <= 0:
-                return FactorResult(score=None, err=ValueError(f"MA 异常: {ctx.code}"))
+        if ma <= 0:
+            raise ValueError(f"MA 异常: {ctx.code}，MA={ma}")
 
-            momentum = ((today_ratio - ma) / ma) * 100
+        momentum = ((today_ratio - ma) / ma) * 100
 
-            # 3. 计算加速度：今日动量 - N日前动量
-            # 先计算历史动量序列
-            momentum_series = []
-            for i in range(self.accel_period + 1):
-                idx = -(i + 1)
-                end_idx = idx if idx < -1 else None
-                start_idx = idx - self.momentum_period + 1
+        # 3. 计算加速度：今日动量 - N日前动量
+        # 先计算历史动量序列
+        momentum_series = []
+        for i in range(self.accel_period + 1):
+            idx = -(i + 1)
+            end_idx = idx if idx < -1 else None
+            start_idx = idx - self.momentum_period + 1
 
-                if abs(start_idx) > len(ratios):
-                    break
+            if abs(start_idx) > len(ratios):
+                break
 
-                period_data = ratios[start_idx:end_idx] if end_idx else ratios[start_idx:]
-                period_ma = np.mean(period_data)
-                if period_ma > 0:
-                    m = ((ratios[idx] - period_ma) / period_ma) * 100
-                    momentum_series.append(m)
+            period_data = ratios[start_idx:end_idx] if end_idx else ratios[start_idx:]
+            period_ma = np.mean(period_data)
+            if period_ma > 0:
+                m = ((ratios[idx] - period_ma) / period_ma) * 100
+                momentum_series.append(m)
 
-            # 计算加速度（动量的变化）
-            if len(momentum_series) >= 2:
-                acceleration = momentum_series[0] - momentum_series[-1]
-            else:
-                acceleration = 0.0
+        # 计算加速度（动量的变化）
+        if len(momentum_series) >= 2:
+            acceleration = momentum_series[0] - momentum_series[-1]
+        else:
+            acceleration = 0.0
 
-            # 4. 组合得分（取负：散户流出 = 正分 = 买入信号）
-            score = -(momentum * self.momentum_weight +
-                      acceleration * self.accel_weight)
+        # 4. 组合得分（取负：散户流出 = 正分 = 买入信号）
+        score = -(momentum * self.momentum_weight +
+                  acceleration * self.accel_weight)
 
-            # 5. 成交量加权（可选）
-            if self.use_volume_weight:
-                try:
-                    today_data = ctx.get_today_data()
-                    yesterday_data = ctx.get_yesterday_data()
-                    volume_ratio = float(today_data['volume']) / float(yesterday_data['volume'])
-                    # 放量时增强信号，缩量时削弱
-                    volume_factor = np.clip(volume_ratio, 0.5, 2.0)
-                    score *= volume_factor
-                except:
-                    pass  # 成交量数据异常时忽略加权
+        # 5. 成交量加权（可选）
+        if self.use_volume_weight:
+            today_data = ctx.get_today_data()
+            yesterday_data = ctx.get_yesterday_data()
+            volume_ratio = float(today_data['volume']) / float(yesterday_data['volume'])
+            # 放量时增强信号，缩量时削弱
+            volume_factor = np.clip(volume_ratio, 0.5, 2.0)
+            score *= volume_factor
 
-            return FactorResult(score=score, err=None)
-
-        except Exception as e:
-            return FactorResult(score=None, err=e)
+        return FactorResult(score=score, err=None)
 
 
 class RetailFlowAcceleration(BaseFactor):
@@ -167,27 +160,23 @@ class RetailFlowAcceleration(BaseFactor):
         self._required_days = period + 3
 
     def calc(self, ctx: FactorCtx) -> FactorResult:
-        try:
-            ratios = _get_retail_ratio_series(ctx.code, ctx.base_time, self._required_days)
-            if ratios is None or len(ratios) < self._required_days:
-                return FactorResult(score=None, err=ValueError(f"数据不足: {ctx.code}"))
+        ratios = _get_retail_ratio_series(ctx.code, ctx.base_time, self._required_days)
+        if ratios is None or len(ratios) < self._required_days:
+            raise ValueError(f"数据不足: {ctx.code}，需要{self._required_days}天，实际{len(ratios) if ratios is not None else 0}天")
 
-            # 一阶导数（变化率）
-            velocity = np.diff(ratios)
+        # 一阶导数（变化率）
+        velocity = np.diff(ratios)
 
-            # 二阶导数（加速度）
-            acceleration = np.diff(velocity)
+        # 二阶导数（加速度）
+        acceleration = np.diff(velocity)
 
-            # 取最近的加速度平均值
-            recent_accel = np.mean(acceleration[-self.period:])
+        # 取最近的加速度平均值
+        recent_accel = np.mean(acceleration[-self.period:])
 
-            # 取负并放大：散户撤离加速 = 正分
-            score = -recent_accel * 10
+        # 取负并放大：散户撤离加速 = 正分
+        score = -recent_accel * 10
 
-            return FactorResult(score=score, err=None)
-
-        except Exception as e:
-            return FactorResult(score=None, err=e)
+        return FactorResult(score=score, err=None)
 
 
 class RetailFlowRSI(BaseFactor):
@@ -216,36 +205,32 @@ class RetailFlowRSI(BaseFactor):
         self._required_days = period + 5
 
     def calc(self, ctx: FactorCtx) -> FactorResult:
-        try:
-            ratios = _get_retail_ratio_series(ctx.code, ctx.base_time, self._required_days)
-            if ratios is None or len(ratios) < self._required_days:
-                return FactorResult(score=None, err=ValueError(f"数据不足: {ctx.code}"))
+        ratios = _get_retail_ratio_series(ctx.code, ctx.base_time, self._required_days)
+        if ratios is None or len(ratios) < self._required_days:
+            raise ValueError(f"数据不足: {ctx.code}，需要{self._required_days}天，实际{len(ratios) if ratios is not None else 0}天")
 
-            # 计算变化
-            changes = np.diff(ratios)
+        # 计算变化
+        changes = np.diff(ratios)
 
-            # 分离涨跌
-            gains = np.where(changes > 0, changes, 0)
-            losses = np.where(changes < 0, -changes, 0)
+        # 分离涨跌
+        gains = np.where(changes > 0, changes, 0)
+        losses = np.where(changes < 0, -changes, 0)
 
-            # 计算平均涨跌
-            avg_gain = np.mean(gains[-self.period:])
-            avg_loss = np.mean(losses[-self.period:])
+        # 计算平均涨跌
+        avg_gain = np.mean(gains[-self.period:])
+        avg_loss = np.mean(losses[-self.period:])
 
-            # 计算 RSI
-            if avg_loss == 0:
-                rsi = 100.0
-            else:
-                rs = avg_gain / avg_loss
-                rsi = 100 - (100 / (1 + rs))
+        # 计算 RSI
+        if avg_loss == 0:
+            rsi = 100.0
+        else:
+            rs = avg_gain / avg_loss
+            rsi = 100 - (100 / (1 + rs))
 
-            # 反转：低 RSI = 高分 = 买入信号
-            score = 100 - rsi
+        # 反转：低 RSI = 高分 = 买入信号
+        score = 100 - rsi
 
-            return FactorResult(score=score, err=None)
-
-        except Exception as e:
-            return FactorResult(score=None, err=e)
+        return FactorResult(score=score, err=None)
 
 
 class RetailFlowBreakout(BaseFactor):
@@ -276,34 +261,30 @@ class RetailFlowBreakout(BaseFactor):
         self._required_days = lookback + 5
 
     def calc(self, ctx: FactorCtx) -> FactorResult:
-        try:
-            ratios = _get_retail_ratio_series(ctx.code, ctx.base_time, self._required_days)
-            if ratios is None or len(ratios) < self._required_days:
-                return FactorResult(score=None, err=ValueError(f"数据不足: {ctx.code}"))
+        ratios = _get_retail_ratio_series(ctx.code, ctx.base_time, self._required_days)
+        if ratios is None or len(ratios) < self._required_days:
+            raise ValueError(f"数据不足: {ctx.code}，需要{self._required_days}天，实际{len(ratios) if ratios is not None else 0}天")
 
-            # 历史区间
-            history = ratios[-(self.lookback + 1):-1]
-            today = ratios[-1]
+        # 历史区间
+        history = ratios[-(self.lookback + 1):-1]
+        today = ratios[-1]
 
-            mean = np.mean(history)
-            std = np.std(history)
+        mean = np.mean(history)
+        std = np.std(history)
 
-            if std <= 0:
-                return FactorResult(score=0.0, err=None)
+        if std <= 0:
+            raise ValueError(f"标准差为0: {ctx.code}，无法计算Z-score")
 
-            # 计算 Z-score
-            z_score = (today - mean) / std
+        # 计算 Z-score
+        z_score = (today - mean) / std
 
-            # 转换为突破强度
-            if abs(z_score) >= self.threshold:
-                score = z_score * 20
-            else:
-                score = z_score * 5
+        # 转换为突破强度
+        if abs(z_score) >= self.threshold:
+            score = z_score * 20
+        else:
+            score = z_score * 5
 
-            # 取负并限制范围：散户撤离突破 = 正分
-            score = np.clip(-score, -100, 100)
+        # 取负并限制范围：散户撤离突破 = 正分
+        score = np.clip(-score, -100, 100)
 
-            return FactorResult(score=score, err=None)
-
-        except Exception as e:
-            return FactorResult(score=None, err=e)
+        return FactorResult(score=score, err=None)

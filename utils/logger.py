@@ -1,4 +1,5 @@
 import sys
+import os
 from typing import Any
 from loguru import logger as real_logger
 
@@ -7,13 +8,14 @@ class BaseLogger:
     self.real_logger = real_logger
     self.catch = self.real_logger.catch
     self.log_format = "<w>{time:YYYY-MM-DD HH:mm:ss}</w> | <level>{level}</level> | {function}@{module}:{line} | <level>{message}</level>"
+    effective_level = os.getenv('WBR_LOG_LEVEL', level).upper()
     # 移除默认的 handler
     self.real_logger.remove()
     # 设置控制台日志格式
     self.real_logger.add(
       sink=sys.stdout,
       format=self.log_format,
-      level=level,
+      level=effective_level,
       backtrace=True,
       diagnose=True
     )

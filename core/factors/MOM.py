@@ -9,7 +9,7 @@ MOM动量因子 - 纯趋势追踪（加法混合设计）
 - ROC加速（连续上涨）时给予额外加分
 
 评分设计:
-- base_score (50%): sigmoid映射（中心点5%，正动量高分）
+- base_score: sigmoid映射（中心点5%，正动量高分，不加限制）
 - signal_bonus (50%): ROC加速确认（连续上涨 + ROC>0前置条件）
 
 注意: 本因子输出原始分数，需要在框架层使用batch_norm进行归一化
@@ -31,7 +31,7 @@ class MOMFactor(BaseFactor):
     MOM动量因子
 
     评分逻辑:
-    1. base_score (50%): sigmoid映射（中心点5%，正动量高分）
+    1. base_score: sigmoid映射（中心点5%，正动量高分，不加限制）
     2. signal_bonus (50%): ROC加速确认（连续上涨 + ROC>0前置条件）
 
     输出: 原始分数 [0, 1]，由框架层进行batch norm归一化
@@ -55,53 +55,54 @@ class MOMFactor(BaseFactor):
         self.acceleration_lookback = acceleration_lookback
 
     def calc(self, ctx: FactorCtx) -> FactorResult:
-        try:
-            # 获取动量比率（百分比形式）
-            mom_ratio = ctx.get_mom_ratio(period=self.mom_period)
+        # 获取动量比率（百分比形式）
+        mom_ratio = ctx.get_mom_ratio(period=self.mom_period)
 
-            # === 1. 连续基础分 (50%) ===
-            # sigmoid映射：中心点5%（正常追涨起点）
-            # mom_ratio=5 → 0.25, mom_ratio=15 → ~0.43, mom_ratio=-5 → ~0.07
-            base_score = safe_sigmoid((mom_ratio - self.mom_center) / self.mom_center) * 0.5
+        # === 1. 连续基础分（不加限制） ===
+        # sigmoid映射：中心点5%（正常追涨起点）
+        # mom_ratio=5 → 0.5, mom_ratio=15 → ~0.88, mom_ratio=-5 → ~0.12
+        base_score = safe_sigmoid((mom_ratio - self.mom_center) / self.mom_center)
 
-            # === 2. 信号加成 (50%) ===
-            signal_bonus = 0.0
+        # === 2. 信号加成 (50%) ===
+        signal_bonus = 0.0
 
-            # ROC加速检测（连续上涨 + ROC>0前置条件）
-            # 需要足够的历史数据来计算ROC序列
-            history_data = ctx.get_daily_data(self.roc_period + self.acceleration_lookback)
+        # ROC加速检测（连续上涨 + ROC>0前置条件）
+        # 需要足够的历史数据来计算ROC序列
+        required_days = self.roc_period + self.acceleration_lookback
+        history_data = ctx.get_daily_data(required_days)
+        if len(history_data) < required_days:
+            raise ValueError(f"历史数据不足: 需要{required_days}天，实际{len(history_data)}天")
 
-            if len(history_data) >= self.roc_period + self.acceleration_lookback:
-                close = np.array(history_data['close'].values, dtype=np.float64)
-                roc_series = talib.ROC(close, timeperiod=self.roc_period)
+        close = np.array(history_data['close'].values, dtype=np.float64)
+        roc_series = talib.ROC(close, timeperiod=self.roc_period)
 
-                # 提取最近的有效数据（去掉NaN）
-                valid_mask = ~np.isnan(roc_series)
-                valid_roc = roc_series[valid_mask]
+        # 提取最近的有效数据（去掉NaN）
+        valid_mask = ~np.isnan(roc_series)
+        valid_roc = roc_series[valid_mask]
 
-                if len(valid_roc) >= self.acceleration_lookback:
-                    # 取最近5天的ROC
-                    recent_roc = valid_roc[-self.acceleration_lookback:]
-                    current_roc = recent_roc[-1]
+        if len(valid_roc) < self.acceleration_lookback:
+            raise ValueError(f"有效ROC数据不足: 需要{self.acceleration_lookback}个点，实际{len(valid_roc)}个")
 
-                    # 前置条件：当前ROC必须为正（追涨逻辑）
-                    if current_roc > 0:
-                        # 检测最近5天ROC是否连续上升
-                        is_accelerating = all(
-                            recent_roc[i] > recent_roc[i-1]
-                            for i in range(1, len(recent_roc))
-                        )
+        # 取最近5天的ROC
+        recent_roc = valid_roc[-self.acceleration_lookback:]
+        current_roc = recent_roc[-1]
 
-                        if is_accelerating:
-                            roc_base = abs(recent_roc[0])
-                            if roc_base != 0:  # 只有base非0才计算加速度
-                                acceleration = (recent_roc[-1] - recent_roc[0]) / roc_base
-                                signal_bonus = min(acceleration / 0.1, 1.0) * 0.5
+        # 前置条件：当前ROC必须为正（追涨逻辑）
+        if current_roc > 0:
+            # 检测最近5天ROC是否连续上升
+            is_accelerating = all(
+                recent_roc[i] > recent_roc[i-1]
+                for i in range(1, len(recent_roc))
+            )
 
-            # === 3. 最终分数 = base + bonus ===
-            final_score = base_score + signal_bonus
+            if is_accelerating:
+                roc_base = abs(recent_roc[0])
+                if roc_base == 0:
+                    raise ValueError("ROC基准值为0，无法计算加速度")
+                acceleration = (recent_roc[-1] - recent_roc[0]) / roc_base
+                signal_bonus = min(acceleration / 0.1, 1.0) * 0.5
 
-            return FactorResult(score=final_score, err=None)
+        # === 3. 最终分数 = base + bonus ===
+        final_score = base_score + signal_bonus
 
-        except Exception as e:
-            return FactorResult(score=None, err=e)
+        return FactorResult(score=final_score, err=None)

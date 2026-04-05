@@ -4,16 +4,16 @@ from core.factors.helpers import BaseFactor, FactorResult, FactorCtx
 MIN_RAW_PRICE = 2.0
 
 
-class SmallCap(BaseFactor):
+class SmallCapKeepST(BaseFactor):
   
-  """小盘股因子 - 基于成交额近似市值"""
+  """小盘股因子 - 保留普通ST，仅排除*ST/退市整理/终止上市"""
 
   hist_days = 60
 
   def calc(self, ctx: FactorCtx) -> FactorResult:
-    from core.database.stock_name import is_st_at_date  # v3: date-aware cache
-    if is_st_at_date(ctx.code, ctx.base_time):
-      return FactorResult(score=None, err="st_stock")
+    from core.database.stock_name import is_star_st_at_date  # v3: date-aware cache
+    if is_star_st_at_date(ctx.code, ctx.base_time):
+      return FactorResult(score=None, err="star_st_stock")
 
     try:
       history_data = ctx.get_daily_data(60)
@@ -23,7 +23,6 @@ class SmallCap(BaseFactor):
     if history_data is None or history_data.empty:
       return FactorResult(score=None, err="no data")
 
-    # 面值退市风险过滤：不复权收盘价 < 2 元直接排除
     raw_close = ctx.get_raw_close()
     if raw_close is not None and raw_close < MIN_RAW_PRICE:
       return FactorResult(score=None, err=f"raw_price_{raw_close:.2f}<{MIN_RAW_PRICE}")

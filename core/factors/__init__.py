@@ -9,6 +9,7 @@ from .TRIX import *
 from .MOM import *
 from .ADX import *
 from .SmallCap import *
+from .SmallCapKeepST import *
 from .Unpopular import *
 from .RetailFlow import *
 from .RetailFlowMomentum import *

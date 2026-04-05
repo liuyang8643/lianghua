@@ -10,8 +10,5 @@ class CCI(BaseFactor):
     super().__init__()
 
   def calc(self, ctx: FactorCtx) -> FactorResult:
-    try:
-      cci_value = ctx.get_cci()
-      return FactorResult(score=cci_value, err=None)
-    except Exception as e:
-      return FactorResult(score=None, err=e)
+    cci_value = ctx.get_cci()
+    return FactorResult(score=cci_value, err=None)
