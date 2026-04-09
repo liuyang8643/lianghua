@@ -1,9 +1,9 @@
 from datetime import date, datetime
 from typing import Literal, Optional, TypedDict
 
-from core.database import StockDetail, StockTradingData, get_market_trade_bar, get_stock_detail
+from core.database import StockDetail, StockTradingData, get_market_data_batch, get_stock_detail
 from utils.stock.info import is_bse_stock, is_cyb_stock, is_kcb_stock, is_st_stock, is_stock_trading
-from utils.stock.time import get_target_forward_day
+from utils.stock.time import AFTERNOON_END, get_target_forward_day
 
 TradeSide = Literal['buy', 'sell']
 LimitRegimeName = Literal['main_board', 'cyb', 'kcb', 'bse', 'st', 'unlimited']
@@ -159,6 +159,25 @@ def get_limit_band_from_ratio(
   )
 
 
+def _get_trade_bar(
+    stock_code: str,
+    trade_day: date,
+    dividend_type: str,
+) -> Optional[StockTradingData]:
+  trade_data = get_market_data_batch(
+    [stock_code],
+    1,
+    datetime.combine(trade_day, AFTERNOON_END),
+    period='1d',
+    allow_tainted=True,
+    dividend_type=dividend_type,
+    strict_trade_date=True,
+  ).get(stock_code)
+  if trade_data is None or trade_data.empty:
+    return None
+  return trade_data.iloc[-1]
+
+
 def evaluate_orderability(
     side: TradeSide,
     stock_code: str,
@@ -186,7 +205,7 @@ def evaluate_orderability(
       'source': 'detail_status',
     }
 
-  trade_bar = bar if bar is not None else get_market_trade_bar(stock_code, trade_day, dividend_type=dividend_type)
+  trade_bar = bar if bar is not None else _get_trade_bar(stock_code, trade_day, dividend_type)
   if trade_bar is None:
     regime = resolve_limit_regime(stock_code, trade_day, detail)
     return {

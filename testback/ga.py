@@ -8,7 +8,6 @@ from joblib import Parallel, delayed, parallel_backend
 from core import (
   cleanup_shared_cache,
   get_market_data_batch,
-  get_market_trade_bar_batch,
   get_stock_detail,
   init_stock_detail_cache,
 )
@@ -478,7 +477,19 @@ def _backtest_with_config(topn_list, weights, buy_n, sell_m, temperatures, freez
 
     current_position_codes = set(account.positions.keys())
     price_universe = current_position_codes | set(sell_m_stocks) | set(buy_n_stocks)
-    trade_bars = get_market_trade_bar_batch(list(price_universe), trade_datetime, dividend_type='none')
+    trade_bar_data = get_market_data_batch(
+      list(price_universe),
+      1,
+      trade_datetime,
+      period='1d',
+      allow_tainted=True,
+      dividend_type='none',
+      strict_trade_date=True,
+    )
+    trade_bars = {
+      code: (data.iloc[-1] if data is not None and not data.empty else None)
+      for code, data in trade_bar_data.items()
+    }
     if price_universe and not any(bar is not None for bar in trade_bars.values()):
       _raise_if_trade_bars_stale(price_universe, trade_datetime, signal_date)
 

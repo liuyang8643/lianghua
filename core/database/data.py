@@ -9,7 +9,7 @@ import numpy as np
 from core.logger import core_logger
 from utils.shared_memory import SharedMemoryCache
 from utils.stock.format import format_qmt_datetime
-from utils.stock.time import AFTERNOON_END, get_latest_trading_time, is_latest_data
+from utils.stock.time import get_latest_trading_time, is_latest_data
 from .history import check_stocks_need_fix, get_history_data, get_history_data_after_download
 from .stock_list import check_stock_valid_at_date
 
@@ -85,11 +85,6 @@ def cleanup_shared_cache():
   _GLOBAL_DAILY_CACHE.cleanup()
   _GLOBAL_MINUTE_CACHE.cleanup()
 
-def _normalize_trade_date_input(trade_date: datetime | date) -> datetime:
-  if isinstance(trade_date, datetime):
-    return trade_date
-  return datetime.combine(trade_date, AFTERNOON_END)
-
 
 def _is_same_trade_day(bar_time_ms: int, trade_date: datetime | date) -> bool:
   return datetime.fromtimestamp(bar_time_ms / 1000).date() == (
@@ -97,68 +92,27 @@ def _is_same_trade_day(bar_time_ms: int, trade_date: datetime | date) -> bool:
   )
 
 
-def get_market_trade_bar(
-    stock_code: str,
+def _enforce_strict_trade_date(
+    data: Optional[pd.DataFrame],
     trade_date: datetime | date,
-    period: str = '1d',
-    dividend_type: str = 'back',
-) -> Optional[pd.Series]:
-  """获取指定交易日的当日bar，不允许静默回退到更早日期。"""
-  if period != '1d':
-    raise NotImplementedError("目前仅支持 period='1d'")
-
-  base_time = _normalize_trade_date_input(trade_date)
-  data = get_market_data_from_cache(
-    stock_code,
-    1,
-    base_time,
-    period,
-    allow_tainted=True,
-    dividend_type=dividend_type,
-  )
+) -> Optional[pd.DataFrame]:
   if data is None or data.empty:
     return None
 
   bar = data.iloc[-1]
   if not _is_same_trade_day(int(bar['time']), trade_date):
     return None
-  return bar
+  return data
 
 
-def get_market_trade_bar_batch(
-    stock_codes: list[str],
+def _enforce_strict_trade_date_batch(
+    data_dict: dict[str, Optional[pd.DataFrame]],
     trade_date: datetime | date,
-    period: str = '1d',
-    dividend_type: str = 'back',
-) -> dict[str, Optional[pd.Series]]:
-  """批量获取指定交易日的当日bar，不允许静默回退。"""
-  if period != '1d':
-    raise NotImplementedError("目前仅支持 period='1d'")
-
-  if not stock_codes:
-    return {}
-
-  base_time = _normalize_trade_date_input(trade_date)
-  data_dict = get_market_data_batch(
-    stock_codes,
-    1,
-    base_time,
-    period,
-    allow_tainted=True,
-    dividend_type=dividend_type,
-  )
-
-  result: dict[str, Optional[pd.Series]] = {}
-  for code in stock_codes:
-    data = data_dict.get(code)
-    if data is None or data.empty:
-      result[code] = None
-      continue
-
-    bar = data.iloc[-1]
-    result[code] = bar if _is_same_trade_day(int(bar['time']), trade_date) else None
-
-  return result
+) -> dict[str, Optional[pd.DataFrame]]:
+  return {
+    code: _enforce_strict_trade_date(data, trade_date)
+    for code, data in data_dict.items()
+  }
 
 
 def get_full_market_data(
@@ -208,6 +162,7 @@ def get_market_data_from_cache(
     period: str = '1d',
     allow_tainted: bool = False,
     dividend_type: str = 'back',
+    strict_trade_date: bool = False,
 ) -> Optional[pd.DataFrame]:
   """从缓存中获取指定时间范围的市场数据
 
@@ -262,7 +217,10 @@ def get_market_data_from_cache(
 
   # 使用 iloc 直接切片，比 tail() 更高效（零拷贝视图）
   start_pos = max(0, insert_pos - count)
-  return full_data.iloc[start_pos:insert_pos]
+  result = full_data.iloc[start_pos:insert_pos]
+  if strict_trade_date:
+    return _enforce_strict_trade_date(result, base_time)
+  return result
 
 def get_market_data(
     stock_code: str,
@@ -297,6 +255,7 @@ def get_market_data_batch(
     period: str = '1d',
     allow_tainted: bool = False,  # 是否允许返回不完整或非最新的数据
     dividend_type: str = 'back',
+    strict_trade_date: bool = False,
 ) -> dict[str, Optional[pd.DataFrame]]:
   """批量获取市场数据
 
@@ -315,6 +274,8 @@ def get_market_data_batch(
 
   # 如果允许污染数据，直接返回，跳过所有校验和修复逻辑
   if allow_tainted:
+    if strict_trade_date:
+      return _enforce_strict_trade_date_batch(history_data_dict, input_time)
     return history_data_dict
 
   # 当count为None时，仍然需要检查并修复过期数据，但最终允许返回不完整数据
@@ -411,4 +372,6 @@ def get_market_data_batch(
           filtered = valid_data[suspend_mask]
           history_data_dict[code] = filtered.iloc[-count:] if len(filtered) > count else filtered
 
+  if strict_trade_date:
+    return _enforce_strict_trade_date_batch(history_data_dict, input_time)
   return history_data_dict

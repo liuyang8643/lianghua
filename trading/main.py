@@ -9,13 +9,13 @@ from types import SimpleNamespace
 from xtquant import xtconstant, xtdata
 
 from configs import TRADE_ACCOUNT
-from core import allow_buy_stock_code_list, get_market_data_batch, get_market_trade_bar_batch
+from core import allow_buy_stock_code_list, get_market_data_batch
 from core.strategies import TopN
 from core.strategies.sizers import Sizer
 from testback.ga_config import get_profile_factor_classes, resolve_profile_name
 from trading.logger import trading_logger
 from utils.recorder import recorder
-from utils.stock.time import get_last_trading_day
+from utils.stock.time import AFTERNOON_END, get_last_trading_day
 from utils.stock.tradability import evaluate_orderability
 
 from .lark.receiver import create_lark_handler
@@ -116,6 +116,23 @@ if __name__ == '__main__':
     trading_logger.info(f"候选股票池: {len(filtered_stocks)} 只")
     get_market_data_batch(filtered_stocks, 2, base_time=signal_datetime, dividend_type='back')
 
+    trade_bar_time = datetime.combine(trade_date, AFTERNOON_END)
+
+    def _load_trade_bars(stock_codes: list[str]):
+      trade_bar_data = get_market_data_batch(
+        stock_codes,
+        1,
+        base_time=trade_bar_time,
+        period='1d',
+        allow_tainted=True,
+        dividend_type='none',
+        strict_trade_date=True,
+      )
+      return {
+        code: (data.iloc[-1] if data is not None and not data.empty else None)
+        for code, data in trade_bar_data.items()
+      }
+
     topn = TopN(
       filtered_stocks,
       signal_datetime,
@@ -136,7 +153,7 @@ if __name__ == '__main__':
 
     positions = {p.stock_code: p for p in store.trader.query_positions()}
     sell_candidates = sorted(set(positions) - set(sell_m_stocks))
-    sell_bars = get_market_trade_bar_batch(sell_candidates, trade_date, dividend_type='none')
+    sell_bars = _load_trade_bars(sell_candidates)
     allowed_sell_codes = []
     sell_details = []
     for code in sell_candidates:
@@ -159,7 +176,7 @@ if __name__ == '__main__':
         'est_amount': volume * est_price,
       })
 
-    buy_trade_bars = get_market_trade_bar_batch(buy_n_stocks, trade_date, dividend_type='none')
+    buy_trade_bars = _load_trade_bars(buy_n_stocks)
     tradable_buy_stocks = []
     sizing_prices = {}
     for code in buy_n_stocks:
