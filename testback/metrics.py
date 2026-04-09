@@ -71,38 +71,44 @@ def compute_strategy_metrics(
   if not cumulative_returns_pct or not trade_dates:
     return {}
 
-  n = len(trade_dates)
   total_return = (final_asset - init_cash) / init_cash * 100
+  ending_nav = final_asset / init_cash if init_cash else 0.0
 
   first_date = datetime.strptime(trade_dates[0], '%Y-%m-%d')
   last_date = datetime.strptime(trade_dates[-1], '%Y-%m-%d')
   calendar_days = (last_date - first_date).days
   years = calendar_days / 365.25 if calendar_days > 0 else 0.0
 
-  if years > 0 and total_return > -100:
-    annualized = ((1 + total_return / 100) ** (1.0 / years) - 1) * 100
+  if years > 0 and ending_nav > 0:
+    annualized = (ending_nav ** (1.0 / years) - 1) * 100
+  elif years > 0 and ending_nav == 0:
+    annualized = -100.0
   else:
-    annualized = total_return / years if years > 0 else 0.0
+    annualized = 0.0
 
-  cumulative_arr = np.array(cumulative_returns_pct)
-  if len(cumulative_arr) >= 2:
-    daily_rets = np.diff(cumulative_arr)
-  else:
-    daily_rets = np.array([])
+  nav = np.array(cumulative_returns_pct, dtype=float) / 100.0 + 1.0
+  prev_nav = np.concatenate(([1.0], nav[:-1]))
+  valid_prev_nav = np.where(prev_nav == 0, np.nan, prev_nav)
+  daily_rets = (nav / valid_prev_nav - 1.0) * 100.0
+  daily_rets = daily_rets[~np.isnan(daily_rets)]
 
-  if len(daily_rets) > 0:
-    cum = np.concatenate([[0.0], daily_rets]).cumsum()
-    peak = np.maximum.accumulate(cum)
-    drawdown = cum - peak
-    max_dd = float(np.min(drawdown))
+  if len(nav) > 0:
+    peaks = np.maximum.accumulate(nav)
+    drawdown = nav / peaks - 1.0
+    max_dd = float(np.min(drawdown) * 100.0)
+    max_dd_idx = int(np.argmin(drawdown))
+    peak_idx = int(np.argmax(nav[:max_dd_idx + 1])) if max_dd_idx >= 0 else 0
+    max_dd_start = trade_dates[peak_idx]
+    max_dd_end = trade_dates[max_dd_idx]
   else:
     max_dd = 0.0
+    max_dd_start = trade_dates[0]
+    max_dd_end = trade_dates[0]
 
   if len(daily_rets) > 1:
     mean_ret = float(np.mean(daily_rets))
     std_ret = float(np.std(daily_rets, ddof=1))
-    periods_per_year = n / years if years > 0 else 252.0
-    sharpe = (mean_ret / std_ret * np.sqrt(periods_per_year)) if std_ret > 0 else 0.0
+    sharpe = (mean_ret / std_ret * np.sqrt(252.0)) if std_ret > 0 else 0.0
   else:
     sharpe = 0.0
 
@@ -120,6 +126,8 @@ def compute_strategy_metrics(
     'total_return': round(total_return, 2),
     'annualized': round(annualized, 2),
     'max_drawdown': round(max_dd, 2),
+    'max_drawdown_start': max_dd_start,
+    'max_drawdown_end': max_dd_end,
     'sharpe_ratio': round(sharpe, 2),
     'calmar_ratio': round(calmar, 2),
     'win_rate': round(win_rate, 1),

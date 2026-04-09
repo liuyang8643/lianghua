@@ -674,7 +674,7 @@ class SingleRunAnalyzer:
             (dates, cumulative_returns): 日期列表和累计收益率(%)
         """
         # 复用 report.py 中的逻辑
-        from testback.report import get_hs300_daily_returns
+        from testback.reportor import get_hs300_daily_returns
         trade_dates = self.data.get('trade_dates', [])
         if trade_dates:
             returns = get_hs300_daily_returns(trade_dates)
@@ -689,7 +689,7 @@ class SingleRunAnalyzer:
             output_path = Path(output_path)
 
         # 调用 report.py 的报告生成函数
-        from testback.report import generate_single_report
+        from testback.reportor import generate_single_report
         generate_single_report(self.data, self.result_dir)
 
     def print_summary(self):

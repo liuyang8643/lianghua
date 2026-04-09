@@ -100,6 +100,7 @@ python -m core.factors.benchmark.web_chart --code 600000.SH
 - `trading/main.py` is the explicit live-trading CLI entrypoint and currently requires `--individual-config`. It also supports one-shot manual `--buy` / `--sell` execution with terminal confirmation.
 - `trading/watchdog.py` does not currently match the `trading.main` CLI contract and should be treated carefully.
 - `testback/` contains GA search and analysis scripts rather than a separate packaged service.
+- `testback/reportor/` contains the single-run report implementation and frontend templates. Import report generation from `testback.reportor`.
 
 ## Dependency Notes
 

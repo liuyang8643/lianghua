@@ -5,7 +5,13 @@ from typing import Any, Dict, List
 
 from joblib import Parallel, delayed, parallel_backend
 
-from core import cleanup_shared_cache, get_market_trade_bar_batch, get_stock_detail, init_stock_detail_cache
+from core import (
+  cleanup_shared_cache,
+  get_market_data_batch,
+  get_market_trade_bar_batch,
+  get_stock_detail,
+  init_stock_detail_cache,
+)
 from core.database import allow_buy_stock_code_list, init_full_data
 from core.database.delist import get_delist_stock_info
 from core.strategies.top_n import compute_topn_range, make_topn_range_cache_key
@@ -366,6 +372,47 @@ def _backtest_with_config(topn_list, weights, buy_n, sell_m, temperatures, freez
   skipped_sell_reasons: Dict[str, int] = {}
   delist_events: List[Dict] = []
 
+  def _raise_if_trade_bars_stale(price_codes: set[str], trade_dt: datetime, signal_dt: date_type):
+    if not price_codes:
+      return
+
+    stale_probe = get_market_data_batch(
+      list(price_codes),
+      1,
+      trade_dt,
+      period='1d',
+      allow_tainted=True,
+      dividend_type='none',
+    )
+    latest_dates = []
+    missing_codes = []
+    for code, data in stale_probe.items():
+      if data is None or data.empty:
+        missing_codes.append(code)
+        continue
+      latest_dates.append(datetime.fromtimestamp(int(data.iloc[-1]['time']) / 1000).date())
+
+    if latest_dates:
+      latest_available = max(latest_dates)
+      if latest_available < trade_dt.date():
+        raise RuntimeError(
+          '执行层行情数据已过期：'
+          f'signal_date={signal_dt.isoformat()}, '
+          f'trade_date={trade_dt.date().isoformat()}, '
+          f'latest_available_trade_bar={latest_available.isoformat()}, '
+          f'price_universe={len(price_codes)} 只。'
+          '请先更新 QMT 本地日线数据，或缩短回测区间。'
+        )
+
+    if missing_codes and len(missing_codes) == len(price_codes):
+      raise RuntimeError(
+        '执行层行情数据缺失：'
+        f'signal_date={signal_dt.isoformat()}, '
+        f'trade_date={trade_dt.date().isoformat()}, '
+        f'price_universe={len(price_codes)} 只全部无可用日线。'
+        '请检查 QMT 本地数据是否完整。'
+      )
+
   def _write_off_delisted_positions(signal_date: date_type, trade_date: date_type):
     if not account.positions:
       return
@@ -432,6 +479,8 @@ def _backtest_with_config(topn_list, weights, buy_n, sell_m, temperatures, freez
     current_position_codes = set(account.positions.keys())
     price_universe = current_position_codes | set(sell_m_stocks) | set(buy_n_stocks)
     trade_bars = get_market_trade_bar_batch(list(price_universe), trade_datetime, dividend_type='none')
+    if price_universe and not any(bar is not None for bar in trade_bars.values()):
+      _raise_if_trade_bars_stale(price_universe, trade_datetime, signal_date)
 
     prices = {}
     for stock, bar in trade_bars.items():
@@ -593,7 +642,7 @@ def _backtest_with_config(topn_list, weights, buy_n, sell_m, temperatures, freez
     for i, snap in enumerate(daily_snapshots):
       snap['cumulative_return_pct'] = cumulative_returns[i]
 
-  daily_returns = cumulative_returns
+  daily_returns = [snap.get('daily_return_pct', 0.0) for snap in daily_snapshots]
 
   positions = account.calc_position_values(final_datetime, prices)
   for position in positions:
@@ -949,7 +998,7 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
   if mode_config['save_charts']:
     output_dir = _resolve_output_dir(args.output_dir, 'single')
     try:
-      from testback.report import generate_single_report
+      from testback.reportor import generate_single_report
       html_path = generate_single_report(report_data, output_dir)
       testback_logger.info(f"可视化报告已保存至: {html_path}")
       # 自动用浏览器打开报告
