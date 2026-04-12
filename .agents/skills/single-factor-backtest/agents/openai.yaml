@@ -1,0 +1,4 @@
+interface:
+  display_name: "Single Factor Backtest"
+  short_description: "Run WBR single-factor backtests"
+  default_prompt: "Use $single-factor-backtest to run a WBR single-mode backtest for one factor and a chosen date range."

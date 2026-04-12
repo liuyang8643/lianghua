@@ -18,6 +18,7 @@ Read this file before making changes. Tool-specific notes should defer to this f
 - Primary repository instructions live in this root `AGENTS.md`.
 - `CLAUDE.md` should be a symlink to `AGENTS.md`.
 - Shared project skills live under `.agents/skills/`.
+- Shared project skill `git-session-commit` defines the default commit workflow: clear the staging area first, stage only files involved in the current session, and use a Chinese commit summary.
 - `.claude/skills` should be a symlink to `.agents/skills`.
 - `.github/copilot-instructions.md` is a pointer note and should not diverge from this file.
 

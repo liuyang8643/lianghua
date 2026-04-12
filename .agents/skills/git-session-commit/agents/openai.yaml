@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Session Commit"
+  short_description: "Commit only current-session files"
+  default_prompt: "Use $git-session-commit to clear the staging area and commit only files changed in the current session with a Chinese summary."
