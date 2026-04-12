@@ -16,7 +16,7 @@ from testback.ga_config import get_profile_factor_classes, resolve_profile_name
 from trading.logger import trading_logger
 from utils.recorder import recorder
 from utils.stock.time import AFTERNOON_END, get_last_trading_day
-from utils.stock.tradability import evaluate_orderability
+from utils.stock.info import evaluate_orderability
 
 from .lark.receiver import create_lark_handler
 from .manual_confirm import build_manual_confirmation_text, is_manual_confirmation_approved

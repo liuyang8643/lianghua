@@ -16,7 +16,7 @@ from core.database.delist import get_delist_stock_info
 from core.strategies.top_n import compute_topn_range, make_topn_range_cache_key
 from utils.shared_memory import SharedMemoryCache
 from utils.stock.time import get_next_trading_day, get_target_period_backward, get_trading_date_span
-from utils.stock.tradability import evaluate_orderability
+from utils.stock.info import evaluate_orderability
 from testback.account import StockAccountMocker
 from testback.ga_config import (
   DEFAULT_GA_PROFILE,
