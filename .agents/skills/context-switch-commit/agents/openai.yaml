@@ -1,0 +1,4 @@
+interface:
+  display_name: "Context Switch Commit"
+  short_description: "Commit verified prior-task changes before a new unrelated request."
+  default_prompt: "Use $context-switch-commit when the user switches to a clearly unrelated task and you need to commit the prior task's verified changes first via $git-session-commit."
