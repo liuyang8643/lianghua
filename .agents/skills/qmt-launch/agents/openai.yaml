@@ -1,0 +1,4 @@
+interface:
+  display_name: "QMT Launch"
+  short_description: "Start or verify the local QMT client for WBR"
+  default_prompt: "Use $qmt-launch to start the local QMT client before running xtquant-dependent checks."

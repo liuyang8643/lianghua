@@ -62,7 +62,7 @@ class TopN:
         """
         self.stock_list = stock_list
         self.base_date = base_date
-        self.weights = None if weights is None else dict(weights)
+        self.weights = weights
         self.dividend_type = dividend_type
 
         self._factor_classes: List[type] = factor_classes or DEFAULT_FACTOR_CLASSES
@@ -110,10 +110,11 @@ class TopN:
             core_logger.debug(f"因子分数全部命中缓存，跳过计算")
             return
 
-        batches = [stocks_to_calc[i:i + _STOCK_BATCH_SIZE]
-                   for i in range(0, len(stocks_to_calc), _STOCK_BATCH_SIZE)]
-
         n_threads = min(_MAX_FACTOR_THREADS, max(1, (os.cpu_count() or 4) // 2))
+        # 动态计算批处理大小：确保每个线程至少有2个批次，但单批不超过100只股票
+        batch_size = max(10, min(_STOCK_BATCH_SIZE, len(stocks_to_calc) // (n_threads * 2)))
+        batches = [stocks_to_calc[i:i + batch_size]
+                   for i in range(0, len(stocks_to_calc), batch_size)]
 
         def _calc_batch(batch_stocks: List[str]):
             """线程 worker：计算一批股票的所有因子"""
@@ -259,15 +260,21 @@ def compute_topn_range(
         core_logger.info(f"从缓存加载 TopN：{first_d}~{last_d}，{len(cached)} 天")
         return cached
 
+    # 预计算因子元数据，避免在循环中重复实例化
+    factor_metadata = []
+    for f_cls in factor_classes:
+        f = f_cls()
+        name = f.__class__.__name__
+        if weights is not None and weights.get(name, 0.0) == 0:
+            continue
+        fhash = hash_function_code(f.calc)
+        factor_metadata.append((name, fhash))
+
+    # 检查缓存状态
     topn_params = []
     for d in backtest_datetime_list:
         all_cached = True
-        for f_cls in factor_classes:
-            f = f_cls()
-            name = f.__class__.__name__
-            if weights is not None and weights.get(name, 0.0) == 0:
-                continue
-            fhash = hash_function_code(f.calc)
+        for name, fhash in factor_metadata:
             ck = _make_factor_cache_key(name, fhash, d, stock_list, dividend_type)
             cached_factors = DiskCache.load_pickle(ck) or {}
             if len(cached_factors) < len(stock_list):
