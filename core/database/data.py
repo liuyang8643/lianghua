@@ -1,6 +1,7 @@
 # from line_profiler_pycharm import profile
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from multiprocessing import current_process
 import pandas as pd
 from datetime import date, datetime
 from typing import Optional
@@ -9,11 +10,11 @@ import numpy as np
 from core.logger import core_logger
 from utils.shared_memory import SharedMemoryCache
 from utils.stock.format import format_qmt_datetime
-from utils.stock.time import get_latest_trading_time, is_latest_data
+from utils.stock.time import get_latest_trading_time, get_trading_date_span, is_latest_data
 from .history import check_stocks_need_fix, get_history_data, get_history_data_after_download
 from .stock_list import check_stock_valid_at_date
 
-# 全局历史数据缓存，以股票代码+复权方式为key，存储完整历史数据
+# 全局市场数据缓存，以股票代码+复权方式为 key，按需存储共享窗口数据
 _GLOBAL_DAILY_CACHE = SharedMemoryCache('daily')
 _GLOBAL_MINUTE_CACHE = SharedMemoryCache('minute')
 
@@ -23,39 +24,158 @@ def _make_market_cache_key(stock_code: str, dividend_type: str) -> str:
   return f'{stock_code}:{dividend_type}'
 
 
+def _get_market_cache(period: str) -> SharedMemoryCache:
+  return _GLOBAL_DAILY_CACHE if period == '1d' else _GLOBAL_MINUTE_CACHE
+
+
+def _filter_active_bars(data: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+  if data is not None and not data.empty and 'suspendFlag' in data.columns:
+    # 使用 numpy 向量化操作，比 pandas boolean indexing 更快
+    suspend_mask = data['suspendFlag'].values == 0
+    data = data[suspend_mask]
+  return data
+
+
 def init_full_data(stock_codes: list[str] = None, period: str = '1d', max_workers: int = None, dividend_type: str = 'back'):
-  """初始化共享缓存并预加载股票数据（一站式接口）
+  """兼容旧接口；市场数据已改为按需窗口加载。"""
+  core_logger.debug(
+    "init_full_data 已不再执行全量历史预加载；请改用按需缓存或 init_market_data_range()."
+  )
+  return 0
 
-  多线程并行加载缓存中不存在的股票，有缓存则跳过。
-  与原版 main 分支逻辑一致（只是串行改成了多线程并行）。
 
-  Args:
-    stock_codes: 股票代码列表
-    period: 数据周期，'1d'（分钟数据暂不支持）
-    max_workers: 最大线程数
-    dividend_type: 复权方式
+def _cache_market_data_if_safe(cache: SharedMemoryCache, cache_key: str, data: Optional[pd.DataFrame]):
+  if data is None or data.empty:
+    return
+  if current_process().name == 'MainProcess':
+    cache.put(cache_key, data)
 
-  Returns:
-    成功加载的股票数量
+
+def _slice_market_data_by_time(
+    data: pd.DataFrame,
+    start_time: Optional[datetime],
+    end_time: datetime,
+) -> pd.DataFrame:
+  time_values = data['time'].values
+  end_time_ms = int(end_time.timestamp() * 1000)
+  start_idx = 0
+  if start_time is not None:
+    start_time_ms = int(start_time.timestamp() * 1000)
+    start_idx = np.searchsorted(time_values, start_time_ms, side='left')
+  end_idx = np.searchsorted(time_values, end_time_ms, side='right')
+  return data.iloc[start_idx:end_idx]
+
+
+def _load_market_window(
+    stock_code: str,
+    count: int,
+    base_time: datetime,
+    period: str,
+    allow_tainted: bool,
+    dividend_type: str,
+) -> Optional[pd.DataFrame]:
+  data = get_market_data(
+    stock_code,
+    count,
+    base_time,
+    period,
+    allow_tainted=allow_tainted,
+    dividend_type=dividend_type,
+  )
+  return _filter_active_bars(data)
+
+
+def _get_cached_market_window(
+    stock_code: str,
+    count: int,
+    base_time: datetime,
+    period: str,
+    allow_tainted: bool,
+    dividend_type: str,
+) -> Optional[pd.DataFrame]:
+  cache = _get_market_cache(period)
+  cache_key = _make_market_cache_key(stock_code, dividend_type)
+  cached_data = cache.get(cache_key) if cache.contains(cache_key) else None
+
+  if cached_data is not None and not cached_data.empty:
+    cached_slice = _slice_market_data_by_time(cached_data, None, base_time)
+    last_bar_time = datetime.fromtimestamp(int(cached_data.iloc[-1]['time']) / 1000)
+    if len(cached_slice) >= count and (allow_tainted or is_latest_data(last_bar_time, base_time, period)):
+      return cached_data
+
+  fetch_count = count + 2000 if period == '1m' else count
+  window_data = _load_market_window(
+    stock_code,
+    fetch_count,
+    base_time,
+    period,
+    allow_tainted,
+    dividend_type,
+  )
+  if window_data is not None and not window_data.empty:
+    _cache_market_data_if_safe(cache, cache_key, window_data)
+  return window_data
+
+
+def init_market_data_range(
+    stock_codes: list[str] = None,
+    start_time: date | datetime = None,
+    end_time: date | datetime = None,
+    period: str = '1d',
+    max_workers: int = None,
+    dividend_type: str = 'back',
+):
+  """按指定时间窗口预加载共享缓存中的日线数据
+
+  该接口用于回测/GA 这类已知时间范围的场景。
+  缓存仍复用现有共享内存键，但只写入截至 ``end_time`` 的最近窗口数据，
+  避免为全市场常驻整段上市以来的历史日线。
   """
   if period != '1d':
     raise NotImplementedError("目前仅支持 period='1d'，分钟数据暂不支持")
+  if start_time is None or end_time is None:
+    raise ValueError('start_time 和 end_time 不能为空')
+
+  start_dt = start_time if isinstance(start_time, datetime) else datetime.combine(start_time, datetime.min.time())
+  end_dt = end_time if isinstance(end_time, datetime) else datetime.combine(end_time, datetime.min.time())
+  if start_dt > end_dt:
+    raise ValueError('start_time 不能晚于 end_time')
 
   max_workers = max_workers or min(8, os.cpu_count() or 4)
-  cache = _GLOBAL_DAILY_CACHE
+  cache = _get_market_cache(period)
+  latest_end_time = get_latest_trading_time(end_dt)
+  required_count = len(get_trading_date_span(start_dt.date(), latest_end_time.date()))
+
+  if required_count <= 0:
+    core_logger.debug(
+      f"跳过窗口预加载：{start_dt.date()} ~ {latest_end_time.date()} 没有交易日"
+    )
+    return 0
 
   from .stock_list import allow_buy_stock_code_list
   all_stocks = stock_codes if stock_codes else allow_buy_stock_code_list()
   core_logger.debug(
-    f"预加载 {len(all_stocks)} 只股票的 【{period}/{dividend_type} 数据】到共享内存（{max_workers} 线程）..."
+    f"按窗口预加载 {len(all_stocks)} 只股票的 【{period}/{dividend_type} 数据】到共享内存"
+    f"（{start_dt.date()} ~ {latest_end_time.date()}，约 {required_count} 根，{max_workers} 线程）..."
   )
 
-  # 只加载缓存中没有的股票
   def _load_one(code):
     cache_key = _make_market_cache_key(code, dividend_type)
     if cache.contains(cache_key):
       return 0
-    data = get_full_market_data(code, period, dividend_type=dividend_type)
+    try:
+      data = get_market_data(
+        code,
+        required_count,
+        latest_end_time,
+        period,
+        allow_tainted=True,
+        dividend_type=dividend_type,
+      )
+    except Exception:
+      return 0
+    data = _filter_active_bars(data)
+    _cache_market_data_if_safe(cache, cache_key, data)
     return 1 if (data is not None and not data.empty) else 0
 
   loaded = 0
@@ -66,19 +186,31 @@ def init_full_data(stock_codes: list[str] = None, period: str = '1d', max_worker
       loaded += future.result()
       done += 1
       if done % 200 == 0:
-        core_logger.debug(f"数据预加载进度: {done}/{len(all_stocks)}")
+        core_logger.debug(f"窗口数据预加载进度: {done}/{len(all_stocks)}")
 
-  # 预加载基准股票数据
+  # 基准指数也用同一窗口预加载，避免回测阶段为单只指数再落回全量历史读取。
   from utils.stock.info import baseline_stock_code
   baseline_cache_key = _make_market_cache_key(baseline_stock_code, dividend_type)
   if not cache.contains(baseline_cache_key):
-    baseline_data = get_full_market_data(baseline_stock_code, period, dividend_type=dividend_type)
-    if baseline_data is not None and not baseline_data.empty:
-      cache.put(baseline_cache_key, baseline_data)
+    try:
+      baseline_data = get_market_data(
+        baseline_stock_code,
+        required_count,
+        latest_end_time,
+        period,
+        allow_tainted=True,
+        dividend_type=dividend_type,
+      )
+    except Exception:
+      baseline_data = None
+    baseline_data = _filter_active_bars(baseline_data)
+    _cache_market_data_if_safe(cache, baseline_cache_key, baseline_data)
 
-  core_logger.debug(f"预加载完成，新增加载 {loaded} 只。")
+  core_logger.debug(f"窗口预加载完成，新增加载 {loaded} 只。")
   stat = cache.stat()
   core_logger.debug(f"_GLOBAL_DAILY_CACHE 包含 {stat['count']} 条数据，共计 {stat['total_size_mb']:.2f} MB。")
+  return loaded
+
 
 def cleanup_shared_cache():
   """清理共享缓存（在主进程退出时调用）"""
@@ -122,36 +254,16 @@ def get_full_market_data(
     allow_tainted: bool = True,
     dividend_type: str = 'back'
 ) -> Optional[pd.DataFrame]:
-  """获取股票的完整历史数据（从上市日到目标时间），使用全局缓存
+  """获取股票的完整历史数据（从上市日到目标时间）。
 
-  性能优化：
-  - 使用全局缓存避免重复IO
-  - 对于日线数据一次性加载完整历史
+  仅保留给少数确实需要完整历史的调用方；不再写入共享缓存。
   """
   if target_time is None:
     target_time = datetime.now()
 
-  cache = _GLOBAL_DAILY_CACHE if period == '1d' else _GLOBAL_MINUTE_CACHE
-  cache_key = _make_market_cache_key(stock_code, dividend_type)
-
-  # 如果缓存中已有数据，直接返回（零拷贝）
-  if cache.contains(cache_key):
-    cached_data = cache.get(cache_key)
-    if cached_data is not None:
-      return cached_data
-
   try:
-    # 缓存中没有，需要加载数据
     data = get_market_data(stock_code, None, target_time, period, allow_tainted=allow_tainted, dividend_type=dividend_type)
-    
-    # 过滤停牌数据（suspendFlag == 1）
-    if data is not None and not data.empty and 'suspendFlag' in data.columns:
-      # 使用 numpy 向量化操作，比 pandas boolean indexing 更快
-      suspend_mask = data['suspendFlag'].values == 0
-      data = data[suspend_mask]
-    
-    cache.put(cache_key, data) # 缓存数据
-    return data
+    return _filter_active_bars(data)
   except Exception:
     return None
 
@@ -174,17 +286,18 @@ def get_market_data_from_cache(
   # 历史日线不做阻塞式补数下载，避免大量并发卡死在 xtdata.download_history_data2
   tainted = allow_tainted or (period == '1d' and base_time.date() < date.today())
 
-  full_data = get_full_market_data(
-    stock_code,
-    period,
-    target_time=base_time,
-    allow_tainted=tainted,
-    dividend_type=dividend_type,
-  )
-
   # 检查股票日期有效性
   if not check_stock_valid_at_date(stock_code, base_time.date()):
     raise ValueError(f'{stock_code} 获取 {format_qmt_datetime(base_time)} {count}*{period} 失败：股票不存在或在该时间点无效')
+
+  full_data = _get_cached_market_window(
+    stock_code,
+    count,
+    base_time,
+    period,
+    tainted,
+    dividend_type,
+  )
 
   if full_data is None or full_data.empty:
     return None
@@ -197,29 +310,56 @@ def get_market_data_from_cache(
   time_values = full_data['time'].values
   insert_pos = np.searchsorted(time_values, base_time_ms, side='right')
 
-  # 切分数据：取 [:insert_pos] 就是所有 <= base_time_ms 的数据
   if insert_pos < count:
-    # 数据不足，尝试重新加载更多数据（对于分钟数据可能需要更多）
-    if period == '1m':
-      required_size = count + 2000
-      minute_cache_key = _make_market_cache_key(stock_code, dividend_type)
-      _GLOBAL_MINUTE_CACHE.put(minute_cache_key, None)  # 清除旧缓存
-      # 重新加载更多数据
-      full_data = get_market_data(stock_code, required_size, base_time, '1m', allow_tainted=True, dividend_type=dividend_type)
-      _GLOBAL_MINUTE_CACHE.put(minute_cache_key, full_data)
-
-      if full_data is not None and not full_data.empty:
-        time_values = full_data['time'].values
-        insert_pos = np.searchsorted(time_values, base_time_ms, side='right')
-
-    if insert_pos < count:
-      return None
+    return None
 
   # 使用 iloc 直接切片，比 tail() 更高效（零拷贝视图）
   start_pos = max(0, insert_pos - count)
   result = full_data.iloc[start_pos:insert_pos]
   if strict_trade_date:
     return _enforce_strict_trade_date(result, base_time)
+  return result
+
+
+def get_market_data_range_from_cache(
+    stock_code: str,
+    start_time: datetime,
+    end_time: datetime,
+    period: str = '1d',
+    allow_tainted: bool = False,
+    dividend_type: str = 'back',
+    strict_end_trade_date: bool = False,
+    skip_validity_check: bool = False,
+) -> Optional[pd.DataFrame]:
+  if start_time > end_time:
+    raise ValueError('start_time 不能晚于 end_time')
+  if period != '1d':
+    raise NotImplementedError("目前仅支持 period='1d' 的区间缓存读取")
+
+  if not skip_validity_check and not check_stock_valid_at_date(stock_code, end_time.date()):
+    raise ValueError(f'{stock_code} 获取 {format_qmt_datetime(end_time)} 区间数据失败：股票不存在或在该时间点无效')
+
+  tainted = allow_tainted or end_time.date() < date.today()
+  required_count = len(get_trading_date_span(start_time.date(), end_time.date()))
+  if required_count <= 0:
+    return None
+
+  window_data = _get_cached_market_window(
+    stock_code,
+    required_count,
+    end_time,
+    period,
+    tainted,
+    dividend_type,
+  )
+  if window_data is None or window_data.empty:
+    return None
+
+  result = _slice_market_data_by_time(window_data, start_time, end_time)
+  if result.empty:
+    return None
+  if strict_end_trade_date:
+    return _enforce_strict_trade_date(result, end_time)
   return result
 
 def get_market_data(

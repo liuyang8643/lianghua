@@ -11,12 +11,12 @@ from joblib import Parallel, delayed
 from scipy.stats import pearsonr, spearmanr
 from tqdm import tqdm
 
-from core import FactorCtx, core_logger, init_full_data, init_stock_detail_cache
-from core.database import get_full_market_data, get_stock_detail
+from core import FactorCtx, core_logger, init_stock_detail_cache
+from core.database import get_market_data_range_from_cache, get_stock_detail, init_market_data_range
 from core.factors.helpers import CacheKey, DiskCache
 from utils.hash import hash_function_code
 from utils.stock.format import format_qmt_datetime
-from utils.stock.time import get_trading_date_span
+from utils.stock.time import get_target_forward_day, get_target_period_backward, get_trading_date_span
 
 @dataclass
 class StockFactorScore:
@@ -152,13 +152,21 @@ def _calculate_daily_correlation(
         if not detail:
           continue
 
-        full_data = get_full_market_data(stock_code, '1d')
-        if full_data is None or full_data.empty:
+        price_end_date = max(future_dates.values())
+        price_data = get_market_data_range_from_cache(
+          stock_code,
+          datetime.combine(trade_date, datetime.min.time()),
+          datetime.combine(price_end_date, datetime.max.time()),
+          '1d',
+          allow_tainted=True,
+          dividend_type='back',
+        )
+        if price_data is None or price_data.empty:
           continue
 
         # 构建日期到收盘价的映射（优化：使用向量化操作替代 iterrows）
-        timestamps = full_data['time'].values
-        closes = full_data['close'].values
+        timestamps = price_data['time'].values
+        closes = price_data['close'].values
         dates = [datetime.fromtimestamp(ts / 1000).date() for ts in timestamps]
         time_to_close = dict(zip(dates, closes))
 
@@ -258,14 +266,26 @@ def _calculate_stock_correlation(
     factor = factor_cls()
 
     # 获取股票数据
-    full_data = get_full_market_data(stock_code, '1d')
-    if full_data is None or full_data.empty:
+    if not trade_dates:
+      return {m: StockCorrelation(stock_code, stock_name or stock_code, m, None, None, None, 0)
+              for m in m_days_list}
+
+    range_end_date = get_target_forward_day(trade_dates[-1], max(m_days_list, default=0))
+    price_data = get_market_data_range_from_cache(
+      stock_code,
+      datetime.combine(trade_dates[0], datetime.min.time()),
+      datetime.combine(range_end_date, datetime.max.time()),
+      '1d',
+      allow_tainted=True,
+      dividend_type='back',
+    )
+    if price_data is None or price_data.empty:
       return {m: StockCorrelation(stock_code, stock_name or stock_code, m, None, None, None, 0)
               for m in m_days_list}
 
     # 构建日期到收盘价的映射
-    timestamps = full_data['time'].values
-    closes = full_data['close'].values
+    timestamps = price_data['time'].values
+    closes = price_data['close'].values
     dates = [datetime.fromtimestamp(ts / 1000).date() for ts in timestamps]
     time_to_close = dict(zip(dates, closes))
 
@@ -361,15 +381,23 @@ def calculate_factor_correlation(
   """计算因子得分与T+M日收益率的相关性（一次性计算所有持有期）
   
   注意：该函数会在内部使用多进程并行计算，共享内存缓存已自动启用。
-  如果在外部多进程环境中调用，请确保主进程已调用 init_full_data()
+  如果在外部多进程环境中调用，请确保主进程已按回测窗口预热日线缓存。
   """
 
   m_days_list = [m_days] if isinstance(m_days, int) else sorted(m_days)
+  max_m_days = max(m_days_list, default=0)
 
   # 预加载股票详情到共享内存缓存
   init_stock_detail_cache(stock_codes)
-  # 初始化并预加载数据到共享内存
-  init_full_data(stock_codes, '1d')
+  # 仅预加载相关性计算所需窗口，避免整段历史常驻内存
+  factor_history_days = factor_cls().hist_days
+  preload_start = get_target_period_backward(
+    datetime.combine(start_date, datetime.max.time()),
+    '1d',
+    factor_history_days,
+  )
+  preload_end = datetime.combine(get_target_forward_day(end_date, max_m_days), datetime.max.time())
+  init_market_data_range(stock_codes, preload_start, preload_end, '1d')
 
   core_logger.info(f"开始计算 {factor_cls.__name__} 相关性: {start_date} 至 {end_date}")
   core_logger.info(f"股票数: {len(stock_codes)}, 持有期: {m_days_list}")

@@ -14,17 +14,22 @@ def compute_hs300_cumulative_returns(trade_dates: List[str]) -> List[float]:
   """获取沪深300在回测期间的累计收益率（%）。
 
   注意：指数不走 get_market_data_from_cache（会被 check_stock_valid_at_date 拦截），
-  直接用 get_full_market_data 取全量日线再按日期切片。
+  直接按回测窗口读取指数日线。
   """
   if not trade_dates:
     return []
 
   try:
-    from core.database.data import get_full_market_data
+    from core.database.history import get_history_data
 
     base_time = datetime.strptime(trade_dates[-1], '%Y-%m-%d')
-    data = get_full_market_data(HS300_CODE, '1d', target_time=base_time,
-                                allow_tainted=True, dividend_type='back')
+    data = get_history_data(
+      [HS300_CODE],
+      len(trade_dates),
+      base_time,
+      '1d',
+      'back',
+    ).get(HS300_CODE)
 
     if data is None or data.empty:
       testback_logger.warning(f'沪深300 ({HS300_CODE}) 数据获取失败，返回全0基准线')

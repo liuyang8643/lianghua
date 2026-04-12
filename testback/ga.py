@@ -11,11 +11,11 @@ from core import (
   get_stock_detail,
   init_stock_detail_cache,
 )
-from core.database import allow_buy_stock_code_list, init_full_data
+from core.database import allow_buy_stock_code_list, init_market_data_range
 from core.database.delist import get_delist_stock_info
 from core.strategies.top_n import compute_topn_range, make_topn_range_cache_key
 from utils.shared_memory import SharedMemoryCache
-from utils.stock.time import get_next_trading_day, get_trading_date_span
+from utils.stock.time import get_next_trading_day, get_target_period_backward, get_trading_date_span
 from utils.stock.tradability import evaluate_orderability
 from testback.account import StockAccountMocker
 from testback.ga_config import (
@@ -791,13 +791,30 @@ def _wrap_process_worker(individual_config: dict, mem_offset: int, mem_count: in
 
 # ========== 数据加载（所有模式共用）==========
 
-def _load_shared_data(backtest_datetime_list, all_stocks):
-  """预加载市场数据到共享内存（不含TopN，TopN在各模式中按需计算）"""
+def _load_shared_data(backtest_datetime_list, all_stocks, max_hist_days: int = 0):
+  """按回测窗口预加载市场数据到共享内存（不含 TopN）"""
+  if not backtest_datetime_list:
+    return
+
   # 预加载股票详情到共享内存缓存
   init_stock_detail_cache(all_stocks)
-  # 初始化并预加载数据到共享内存
-  init_full_data(all_stocks, '1d')
-  testback_logger.debug(f"市场数据预加载完成，共 {len(all_stocks)} 只股票")
+  signal_start = backtest_datetime_list[0]
+  signal_end = backtest_datetime_list[-1]
+  preload_start = (
+    get_target_period_backward(signal_start, '1d', max_hist_days)
+    if max_hist_days > 0 else signal_start
+  )
+
+  init_market_data_range(
+    all_stocks,
+    preload_start,
+    signal_end,
+    '1d',
+  )
+  testback_logger.debug(
+    f"市场数据窗口预加载完成，共 {len(all_stocks)} 只股票，"
+    f"范围 {preload_start.date()} ~ {signal_end.date()}"
+  )
 
 
 def _compute_topn_for_range(
@@ -1363,7 +1380,7 @@ def main():
   testback_logger.info(f"因子历史需求: {hist_detail}，最大需求={max_hist_days}天")
 
   try:
-    _load_shared_data(backtest_datetime_list, filtered_stocks)
+    _load_shared_data(backtest_datetime_list, filtered_stocks, max_hist_days)
 
     from core.database.stock_name import prefetch_stock_histories
     prefetch_stock_histories(filtered_stocks)

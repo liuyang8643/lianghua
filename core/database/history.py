@@ -1,10 +1,11 @@
-from datetime import datetime
+from datetime import datetime, time
 from typing import Optional
 from pandas import DataFrame
 from xtquant import xtdata
 
 from utils.stock.format import format_qmt_date, format_qmt_datetime
 from utils.stock.time import get_target_period_backward, is_latest_data
+from .stock_list import _get_stock_date_range
 
 def get_history_data(
     stock_codes: list[str],
@@ -24,6 +25,36 @@ def get_history_data(
     dividend_type=dividend_type,
   )
 
+
+def _format_download_time(target_time: Optional[datetime], period: str) -> str:
+  if target_time is None:
+    return ''
+  return format_qmt_date(target_time) if period == '1d' else format_qmt_datetime(target_time)
+
+
+def _get_first_bar_datetime(data: Optional[DataFrame]) -> Optional[datetime]:
+  if data is None or data.empty:
+    return None
+  first_ts = int(data.iloc[0]['time'])
+  return datetime.fromtimestamp(first_ts // 1000)
+
+
+def _get_last_bar_datetime(data: Optional[DataFrame]) -> Optional[datetime]:
+  if data is None or data.empty:
+    return None
+  last_ts = int(data.iloc[-1]['time'])
+  return datetime.fromtimestamp(last_ts // 1000)
+
+
+def _get_full_history_start(stock_code: str, period: str) -> Optional[datetime]:
+  if period != '1d':
+    return None
+  date_range = _get_stock_date_range(stock_code)
+  if not date_range or date_range[0] is None:
+    return None
+  return datetime.combine(date_range[0], time.min)
+
+
 def get_history_data_after_download(
     stock_codes: list[str],
     count: Optional[int],
@@ -33,33 +64,46 @@ def get_history_data_after_download(
 ) -> dict[str, Optional[DataFrame]]:
   # 先检查数据是否已完整（缓存命中则跳过下载）
   existing = get_history_data(stock_codes, count, base_time, period, dividend_type)
-  actual_count = 2500 if count is None else count
 
-  stocks_need_download = []
+  stocks_need_download: dict[str, Optional[datetime]] = {}
   for code in stock_codes:
     data = existing.get(code)
     if data is None or data.empty:
-      stocks_need_download.append(code)
+      stocks_need_download[code] = (
+        get_target_period_backward(base_time, period, count)
+        if count is not None else _get_full_history_start(code, period)
+      )
       continue
-    if len(data) < actual_count:
-      stocks_need_download.append(code)
-      continue
-    # 检查最新日期
-    if len(data) > 0:
-      last_ts = data.iloc[-1]['time']
-      last_dt = datetime.fromtimestamp(last_ts // 1000)
-      if not is_latest_data(last_dt, base_time, period):
-        stocks_need_download.append(code)
+
+    required_start = None
+    if count is not None:
+      if len(data) < count:
+        required_start = get_target_period_backward(base_time, period, count)
+    else:
+      required_start = _get_full_history_start(code, period)
+      first_dt = _get_first_bar_datetime(data)
+      if required_start is not None and first_dt is not None and first_dt.date() > required_start.date():
+        stocks_need_download[code] = required_start
+        continue
+
+    last_dt = _get_last_bar_datetime(data)
+    if last_dt is not None and not is_latest_data(last_dt, base_time, period):
+      stocks_need_download[code] = required_start
 
   if stocks_need_download:
-    start_time_str = format_qmt_date(get_target_period_backward(base_time, period, actual_count))
-    end_time_str = format_qmt_date(base_time)
-    xtdata.download_history_data2(
-      stocks_need_download, period,
-      start_time=start_time_str,
-      end_time=end_time_str,
-      incrementally=True
-    )
+    end_time_str = _format_download_time(base_time, period)
+    download_groups: dict[str, list[str]] = {}
+    for code, start_dt in stocks_need_download.items():
+      start_time_str = _format_download_time(start_dt, period)
+      download_groups.setdefault(start_time_str, []).append(code)
+
+    for start_time_str, grouped_codes in download_groups.items():
+      xtdata.download_history_data2(
+        grouped_codes, period,
+        start_time=start_time_str,
+        end_time=end_time_str,
+        incrementally=True
+      )
     # 下载后重新获取
     existing = get_history_data(stock_codes, count, base_time, period, dividend_type)
 
