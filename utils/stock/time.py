@@ -2,13 +2,79 @@ import re
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache
 
-from .holiday import is_trading_day
-
 DAY_START = time(0, 0)
 MORNING_START = time(9, 30)
 MORNING_END = time(11, 30)
 AFTERNOON_START = time(13, 0)
 AFTERNOON_END = time(15, 0)
+
+def _fetch_xt_trading_calendar_state() -> tuple[frozenset[date], date | None, date | None]:
+  from xtquant import xtdata
+
+  timestamps = xtdata.get_trading_dates('SH')
+  if not timestamps:
+    return frozenset(), None, None
+
+  trading_dates = tuple(
+    datetime.fromtimestamp(ts / 1000).date()
+    for ts in timestamps
+  )
+  return frozenset(trading_dates), trading_dates[0], trading_dates[-1]
+
+
+@lru_cache(maxsize=1)
+def _get_trading_calendar_state() -> tuple[frozenset[date], date | None, date | None]:
+  try:
+    return _fetch_xt_trading_calendar_state()
+  except Exception:
+    return frozenset(), None, None
+
+
+def _is_weekday(target_date: date) -> bool:
+  return target_date.weekday() < 5
+
+
+def _get_last_weekday(base_date: date) -> date:
+  input_date = base_date
+  while not _is_weekday(input_date):
+    input_date -= timedelta(days=1)
+  return input_date
+
+
+def _get_next_weekday(base_date: date) -> date:
+  input_date = base_date + timedelta(days=1)
+  while not _is_weekday(input_date):
+    input_date += timedelta(days=1)
+  return input_date
+
+
+def _weekday_span(start_date: date, end_date: date) -> list[date]:
+  res_span: list[date] = []
+  current_date = start_date
+  while current_date <= end_date:
+    if _is_weekday(current_date):
+      res_span.append(current_date)
+    current_date += timedelta(days=1)
+  return res_span
+
+
+@lru_cache(maxsize=4096)
+def is_trading_day(target_date: date = None) -> bool:
+  if target_date is None:
+    target_date = date.today()
+
+  if not _is_weekday(target_date):
+    return False
+
+  trading_dates, _, last_known_date = _get_trading_calendar_state()
+  if last_known_date is None:
+    return True
+
+  # QMT 这里拿到的是已完成的历史交易日；当前/未来日期退化为工作日判断。
+  if target_date > last_known_date:
+    return True
+
+  return target_date in trading_dates
 
 def is_current_trading(base_time: datetime = None) -> bool:
   input_time = base_time or datetime.now()
@@ -27,13 +93,20 @@ def get_last_trading_day(base_date: date = None) -> date:
   if base_date is None:
     base_date = date.today()
 
-  input_date = base_date
+  trading_dates, first_known_date, last_known_date = _get_trading_calendar_state()
+  if first_known_date is None or last_known_date is None:
+    return _get_last_weekday(base_date)
 
-  # 非交易日，寻找前一个交易日
-  while not is_trading_day(input_date):
-    input_date -= timedelta(days=1)
+  if base_date < first_known_date or base_date > last_known_date:
+    return _get_last_weekday(base_date)
 
-  return input_date
+  current_date = base_date
+  while current_date >= first_known_date:
+    if current_date in trading_dates:
+      return current_date
+    current_date -= timedelta(days=1)
+
+  return _get_last_weekday(base_date)
 
 @lru_cache(maxsize=512)
 def get_next_trading_day(base_date: date = None) -> date:
@@ -43,13 +116,20 @@ def get_next_trading_day(base_date: date = None) -> date:
   if base_date is None:
     base_date = date.today()
 
-  input_date = base_date + timedelta(days=1)  # 从下一天开始查找
+  trading_dates, first_known_date, last_known_date = _get_trading_calendar_state()
+  if first_known_date is None or last_known_date is None:
+    return _get_next_weekday(base_date)
 
-  # 非交易日，寻找后一个交易日
-  while not is_trading_day(input_date):
-    input_date += timedelta(days=1)
+  current_date = base_date + timedelta(days=1)
+  if current_date < first_known_date:
+    return first_known_date
 
-  return input_date
+  while current_date <= last_known_date:
+    if current_date in trading_dates:
+      return current_date
+    current_date += timedelta(days=1)
+
+  return _get_next_weekday(base_date)
 
 def get_target_forward_day(base_date: date, count: int = 1) -> date:
   """
@@ -189,14 +269,28 @@ def get_trading_date_span(
   if start_date > end_date:
     raise ValueError('start_date不能大于end_date')
 
-  res_span: list[date] = []
+  trading_dates, first_known_date, last_known_date = _get_trading_calendar_state()
+  if first_known_date is None or last_known_date is None:
+    return _weekday_span(start_date, end_date)
+
+  result: list[date] = []
   current_date = start_date
 
-  while current_date <= end_date:
-    if is_trading_day(current_date):
-      res_span.append(current_date)
+  if current_date < first_known_date:
+    before_end = min(end_date, first_known_date - timedelta(days=1))
+    result.extend(_weekday_span(current_date, before_end))
+    current_date = first_known_date
+
+  historical_end = min(end_date, last_known_date)
+  while current_date <= historical_end:
+    if current_date in trading_dates:
+      result.append(current_date)
     current_date += timedelta(days=1)
-  return res_span
+
+  if current_date <= end_date:
+    result.extend(_weekday_span(current_date, end_date))
+
+  return result
 
 def get_trading_pass_minute(target_datetime: datetime) -> int:
   """ 返回当前时间在交易日已经过去的分钟K线数 """

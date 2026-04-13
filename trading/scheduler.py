@@ -5,8 +5,7 @@ from typing import Callable, List, Optional
 
 from trading.logger import trading_logger
 from utils.recorder import recorder
-from utils.stock.time import is_current_trading
-from utils.stock.holiday import is_trading_day
+from utils.stock.time import is_current_trading, is_trading_day
 from .trader import Trader
 from .lark.sender import lark_sender
 

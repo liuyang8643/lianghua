@@ -7,7 +7,7 @@ import sys
 import datetime
 from typing import Optional
 from trading.qmt import start_qmt
-from utils.stock.holiday import is_trading_day
+from utils.stock.time import is_trading_day
 from utils.sys import terminate_process_tree
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
