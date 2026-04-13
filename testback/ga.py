@@ -17,6 +17,7 @@ from core.strategies.top_n import compute_topn_range, make_topn_range_cache_key
 from utils.shared_memory import SharedMemoryCache
 from utils.stock.time import get_next_trading_day, get_target_period_backward, get_trading_date_span
 from utils.stock.info import evaluate_orderability
+from utils.windows_awake import keep_windows_awake
 from testback.account import StockAccountMocker
 from testback.ga_config import (
   DEFAULT_GA_PROFILE,
@@ -1306,7 +1307,7 @@ def run_ga_mode(args, mode_config, ordered_topns, profile_name: str = DEFAULT_GA
 
 # ========== 主入口 ==========
 
-def main():
+def _main_impl():
   """主入口 - 根据模式参数执行"""
   import argparse
   import random
@@ -1403,6 +1404,15 @@ def main():
   finally:
     testback_cache.cleanup()
     cleanup_shared_cache()
+
+
+def main():
+  with keep_windows_awake() as keep_awake_enabled:
+    if keep_awake_enabled:
+      testback_logger.info('已启用 Windows 防休眠，任务结束后自动恢复')
+    else:
+      testback_logger.warning('未能启用 Windows 防休眠，系统可能仍按当前电源策略休眠')
+    return _main_impl()
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from core.factors.helpers import CacheKey, DiskCache
 from utils.hash import hash_function_code
 from utils.stock.format import format_qmt_datetime
 from utils.stock.time import get_target_forward_day, get_target_period_backward, get_trading_date_span
+from utils.windows_awake import keep_windows_awake
 
 @dataclass
 class StockFactorScore:
@@ -369,7 +370,7 @@ def _calculate_stock_correlation(
     return {m: StockCorrelation(stock_code, stock_name or stock_code, m, None, None, None, 0)
             for m in m_days_list}
 
-def calculate_factor_correlation(
+def _calculate_factor_correlation_impl(
     factor_cls,
     start_date: date,
     end_date: date,
@@ -674,6 +675,32 @@ def calculate_factor_correlation(
     factor_cls.__name__, start_date, end_date, m_days_list, len(stock_codes),
     period_statistics, stock_period_statistics, show_stock_correlation
   )
+
+
+def calculate_factor_correlation(
+    factor_cls,
+    start_date: date,
+    end_date: date,
+    m_days: int | list[int] = 5,
+    stock_codes: list[str] = None,
+    save_stock_scores: bool = False,
+    show_stock_correlation: bool = False
+) -> FactorCorrelationReport:
+  """计算因子得分与T+M日收益率的相关性（一次性计算所有持有期）。"""
+  with keep_windows_awake() as keep_awake_enabled:
+    if keep_awake_enabled:
+      core_logger.info('已启用 Windows 防休眠，相关性计算结束后自动恢复')
+    else:
+      core_logger.warning('未能启用 Windows 防休眠，系统可能仍按当前电源策略休眠')
+    return _calculate_factor_correlation_impl(
+      factor_cls=factor_cls,
+      start_date=start_date,
+      end_date=end_date,
+      m_days=m_days,
+      stock_codes=stock_codes,
+      save_stock_scores=save_stock_scores,
+      show_stock_correlation=show_stock_correlation,
+    )
 
 if __name__ == '__main__':
   """

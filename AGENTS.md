@@ -97,11 +97,12 @@ python -m core.factors.benchmark.web_chart --code 600000.SH
 - `core/database/` contains market, financial, and money-flow data access layers.
 - `core/factors/` contains factor implementations plus benchmark helpers. The current benchmark focus is `WMACross`, a short-horizon 2/28 WMA mean-reversion factor with a retail money-flow amplifier.
 - `core/factors/benchmark/benchmark.py` currently defaults to `WMACross`, supports benchmark date/sample overrides via environment variables, always saves a pickle report, and only generates HTML when `BENCHMARK_GENERATE_HTML` is enabled.
+- `core/factors/benchmark/calc_correlation.py` temporarily requests a Windows no-sleep execution state while `calculate_factor_correlation(...)` is running, then restores the normal policy on exit. This prevents idle auto-sleep but does not override lid-close behavior.
 - `core/factors/benchmark/web_chart.py` provides an ECharts-based browser view for K-line, moving averages, volume, and factor scores. It currently visualizes `WMACross` only and filters chart data to `2021-01-01` through `2022-12-31`.
 - `core/strategies/` contains position-sizing and strategy selection logic.
 - `trading/main.py` is the explicit live-trading CLI entrypoint and currently requires `--individual-config`. It also supports one-shot manual `--buy` / `--sell` execution with terminal confirmation.
 - `trading/watchdog.py` does not currently match the `trading.main` CLI contract and should be treated carefully.
-- `testback/` contains GA search and analysis scripts rather than a separate packaged service.
+- `testback/` contains GA search and analysis scripts rather than a separate packaged service. `testback/ga.py` also temporarily requests a Windows no-sleep execution state while the process is running, then restores the normal policy on exit.
 - `testback/reportor/` contains the single-run report implementation and frontend templates. Import report generation from `testback.reportor`.
 
 ## Dependency Notes
