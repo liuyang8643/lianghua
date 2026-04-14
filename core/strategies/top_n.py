@@ -2,6 +2,7 @@ import hashlib
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed, FIRST_COMPLETED, wait
+from concurrent.futures.process import BrokenProcessPool
 from datetime import datetime
 from typing import Dict, List
 
@@ -16,10 +17,27 @@ DEFAULT_FACTOR_CLASSES = [SmallCap, WMACross]
 _STOCK_BATCH_SIZE = 100
 _TOPN_CACHE_SCHEMA_VERSION = 'topn-v2'
 _FACTOR_SCORE_CACHE_SCHEMA_VERSION = 'factor-score-v2'
-
-_MAX_TOPN_WORKERS = max(1, (os.cpu_count() or 4) - 2)
-_MAX_FACTOR_THREADS = max(1, (os.cpu_count() or 4) - 2)
+_CPU_COUNT = os.cpu_count() or 4
 _STALL_TIMEOUT_SEC = 180
+
+
+def _read_positive_int_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None or raw_value.strip() == '':
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError:
+        core_logger.warning(f'{name}={raw_value!r} 不是正整数，回退到默认值 {default}')
+        return default
+    if value < 1:
+        core_logger.warning(f'{name}={raw_value!r} 小于 1，回退到默认值 {default}')
+        return default
+    return value
+
+
+_MAX_TOPN_WORKERS = _read_positive_int_env('WBR_TOPN_MAX_WORKERS', max(1, _CPU_COUNT - 2))
+_MAX_FACTOR_THREADS = _read_positive_int_env('WBR_TOPN_FACTOR_THREADS', max(1, _CPU_COUNT - 2))
 
 
 def _make_factor_cache_key(name: str, func_hash: str, base_date: datetime, stock_list: List[str], dividend_type: str) -> str:
@@ -225,6 +243,74 @@ def make_topn_range_cache_key(
     )
 
 
+def _compute_topn_sequential(worker_args_list: List[tuple]) -> List["TopN"]:
+    total_tasks = len(worker_args_list)
+    started_at = time.time()
+    result_topns = []
+    for idx, args in enumerate(worker_args_list, start=1):
+        result_topns.append(_calc_topn_worker(args))
+        now = time.time()
+        elapsed = now - started_at
+        speed = (idx / elapsed) if elapsed > 0 else 0.0
+        eta_sec = ((total_tasks - idx) / speed) if speed > 0 else 0.0
+        core_logger.info(
+            f"TopN 串行进度: {idx}/{total_tasks} "
+            f"({idx / total_tasks * 100:.1f}%), 已耗时 {elapsed:.1f}s, 预计剩余 {eta_sec:.1f}s"
+        )
+    return result_topns
+
+
+def _compute_topn_parallel(worker_args_list: List[tuple], n_workers: int) -> List["TopN"]:
+    core_logger.info(
+        f"启动 {n_workers} 个进程并行计算 TopN，未计算 {len(worker_args_list)} 天"
+    )
+    heartbeat_interval_sec = 15
+    total_tasks = len(worker_args_list)
+    started_at = time.time()
+    last_heartbeat_at = started_at
+    last_progress_at = started_at
+    completed_count = 0
+
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        futures = [executor.submit(_calc_topn_worker, args) for args in worker_args_list]
+        uncached_topns = []
+        pending = set(futures)
+        while pending:
+            done, pending = wait(pending, timeout=heartbeat_interval_sec, return_when=FIRST_COMPLETED)
+            now = time.time()
+            if done:
+                for future in done:
+                    uncached_topns.append(future.result())
+                    completed_count += 1
+                last_progress_at = now
+
+            elapsed = now - started_at
+            stalled_for = now - last_progress_at
+            if done or (now - last_heartbeat_at) >= heartbeat_interval_sec:
+                progress_pct = (completed_count / total_tasks * 100) if total_tasks else 100.0
+                speed = (completed_count / elapsed) if elapsed > 0 else 0.0
+                eta_sec = ((total_tasks - completed_count) / speed) if speed > 0 else 0.0
+                core_logger.info(
+                    f"TopN 并行进度: {completed_count}/{total_tasks} "
+                    f"({progress_pct:.1f}%), 已耗时 {elapsed:.1f}s, 预计剩余 {eta_sec:.1f}s"
+                )
+                last_heartbeat_at = now
+
+            if pending and stalled_for >= _STALL_TIMEOUT_SEC:
+                core_logger.error(
+                    f"TopN 并行超过 {_STALL_TIMEOUT_SEC}s 无进度，触发熔断"
+                )
+                for proc in list(getattr(executor, '_processes', {}).values()):
+                    if proc is not None and proc.is_alive():
+                        proc.kill()
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise TimeoutError(
+                    f"TopN parallel stalled for {_STALL_TIMEOUT_SEC}s "
+                    f"(completed={completed_count}/{total_tasks})"
+                )
+    return uncached_topns
+
+
 def compute_topn_range(
     backtest_datetime_list: List[datetime],
     stock_list: List[str],
@@ -301,53 +387,23 @@ def compute_topn_range(
             for d in uncached_dates
         ]
         n_workers = min(_MAX_TOPN_WORKERS, max(1, (os.cpu_count() or 4) - 2), len(worker_args_list))
-        core_logger.info(
-            f"启动 {n_workers} 个进程并行计算 TopN，未计算 {len(uncached_dates)} 天"
-        )
-        heartbeat_interval_sec = 15
-        total_tasks = len(worker_args_list)
-        started_at = time.time()
-        last_heartbeat_at = started_at
-        last_progress_at = started_at
-        completed_count = 0
-
-        with ProcessPoolExecutor(max_workers=n_workers) as executor:
-            futures = [executor.submit(_calc_topn_worker, args) for args in worker_args_list]
-            uncached_topns = []
-            pending = set(futures)
-            while pending:
-                done, pending = wait(pending, timeout=heartbeat_interval_sec, return_when=FIRST_COMPLETED)
-                now = time.time()
-                if done:
-                    for future in done:
-                        uncached_topns.append(future.result())
-                        completed_count += 1
-                    last_progress_at = now
-
-                elapsed = now - started_at
-                stalled_for = now - last_progress_at
-                if done or (now - last_heartbeat_at) >= heartbeat_interval_sec:
-                    progress_pct = (completed_count / total_tasks * 100) if total_tasks else 100.0
-                    speed = (completed_count / elapsed) if elapsed > 0 else 0.0
-                    eta_sec = ((total_tasks - completed_count) / speed) if speed > 0 else 0.0
-                    core_logger.info(
-                        f"TopN 并行进度: {completed_count}/{total_tasks} "
-                        f"({progress_pct:.1f}%), 已耗时 {elapsed:.1f}s, 预计剩余 {eta_sec:.1f}s"
+        uncached_topns = None
+        attempt_workers = n_workers
+        while uncached_topns is None:
+            try:
+                uncached_topns = _compute_topn_parallel(worker_args_list, attempt_workers)
+            except BrokenProcessPool:
+                if attempt_workers <= 2:
+                    core_logger.warning(
+                        "TopN 进程池异常退出，降级为当前进程串行计算剩余日期"
                     )
-                    last_heartbeat_at = now
-
-                if pending and stalled_for >= _STALL_TIMEOUT_SEC:
-                    core_logger.error(
-                        f"TopN 并行超过 {_STALL_TIMEOUT_SEC}s 无进度，触发熔断"
-                    )
-                    for proc in list(getattr(executor, '_processes', {}).values()):
-                        if proc is not None and proc.is_alive():
-                            proc.kill()
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    raise TimeoutError(
-                        f"TopN parallel stalled for {_STALL_TIMEOUT_SEC}s "
-                        f"(completed={completed_count}/{total_tasks})"
-                    )
+                    uncached_topns = _compute_topn_sequential(worker_args_list)
+                    break
+                next_workers = max(2, attempt_workers // 2)
+                core_logger.warning(
+                    f"TopN 进程池异常退出，降低并行度后重试: {attempt_workers} -> {next_workers}"
+                )
+                attempt_workers = next_workers
         result_topns.extend(uncached_topns)
 
     result_topns.sort(key=lambda x: x.base_date)
