@@ -56,7 +56,6 @@ class TestMarketDataFromCache(unittest.TestCase):
         count=1,
         base_time=base_time,
         period='1d',
-        allow_tainted=True,
         dividend_type='back',
       )
 
@@ -68,7 +67,7 @@ class TestMarketDataFromCache(unittest.TestCase):
     self.assertEqual(mock_window.call_args.args[1], 1)
     self.assertEqual(mock_window.call_args.args[2], base_time)
 
-  def test_historical_daily_data_uses_tainted_fast_path(self):
+  def test_get_market_data_batch_uses_download_aware_loader(self):
     base_time = datetime(2024, 8, 30, 15, 0, 0)
     df = pd.DataFrame(
       [
@@ -76,18 +75,73 @@ class TestMarketDataFromCache(unittest.TestCase):
       ]
     )
 
-    with patch.object(data_module, '_get_cached_market_window', return_value=df) as mock_window, \
-         patch.object(data_module, 'check_stock_valid_at_date', return_value=True):
-      _ = data_module.get_market_data_from_cache(
-        stock_code='000023.SZ',
+    with patch.object(data_module, 'get_history_data_after_download', return_value={'000023.SZ': df}) as mock_loader:
+      result = data_module.get_market_data_batch(
+        stock_codes=['000023.SZ'],
         count=1,
         base_time=base_time,
         period='1d',
-        allow_tainted=False,
         dividend_type='back',
       )
 
-    self.assertTrue(mock_window.call_args.args[4])
+    self.assertEqual(result['000023.SZ'].iloc[-1]['open'], 1.0)
+    self.assertEqual(mock_loader.call_count, 1)
+    self.assertEqual(mock_loader.call_args.args[0], ['000023.SZ'])
+    self.assertEqual(mock_loader.call_args.args[1], 1)
+    self.assertEqual(mock_loader.call_args.args[2], data_module.get_latest_trading_time(base_time))
+
+  def test_get_market_data_batch_filters_suspend_rows_before_return(self):
+    base_time = datetime(2024, 8, 30, 15, 0, 0)
+    df = pd.DataFrame(
+      [
+        {'time': int(datetime(2024, 8, 28, 15, 0, 0).timestamp() * 1000), 'open': 0.8, 'suspendFlag': 0},
+        {'time': int(datetime(2024, 8, 29, 15, 0, 0).timestamp() * 1000), 'open': 1.0, 'suspendFlag': 1},
+        {'time': int(datetime(2024, 8, 30, 15, 0, 0).timestamp() * 1000), 'open': 1.2, 'suspendFlag': 0},
+      ]
+    )
+
+    with patch.object(data_module, 'get_history_data_after_download', return_value={'000023.SZ': df}):
+      result = data_module.get_market_data_batch(
+        stock_codes=['000023.SZ'],
+        count=2,
+        base_time=base_time,
+        period='1d',
+        dividend_type='back',
+      )
+
+    self.assertEqual(len(result['000023.SZ']), 2)
+    self.assertEqual(list(result['000023.SZ']['open']), [0.8, 1.2])
+
+  def test_get_market_data_batch_filters_zero_placeholder_bars_but_keeps_resume_flag(self):
+    base_time = datetime(2024, 8, 30, 15, 0, 0)
+    df = pd.DataFrame(
+      [
+        {
+          'time': int(datetime(2024, 8, 28, 15, 0, 0).timestamp() * 1000),
+          'open': 0.8, 'high': 0.9, 'low': 0.7, 'close': 0.85, 'suspendFlag': 0,
+        },
+        {
+          'time': int(datetime(2024, 8, 29, 15, 0, 0).timestamp() * 1000),
+          'open': 0.0, 'high': 0.0, 'low': 0.0, 'close': 0.0, 'suspendFlag': 0,
+        },
+        {
+          'time': int(datetime(2024, 8, 30, 15, 0, 0).timestamp() * 1000),
+          'open': 1.2, 'high': 1.3, 'low': 1.1, 'close': 1.25, 'suspendFlag': -1,
+        },
+      ]
+    )
+
+    with patch.object(data_module, 'get_history_data_after_download', return_value={'000023.SZ': df}):
+      result = data_module.get_market_data_batch(
+        stock_codes=['000023.SZ'],
+        count=2,
+        base_time=base_time,
+        period='1d',
+        dividend_type='back',
+      )
+
+    self.assertEqual(len(result['000023.SZ']), 2)
+    self.assertEqual(list(result['000023.SZ']['open']), [0.8, 1.2])
 
   def test_get_market_data_from_cache_strict_trade_date_rejects_fallback_bar(self):
     base_time = datetime(2024, 8, 30, 15, 0, 0)
@@ -104,7 +158,6 @@ class TestMarketDataFromCache(unittest.TestCase):
         count=1,
         base_time=base_time,
         period='1d',
-        allow_tainted=True,
         dividend_type='back',
         strict_trade_date=True,
       )
@@ -119,18 +172,58 @@ class TestMarketDataFromCache(unittest.TestCase):
       ]
     )
 
-    with patch.object(data_module, 'get_history_data', return_value={'000023.SZ': fallback_df}):
+    with patch.object(data_module, 'get_history_data_after_download', return_value={'000023.SZ': fallback_df}):
       result = data_module.get_market_data_batch(
         stock_codes=['000023.SZ'],
         count=1,
         base_time=base_time,
         period='1d',
-        allow_tainted=True,
         dividend_type='back',
         strict_trade_date=True,
       )
 
     self.assertEqual({'000023.SZ': None}, result)
+
+  def test_get_market_data_batch_rejects_stale_tail_like_single(self):
+    base_time = datetime(2024, 8, 30, 15, 0, 0)
+    fallback_df = pd.DataFrame(
+      [
+        {'time': int(datetime(2024, 8, 29, 15, 0, 0).timestamp() * 1000), 'open': 9.99},
+      ]
+    )
+
+    with patch.object(data_module, 'get_history_data_after_download', return_value={'000023.SZ': fallback_df}):
+      result = data_module.get_market_data_batch(
+        stock_codes=['000023.SZ'],
+        count=1,
+        base_time=base_time,
+        period='1d',
+        dividend_type='back',
+      )
+
+    self.assertEqual({'000023.SZ': None}, result)
+
+  def test_get_market_data_batch_accepts_short_history_for_new_stock(self):
+    base_time = datetime(2024, 8, 30, 15, 0, 0)
+    short_df = pd.DataFrame(
+      [
+        {'time': int(datetime(2024, 8, 29, 15, 0, 0).timestamp() * 1000), 'open': 1.0},
+        {'time': int(datetime(2024, 8, 30, 15, 0, 0).timestamp() * 1000), 'open': 1.2},
+      ]
+    )
+
+    with patch.object(data_module, 'get_history_data_after_download', return_value={'301667.SZ': short_df}), \
+         patch.object(data_module, '_get_expected_history_count', return_value=2):
+      result = data_module.get_market_data_batch(
+        stock_codes=['301667.SZ'],
+        count=5,
+        base_time=base_time,
+        period='1d',
+        dividend_type='back',
+      )
+
+    self.assertEqual(len(result['301667.SZ']), 2)
+    self.assertEqual(list(result['301667.SZ']['open']), [1.0, 1.2])
 
   def test_get_market_data_range_from_cache_slices_requested_window(self):
     start_time = datetime(2024, 8, 29, 0, 0, 0)
@@ -150,7 +243,6 @@ class TestMarketDataFromCache(unittest.TestCase):
         start_time=start_time,
         end_time=end_time,
         period='1d',
-        allow_tainted=True,
         dividend_type='back',
       )
 

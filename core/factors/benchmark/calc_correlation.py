@@ -159,7 +159,6 @@ def _calculate_daily_correlation(
           datetime.combine(trade_date, datetime.min.time()),
           datetime.combine(price_end_date, datetime.max.time()),
           '1d',
-          allow_tainted=True,
           dividend_type='back',
         )
         if price_data is None or price_data.empty:
@@ -277,7 +276,6 @@ def _calculate_stock_correlation(
       datetime.combine(trade_dates[0], datetime.min.time()),
       datetime.combine(range_end_date, datetime.max.time()),
       '1d',
-      allow_tainted=True,
       dividend_type='back',
     )
     if price_data is None or price_data.empty:

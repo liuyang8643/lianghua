@@ -12,10 +12,11 @@ from core import (
   init_stock_detail_cache,
 )
 from core.database import allow_buy_stock_code_list, init_market_data_range
+from core.database.history import get_history_data
 from core.database.delist import get_delist_stock_info
 from core.strategies.top_n import compute_topn_range, make_topn_range_cache_key
 from utils.shared_memory import SharedMemoryCache
-from utils.stock.time import get_next_trading_day, get_target_period_backward, get_trading_date_span
+from utils.stock.time import get_latest_trading_time, get_next_trading_day, get_target_period_backward, get_trading_date_span
 from utils.stock.info import evaluate_orderability
 from utils.windows_awake import keep_windows_awake
 from testback.account import StockAccountMocker
@@ -376,12 +377,11 @@ def _backtest_with_config(topn_list, weights, buy_n, sell_m, temperatures, freez
     if not price_codes:
       return
 
-    stale_probe = get_market_data_batch(
+    stale_probe = get_history_data(
       list(price_codes),
       1,
-      trade_dt,
+      get_latest_trading_time(trade_dt),
       period='1d',
-      allow_tainted=True,
       dividend_type='none',
     )
     latest_dates = []
@@ -483,7 +483,6 @@ def _backtest_with_config(topn_list, weights, buy_n, sell_m, temperatures, freez
       1,
       trade_datetime,
       period='1d',
-      allow_tainted=True,
       dividend_type='none',
       strict_trade_date=True,
     )

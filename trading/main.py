@@ -124,7 +124,6 @@ if __name__ == '__main__':
         1,
         base_time=trade_bar_time,
         period='1d',
-        allow_tainted=True,
         dividend_type='none',
         strict_trade_date=True,
       )

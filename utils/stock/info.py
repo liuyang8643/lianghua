@@ -459,7 +459,6 @@ def _get_trade_bar(
     1,
     datetime.combine(trade_day, AFTERNOON_END),
     period='1d',
-    allow_tainted=True,
     dividend_type=dividend_type,
     strict_trade_date=True,
   ).get(stock_code)

@@ -44,7 +44,7 @@ class FactorCtx:
     try:
       data = get_market_data_from_cache(
         self.code, 1, self.base_time, '1d',
-        allow_tainted=True, dividend_type='none',
+        dividend_type='none',
       )
       if data is not None and not data.empty:
         return float(data.iloc[-1]['close'])
@@ -370,7 +370,6 @@ class FactorCtx:
       period,
       self.base_time,
       '1d',
-      allow_tainted=True,
       dividend_type=self.dividend_type,
     )
     if benchmark_data is None or benchmark_data.empty:

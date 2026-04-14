@@ -1,11 +1,14 @@
 from datetime import datetime, time
 from typing import Optional
+
+import numpy as np
 from pandas import DataFrame
 from xtquant import xtdata
 
 from utils.stock.format import format_qmt_date, format_qmt_datetime
-from utils.stock.time import get_target_period_backward, is_latest_data
+from utils.stock.time import get_latest_trading_time, get_target_period_backward, get_trading_date_span, is_latest_data
 from .stock_list import _get_stock_date_range
+
 
 def get_history_data(
     stock_codes: list[str],
@@ -14,7 +17,7 @@ def get_history_data(
     period: str,
     dividend_type: str = 'back',
 ) -> dict[str, Optional[DataFrame]]:
-  # 当count为None时，使用-1表示获取所有数据
+  # 当 count 为 None 时，使用 -1 表示直接读取本地已有的全部原始数据。
   actual_count = -1 if count is None else count
   return xtdata.get_market_data_ex(
     [],
@@ -46,6 +49,57 @@ def _get_last_bar_datetime(data: Optional[DataFrame]) -> Optional[datetime]:
   return datetime.fromtimestamp(last_ts // 1000)
 
 
+def _build_reliable_bar_mask(data: Optional[DataFrame]) -> Optional[np.ndarray]:
+  """构造“可返回给上层”的可靠 bar 掩码。
+
+  QMT 的停牌日线返回并不稳定：
+  - 有时停牌日直接缺 bar；
+  - 有时会返回 OHLC 全 0 的占位 bar；
+  - ``suspendFlag`` 也不总是 1，且 -1 表示当日起复牌，不能按停牌过滤。
+
+  因此最终返回给上层的数据不能只依赖 ``suspendFlag == 1``，
+  需要同时剔除“明确停牌”和“全零占位 bar”。
+  """
+  if data is None or data.empty:
+    return None
+
+  mask = np.ones(len(data), dtype=bool)
+
+  if 'suspendFlag' in data.columns:
+    suspend_flags = data['suspendFlag'].to_numpy(copy=False)
+    mask &= (suspend_flags != 1)
+
+  if all(col in data.columns for col in ('open', 'high', 'low', 'close')):
+    open_values = data['open'].to_numpy(copy=False)
+    high_values = data['high'].to_numpy(copy=False)
+    low_values = data['low'].to_numpy(copy=False)
+    close_values = data['close'].to_numpy(copy=False)
+    zero_placeholder = (
+      (open_values <= 0)
+      & (high_values <= 0)
+      & (low_values <= 0)
+      & (close_values <= 0)
+    )
+    mask &= ~zero_placeholder
+
+  return mask
+
+
+def _count_reliable_bars(data: Optional[DataFrame]) -> int:
+  if data is None or data.empty:
+    return 0
+  reliable_mask = _build_reliable_bar_mask(data)
+  return int(reliable_mask.sum()) if reliable_mask is not None else 0
+
+
+def _get_history_signature(
+    data: Optional[DataFrame],
+) -> tuple[int, int, Optional[datetime], Optional[datetime]]:
+  if data is None or data.empty:
+    return 0, 0, None, None
+  return len(data), _count_reliable_bars(data), _get_first_bar_datetime(data), _get_last_bar_datetime(data)
+
+
 def _get_full_history_start(stock_code: str, period: str) -> Optional[datetime]:
   if period != '1d':
     return None
@@ -55,6 +109,137 @@ def _get_full_history_start(stock_code: str, period: str) -> Optional[datetime]:
   return datetime.combine(date_range[0], time.min)
 
 
+def _get_expected_history_count(
+    stock_code: str,
+    base_time: datetime,
+    period: str,
+    count: int,
+) -> int:
+  full_history_start = _get_full_history_start(stock_code, period)
+  if full_history_start is None:
+    return count
+
+  latest_trading_date = get_latest_trading_time(base_time).date()
+  if full_history_start.date() > latest_trading_date:
+    return 0
+  available_count = len(get_trading_date_span(full_history_start.date(), latest_trading_date))
+  return min(count, available_count)
+
+
+def _get_count_history_start(
+    stock_code: str,
+    base_time: datetime,
+    period: str,
+    count: int,
+) -> datetime:
+  required_start = get_target_period_backward(base_time, period, count)
+  full_history_start = _get_full_history_start(stock_code, period)
+  if full_history_start is None:
+    return required_start
+  return max(required_start, full_history_start)
+
+
+def _resolve_download_start(
+    stock_code: str,
+    data: Optional[DataFrame],
+    count: Optional[int],
+    base_time: datetime,
+    period: str,
+) -> Optional[datetime]:
+  """计算最小必要下载起点。
+
+  这里同时处理两个坑：
+  - ``get_market_data_ex(..., count=N)`` 会继续向前取已有 bar，缺失停牌日不一定影响 raw 数量；
+  - 但如果返回里混入了全零占位 bar，它们会占掉 count 名额，导致“raw 足够、可靠 bar 不够”。
+
+  因此下载判定必须同时看：
+  - 原始尾部是否已经更新到 ``base_time``；
+  - 过滤停牌/占位 bar 后的可靠数量是否达到目标。
+  """
+  candidates: list[datetime] = []
+
+  if count is None:
+    required_start = _get_full_history_start(stock_code, period)
+    if required_start is None:
+      return None
+    if data is None or data.empty:
+      return required_start
+
+    first_dt = _get_first_bar_datetime(data)
+    if first_dt is not None and first_dt.date() > required_start.date():
+      candidates.append(required_start)
+
+    last_dt = _get_last_bar_datetime(data)
+    if last_dt is not None and not is_latest_data(last_dt, base_time, period):
+      candidates.append(last_dt)
+
+    return min(candidates) if candidates else None
+
+  expected_count = _get_expected_history_count(stock_code, base_time, period, count)
+  if expected_count <= 0:
+    return None
+
+  required_start = _get_count_history_start(stock_code, base_time, period, count)
+  if data is None or data.empty:
+    return required_start
+
+  first_dt = _get_first_bar_datetime(data)
+  if first_dt is None:
+    return required_start
+
+  reliable_count = _count_reliable_bars(data)
+  if reliable_count < expected_count:
+    missing_count = expected_count - reliable_count
+    prepend_start = get_target_period_backward(first_dt, period, missing_count)
+    full_history_start = _get_full_history_start(stock_code, period)
+    if full_history_start is not None:
+      prepend_start = max(prepend_start, full_history_start)
+    if prepend_start < first_dt:
+      candidates.append(prepend_start)
+
+  last_dt = _get_last_bar_datetime(data)
+  if last_dt is not None and not is_latest_data(last_dt, base_time, period):
+    candidates.append(last_dt)
+
+  return min(candidates) if candidates else None
+
+
+def _get_next_fetch_count(
+    data_dict: dict[str, Optional[DataFrame]],
+    stock_codes: list[str],
+    requested_count: Optional[int],
+    base_time: datetime,
+    period: str,
+    current_fetch_count: Optional[int],
+) -> Optional[int]:
+  if requested_count is None or current_fetch_count is None:
+    return current_fetch_count
+
+  next_fetch_count = current_fetch_count
+  for code in stock_codes:
+    data = data_dict.get(code)
+    expected_count = _get_expected_history_count(code, base_time, period, requested_count)
+    if expected_count <= 0:
+      continue
+
+    reliable_count = _count_reliable_bars(data)
+    if reliable_count >= expected_count:
+      continue
+
+    data_size = 0 if data is None or data.empty else len(data)
+    # 当读取结果正好被 count 截断时，优先扩大本地读取窗口；
+    # 许多停牌 case 的更早有效 bar 已经在本地，只是被尾部停牌/raw 占位 bar 挤掉了。
+    if data_size < current_fetch_count:
+      continue
+    invalid_count = max(0, data_size - reliable_count)
+    next_fetch_count = max(
+      next_fetch_count,
+      current_fetch_count + (expected_count - reliable_count) + invalid_count,
+    )
+
+  return next_fetch_count
+
+
 def get_history_data_after_download(
     stock_codes: list[str],
     count: Optional[int],
@@ -62,149 +247,63 @@ def get_history_data_after_download(
     period: str,
     dividend_type: str = 'back',
 ) -> dict[str, Optional[DataFrame]]:
-  # 先检查数据是否已完整（缓存命中则跳过下载）
-  existing = get_history_data(stock_codes, count, base_time, period, dividend_type)
+  """按需补齐本地原始行情，再返回原始结果。
 
-  stocks_need_download: dict[str, Optional[datetime]] = {}
-  for code in stock_codes:
-    data = existing.get(code)
-    if data is None or data.empty:
-      stocks_need_download[code] = (
-        get_target_period_backward(base_time, period, count)
-        if count is not None else _get_full_history_start(code, period)
-      )
+  这里故意只在“确实缺数或尾部过期”时才调用 ``download_history_data2``，
+  因为下载很慢。下载起点按每只股票单独计算，并按起点分组，避免整批股票重复回补。
+
+  另外，当前 QMT 上 ``download_history_data2`` 的 ``incrementally`` 参数实际无效，
+  这里直接忽略，不再传递这个参数。
+  """
+  fetch_count = count
+  existing = get_history_data(stock_codes, fetch_count, base_time, period, dividend_type)
+
+  # 最多允许少量“扩本地读取窗口 / 触发下载”交替迭代，避免异常数据形态下死循环。
+  # 实际正常路径通常 1~2 轮就结束；这里留 6 轮只是保险上限，不承载业务语义。
+  for _ in range(6):
+    next_fetch_count = _get_next_fetch_count(
+      existing,
+      stock_codes,
+      count,
+      base_time,
+      period,
+      fetch_count,
+    )
+    if next_fetch_count is not None and next_fetch_count > fetch_count:
+      fetch_count = next_fetch_count
+      existing = get_history_data(stock_codes, fetch_count, base_time, period, dividend_type)
       continue
 
-    required_start = None
-    if count is not None:
-      if len(data) < count:
-        required_start = get_target_period_backward(base_time, period, count)
-    else:
-      required_start = _get_full_history_start(code, period)
-      first_dt = _get_first_bar_datetime(data)
-      if required_start is not None and first_dt is not None and first_dt.date() > required_start.date():
-        stocks_need_download[code] = required_start
-        continue
+    stocks_need_download: dict[str, datetime] = {}
+    for code in stock_codes:
+      start_dt = _resolve_download_start(code, existing.get(code), count, base_time, period)
+      if start_dt is not None:
+        stocks_need_download[code] = start_dt
 
-    last_dt = _get_last_bar_datetime(data)
-    if last_dt is not None and not is_latest_data(last_dt, base_time, period):
-      stocks_need_download[code] = required_start
+    if not stocks_need_download:
+      break
 
-  if stocks_need_download:
     end_time_str = _format_download_time(base_time, period)
     download_groups: dict[str, list[str]] = {}
     for code, start_dt in stocks_need_download.items():
       start_time_str = _format_download_time(start_dt, period)
       download_groups.setdefault(start_time_str, []).append(code)
 
+    previous_signatures = {
+      code: _get_history_signature(existing.get(code))
+      for code in stocks_need_download
+    }
+
     for start_time_str, grouped_codes in download_groups.items():
       xtdata.download_history_data2(
-        grouped_codes, period,
+        grouped_codes,
+        period,
         start_time=start_time_str,
         end_time=end_time_str,
-        incrementally=True
       )
-    # 下载后重新获取
-    existing = get_history_data(stock_codes, count, base_time, period, dividend_type)
+
+    existing = get_history_data(stock_codes, fetch_count, base_time, period, dividend_type)
+    if all(_get_history_signature(existing.get(code)) == previous_signatures[code] for code in stocks_need_download):
+      break
 
   return existing
-
-# @profile
-def check_stocks_need_fix(
-    history_data_dict: dict[str, Optional[DataFrame]],
-    stock_codes: list[str],
-    base_time: datetime,
-    count: int,
-    period: str = '1d',
-    updated: bool = False
-) -> dict[str, Optional[DataFrame]]:
-  """检查哪些股票需要补全数据（包括更新和停牌数据处理）
-
-  性能优化魔法技巧：
-  1. 使用位运算 & 替代 and，可以触发CPU的SIMD指令
-  2. 提前退出策略：按照最常见到最不常见的顺序检查条件
-  3. 缓存属性访问：避免重复的字典查找和DataFrame操作
-  4. 使用numpy的向量化操作替代pandas的逐元素操作
-  5. 利用短路求值：将最快的检查放在前面
-  """
-  stocks_need_fix = {}
-
-  for code in stock_codes:
-    stock_data = history_data_dict.get(code)
-
-    # 早期退出策略1：空数据检查（最常见）
-    # 使用 is None 比 == None 快（直接比较内存地址）
-    if stock_data is None or stock_data.empty:
-      if not updated:
-        stocks_need_fix[code] = None
-      continue
-
-    # 缓存数据大小（避免重复调用len()）
-    data_size = len(stock_data)
-
-    # 早期退出策略2：数量不足检查
-    # 使用位运算优化：not updated 等价于 updated == 0
-    if (not updated) & (data_size < count):
-      stocks_need_fix[code] = None
-      continue
-
-    # 提取最后一行数据 - 使用iloc[-1]比tail(1).iloc[0]快
-    # 原因：避免创建中间DataFrame
-    last_row = stock_data.iloc[-1]
-    latest_timestamp = last_row['time']
-
-    # 优化：直接使用整数除法，比先除后转换快
-    latest_datetime = datetime.fromtimestamp(latest_timestamp // 1000)
-
-    # 早期退出策略3：数据过期检查
-    # 使用短路求值：将not updated放前面（更快的布尔检查）
-    if (not updated) & (not is_latest_data(latest_datetime, base_time, period)):
-      stocks_need_fix[code] = None
-      continue
-
-    # 复合条件检查：数据最新且数量充足
-    # 使用位运算 & 将两个布尔值合并为一次判断
-    if is_latest_data(latest_datetime, base_time, period) & (data_size >= count):
-      # 向量化操作：一次性提取suspendFlag列为numpy数组
-      # 这比逐行访问快10-100倍
-      suspend_flags = stock_data['suspendFlag'].values
-
-      # ========== 魔法优化：位运算 + SIMD ==========
-      # 原理：现代CPU支持SIMD（单指令多数据）指令
-      # numpy的位运算可以触发SIMD，一次处理多个元素
-      #
-      # 性能对比：
-      # - suspend_flags == 0: 需要创建临时数组，较慢
-      # - ~suspend_flags: 直接位翻转，可以SIMD加速
-      # - 对于0/1的布尔标志，~ 等价于 == 0 但快2-3倍
-
-      if suspend_flags.dtype == bool:
-        # 布尔类型：使用位非运算（最快）
-        valid_mask = ~suspend_flags
-      else:
-        # 整数类型：使用 == 0（因为位非会翻转所有位）
-        # 但仍然使用向量化操作
-        valid_mask = (suspend_flags == 0)
-
-      # ========== 魔法优化：使用all()的短路特性 ==========
-      # all()在遇到第一个False时立即返回，避免检查所有元素
-      if valid_mask.all():
-        continue
-
-      # ========== 魔法优化：使用numpy的sum计数 ==========
-      # 原理：对于布尔数组，sum()会将True计为1，False计为0
-      # 这比len([x for x in valid_mask if x])快100倍以上
-      # 因为：
-      # 1. sum是C实现的，没有Python循环开销
-      # 2. 可以利用CPU的向量化指令
-      # 3. 不需要创建中间列表
-      valid_count = valid_mask.sum()
-
-      if valid_count < count:
-        # ========== 魔法优化：布尔索引的零拷贝 ==========
-        # 原理：stock_data[valid_mask]返回一个视图而不是拷贝
-        # 当数据量大时，这可以节省大量内存和时间
-        # 注意：只在必要时才进行过滤操作
-        stocks_need_fix[code] = stock_data[valid_mask]
-
-  return stocks_need_fix
