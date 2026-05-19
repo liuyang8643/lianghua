@@ -61,6 +61,40 @@ class LarkSender:
     res = self.client.im.v1.message.create(create_message_req)
     return self.log_res(res)
 
+  def send_file(self, file_path: str, file_name: str = None):
+    import os, io
+    file_name = file_name or os.path.basename(file_path)
+    with open(file_path, 'rb') as f:
+      file_content = f.read()
+    upload_req = (
+      CreateFileRequest.builder()
+      .request_body(
+        CreateFileRequestBody.builder()
+        .file_name(file_name)
+        .file_type("stream")
+        .file(io.BytesIO(file_content))
+        .build()
+      ).build()
+    )
+    upload_resp = self.client.im.v1.file.create(upload_req)
+    if not upload_resp.success():
+      lark.logger.error(f"文件上传失败: [{upload_resp.code}]{upload_resp.msg}")
+      return upload_resp
+    file_key = upload_resp.data.file_key
+    msg_req = (
+      CreateMessageRequest.builder()
+      .receive_id_type('email')
+      .request_body(
+        CreateMessageRequestBody.builder()
+        .receive_id(LARK_RECEIVE_ID)
+        .msg_type("file")
+        .content(lark.JSON.marshal({"file_key": file_key}))
+        .build()
+      ).build()
+    )
+    res = self.client.im.v1.message.create(msg_req)
+    return self.log_res(res)
+
   def send_notification_card(
       self,
       content: str,

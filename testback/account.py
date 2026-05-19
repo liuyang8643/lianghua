@@ -1,8 +1,6 @@
 from typing import Dict, List, Optional, TypedDict
 from datetime import date as sys_date, datetime
 
-from core.database import get_market_data_from_cache
-
 
 class MockStockPosition(TypedDict):
   code: str
@@ -72,11 +70,8 @@ class StockAccountMocker:
     self.min_commission = min_commission
     self.cleared_positions: list[MockStockClearedPosition] = []
     self.positions: Dict[str, MockStockPosition] = {}
-    self.daily_cash: Dict[sys_date, float] = {}
-    self.daily_assets: Dict[sys_date, float] = {}
-    self.trade_log: List[TradeRecord] = []
     self.daily_returns: Dict[sys_date, float] = {}
-    self.daily_total_assets: Dict[sys_date, float] = {}
+    self.trade_log: List[TradeRecord] = []
     self._last_total_asset: float = cash
 
   def calc_commission(self, cost: float):
@@ -106,7 +101,6 @@ class StockAccountMocker:
     signal_date = signal_date or buy_date
 
     self.current_cash -= total_cost
-    self.daily_cash[buy_date] = self.current_cash
 
     if code in self.positions:
       pos = self.positions[code]
@@ -177,7 +171,6 @@ class StockAccountMocker:
     realized_income = total_gain - cost_basis
 
     self.current_cash += total_gain
-    self.daily_cash[sell_date] = self.current_cash
 
     self.trade_log.append({
       'code': code,
@@ -269,8 +262,6 @@ class StockAccountMocker:
     cost_basis = original_pos['cost']
     realized_income = -cost_basis
 
-    self.daily_cash[write_off_date] = self.current_cash
-
     self.trade_log.append({
       'code': code,
       'action': 'sell',
@@ -304,22 +295,17 @@ class StockAccountMocker:
       execution_dividend_type=execution_dividend_type,
     ))
 
-  def calc_position_values(self, cur_time: datetime, prices: dict = None):
+  def calc_position_values(self, prices: dict = None):
     """ 获取持仓市值
 
     Args:
-        cur_time: 当前时间
         prices: 已预取的价格字典 {code: price}，优先使用，避免重复查询缓存
     """
     res = []
     for code, pos in self.positions.items():
       price = None
-      if prices is not None and code in prices:
-        price = prices[code]
-      else:
-        latest_data = get_market_data_from_cache(pos['code'], 1, cur_time, dividend_type='none')
-        if latest_data is not None and latest_data.size > 0:
-          price = float(latest_data.iloc[-1]['close'])
+      if prices is not None:
+        price = prices.get(code)
       if price is not None:
         res.append(
           {
@@ -341,10 +327,8 @@ class StockAccountMocker:
         cur_time: 当前时间
         prices: 已预取的价格字典 {code: price}，优先使用
     """
-    market_value = sum([pos['current_value'] for pos in self.calc_position_values(cur_time, prices)])
+    market_value = sum([pos['current_value'] for pos in self.calc_position_values(prices)])
     total_asset = self.current_cash + market_value
-    self.daily_assets[cur_time.date()] = total_asset
-    self.daily_total_assets[cur_time.date()] = total_asset
 
     if self._last_total_asset > 0:
         daily_return = (total_asset - self._last_total_asset) / self._last_total_asset * 100

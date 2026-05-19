@@ -132,35 +132,10 @@ def _make_stock_count_summary(codes: List[str], stock_name_map: Dict[str, str], 
     return f'<span>{len(codes)} 只</span>{_make_detail_icon(title)}', title
 
 
-def _make_trade_count_summary(buys: List[str], sells: List[str], stock_name_map: Dict[str, str]) -> tuple[str, str]:
-    parts = []
-    title_lines = []
-    if buys:
-        parts.append(f'买入 {len(buys)} 只')
-        title_lines.extend([f'买 {_fmt_stock(code, stock_name_map)}' for code in buys])
-    if sells:
-        parts.append(f'卖出 {len(sells)} 只')
-        title_lines.extend([f'卖 {_fmt_stock(code, stock_name_map)}' for code in sells])
-    if not parts:
-        return '<span class="muted">—</span>', ''
-    detail = '\n'.join(title_lines)
-    return '<br>'.join(html_escape(part) for part in parts) + _make_detail_icon(detail), detail
-
-
 def _tooltip_html(detail: str) -> str:
     if not detail:
         return ''
     return html_escape(detail).replace('\n', '<br>')
-
-
-def _make_detail_icon(detail: str) -> str:
-    if not detail.strip():
-        return ''
-    return (
-        f'<span class="detail-icon has-tooltip" '
-        f'data-tippy-content="{_tooltip_html(detail)}" '
-        f'aria-label="详情">i</span>'
-    )
 
 
 def _make_help_label(label: str, tooltip: str) -> str:
@@ -370,183 +345,10 @@ def _build_kline_chart(code: str, trade_log: List[Dict], trade_dates: List[str],
 
 
 
-def _build_all_kline_section(trade_log: List[Dict], trade_dates: List[str],
-                             stock_name_map: Dict[str, str]) -> str:
-    """为所有交易过的股票生成K线图表区段"""
-    if not trade_log:
-        return ''
-
-    traded_codes = sorted(set(t['code'] for t in trade_log if t.get('code')))
-    if not traded_codes:
-        return ''
-
-    chart_sections = []
-    button_sections = []
-
-    for code in traded_codes:
-        chart_html = _build_kline_chart(code, trade_log, trade_dates, stock_name_map)
-        display_text = html_escape(_fmt_stock(code, stock_name_map))
-        has_kline = bool(chart_html)
-        if has_kline:
-            chart_sections.append(f'''
-        <div id="kline-{code.replace('.', '-')}" class="kline-chart" style="display:none;">
-            <div class="kline-header">
-                <span class="kline-code">{display_text}</span>
-                <button class="kline-close" onclick="closeKline()">× 关闭</button>
-            </div>
-            {chart_html}
-        </div>''')
-
-        cls = 'stock-pill' if has_kline else 'stock-pill no-data'
-        onclick = f"showKline('{code}')" if has_kline else ''
-        button_sections.append(f'<button class="{cls}" onclick="{onclick}">{display_text}</button>')
-
-    if not chart_sections:
-        return ''
-
-    buttons_html = '<div class="kline-stock-pills">' + ''.join(button_sections) + '</div>'
-    kline_divs = ''.join(chart_sections)
-
-    return f'''
-    <div class="kline-overlay" id="klineOverlay" onclick="closeKline()"></div>
-    <div class="kline-panel" id="klinePanel">
-        <div class="kline-panel-header">
-            <span>K线走势（点击股票查看）</span>
-            <button class="panel-close" onclick="closeKline()">×</button>
-        </div>
-        {buttons_html}
-        <div class="kline-charts-area" id="klineChartsArea">
-            <div class="kline-placeholder" id="klinePlaceholder">点击上方股票按钮查看 K 线图</div>
-            {kline_divs}
-        </div>
-    </div>'''
-
-
-
-def _collect_kline_raw_data(trade_log: List[Dict], trade_dates: List[str],
-                            stock_name_map: Dict[str, str]) -> Dict:
-    """收集所有交易过股票的原始 OHLCV 数据（用于前端按需渲染）。"""
-    if not trade_log or not trade_dates:
-        return {}
-
-    try:
-        from core.database import get_market_data_from_cache
-    except ImportError:
-        return {}
-
-    traded_codes = sorted(set(t['code'] for t in trade_log if t.get('code')))
-    kline_data: Dict[str, Any] = {}
-
-    for code in traded_codes:
-        try:
-            last_date = datetime.strptime(trade_dates[-1], '%Y-%m-%d')
-            end_dt = last_date + timedelta(days=60)
-            data = get_market_data_from_cache(code, 300, end_dt, '1d', dividend_type='back')
-            if data is None or data.empty or len(data) < 5:
-                continue
-
-            timestamps = data['time'].values
-            dates = [datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d') for ts in timestamps]
-            stock_trades = _get_stock_trades(trade_log, code)
-
-            kline_data[code] = {
-                'n': _get_stock_name(code, stock_name_map),
-                'd': dates,
-                'o': [round(float(v), 2) for v in data['open'].values],
-                'h': [round(float(v), 2) for v in data['high'].values],
-                'l': [round(float(v), 2) for v in data['low'].values],
-                'c': [round(float(v), 2) for v in data['close'].values],
-                'v': [int(float(v)) for v in data['amount'].values],
-                'b': [{'d': b['trade_date'], 'p': round(b['price'], 4)} for b in stock_trades['buys']],
-                's': [{'d': s['trade_date'], 'p': round(s['price'], 4)} for s in stock_trades['sells']],
-            }
-        except Exception:
-            continue
-
-    return kline_data
-
-
-
-def _build_lazy_kline_section(trade_log: List[Dict], trade_dates: List[str],
-                              stock_name_map: Dict[str, str]) -> str:
-    """构建 K 线区段：数据以 gzip+base64 压缩后嵌入 HTML，点击时才用 Plotly 渲染。
-
-    相比 _build_all_kline_section 预渲染全部图表（~37 MB），本方法压缩后仅 ~5 MB，
-    且浏览器无需在加载时创建上千个 Plotly 图表实例。
-    """
-    import gzip as _gzip
-    import base64 as _base64
-    import json as _json
-
-    kline_data = _collect_kline_raw_data(trade_log, trade_dates, stock_name_map)
-    if not kline_data:
-        return ''
-
-    json_str = _json.dumps(kline_data, ensure_ascii=False, separators=(',', ':'))
-    compressed = _gzip.compress(json_str.encode('utf-8'), compresslevel=9)
-    b64_data = _base64.b64encode(compressed).decode('ascii')
-
-    testback_logger.info(
-        f'K线数据: {len(kline_data)} 只股票, '
-        f'原始 {len(json_str)/1024/1024:.1f} MB → '
-        f'压缩后 {len(b64_data)/1024/1024:.1f} MB'
-    )
-
-    traded_codes = sorted(kline_data.keys())
-    buttons = []
-    for code in traded_codes:
-        name = kline_data[code].get('n', '')
-        label = f'{code} {name}' if name else code
-        buttons.append(
-            f'<button class="stock-pill" onclick="showKline(\'{code}\')">'
-            f'{html_escape(label)}</button>'
-        )
-    buttons_html = '<div class="kline-stock-pills">' + ''.join(buttons) + '</div>'
-
-    return f'''
-    <div class="kline-overlay" id="klineOverlay" onclick="closeKline()"></div>
-    <div class="kline-panel" id="klinePanel">
-        <div class="kline-panel-header">
-            <span>K线走势（点击股票查看，共 {len(traded_codes)} 只）</span>
-            <button class="panel-close" onclick="closeKline()">×</button>
-        </div>
-        {buttons_html}
-        <div class="kline-charts-area" id="klineChartsArea">
-            <div class="kline-placeholder" id="klinePlaceholder">
-                点击上方股票按钮查看 K 线图
-            </div>
-            <div id="klineRenderArea" style="display:none;padding:8px;"></div>
-        </div>
-    </div>
-    <script>var KLINE_B64="{b64_data}";</script>'''
-
-
 # ---------------------------------------------------------------------------
 # 基准数据
 # ---------------------------------------------------------------------------
 
-
-def get_hs300_daily_returns(trade_dates: List[str]) -> List[float]:
-    """兼容旧调用：委托到统一指标模块。"""
-    return compute_hs300_cumulative_returns(trade_dates)
-
-
-# ---------------------------------------------------------------------------
-# 指标计算
-# ---------------------------------------------------------------------------
-
-
-def calc_metrics(cumulative_returns_pct: List[float], trade_dates: List[str],
-                 init_cash: float, final_asset: float,
-                 trade_log: List[Dict]) -> Dict:
-    """兼容旧调用：委托到统一指标模块。"""
-    return compute_strategy_metrics(
-        cumulative_returns_pct=cumulative_returns_pct,
-        trade_dates=trade_dates,
-        init_cash=init_cash,
-        final_asset=final_asset,
-        trade_log=trade_log,
-    )
 
 
 
@@ -1054,6 +856,26 @@ def _make_monthly_table(monthly_stats: List[Dict]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _build_per_year_table(per_year_metrics: List[Dict]) -> str:
+    if not per_year_metrics:
+        return '<p style="color:var(--muted);padding:8px">无年度数据</p>'
+    header = '<tr><th>年份</th><th>年化收益</th><th>夏普比率</th><th>最大回撤</th><th>收益</th><th>交易日</th></tr>'
+    rows = ''
+    for m in per_year_metrics:
+        ret_cls = 'pos' if m['return'] >= 0 else 'neg'
+        ann_cls = 'pos' if m['annualized'] >= 0 else 'neg'
+        shp_cls = 'pos' if m['sharpe'] >= 0 else 'neg'
+        rows += (
+            f'<tr><td>{m["year"]}</td>'
+            f'<td class="{ann_cls}">{m["annualized"]:+.2f}%</td>'
+            f'<td class="{shp_cls}">{m["sharpe"]:+.2f}</td>'
+            f'<td class="neg">{m["max_drawdown"]:.2f}%</td>'
+            f'<td class="{ret_cls}">{m["return"]:+.2f}%</td>'
+            f'<td>{m["trading_days"]}</td></tr>'
+        )
+    return f'<table class="per-year-table"><thead>{header}</thead><tbody>{rows}</tbody></table>'
+
+
 def _build_metric_cards(metrics: Dict, holding_stats: Dict) -> str:
     max_dd_period = ''
     if metrics.get('max_drawdown_start') and metrics.get('max_drawdown_end'):
@@ -1247,6 +1069,7 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     delist_events = report_data.get('delist_events', []) or []
     stock_name_map = report_data.get('stock_name_map', {}) or {}
     holding_stats = report_data.get('holding_stats', {}) or {}
+    per_year_metrics = report_data.get('per_year_metrics', []) or []
     period = report_data.get('period', {}) or {}
     rebalance_rule = report_data.get('rebalance_rule', {}) or {}
     final_asset = report_data.get('final_asset', init_cash)
@@ -1261,10 +1084,17 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     strategy_nav = _cumulative_returns_to_nav(cumulative_returns)
     hs300_returns = report_data.get('hs300_returns')
     if not hs300_returns or len(hs300_returns) != len(trade_dates):
-        hs300_returns = get_hs300_daily_returns(trade_dates)
+        hs300_returns = compute_hs300_cumulative_returns(trade_dates)
     hs300_nav = _cumulative_returns_to_nav(hs300_returns) if hs300_returns else []
 
-    metrics = calc_metrics(cumulative_returns, trade_dates, init_cash, final_asset, trade_log)
+    generated_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    metrics = compute_strategy_metrics(
+        cumulative_returns_pct=cumulative_returns,
+        trade_dates=trade_dates,
+        init_cash=init_cash,
+        final_asset=final_asset,
+        trade_log=trade_log,
+    )
     metrics.update({
         'executed_buy_count': report_data.get('executed_buy_count', metrics.get('buy_trades', 0)),
         'executed_sell_count': report_data.get('executed_sell_count', metrics.get('sell_trades', 0)),
@@ -1275,7 +1105,45 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
         **holding_stats,
     })
 
+    signal_timing = rebalance_rule.get('signal_timing', 'T-1')
+    trade_timing = rebalance_rule.get('trade_timing', 'T open')
+    signal_dividend_type = rebalance_rule.get('signal_dividend_type', 'back')
+    execution_dividend_type = rebalance_rule.get('execution_dividend_type', signal_dividend_type)
+    price_field = rebalance_rule.get('price_field', 'open')
+
+    total_return = (final_asset - init_cash) / init_cash * 100 if init_cash else 0.0
     report_json = json.dumps({
+        'summary': {
+            'total_return_pct': round(total_return, 2),
+            'annualized_return_pct': metrics.get('annualized', 0),
+            'max_drawdown_pct': metrics.get('max_drawdown', 0),
+            'sharpe_ratio': metrics.get('sharpe_ratio', 0),
+            'calmar_ratio': metrics.get('calmar_ratio', 0),
+            'win_rate_pct': metrics.get('win_rate', 0),
+            'total_trades': metrics.get('total_trades', 0),
+            'wins': metrics.get('wins', 0),
+            'losses': metrics.get('losses', 0),
+            'avg_profit': metrics.get('avg_profit', 0),
+            'avg_win': metrics.get('avg_win', 0),
+            'avg_loss': metrics.get('avg_loss', 0),
+            'max_profit': metrics.get('max_profit', 0),
+            'max_loss': metrics.get('max_loss', 0),
+            'total_commission': metrics.get('total_commission', 0),
+            'total_days': trade_days,
+            'init_cash': init_cash,
+            'final_asset': final_asset,
+            'round_trips': metrics.get('round_trip_count', 0),
+            'avg_holding_days': metrics.get('average_holding_days', 0),
+            'delist_count': metrics.get('delist_count', 0),
+        },
+        'meta': {
+            'period_start': period.get('start', ''),
+            'period_end': period.get('end', ''),
+            'signal_timing': signal_timing,
+            'trade_timing': trade_timing,
+            'price_field': price_field,
+            'generated_time': generated_time,
+        },
         'tables': {
             'monthly': _make_monthly_table(monthly_stats),
             'trades': _make_trade_table(trade_log, stock_name_map),
@@ -1305,11 +1173,6 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
         f'<span class="temp-tag">{html_escape(name)}={value:.1f}</span>'
         for name, value in temperatures.items()
     ) or '<span class="muted">—</span>'
-    signal_timing = rebalance_rule.get('signal_timing', 'T-1')
-    trade_timing = rebalance_rule.get('trade_timing', 'T open')
-    signal_dividend_type = rebalance_rule.get('signal_dividend_type', 'back')
-    execution_dividend_type = rebalance_rule.get('execution_dividend_type', signal_dividend_type)
-    price_field = rebalance_rule.get('price_field', 'open')
 
     verify_notice_html = ''
     if verify_config:
@@ -1330,7 +1193,6 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
             verify_parts.append(f'<strong>备注:</strong> {html_escape(verify_config["notes"])}')
         verify_notice_html = '<div class="verify-box">' + '<br>'.join(verify_parts) + '</div>'
 
-    generated_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     html_content = f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>回测报告 - {html_escape(period_str)}</title><link rel="icon" href="data:,"><link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css"><script src="https://unpkg.com/@popperjs/core@2/dist/umd/popper.min.js"></script><script src="https://unpkg.com/tippy.js@6/dist/tippy-bundle.umd.min.js"></script><script src="https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js"></script><style>{styles}</style></head>
@@ -1339,6 +1201,7 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
 <div class="config-box"><strong>因子权重:</strong> {weights_html}<br><strong>温度参数:</strong> {temps_html}<br><strong>调仓配置:</strong> buy_n={buy_n}, sell_m={sell_m} &nbsp;|&nbsp;<strong>冻结天数:</strong> {freeze_days} 交易日<br><strong>调仓规则:</strong> 信号={html_escape(signal_timing)} &nbsp;|&nbsp; 执行={html_escape(trade_timing)} &nbsp;|&nbsp; 价格字段={html_escape(price_field)}<br><strong>复权口径:</strong> 信号={html_escape(signal_dividend_type)} &nbsp;→&nbsp; 执行={html_escape(execution_dividend_type)} &nbsp;|&nbsp;<strong>实际买入次数:</strong> {metrics.get('executed_buy_count', 0)} &nbsp;|&nbsp;<strong>实际卖出次数:</strong> {metrics.get('executed_sell_count', 0)} &nbsp;|&nbsp;<strong>完整 round-trip 数:</strong> {metrics.get('round_trip_count', 0)}</div>
 {verify_notice_html}
 <div class="card"><div class="card-title">核心指标</div><div class="metrics-grid">{metric_cards}</div></div>
+<div class="card"><div class="card-title">分年度指标</div>{_build_per_year_table(per_year_metrics)}</div>
 <div class="card"><div class="card-title">净值曲线</div><div id="equity-chart" class="chart-lg"></div></div>
 <div class="charts-2col"><div class="card"><div class="card-title">每日收益率分布</div><div id="distribution-chart" class="chart"></div></div><div class="card"><div class="card-title">盈亏分布</div><div id="winloss-chart" class="chart"></div></div></div>
 <div class="card"><div class="card-title">月度收益</div><div id="monthly-host"></div></div>

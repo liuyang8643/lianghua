@@ -12,7 +12,7 @@ from utils.sys import terminate_process_tree
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 MAIN_MODULE = 'trading.main'
-DEFAULT_INDIVIDUAL_CONFIG = os.path.join(REPO_ROOT, 'configs', 'best_individual_config.json')
+DEFAULT_INDIVIDUAL_CONFIG = os.path.join(REPO_ROOT, 'configs', 'single_smallcap_g2a_config.json')
 
 
 def _resolve_path(path: str) -> str:

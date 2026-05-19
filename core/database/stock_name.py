@@ -55,13 +55,19 @@ def _cache_path(stock_code: str) -> Path:
     return _CACHE_DIR / f"{code}.pkl"
 
 
+_MEM_CACHE: dict[str, dict] = {}
+
 def _load_cache(stock_code: str) -> Optional[dict]:
+    if stock_code in _MEM_CACHE:
+        return _MEM_CACHE[stock_code]
     p = _cache_path(stock_code)
     if not p.exists():
         return None
     try:
         with open(p, "rb") as f:
-            return pickle.load(f)
+            data = pickle.load(f)
+        _MEM_CACHE[stock_code] = data
+        return data
     except Exception:
         return None
 
@@ -137,7 +143,8 @@ def _get_stock_history(stock_code: str, target_date: date | None = None) -> dict
     cached = _load_cache(stock_code)
     if cached is not None:
         fetched_at = cached.get("fetched_at")
-        if fetched_at is not None and (target_date is None or target_date <= fetched_at):
+        has_names = cached.get("intervals") or cached.get("current_name")
+        if fetched_at is not None and has_names and (target_date is None or target_date <= fetched_at):
             return cached
 
     bare = stock_code.split(".")[0]
@@ -147,11 +154,11 @@ def _get_stock_history(stock_code: str, target_date: date | None = None) -> dict
     # 从 p_stock2109 构建名称时间线:
     # 每条记录 = "在 start_date 这天，股票从 old_name 改为新名"
     # 因此 old_name 在 [上一个 start_date, 本 start_date) 区间有效
-    # 当前名称通过 xtdata 获取
+    # 当前名称通过 get_stock_detail 获取
     current_name = None
     try:
-        from xtquant import xtdata
-        detail = xtdata.get_instrument_detail(stock_code)
+        from .detail import get_stock_detail
+        detail = get_stock_detail(stock_code)
         if detail:
             current_name = detail.get("InstrumentName", "").strip()
     except Exception:
@@ -197,29 +204,38 @@ def get_stock_name_at_date(stock_code: str, target_date: date | datetime) -> Opt
     history = _get_stock_history(stock_code, target_date)
     intervals = history.get("intervals", [])
     if not intervals:
-        return history.get("current_name")
+        name = history.get("current_name")
+    else:
+        name = intervals[0][1]
+        for start, n in intervals:
+            if target_date >= start:
+                name = n
+            else:
+                break
 
-    # intervals 按 start_date 升序，找到 target_date 所在区间
-    name = intervals[0][1]
-    for start, n in intervals:
-        if target_date >= start:
-            name = n
-        else:
-            break
+    if not name:
+        try:
+            from .detail import get_stock_detail
+            detail = get_stock_detail(stock_code)
+            if detail:
+                name = detail.get("InstrumentName", "").strip()
+        except Exception:
+            pass
+
     return name or None
 
 
 # 基于 event 字段的状态机（子串匹配，兼容组合事件如"戴帽披*"）
-_CLEAR_ST_KEYWORDS = ("摘帽", "恢复上市", "新股上市")
-_STAR_ST_KEYWORDS = ("披*", "退市整理", "终止上市")
+_KEEP_ST_KEYWORDS = ("披*", "退市整理", "戴帽", "暂停上市", "终止上市")
+_CLEAR_ST_KEYWORDS = ("摘帽", "恢复上市", "新股上市", "重新上市", "转板上市", "摘*摘帽", "发行失败", "拟上市")
+
+
+def _is_keep_event(event: str) -> bool:
+    return any(kw in event for kw in _KEEP_ST_KEYWORDS)
 
 
 def _is_clear_event(event: str) -> bool:
     return any(kw in event for kw in _CLEAR_ST_KEYWORDS)
-
-
-def _is_star_event(event: str) -> bool:
-    return any(kw in event for kw in _STAR_ST_KEYWORDS)
 
 
 def is_st_at_date(stock_code: str, target_date: date | datetime) -> bool:
@@ -238,7 +254,13 @@ def is_st_at_date(stock_code: str, target_date: date | datetime) -> bool:
         st = False
         for sc in st_changes:
             if target_date >= sc["date"]:
-                st = not _is_clear_event(sc["event"])
+                event = sc["event"]
+                if _is_keep_event(event):
+                    st = True
+                elif _is_clear_event(event):
+                    st = False
+                else:
+                    st = True  # 默认戴帽
             else:
                 break
         return st
@@ -261,7 +283,7 @@ def is_star_st_at_date(stock_code: str, target_date: date | datetime) -> bool:
         star = False
         for sc in st_changes:
             if target_date >= sc["date"]:
-                star = _is_star_event(sc["event"])
+                star = _is_keep_event(sc["event"])
             else:
                 break
         return star
@@ -289,6 +311,9 @@ def prefetch_stock_histories(stock_codes: list[str], max_workers: int = 8) -> in
 
     uncached = [c for c in stock_codes if _needs_fetch(c)]
     if not uncached:
+        # 全部命中磁盘缓存，预加载到内存缓存避免热路径磁盘 I/O
+        for c in stock_codes:
+            _load_cache(c)
         core_logger.info(f"ST历史数据全部命中本地缓存 ({len(stock_codes)} 只)")
         return 0
 
@@ -329,6 +354,51 @@ def prefetch_stock_histories(stock_codes: list[str], max_workers: int = 8) -> in
                 last_log = now
 
     return len(uncached) - failed
+
+
+def build_st_mask(stock_codes: list[str], trade_dates: list[date]) -> "pd.DataFrame":
+    """构建 ST / *ST / 退市 状态掩码面板。
+
+    Args:
+        stock_codes: 股票代码列表
+        trade_dates: 交易日列表
+
+    Returns:
+        DataFrame(index=trade_dates, columns=stock_codes)，
+        True 表示该股票在该交易日处于 ST / *ST / 退市整理 / 已终止上市状态。
+    """
+    import numpy as np
+    import pandas as pd
+
+    if not stock_codes or not trade_dates:
+        return pd.DataFrame()
+
+    n_dates = len(trade_dates)
+    n_stocks = len(stock_codes)
+    trade_date_arr = np.array([pd.Timestamp(d) for d in trade_dates], dtype='datetime64[ns]')
+    result = np.zeros((n_dates, n_stocks), dtype=bool)
+
+    for j, code in enumerate(stock_codes):
+        history = _get_stock_history(code, trade_dates[-1])
+        st_changes = history.get("st_changes", [])
+
+        if st_changes:
+            change_dates = np.array([pd.Timestamp(sc["date"]) for sc in st_changes], dtype='datetime64[ns]')
+            change_states = np.array([
+                _is_keep_event(sc["event"]) or not _is_clear_event(sc["event"])
+                for sc in st_changes
+            ], dtype=bool)
+
+            indices = np.searchsorted(change_dates, trade_date_arr, side='right') - 1
+            valid = indices >= 0
+            if valid.any():
+                result[valid, j] = change_states[indices[valid]]
+        else:
+            name = get_stock_name_at_date(code, trade_dates[-1])
+            if name and ("ST" in name or name.endswith("退")):
+                result[:, j] = True
+
+    return pd.DataFrame(result, index=trade_dates, columns=stock_codes)
 
 
 def clear_stock_name_cache():

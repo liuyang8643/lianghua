@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import argparse
 import json
 import sys
@@ -9,19 +9,25 @@ from types import SimpleNamespace
 from xtquant import xtconstant, xtdata
 
 from configs import TRADE_ACCOUNT
-from core import allow_buy_stock_code_list, get_market_data_batch
+from core import allow_buy_stock_code_list, get_market_data_batch, get_trade_bars
+from core.database.stock_name import get_stock_name_at_date
 from core.strategies import TopN
 from core.strategies.sizers import Sizer
 from testback.ga_config import get_profile_factor_classes, resolve_profile_name
 from trading.logger import trading_logger
 from utils.recorder import recorder
 from utils.stock.time import AFTERNOON_END, get_last_trading_day
-from utils.stock.info import evaluate_orderability
+from utils.stock.legality import LegalityValidator
 
 from .lark.receiver import create_lark_handler
 from .manual_confirm import build_manual_confirmation_text, is_manual_confirmation_approved
 from .scheduler import TradingScheduler
 from .trader import Trader
+
+_BOARD_LABELS = {
+  'main_board': '主板', 'cyb': '创业板', 'kcb': '科创板', 'bse': '北交所',
+  'st': 'ST', 'unlimited': '新股',
+}
 
 
 def _get_signal_date(trade_date):
@@ -62,7 +68,11 @@ def _submit_buy_order(store: TradingScheduler, code: str, shares: int, signal_da
 def _print_and_confirm_manual_plan(pending: dict, execute_buy: bool, execute_sell: bool) -> bool:
   message = build_manual_confirmation_text(pending, execute_buy=execute_buy, execute_sell=execute_sell)
   print(message)
-  user_input = input("确认执行> ")
+  try:
+    user_input = input("确认执行> ")
+  except EOFError:
+    trading_logger.warning("无法读取交互输入（非交互环境），已取消确认")
+    return False
   return is_manual_confirmation_approved(user_input)
 
 
@@ -111,26 +121,12 @@ if __name__ == '__main__':
       store.pending_rebalance = None
       return
 
-    all_stocks = allow_buy_stock_code_list()
+    all_stocks = allow_buy_stock_code_list(target_date=trade_date)
     filtered_stocks = list(all_stocks)
     trading_logger.info(f"候选股票池: {len(filtered_stocks)} 只")
     get_market_data_batch(filtered_stocks, 2, base_time=signal_datetime, dividend_type='back')
 
     trade_bar_time = datetime.combine(trade_date, AFTERNOON_END)
-
-    def _load_trade_bars(stock_codes: list[str]):
-      trade_bar_data = get_market_data_batch(
-        stock_codes,
-        1,
-        base_time=trade_bar_time,
-        period='1d',
-        dividend_type='none',
-        strict_trade_date=True,
-      )
-      return {
-        code: (data.iloc[-1] if data is not None and not data.empty else None)
-        for code, data in trade_bar_data.items()
-      }
 
     topn = TopN(
       filtered_stocks,
@@ -150,49 +146,58 @@ if __name__ == '__main__':
       norm_method='rank'
     )
 
+    validator = LegalityValidator()
     positions = {p.stock_code: p for p in store.trader.query_positions()}
     sell_candidates = sorted(set(positions) - set(sell_m_stocks))
-    sell_bars = _load_trade_bars(sell_candidates)
+    sell_bars = get_trade_bars(sell_candidates, trade_bar_time)
     allowed_sell_codes = []
     sell_details = []
     for code in sell_candidates:
-      orderability = evaluate_orderability('sell', code, trade_date, bar=sell_bars.get(code), dividend_type='none')
-      if not orderability['allowed']:
+      bar = sell_bars.get(code)
+      if bar is None or bar.get('open') is None:
+        trading_logger.info(f"{code} 跳过卖出: bar缺失")
+        continue
+      open_price = float(bar['open'])
+      result = validator.check_sell(code, trade_date, bar)
+      if not result.allowed:
         trading_logger.info(
-          f"{code} 跳过卖出: reason={orderability['reason']}, regime={orderability['regime']}, "
-          f"up_limit={orderability['up_limit']}, down_limit={orderability['down_limit']}"
+          f"{code} 跳过卖出: reason={result.reason}, regime={result.regime_name}, "
+          f"up_limit={result.up_limit}, down_limit={result.down_limit}"
         )
         continue
       allowed_sell_codes.append(code)
       position = positions.get(code)
-      bar = sell_bars.get(code)
       volume = int(position.can_use_volume) if position is not None else 0
-      est_price = float(bar['open']) if bar and bar.get('open') is not None else 0.0
       sell_details.append({
         'code': code,
+        'name': get_stock_name_at_date(code, signal_date),
+        'board': _BOARD_LABELS.get(result.regime_name, result.regime_name),
         'volume': volume,
-        'est_price': est_price,
-        'est_amount': volume * est_price,
+        'est_price': open_price,
+        'est_amount': volume * open_price,
       })
 
-    buy_trade_bars = _load_trade_bars(buy_n_stocks)
+    buy_trade_bars = get_trade_bars(buy_n_stocks, trade_bar_time)
     tradable_buy_stocks = []
     sizing_prices = {}
+    buy_regimes = {}
     for code in buy_n_stocks:
-      orderability = evaluate_orderability('buy', code, trade_date, bar=buy_trade_bars.get(code), dividend_type='none')
-      if not orderability['allowed']:
+      bar = buy_trade_bars.get(code)
+      if bar is None or bar.get('open') is None:
+        trading_logger.info(f"{code} 跳过买入: bar缺失")
+        continue
+      open_price = float(bar['open'])
+      result = validator.check_buy(code, trade_date, bar)
+      if not result.allowed:
         trading_logger.info(
-          f"{code} 跳过买入: reason={orderability['reason']}, regime={orderability['regime']}, "
-          f"up_limit={orderability['up_limit']}, down_limit={orderability['down_limit']}"
+          f"{code} 跳过买入: reason={result.reason}, regime={result.regime_name}, "
+          f"up_limit={result.up_limit}, down_limit={result.down_limit}"
         )
         continue
       if positions.get(code):
         continue
-      sizing_bar = buy_trade_bars.get(code)
-      if sizing_bar is None or sizing_bar.get('open') is None:
-        trading_logger.info(f"{code} 跳过买入: live sizing 缺少 open")
-        continue
-      sizing_prices[code] = float(sizing_bar['open'])
+      sizing_prices[code] = open_price
+      buy_regimes[code] = _BOARD_LABELS.get(result.regime_name, result.regime_name)
       tradable_buy_stocks.append(code)
 
     allocations = Sizer.allocate(
@@ -203,6 +208,8 @@ if __name__ == '__main__':
     buy_details = [
       {
         'code': code,
+        'name': get_stock_name_at_date(code, signal_date),
+        'board': buy_regimes.get(code),
         'shares': int(shares),
         'est_price': float(sizing_prices[code]),
         'est_amount': int(shares) * float(sizing_prices[code]),

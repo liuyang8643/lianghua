@@ -111,7 +111,7 @@ Key runtime dependencies declared in `pyproject.toml` include:
 
 - Trading and data: `xtquant`, `akshare`, `pandas`, `numpy`, `scipy`, `ta-lib`
 - Optimization and parallelism: `deap`, `joblib`, `loky`, `filelock`
-- Reporting and integration: `plotly`, `jinja2`, `boto3`, `lark-oapi`, `pyyaml`, `loguru`, `psutil`, `pyarrow`
+- Reporting and integration: `plotly`, `jinja2`, `lark-oapi`, `pyyaml`, `loguru`, `psutil`, `pyarrow`
 
 Additional runtime behavior to remember:
 

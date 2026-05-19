@@ -7,7 +7,7 @@ from trading.lark.sender import LarkMsgLevel, lark_sender
 from trading.logger import trading_logger
 from core.database import get_stock_detail
 from utils.stock.format import get_stock_desc
-from trading.subscribe import unsubscribe_stock
+
 
 class TraderCallback(XtQuantTraderCallback):
   """ 订阅账户变更 """
@@ -63,8 +63,6 @@ class TraderCallback(XtQuantTraderCallback):
     # 完全清仓则取消订阅
     if trade.order_type == xtconstant.STOCK_SELL:
       position = self.trader.query_stock_position(trade.stock_code)
-      if not position or not position.can_use_volume:
-        unsubscribe_stock(trade.stock_code)
 
   def on_order_error(self, order_error: XtOrderError):
     trading_logger.error(f"订单错误：{order_error.error_msg}")

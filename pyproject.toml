@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "akshare>=1.14.0",
-    "boto3~=1.42.23",
+
     "deap>=1.4.3",
     "filelock~=3.20.3",
     "jinja2~=3.1.6",
@@ -23,7 +23,8 @@ dependencies = [
     "ta-lib~=0.6.8",
     "tqdm>=4.67.1",
     "xtquant~=250516.1.1",
-    "plotly~=6.5.0"
+    "plotly~=6.5.0",
+    "mootdx>=0.11.7",
 ]
 
 [build-system]
@@ -36,4 +37,17 @@ packages = ["core", "trading", "testback", "utils", "configs"]
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "network: tests that require network access (e.g., AkShare, CNINFO, mootdx)",
+
+    "cninfo: tests that require CNINFO API access (stock names, ST status)",
+    "mootdx: tests that require mootdx/通达信 data source (K-line history)",
+]
 

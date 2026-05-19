@@ -1,13 +1,13 @@
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
+
+import numpy as np
 from typing import Literal, Optional, TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
   from core.database import StockDetail, StockTradingData
 
 LimitRegimeName = Literal['main_board', 'cyb', 'kcb', 'bse', 'st', 'unlimited']
-TradeSide = Literal['buy', 'sell']
-TradabilityReason = Literal['ok', 'suspended', 'limit_up_locked', 'limit_down_locked', 'missing_trade_bar']
 
 
 class LimitRegime(TypedDict):
@@ -17,20 +17,6 @@ class LimitRegime(TypedDict):
   is_st: bool
   has_price_limit: bool
   is_limit_exempt: bool
-
-
-class OrderabilityResult(TypedDict):
-  """可交易性评估结果"""
-  allowed: bool
-  reason: TradabilityReason
-  side: TradeSide
-  stock_code: str
-  trade_date: str
-  regime: LimitRegimeName
-  limit_ratio: Optional[float]
-  up_limit: Optional[float]
-  down_limit: Optional[float]
-  source: str
 
 
 def is_st_stock(stock_code: str) -> bool:
@@ -57,7 +43,7 @@ def is_cyb_stock(stock_code: str) -> bool:
   参考文档：
   - 深交所《创业板改革并试点注册制相关问题答记者问》(2020-08-21)
     https://www.szse.cn/aboutus/trends/news/t20200821_580924.html
-  - 创业板公司公告《证券代码：300096》(2024-01-03)，明确“股票交易的日涨跌幅限制不变，仍为20%”
+  - 创业板公司公告《证券代码：300096》(2024-01-03)，明确"股票交易的日涨跌幅限制不变，仍为20%"
     https://disc.static.szse.cn/download/disc/disk03/finalpage/2024-01-03/70e90ff3-2f2a-49cc-aa90-1e9bfbef063d.PDF
 
   Args:
@@ -221,29 +207,14 @@ def _resolve_st_status(
 
 def _is_limit_exempt_window(stock_code: str, trade_date: date, detail: Optional['StockDetail']) -> bool:
   """
-  判断股票在指定交易日是否处于涨跌停豁免期
+  判断股票在指定交易日是否处于涨跌停豁免期（按板块和年份区分）。
 
-  新股上市后有涨跌停豁免期：
-  - 主板/创业板/科创板：上市后前 5 个交易日（含上市日）
-  - 北交所：仅上市首日不设涨跌幅限制
-
-  Args:
-    stock_code: 股票代码
-    trade_date: 交易日期
-    detail: 股票详情（可选，用于获取上市日期）
-
-  Returns:
-    是否在豁免期内
-
-  参考文档：
-  - 深交所《主板投资入市手册（十四）：主板股票交易机制（二）》(2023-06-29)
-    https://investor.szse.cn/institute/rules/t20230629_601434.html
-  - 深交所《创业板改革并试点注册制相关问题答记者问》(2020-08-21)
-    https://www.szse.cn/aboutus/trends/news/t20200821_580924.html
-  - 上交所《科创板开市初期交易制度的答记者问》(2019-07-19)
-    https://www.sse.com.cn/star/media/news/c/c_20190719_4866789.shtml
-  - 北交所发行上市文件/风险揭示材料均沿用“上市首日不设涨跌幅限制，其后涨跌幅限制为30%”表述，例如：
-    https://www.bse.cn/disclosure/2024/2024-08-26/1724666892_999832.pdf
+  历史规则概要：
+  - 北交所(43/83/87/92)：2021.11.15 起，仅上市首日不设涨跌幅限制
+  - 科创板(688)：2019.07.22 起，上市前 5 个交易日不设限制
+  - 创业板(300/301)：2020.08.24 起，上市前 5 个交易日不设限制；此前无豁免
+  - 主板(600/601/603/000/001/002/003)：2023.04.10 起，上市前 5 个交易日不设限制
+  - 2014 年之前所有板块：首日无固定涨跌停（仅有三档临停），近似为首日豁免
   """
   from utils.stock.time import get_target_forward_day
 
@@ -251,12 +222,30 @@ def _is_limit_exempt_window(stock_code: str, trade_date: date, detail: Optional[
   if list_date is None or trade_date < list_date:
     return False
 
+  # 北交所：仅上市首日不设涨跌幅限制
   if is_bse_stock(stock_code):
-    exempt_days = 0
-  else:
-    exempt_days = 4
+    return trade_date == list_date
 
-  return trade_date <= get_target_forward_day(list_date, exempt_days)
+  # 科创板：2019.07.22 起前 5 个交易日不设限制
+  if is_kcb_stock(stock_code):
+    return trade_date >= date(2019, 7, 22) and trade_date <= get_target_forward_day(list_date, 4)
+
+  # 创业板：2020.08.24 起前 5 个交易日不设限制
+  if is_cyb_stock(stock_code):
+    if trade_date >= date(2020, 8, 24):
+      return trade_date <= get_target_forward_day(list_date, 4)
+    # 2014 年之前首日无固定涨跌停（仅有三档临停）
+    if trade_date < date(2014, 1, 1):
+      return trade_date == list_date
+    return False
+
+  # 主板：2023.04.10 起前 5 个交易日不设限制
+  if trade_date >= date(2023, 4, 10):
+    return trade_date <= get_target_forward_day(list_date, 4)
+  # 2014 年之前首日无固定涨跌停
+  if trade_date < date(2014, 1, 1):
+    return trade_date == list_date
+  return False
 
 
 def resolve_limit_regime(
@@ -314,6 +303,17 @@ def resolve_limit_regime(
       'is_limit_exempt': True,
     }
 
+  # IPO 首日（非豁免窗口）：2014 年起首日 ±44% 以发行价为基准
+  list_date = _parse_list_date(detail)
+  if list_date is not None and trade_day == list_date and trade_day >= date(2014, 1, 1):
+    return {
+      'name': 'ipo_first_day',
+      'ratio': 0.44,
+      'is_st': is_st,
+      'has_price_limit': True,
+      'is_limit_exempt': False,
+    }
+
   if is_bse_stock(stock_code):
     return {
       'name': 'bse',
@@ -324,9 +324,13 @@ def resolve_limit_regime(
     }
 
   if is_cyb_stock(stock_code):
+    # 创业板涨跌幅限制历史变更：
+    # 2020-08-24 前：±10%（与主板相同）
+    # 2020-08-24 起：±20%
+    ratio = 0.20 if trade_day >= date(2020, 8, 24) else 0.10
     return {
       'name': 'cyb',
-      'ratio': 0.20,
+      'ratio': ratio,
       'is_st': is_st,
       'has_price_limit': True,
       'is_limit_exempt': False,
@@ -359,45 +363,6 @@ def resolve_limit_regime(
   }
 
 
-def get_stock_estimate_up_limit(stock_code: str, current_price: float) -> float:
-  """
-  估算股票涨停价（基于当前价格的简化版本）
-
-  注意：此函数使用当前价格作为基准，仅用于快速估算。
-  实际涨跌停价格应基于前收盘价计算，请使用 resolve_limit_regime 获取准确制度。
-
-  Args:
-    stock_code: 股票代码
-    current_price: 当前价格
-
-  Returns:
-    估算的涨停价
-  """
-  regime = resolve_limit_regime(stock_code, datetime.now())
-  if not regime['has_price_limit'] or regime['ratio'] is None:
-    return current_price * 1.5  # 无涨跌停限制时返回一个较大值
-  return _round_limit_price(current_price, regime['ratio'], True)
-
-def get_stock_estimate_down_limit(stock_code: str, current_price: float) -> float:
-  """
-  估算股票跌停价（基于当前价格的简化版本）
-
-  注意：此函数使用当前价格作为基准，仅用于快速估算。
-  实际涨跌停价格应基于前收盘价计算，请使用 resolve_limit_regime 获取准确制度。
-
-  Args:
-    stock_code: 股票代码
-    current_price: 当前价格
-
-  Returns:
-    估算的跌停价
-  """
-  regime = resolve_limit_regime(stock_code, datetime.now())
-  if not regime['has_price_limit'] or regime['ratio'] is None:
-    return current_price * 0.5  # 无涨跌停限制时返回一个较小值
-  return _round_limit_price(current_price, regime['ratio'], False)
-
-
 def get_limit_band_from_ratio(
     stock_code: str,
     trade_date: datetime | date,
@@ -421,7 +386,12 @@ def get_limit_band_from_ratio(
     return None, None, regime
 
   pre_close = float(bar['preClose'])
-  if pre_close <= 0:
+  # IPO 首日 44%：preClose=NaN（上市前无交易），用发行价作基准
+  if regime['name'] == 'ipo_first_day' and (pre_close <= 0 or np.isnan(pre_close)):
+    issue_p = bar.get('issuePrice')
+    if issue_p is not None and not np.isnan(float(issue_p)) and float(issue_p) > 0:
+      pre_close = float(issue_p)
+  if pre_close <= 0 or np.isnan(pre_close):
     return None, None, regime
 
   ratio = regime['ratio']
@@ -435,204 +405,4 @@ def get_limit_band_from_ratio(
   )
 
 
-def _get_trade_bar(
-    stock_code: str,
-    trade_day: date,
-    dividend_type: str,
-) -> Optional['StockTradingData']:
-  """
-  获取指定交易日的 bar 数据
-
-  Args:
-    stock_code: 股票代码
-    trade_day: 交易日期
-    dividend_type: 复权类型
-
-  Returns:
-    交易数据，获取失败返回 None
-  """
-  from core.database import get_market_data_batch
-  from utils.stock.time import AFTERNOON_END
-
-  trade_data = get_market_data_batch(
-    [stock_code],
-    1,
-    datetime.combine(trade_day, AFTERNOON_END),
-    period='1d',
-    dividend_type=dividend_type,
-    strict_trade_date=True,
-  ).get(stock_code)
-  if trade_data is None or trade_data.empty:
-    return None
-  return trade_data.iloc[-1]
-
-
-def evaluate_orderability(
-    side: TradeSide,
-    stock_code: str,
-    trade_date: datetime | date,
-    *,
-    detail: Optional['StockDetail'] = None,
-    bar: Optional['StockTradingData'] = None,
-    dividend_type: str = 'none',
-) -> OrderabilityResult:
-  """
-  评估股票在指定日期是否可买入/卖出
-
-  检查项：
-  - 停牌状态
-  - 涨停锁定（买入时）
-  - 跌停锁定（卖出时）
-  - 交易数据可用性
-
-  Args:
-    side: 交易方向（'buy' 或 'sell'）
-    stock_code: 股票代码
-    trade_date: 交易日期
-    detail: 股票详情（可选）
-    bar: 交易数据（可选）
-    dividend_type: 复权类型
-
-  Returns:
-    可交易性评估结果
-  """
-  trade_day = _to_trade_date(trade_date)
-  if detail is None:
-    from core.database import get_stock_detail
-
-    detail = get_stock_detail(stock_code)
-
-  if detail is not None and trade_day == date.today() and not is_stock_trading(detail):
-    regime = resolve_limit_regime(stock_code, trade_day, detail)
-    return {
-      'allowed': False,
-      'reason': 'suspended',
-      'side': side,
-      'stock_code': stock_code,
-      'trade_date': trade_day.isoformat(),
-      'regime': regime['name'],
-      'limit_ratio': regime['ratio'],
-      'up_limit': None,
-      'down_limit': None,
-      'source': 'detail_status',
-    }
-
-  trade_bar = bar if bar is not None else _get_trade_bar(stock_code, trade_day, dividend_type)
-  if trade_bar is None:
-    regime = resolve_limit_regime(stock_code, trade_day, detail)
-    return {
-      'allowed': False,
-      'reason': 'missing_trade_bar',
-      'side': side,
-      'stock_code': stock_code,
-      'trade_date': trade_day.isoformat(),
-      'regime': regime['name'],
-      'limit_ratio': regime['ratio'],
-      'up_limit': None,
-      'down_limit': None,
-      'source': 'trade_bar',
-    }
-
-  if int(trade_bar.get('suspendFlag', 0)) == 1:
-    regime = resolve_limit_regime(stock_code, trade_day, detail)
-    up_limit, down_limit, regime = get_limit_band_from_ratio(stock_code, trade_day, trade_bar, detail)
-    return {
-      'allowed': False,
-      'reason': 'suspended',
-      'side': side,
-      'stock_code': stock_code,
-      'trade_date': trade_day.isoformat(),
-      'regime': regime['name'],
-      'limit_ratio': regime['ratio'],
-      'up_limit': up_limit,
-      'down_limit': down_limit,
-      'source': 'trade_bar',
-    }
-
-  up_limit, down_limit, regime = get_limit_band_from_ratio(stock_code, trade_day, trade_bar, detail)
-  if regime['has_price_limit'] and up_limit is not None and down_limit is not None:
-    day_low = float(trade_bar['low'])
-    day_high = float(trade_bar['high'])
-
-    if side == 'buy' and day_low >= up_limit:
-      return {
-        'allowed': False,
-        'reason': 'limit_up_locked',
-        'side': side,
-        'stock_code': stock_code,
-        'trade_date': trade_day.isoformat(),
-        'regime': regime['name'],
-        'limit_ratio': regime['ratio'],
-        'up_limit': up_limit,
-        'down_limit': down_limit,
-        'source': 'back_adjusted_daily_bar',
-      }
-
-    if side == 'sell' and day_high <= down_limit:
-      return {
-        'allowed': False,
-        'reason': 'limit_down_locked',
-        'side': side,
-        'stock_code': stock_code,
-        'trade_date': trade_day.isoformat(),
-        'regime': regime['name'],
-        'limit_ratio': regime['ratio'],
-        'up_limit': up_limit,
-        'down_limit': down_limit,
-        'source': 'back_adjusted_daily_bar',
-      }
-
-  return {
-    'allowed': True,
-    'reason': 'ok',
-    'side': side,
-    'stock_code': stock_code,
-    'trade_date': trade_day.isoformat(),
-    'regime': regime['name'],
-    'limit_ratio': regime['ratio'],
-    'up_limit': up_limit,
-    'down_limit': down_limit,
-    'source': 'back_adjusted_daily_bar',
-  }
-
-
-def is_stock_trading(detail: Optional['StockDetail']) -> bool:
-  """
-  判断股票是否正常交易
-
-  Args:
-    detail: 股票详情数据
-
-  Returns:
-    True 表示正常交易，False 表示停牌或退市
-  """
-  if detail is None:
-    return False
-
-  return (
-      detail['InstrumentStatus'] <= 0  # 未停牌
-      # 未退市
-      and (detail['ExpireDate'] in ('0', '99999999'))
-  )
-
-
-# baseline_stock_code = '000300.SH'  # 基准股票代码，沪深300
-baseline_stock_code = '000852.SH'  # 基准股票代码，中证1000
-
-def get_baseline_data(base_time: datetime = None) -> Optional['StockTradingData']:
-  """
-  获取基准指数的交易数据
-
-  当前使用中证1000（000852.SH）作为基准指数
-
-  Args:
-    base_time: 基准时间，默认为当前时间
-
-  Returns:
-    基准指数的交易数据，获取失败返回 None
-  """
-  from core.database import get_market_data_from_cache
-
-  input_time = base_time or datetime.now()
-  data = get_market_data_from_cache(baseline_stock_code, 1, input_time, '1d')
-  return data.iloc[-1] if data is not None and data.size > 0 else None
+baseline_stock_code = '000852.SH'

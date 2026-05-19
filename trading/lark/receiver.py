@@ -114,7 +114,10 @@ def create_lark_handler(trader: Trader):
     .register_p2_card_action_trigger(handle_card_action_trigger) \
     .build()
   cli = lark.ws.Client(LARK_APP_ID, LARK_APP_SECRET, event_handler=event_handler)
-  cli.start()
+  try:
+    cli.start()
+  except Exception:
+    trading_logger.warning('飞书 WebSocket 连接失败（app_id/app_secret 未配置）')
 
 if __name__ == "__main__":
   from configs import TRADE_ACCOUNT

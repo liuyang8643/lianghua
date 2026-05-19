@@ -85,6 +85,14 @@ body{
 .metric-value.neg{color:var(--neg)}
 .metric-value.neutral{color:var(--text)}
 .metric-subtext{font-size:11px;color:var(--muted);margin-top:6px}
+.per-year-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+.per-year-table th{background:var(--accent-light);color:var(--accent);padding:8px 12px;text-align:right;font-weight:600;border-bottom:2px solid var(--accent)}
+.per-year-table th:first-child{text-align:left}
+.per-year-table td{padding:6px 12px;text-align:right;border-bottom:1px solid var(--border)}
+.per-year-table td:first-child{text-align:left;font-weight:600}
+.per-year-table td.pos{color:var(--pos)}
+.per-year-table td.neg{color:var(--neg)}
+.per-year-table tr:hover{background:var(--row-even)}
 .weight-tag,.temp-tag{
   display:inline-block;
   border-radius:4px;

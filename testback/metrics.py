@@ -10,35 +10,75 @@ from testback.logger import testback_logger
 HS300_CODE = '000300.SH'
 
 
+def compute_per_year_metrics(cumulative_returns_pct: List[float], trade_dates: List[str]) -> List[Dict]:
+    """按自然年计算夏普、年化收益、最大回撤。"""
+    if not cumulative_returns_pct or not trade_dates:
+        return []
+
+    nav = np.array(cumulative_returns_pct, dtype=float) / 100.0 + 1.0
+    years = sorted(set(d[:4] for d in trade_dates))
+    result = []
+
+    for year in years:
+        idx = [i for i, d in enumerate(trade_dates) if d[:4] == year]
+        if len(idx) < 5:
+            continue
+
+        first, last = idx[0], idx[-1]
+        year_nav = nav[first:last + 1]
+        year_start_nav = nav[first - 1] if first > 0 else 1.0
+        year_nav_full = np.concatenate([[year_start_nav], year_nav])
+
+        # 年化收益
+        year_return = (year_nav[-1] / year_start_nav - 1) * 100
+        trading_days = len(year_nav_full) - 1
+        if trading_days > 0 and year_start_nav > 0:
+            annualized = ((year_nav[-1] / year_start_nav) ** (252.0 / trading_days) - 1) * 100
+        else:
+            annualized = 0.0
+
+        # 夏普
+        daily_rets = year_nav_full[1:] / year_nav_full[:-1] - 1
+        if len(daily_rets) > 1:
+            mean_ret = float(np.mean(daily_rets))
+            std_ret = float(np.std(daily_rets, ddof=1))
+            sharpe = (mean_ret / std_ret * np.sqrt(252.0)) if std_ret > 0 else 0.0
+        else:
+            sharpe = 0.0
+
+        # 最大回撤
+        peaks = np.maximum.accumulate(year_nav_full)
+        dd = year_nav_full / peaks - 1
+        max_dd = float(np.min(dd) * 100)
+
+        result.append({
+            'year': year,
+            'return': round(year_return, 2),
+            'annualized': round(annualized, 2),
+            'sharpe': round(sharpe, 2),
+            'max_drawdown': round(max_dd, 2),
+            'trading_days': trading_days,
+        })
+
+    return result
+
+
 def compute_hs300_cumulative_returns(trade_dates: List[str]) -> List[float]:
   """获取沪深300在回测期间的累计收益率（%）。
 
-  注意：指数不走 get_market_data_from_cache（会被 check_stock_valid_at_date 拦截），
-  直接按回测窗口读取指数日线。
+  mootdx 不支持指数代码，改用 akshare stock_zh_index_daily。
   """
   if not trade_dates:
     return []
 
   try:
-    from core.database.history import get_history_data
+    import akshare as ak
 
-    base_time = datetime.strptime(trade_dates[-1], '%Y-%m-%d')
-    data = get_history_data(
-      [HS300_CODE],
-      len(trade_dates),
-      base_time,
-      '1d',
-      'back',
-    ).get(HS300_CODE)
-
-    if data is None or data.empty:
-      testback_logger.warning(f'沪深300 ({HS300_CODE}) 数据获取失败，返回全0基准线')
-      return [0.0] * len(trade_dates)
-
+    df = ak.stock_zh_index_daily(symbol='sh000300')
     date_to_close: Dict[str, float] = {}
-    for ts, close in zip(data['time'].values, data['close'].values):
-      d = datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d')
-      date_to_close[d] = float(close)
+    for _, row in df.iterrows():
+      d = str(row['date'])[:10]
+      date_to_close[d] = float(row['close'])
 
     result: List[float] = []
     first_close = None
@@ -56,7 +96,7 @@ def compute_hs300_cumulative_returns(trade_dates: List[str]) -> List[float]:
 
     hit_count = sum(1 for d in trade_dates if d in date_to_close)
     if hit_count == 0:
-      testback_logger.warning(f'沪深300数据无日期命中（共 {len(date_to_close)} 条），返回全0')
+      testback_logger.warning('沪深300数据无日期命中，返回全0')
     else:
       testback_logger.info(f'沪深300基准加载成功: {hit_count}/{len(trade_dates)} 日命中')
     return result

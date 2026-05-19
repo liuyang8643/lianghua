@@ -1,61 +1,18 @@
-import hashlib
-import os
 import time
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed, FIRST_COMPLETED, wait
-from concurrent.futures.process import BrokenProcessPool
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List
 
-from core.factors import SmallCap, WMACross, FactorCtx, FactorResult, BatchNormFactor
-from utils.hash import hash_function_code
-from utils.stock.format import format_qmt_date, format_qmt_datetime
-from core.factors.helpers import BaseFactor, CacheKey, DiskCache
+import numpy as np
+import pandas as pd
+
+from core.factors.helpers.interface import FactorResult, BaseFactor
+from core.factors.helpers.batch_norm import BatchNormFactor
+from core.factors.SmallCap import SmallCap
+from utils.stock.format import format_qmt_date
 from ..logger import core_logger
 
-DEFAULT_FACTOR_CLASSES = [SmallCap, WMACross]
-
-_STOCK_BATCH_SIZE = 100
-_TOPN_CACHE_SCHEMA_VERSION = 'topn-v2'
-_FACTOR_SCORE_CACHE_SCHEMA_VERSION = 'factor-score-v2'
-_CPU_COUNT = os.cpu_count() or 4
-_STALL_TIMEOUT_SEC = 180
-
-
-def _read_positive_int_env(name: str, default: int) -> int:
-    raw_value = os.getenv(name)
-    if raw_value is None or raw_value.strip() == '':
-        return default
-    try:
-        value = int(raw_value)
-    except ValueError:
-        core_logger.warning(f'{name}={raw_value!r} 不是正整数，回退到默认值 {default}')
-        return default
-    if value < 1:
-        core_logger.warning(f'{name}={raw_value!r} 小于 1，回退到默认值 {default}')
-        return default
-    return value
-
-
-_MAX_TOPN_WORKERS = _read_positive_int_env('WBR_TOPN_MAX_WORKERS', max(1, _CPU_COUNT - 2))
-_MAX_FACTOR_THREADS = _read_positive_int_env('WBR_TOPN_FACTOR_THREADS', max(1, _CPU_COUNT - 2))
-
-
-def _make_factor_cache_key(name: str, func_hash: str, base_date: datetime, stock_list: List[str], dividend_type: str) -> str:
-    return CacheKey.make_key(
-        [
-            f"factor-{name}-{_FACTOR_SCORE_CACHE_SCHEMA_VERSION}-{func_hash}",
-            format_qmt_datetime(base_date),
-            f"dividend-{dividend_type}",
-        ],
-        stocks=stock_list,
-    )
-
-
-def _calc_topn_worker(args):
-    """进程 worker：计算单个 TopN 实例（内部用线程并行）"""
-    stock_list, base_date, weights, factor_classes, dividend_type = args
-    topn = TopN(stock_list, base_date, weights=weights, factor_classes=factor_classes, dividend_type=dividend_type)
-    return topn
+DEFAULT_FACTOR_CLASSES = [SmallCap]
 
 
 class TopN:
@@ -68,16 +25,8 @@ class TopN:
         weights: Dict[str, float] = None,
         factor_classes: List[type] = None,
         dividend_type: str = 'back',
+        _precomputed_scores: Dict[str, Dict[str, FactorResult]] = None,
     ):
-        """
-        初始化TopN策略
-
-        Args:
-            stock_list: 股票池列表
-            base_date: 基准日期（必须是datetime对象）
-            weights: 因子权重字典，为0的因子跳过计算
-            factor_classes: 因子类列表，默认使用 DEFAULT_FACTOR_CLASSES
-        """
         self.stock_list = stock_list
         self.base_date = base_date
         self.weights = weights
@@ -94,73 +43,20 @@ class TopN:
                 self.factors.append(f)
                 self._factor_names.append(name)
 
-        self.factor_scores: Dict[str, Dict[str, FactorResult]] = {
-            name: {} for name in self._factor_names
-        }
-
         self.max_hist_days = max((f.hist_days for f in self.factors), default=0)
 
-        self._calculate_all_factors()
-
-    def _calculate_all_factors(self):
-        """使用多线程并行计算所有因子的所有股票"""
-        if not self.factors:
-            return
-
-        func_hashes = [hash_function_code(f.calc) for f in self.factors]
-
-        cache_data: Dict[str, Dict[str, FactorResult]] = {}
-        for name, fhash in zip(self._factor_names, func_hashes):
-            cache_key = _make_factor_cache_key(name, fhash, self.base_date, self.stock_list, self.dividend_type)
-            cached = DiskCache.load_pickle(cache_key)
-            cache_data[name] = cached if cached else {}
-
-        stocks_to_calc = [
-            s for s in self.stock_list
-            if all(s not in cache_data.get(name, {}) for name in self._factor_names)
-        ]
-
-        for name, cached in cache_data.items():
-            for stock, val in cached.items():
-                self.factor_scores[name][stock] = val
-
-        if not stocks_to_calc:
-            core_logger.debug(f"因子分数全部命中缓存，跳过计算")
-            return
-
-        n_threads = min(_MAX_FACTOR_THREADS, max(1, (os.cpu_count() or 4) // 2))
-        # 动态计算批处理大小：确保每个线程至少有2个批次，但单批不超过100只股票
-        batch_size = max(10, min(_STOCK_BATCH_SIZE, len(stocks_to_calc) // (n_threads * 2)))
-        batches = [stocks_to_calc[i:i + batch_size]
-                   for i in range(0, len(stocks_to_calc), batch_size)]
-
-        def _calc_batch(batch_stocks: List[str]):
-            """线程 worker：计算一批股票的所有因子"""
-            results: Dict[str, FactorResult] = {}
-            for stock_code in batch_stocks:
-                for f in self.factors:
-                    name = f.__class__.__name__
-                    ctx = FactorCtx(stock_code, self.base_date, dividend_type=self.dividend_type)
-                    results[(name, stock_code)] = f.calc(ctx)
-            return results
-
-        with ThreadPoolExecutor(max_workers=n_threads) as executor:
-            futures = [executor.submit(_calc_batch, batch) for batch in batches]
-            for future in as_completed(futures):
-                batch_result = future.result()
-                for (name, stock), result in batch_result.items():
-                    self.factor_scores[name][stock] = result
-
-        for name, fhash in zip(self._factor_names, func_hashes):
-            cache_key = _make_factor_cache_key(name, fhash, self.base_date, self.stock_list, self.dividend_type)
-            DiskCache.save_pickle(cache_key, self.factor_scores[name])
+        if _precomputed_scores is not None:
+            self.factor_scores = _precomputed_scores
+        else:
+            self.factor_scores: Dict[str, Dict[str, FactorResult]] = {
+                name: {} for name in self._factor_names
+            }
 
     def get_normalized_scores(
         self,
         temperatures: Dict[str, float],
         method: str = 'softmax'
     ) -> Dict[str, Dict[str, float]]:
-        """对所有因子进行批量归一化"""
         normalized = {}
         for factor_name, raw_scores in self.factor_scores.items():
             temperature = temperatures.get(factor_name, 1.0)
@@ -172,20 +68,25 @@ class TopN:
             normalized[factor_name] = norm_scores
         return normalized
 
-    def get_ordered_stocks(
+    def _get_full_ordered_stocks(
         self,
-        n: int,
         weights: Dict[str, float] = None,
         temperatures: Dict[str, float] = None,
-        norm_method: str = 'softmax',
+        norm_method: str = 'rank',
     ) -> List[str]:
-        """返回按综合得分排序的前N只股票"""
         weights = self.weights if weights is None else weights
         temperatures = temperatures or {}
 
+        normed_temps = frozenset(
+            (k, v) for k, v in (temperatures or {}).items() if v != 1.0
+        )
+        tag = (frozenset(weights.items()) if weights else frozenset(), normed_temps, norm_method)
+        if tag in getattr(self, '_ordered_cache', {}):
+            return self._ordered_cache[tag]
+
         normalized_scores = self.get_normalized_scores(temperatures, norm_method)
 
-        final_scores: Dict[str, float] = {}
+        stock_scores = []
         for stock_code in self.stock_list:
             score = 0.0
             valid_factors = 0
@@ -197,118 +98,151 @@ class TopN:
                     score += normalized_scores[factor_name][stock_code] * weight
                     valid_factors += 1
             if valid_factors > 0:
-                final_scores[stock_code] = score
+                stock_scores.append((stock_code, score))
 
-        if not final_scores:
+        if not stock_scores:
             core_logger.warning(f"没有股票有有效因子分数！日期: {format_qmt_date(self.base_date)}")
             return []
 
-        sorted_stocks = sorted(final_scores.items(), key=lambda x: x[1], reverse=True)
-        top_n = [stock for stock, _ in sorted_stocks[:n]]
+        stock_scores.sort(key=lambda x: x[1], reverse=True)
+        ordered = [s for s, _ in stock_scores]
+
+        if not hasattr(self, '_ordered_cache'):
+            self._ordered_cache = {}
+        self._ordered_cache[tag] = ordered
 
         core_logger.info(
             f"{format_qmt_date(self.base_date)} TopN选股完成: "
-            f"候选{len(final_scores)}只, 选出{len(top_n)}只"
+            f"候选{len(ordered)}只"
         )
-        if top_n:
-            top_5 = sorted_stocks[:min(5, len(sorted_stocks))]
+        if ordered:
+            top_5 = stock_scores[:min(5, len(stock_scores))]
             core_logger.debug(
                 "Top 5: " + ", ".join([f"{s}({sc:.6f})" for s, sc in top_5])
             )
 
-        return top_n
+        return ordered
+
+    def get_ordered_stocks(
+        self,
+        n: int,
+        weights: Dict[str, float] = None,
+        temperatures: Dict[str, float] = None,
+        norm_method: str = 'rank',
+    ) -> List[str]:
+        ordered = self._get_full_ordered_stocks(weights, temperatures, norm_method)
+        return ordered[:n] if n < len(ordered) else ordered
 
 
-def make_topn_range_cache_key(
-    backtest_datetime_list: List[datetime],
-    stock_list: List[str],
-    weights: Dict[str, float] = None,
-    factor_classes: List[type] = None,
-    dividend_type: str = 'back',
-) -> str:
-    """生成 TopN 范围共享内存缓存键。"""
-    if not backtest_datetime_list:
-        return 'topn_empty'
-
-    factor_classes = factor_classes or DEFAULT_FACTOR_CLASSES
-    first_d = backtest_datetime_list[0].strftime('%Y%m%d')
-    last_d = backtest_datetime_list[-1].strftime('%Y%m%d')
-    factor_key = '_'.join(sorted(cls.__name__ for cls in factor_classes))
-    weight_key = '_'.join(f'{k}={v}' for k, v in sorted((weights or {}).items()))
-    stock_hash = hashlib.md5('\n'.join(stock_list).encode('utf-8')).hexdigest()[:12]
-    return (
-        f'topn_{_TOPN_CACHE_SCHEMA_VERSION}_{first_d}_{last_d}_{dividend_type}'
-        f'_f{factor_key}_n{len(stock_list)}_{stock_hash}'
-        + (f'_w{weight_key}' if weight_key else '')
-    )
+_RUNTIME_DIR = Path(__file__).resolve().parents[2] / "data" / "runtime"
 
 
-def _compute_topn_sequential(worker_args_list: List[tuple]) -> List["TopN"]:
-    total_tasks = len(worker_args_list)
-    started_at = time.time()
-    result_topns = []
-    for idx, args in enumerate(worker_args_list, start=1):
-        result_topns.append(_calc_topn_worker(args))
-        now = time.time()
-        elapsed = now - started_at
-        speed = (idx / elapsed) if elapsed > 0 else 0.0
-        eta_sec = ((total_tasks - idx) / speed) if speed > 0 else 0.0
-        core_logger.info(
-            f"TopN 串行进度: {idx}/{total_tasks} "
-            f"({idx / total_tasks * 100:.1f}%), 已耗时 {elapsed:.1f}s, 预计剩余 {eta_sec:.1f}s"
-        )
-    return result_topns
+def _load_runtime_npz(dates: List[datetime]) -> dict | None:
+    """加载覆盖指定日期范围的 runtime npz 文件（支持多文件合并）。"""
+    if not _RUNTIME_DIR.exists():
+        return None
 
+    min_date = np.datetime64(min(dt.date() for dt in dates))
+    # 为最后一个 signal_date 的 trade_date（次日）预留缓冲
+    max_date = np.datetime64(max(dt.date() for dt in dates)) + np.timedelta64(7, 'D')
 
-def _compute_topn_parallel(worker_args_list: List[tuple], n_workers: int) -> List["TopN"]:
-    core_logger.info(
-        f"启动 {n_workers} 个进程并行计算 TopN，未计算 {len(worker_args_list)} 天"
-    )
-    heartbeat_interval_sec = 15
-    total_tasks = len(worker_args_list)
-    started_at = time.time()
-    last_heartbeat_at = started_at
-    last_progress_at = started_at
-    completed_count = 0
+    npz_files = sorted(_RUNTIME_DIR.glob("runtime_*.npz"))
+    parts = []
+    for npz_path in npz_files:
+        try:
+            data = dict(np.load(npz_path, allow_pickle=False))
+            d0, d1 = data['trade_dates'][0], data['trade_dates'][-1]
+            if d0 <= max_date and d1 >= min_date:
+                parts.append(data)
+                core_logger.info(f"  {npz_path.name}: {len(data['trade_dates'])}d x {len(data['stock_codes'])}s")
+        except Exception:
+            continue
 
-    with ProcessPoolExecutor(max_workers=n_workers) as executor:
-        futures = [executor.submit(_calc_topn_worker, args) for args in worker_args_list]
-        uncached_topns = []
-        pending = set(futures)
-        while pending:
-            done, pending = wait(pending, timeout=heartbeat_interval_sec, return_when=FIRST_COMPLETED)
-            now = time.time()
-            if done:
-                for future in done:
-                    uncached_topns.append(future.result())
-                    completed_count += 1
-                last_progress_at = now
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return parts[0]
 
-            elapsed = now - started_at
-            stalled_for = now - last_progress_at
-            if done or (now - last_heartbeat_at) >= heartbeat_interval_sec:
-                progress_pct = (completed_count / total_tasks * 100) if total_tasks else 100.0
-                speed = (completed_count / elapsed) if elapsed > 0 else 0.0
-                eta_sec = ((total_tasks - completed_count) / speed) if speed > 0 else 0.0
-                core_logger.info(
-                    f"TopN 并行进度: {completed_count}/{total_tasks} "
-                    f"({progress_pct:.1f}%), 已耗时 {elapsed:.1f}s, 预计剩余 {eta_sec:.1f}s"
-                )
-                last_heartbeat_at = now
+    core_logger.info(f"合并 {len(parts)} 个 npz 文件...")
 
-            if pending and stalled_for >= _STALL_TIMEOUT_SEC:
-                core_logger.error(
-                    f"TopN 并行超过 {_STALL_TIMEOUT_SEC}s 无进度，触发熔断"
-                )
-                for proc in list(getattr(executor, '_processes', {}).values()):
-                    if proc is not None and proc.is_alive():
-                        proc.kill()
-                executor.shutdown(wait=False, cancel_futures=True)
-                raise TimeoutError(
-                    f"TopN parallel stalled for {_STALL_TIMEOUT_SEC}s "
-                    f"(completed={completed_count}/{total_tasks})"
-                )
-    return uncached_topns
+    # 所有 NPZ 构建时使用相同的 stock_codes（全量 K线文件），只需拼接
+    first_codes = parts[0]['stock_codes']
+    codes_match = all(np.array_equal(p['stock_codes'], first_codes) for p in parts[1:])
+
+    all_dates = np.concatenate([p['trade_dates'] for p in parts])
+    all_dates = np.unique(all_dates)
+    all_dates.sort()
+
+    if codes_match:
+        n_stocks = len(first_codes)
+        merged = {
+            'stock_codes': first_codes,
+            'trade_dates': all_dates,
+        }
+        offsets_list = [np.searchsorted(all_dates, p['trade_dates']) for p in parts]
+        _2D_FIELDS = ['open', 'high', 'low', 'close', 'volume', 'amount',
+                      'total_share', 'eps', 'roe', 'profit_yoy', 'revenue_yoy',
+                      'operating_cf_ps', 'gross_margin', 'retail_net_flow', 'st_mask']
+        for field in _2D_FIELDS:
+            if field not in parts[0]:
+                continue
+            dtype = np.bool_ if field == 'st_mask' else np.float64
+            fill = False if field == 'st_mask' else np.nan
+            arr = np.full((len(all_dates), n_stocks), fill, dtype=dtype)
+            for pi, p in enumerate(parts):
+                arr[offsets_list[pi]] = p[field]
+            merged[field] = arr
+        # 1D fields: take from last part (most complete)
+        for field in ['issue_price']:
+            if field in parts[0]:
+                merged[field] = parts[-1][field]
+    else:
+        # 慢路径：NPZ 股票列表不一致，需要 union（理论上不会走到这里）
+        all_stocks = []
+        seen = set()
+        for p in parts:
+            for s in p['stock_codes']:
+                s_str = str(s)
+                if s_str not in seen:
+                    seen.add(s_str)
+                    all_stocks.append(s_str)
+        n_stocks = len(all_stocks)
+        stock_to_idx = {s: i for i, s in enumerate(all_stocks)}
+        merged = {
+            'stock_codes': np.array(all_stocks, dtype='U12'),
+            'trade_dates': all_dates,
+        }
+        offsets_list = [np.searchsorted(all_dates, p['trade_dates']) for p in parts]
+        _2D_FIELDS = ['open', 'high', 'low', 'close', 'volume', 'amount',
+                      'total_share', 'eps', 'roe', 'profit_yoy', 'revenue_yoy',
+                      'operating_cf_ps', 'gross_margin', 'retail_net_flow', 'st_mask']
+        for field in _2D_FIELDS:
+            if field not in parts[0]:
+                continue
+            dtype = np.bool_ if field == 'st_mask' else np.float64
+            fill = False if field == 'st_mask' else np.nan
+            arr = np.full((len(all_dates), n_stocks), fill, dtype=dtype)
+            for pi, p in enumerate(parts):
+                p_stocks = [str(s) for s in p['stock_codes']]
+                col_idx = np.array([stock_to_idx.get(s, -1) for s in p_stocks])
+                valid = col_idx >= 0
+                if not valid.any():
+                    continue
+                for di in range(len(offsets_list[pi])):
+                    arr[offsets_list[pi][di], col_idx[valid]] = p[field][di, valid]
+            merged[field] = arr
+        if 'issue_price' in parts[0]:
+            arr = np.full(n_stocks, np.nan, dtype=np.float64)
+            for pi, p in enumerate(parts):
+                p_stocks = [str(s) for s in p['stock_codes']]
+                for j, s in enumerate(p_stocks):
+                    t = stock_to_idx.get(s, -1)
+                    if t >= 0 and np.isnan(arr[t]) and not np.isnan(p['issue_price'][j]):
+                        arr[t] = p['issue_price'][j]
+            merged['issue_price'] = arr
+
+    core_logger.info(f"合并完成: {len(all_dates)}d x {len(merged['stock_codes'])}s")
+    return merged
 
 
 def compute_topn_range(
@@ -320,8 +254,7 @@ def compute_topn_range(
 ) -> List["TopN"]:
     """计算指定日期范围的 TopN 实例列表。
 
-    进程级并行：每天一个 TopN 实例，不同日期分配到不同进程。
-    线程级并行：每个 TopN 内部，多线程并行计算因子分数。
+    加载 runtime npz，批量计算所有因子分数，构建每日 TopN 实例。
     """
     if not backtest_datetime_list:
         return []
@@ -329,88 +262,124 @@ def compute_topn_range(
     factor_classes = factor_classes or DEFAULT_FACTOR_CLASSES
     first_d = backtest_datetime_list[0].strftime('%Y%m%d')
     last_d = backtest_datetime_list[-1].strftime('%Y%m%d')
+    core_logger.info(f"TopN 范围 {first_d}~{last_d}，加载 runtime npz...")
 
-    from utils.shared_memory import SharedMemoryCache
+    data = _load_runtime_npz(backtest_datetime_list)
+    if data is None:
+        raise FileNotFoundError(
+            f"未找到覆盖 {first_d}~{last_d} 的 runtime npz 文件，"
+            f"请先运行 python data/build_runtime.py"
+        )
 
-    testback_cache = SharedMemoryCache('testback_cache', compress_level=6)
-    cache_key = make_topn_range_cache_key(
-        backtest_datetime_list,
-        stock_list,
-        weights=weights,
-        factor_classes=factor_classes,
-        dividend_type=dividend_type,
-    )
+    npz_stocks = [str(s) for s in data['stock_codes']]
+    stock_indices = {c: i for i, c in enumerate(npz_stocks)}
+    valid_stocks = [s for s in stock_list if s in stock_indices]
 
-    cached = testback_cache.get(cache_key)
-    if cached and len(cached) == len(backtest_datetime_list):
-        core_logger.info(f"从缓存加载 TopN：{first_d}~{last_d}，{len(cached)} 天")
-        return cached
+    npz_dates = data['trade_dates']
+    date_to_idx = {}
+    for i, d in enumerate(npz_dates):
+        date_to_idx[d.astype('datetime64[D]').item()] = i
 
-    # 预计算因子元数据，避免在循环中重复实例化
-    factor_metadata = []
+    n_npz_dates = len(npz_dates)
+    date_indices = []
+    valid_dates = []
+    for dt in backtest_datetime_list:
+        d = dt.date() if hasattr(dt, 'date') else dt
+        di = date_to_idx.get(d)
+        if di is None:
+            continue
+        # 需要下一交易日作为执行日（trade_idx = di + 1），超出 npz 范围则跳过
+        if di + 1 >= n_npz_dates:
+            continue
+        date_indices.append(di)
+        valid_dates.append(dt)
+
+    if not valid_dates:
+        core_logger.warning("没有交易日落在 runtime npz 日期范围内")
+        return []
+
+    # 日期列表（Python date，用于 DataFrame index）
+    py_dates = []
+    for d in npz_dates:
+        ts = d.astype('datetime64[D]').item()
+        py_dates.append(ts if hasattr(ts, 'date') else ts)
+
+    t0 = time.time()
+
+    # 构建因子元数据
+    factor_meta = []
     for f_cls in factor_classes:
         f = f_cls()
         name = f.__class__.__name__
         if weights is not None and weights.get(name, 0.0) == 0:
             continue
-        fhash = hash_function_code(f.calc)
-        factor_metadata.append((name, fhash))
+        factor_meta.append((name, f))
 
-    # 检查缓存状态
-    topn_params = []
-    for d in backtest_datetime_list:
-        all_cached = True
-        for name, fhash in factor_metadata:
-            ck = _make_factor_cache_key(name, fhash, d, stock_list, dividend_type)
-            cached_factors = DiskCache.load_pickle(ck) or {}
-            if len(cached_factors) < len(stock_list):
-                all_cached = False
-                break
-        topn_params.append((d, all_cached))
+    # 批量计算所有因子分数
+    all_scores: dict[str, pd.DataFrame] = {}
+    for name, f in factor_meta:
+        panel = {
+            'stock_codes': npz_stocks,
+            'trade_dates': py_dates,
+            'open': data['open'],
+            'high': data.get('high', data['open']),
+            'low': data.get('low', data['close']),
+            'close': data['close'],
+            'volume': data['volume'],
+            'amount': data['amount'],
+            'issue_price': data['issue_price'],
+            'st_mask': data['st_mask'],
+            'total_share': data['total_share'],
+            'eps': data['eps'],
+            'roe': data['roe'],
+            'profit_yoy': data['profit_yoy'],
+            'revenue_yoy': data['revenue_yoy'],
+            'operating_cf_ps': data['operating_cf_ps'],
+            'gross_margin': data['gross_margin'],
+        }
+        scores_df = f.calc_batch(panel)
+        all_scores[name] = scores_df
 
-    uncached_dates = [p[0] for p in topn_params if not p[1]]
-    cached_dates = [p[0] for p in topn_params if p[1]]
+    core_logger.info(f"因子批量计算完成 ({time.time() - t0:.1f}s)")
 
-    core_logger.info(
-        f"TopN 范围 {first_d}~{last_d}：{len(cached_dates)} 天命中缓存，"
-        f"{len(uncached_dates)} 天需计算"
-    )
+    # 构建每日 TopN 实例
+    t1 = time.time()
+    # 预计算列索引数组，避免逐股 .iloc[] 调用
+    valid_stock_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
+    result = []
+    for i, dt in enumerate(valid_dates):
+        date_idx = date_indices[i]
+        precomputed: dict[str, dict[str, FactorResult]] = {}
+        for name in all_scores:
+            scores_row = all_scores[name].iloc[date_idx, valid_stock_cols].values
+            isnan = np.isnan(scores_row)
+            batch: dict[str, FactorResult] = {}
+            for j, s in enumerate(valid_stocks):
+                if not isnan[j]:
+                    batch[s] = FactorResult(score=float(scores_row[j]), err=None)
+                else:
+                    batch[s] = FactorResult(score=None, err="nan")
+            precomputed[name] = batch
 
-    result_topns = []
-    for d in cached_dates:
-        topn = TopN(stock_list, d, weights=weights, factor_classes=factor_classes, dividend_type=dividend_type)
-        result_topns.append(topn)
+        topn = TopN(valid_stocks, dt, weights=weights, factor_classes=factor_classes,
+                   dividend_type=dividend_type, _precomputed_scores=precomputed)
 
-    if uncached_dates:
-        worker_args_list = [
-            (stock_list, d, weights, factor_classes, dividend_type)
-            for d in uncached_dates
-        ]
-        n_workers = min(_MAX_TOPN_WORKERS, max(1, (os.cpu_count() or 4) - 2), len(worker_args_list))
-        uncached_topns = None
-        attempt_workers = n_workers
-        while uncached_topns is None:
-            try:
-                uncached_topns = _compute_topn_parallel(worker_args_list, attempt_workers)
-            except BrokenProcessPool:
-                if attempt_workers <= 2:
-                    core_logger.warning(
-                        "TopN 进程池异常退出，降级为当前进程串行计算剩余日期"
-                    )
-                    uncached_topns = _compute_topn_sequential(worker_args_list)
-                    break
-                next_workers = max(2, attempt_workers // 2)
-                core_logger.warning(
-                    f"TopN 进程池异常退出，降低并行度后重试: {attempt_workers} -> {next_workers}"
-                )
-                attempt_workers = next_workers
-        result_topns.extend(uncached_topns)
+        # 存储 trade_date 价格数据供回测执行层使用（signal_date + 1）
+        trade_idx = date_idx + 1
+        if trade_idx < n_npz_dates:
+            topn._trade_arrays = {
+                'open': data['open'][trade_idx],
+                'high': data['high'][trade_idx],
+                'low': data['low'][trade_idx],
+                'close': data['close'][trade_idx],
+                'pre_close': data['close'][trade_idx - 1],
+                'volume': data['volume'][trade_idx],
+                'st_mask': data['st_mask'][trade_idx],
+            }
+            topn._trade_stock_idx = stock_indices
 
-    result_topns.sort(key=lambda x: x.base_date)
+            topn.get_ordered_stocks(1, weights=weights, norm_method='rank')
+            result.append(topn)
 
-    if not testback_cache.put(cache_key, result_topns):
-        core_logger.warning(f"TopN 范围缓存写入失败：{cache_key}")
-    else:
-        core_logger.info(f"TopN 范围计算完成并缓存：{len(result_topns)} 天")
-
-    return result_topns
+    core_logger.info(f"TopN 实例构建完成 ({time.time() - t1:.1f}s), 共 {len(result)} 天")
+    return result

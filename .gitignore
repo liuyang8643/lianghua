@@ -1,31 +1,48 @@
-# Cached files
-.cache/
-*.log
-tmp_*
-
-# Python
-.venv/
+# ---- Python ----
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-*.so
-*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+dist/
+build/
 *.egg-info/
 
-# Temp files
-logs*/
-reports/
+# ---- Env / secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- Framework runtime ----
+.runs/
+output/
+logs/
+*.log
+*.pid
+*.png
+
+# ---- Data & Results ----
+data/
 results/
-*.pclprof
 
-# IDE
-.vscode/
+# ---- MCP runtime ----
+.mcp.json
+.playwright-mcp/
+**/.cache/
+
+# ---- Per-project runtime (projects/<name>/) ----
+projects/
+tests/
+
+# ---- Local Claude ----
+.claude/skills/
+.claude/settings.local.json
+.claude-runtime/
+
+# ---- IDE ----
 .idea/
-*.swp
-*.swo
-*~
-
-# secrets
-configs/env.py
+.vscode/
+.DS_Store

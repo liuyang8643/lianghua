@@ -2,30 +2,29 @@ import re
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache
 
+from utils.network import retry_on_network_error
+
 DAY_START = time(0, 0)
 MORNING_START = time(9, 30)
 MORNING_END = time(11, 30)
 AFTERNOON_START = time(13, 0)
 AFTERNOON_END = time(15, 0)
 
-def _fetch_xt_trading_calendar_state() -> tuple[frozenset[date], date | None, date | None]:
-  from xtquant import xtdata
+@retry_on_network_error(max_retries=1, delay=2.0)
+def _fetch_trading_calendar_state() -> tuple[frozenset[date], date | None, date | None]:
+  import akshare as ak
 
-  timestamps = xtdata.get_trading_dates('SH')
-  if not timestamps:
+  df = ak.tool_trade_date_hist_sina()
+  dates = sorted(set(df['trade_date']))
+  if not dates:
     return frozenset(), None, None
-
-  trading_dates = tuple(
-    datetime.fromtimestamp(ts / 1000).date()
-    for ts in timestamps
-  )
-  return frozenset(trading_dates), trading_dates[0], trading_dates[-1]
+  return frozenset(dates), dates[0], dates[-1]
 
 
 @lru_cache(maxsize=1)
 def _get_trading_calendar_state() -> tuple[frozenset[date], date | None, date | None]:
   try:
-    return _fetch_xt_trading_calendar_state()
+    return _fetch_trading_calendar_state()
   except Exception:
     return frozenset(), None, None
 

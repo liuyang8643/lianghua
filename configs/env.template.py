@@ -17,8 +17,3 @@ TRADE_ACCOUNT = '你的账户ID'
 LARK_APP_ID = "你的飞书机器人ID"
 LARK_APP_SECRET = "你的飞书机器人密钥"
 LARK_RECEIVE_ID = "你的飞书邮箱"
-
-# Cloudflare R2 配置
-S3_ENDPOINT = "https://bf90e1d5cc9c2d3364738f6a73d4ae2d.r2.cloudflarestorage.com"
-S3_ACCESS_KEY = "你的R2 Access Key"
-S3_SECRET_KEY = "你的R2 Secret Key"

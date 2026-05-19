@@ -76,15 +76,23 @@ class SharedMemoryCache(Generic[T]):
       # 序列化（可选压缩）
       serialized, is_compressed = self._serialize(data)
       data_size = len(serialized)
-      
+
       # 内存布局：[4字节大小] [1字节压缩标志] [数据]
       total_size = 4 + 1 + data_size
       shm_name = self._get_shm_name(key)
-      
-      # 释放旧共享内存
+
+      # 释放旧共享内存（包括其他进程遗留的）
       if key in self._shm_registry:
         self._cleanup_key(key)
-      
+      else:
+        # 清理其他进程遗留的同名共享内存
+        try:
+          shm_stale = shared_memory.SharedMemory(name=shm_name)
+          shm_stale.close()
+          shm_stale.unlink()
+        except FileNotFoundError:
+          pass
+
       # 创建新共享内存
       shm = shared_memory.SharedMemory(create=True, size=total_size, name=shm_name)
       

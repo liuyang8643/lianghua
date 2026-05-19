@@ -26,11 +26,19 @@ def build_manual_confirmation_text(
     sell_total = 0.0
     for item in sell_details:
       code = item.get('code')
+      name = item.get('name')
+      board = item.get('board')
       volume = int(item.get('volume', 0))
       est_price = float(item.get('est_price', 0.0))
       est_amount = float(item.get('est_amount', 0.0))
       sell_total += est_amount
-      lines.append(f"- {code}: {volume} 股, 估算价格={_fmt_float(est_price)}, 估算金额={_fmt_float(est_amount)}")
+      parts = [code]
+      if name:
+        parts.append(name)
+      if board:
+        parts.append(f"[{board}]")
+      label = ' '.join(parts)
+      lines.append(f"- {label}: {volume} 股, 估算价格={_fmt_float(est_price)}, 估算金额={_fmt_float(est_amount)}")
     lines.append(f"卖出估算总金额: {_fmt_float(sell_total)}")
     lines.append("")
 
@@ -39,11 +47,19 @@ def build_manual_confirmation_text(
     buy_total = 0.0
     for item in buy_details:
       code = item.get('code')
+      name = item.get('name')
+      board = item.get('board')
       shares = int(item.get('shares', 0))
       est_price = float(item.get('est_price', 0.0))
       est_amount = float(item.get('est_amount', 0.0))
       buy_total += est_amount
-      lines.append(f"- {code}: {shares} 股, 估算价格={_fmt_float(est_price)}, 估算金额={_fmt_float(est_amount)}")
+      parts = [code]
+      if name:
+        parts.append(name)
+      if board:
+        parts.append(f"[{board}]")
+      label = ' '.join(parts)
+      lines.append(f"- {label}: {shares} 股, 估算价格={_fmt_float(est_price)}, 估算金额={_fmt_float(est_amount)}")
     lines.append(f"买入估算总金额: {_fmt_float(buy_total)}")
     lines.append("")
 

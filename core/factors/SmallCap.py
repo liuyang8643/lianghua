@@ -1,44 +1,34 @@
 import numpy as np
-from core.factors.helpers import BaseFactor, FactorResult, FactorCtx
+import pandas as pd
+
+from core.factors.helpers import BaseFactor
 
 MIN_RAW_PRICE = 2.0
 
 
 class SmallCap(BaseFactor):
-  
   """小盘股因子 - 基于成交额近似市值"""
 
   hist_days = 60
 
-  def calc(self, ctx: FactorCtx) -> FactorResult:
-    from core.database.stock_name import is_st_at_date  # v3: date-aware cache
-    if is_st_at_date(ctx.code, ctx.base_time):
-      return FactorResult(score=None, err="st_stock")
+  def calc_batch(self, panel: dict) -> pd.DataFrame:
+    stock_codes = panel["stock_codes"]
+    trade_dates = panel["trade_dates"]
+    close = panel["open"]
+    amount = panel["amount"]
+    st_mask = panel["st_mask"]
 
-    try:
-      history_data = ctx.get_daily_data(60)
-    except ValueError as e:
-      return FactorResult(score=None, err=str(e))
+    amount_df = pd.DataFrame(amount, index=trade_dates, columns=stock_codes)
+    avg_amounts = amount_df.rolling(window=self.hist_days, min_periods=1).mean().values / 1e8
 
-    if history_data is None or history_data.empty:
-      return FactorResult(score=None, err="no data")
-
-    # 面值退市风险过滤：不复权收盘价 < 2 元直接排除
-    raw_close = ctx.get_raw_close()
-    if raw_close is not None and raw_close < MIN_RAW_PRICE:
-      return FactorResult(score=None, err=f"raw_price_{raw_close:.2f}<{MIN_RAW_PRICE}")
-
-    amount_col = history_data.get('amount')
-    if amount_col is None or amount_col.empty:
-      return FactorResult(score=None, err="no amount data")
-
-    avg_amount_yi = amount_col.values.mean() / 1e8
-
-    score = 100 * np.exp(-(avg_amount_yi / 5))
-
-    return FactorResult(
-      score=score,
-      err=None,
-      raw_value=avg_amount_yi,
-      metadata={'avg_amount_yi': avg_amount_yi}
+    base_valid = (
+      ~np.isnan(close)
+      & (close >= MIN_RAW_PRICE)
+      & ~st_mask
+      & ~np.isnan(avg_amounts)
     )
+
+    score = 100 * np.exp(-(avg_amounts / 5))
+    score[~base_valid] = np.nan
+
+    return pd.DataFrame(score, index=trade_dates, columns=stock_codes)

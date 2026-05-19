@@ -34,7 +34,4 @@ class StockTradingData(TypedDict):
   close: float  # 收盘价
   volume: float  # 成交量
   amount: float  # 成交额
-  settle: float  # 今结算
-  openInterest: float  # 持仓量
   preClose: float  # 前收盘价
-  suspendFlag: int  # 停牌标志，1表示停牌，0表示不停牌

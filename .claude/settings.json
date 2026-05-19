@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Edit(**/.claude/rules/**)",
+      "Write(**/.claude/rules/**)"
+    ]
+  },
+  "env": {
+    "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING": "1"
+  }
+}

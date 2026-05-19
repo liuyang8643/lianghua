@@ -5,6 +5,34 @@ from typing import NamedTuple
 
 from core.logger import core_logger
 
+
+def _fetch_delist_with_timeout(callable, label: str):
+  """带硬超时的退市数据获取"""
+  from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
+  try:
+    with ThreadPoolExecutor(max_workers=1) as executor:
+      future = executor.submit(callable)
+      return future.result(timeout=15)
+  except FutureTimeoutError:
+    core_logger.warning(f'{label} 请求超时 (15s)')
+    return None
+  except Exception as e:
+    core_logger.warning(f'{label} 请求失败: {e}')
+    return None
+
+
+def _fetch_sh_delist_raw():
+  """获取上交所退市股票原始数据"""
+  import akshare as ak
+  return _fetch_delist_with_timeout(lambda: ak.stock_info_sh_delist(), '上交所退市')
+
+
+def _fetch_sz_delist_raw():
+  """获取深交所退市股票原始数据"""
+  import akshare as ak
+  return _fetch_delist_with_timeout(lambda: ak.stock_info_sz_delist(), '深交所退市')
+
 class DelistStockInfo(NamedTuple):
   """退市股票信息"""
   name: str  # 股票简称
@@ -32,7 +60,7 @@ def get_delist_stock_info() -> dict[str, DelistStockInfo]:
 
     # 上交所退市股票
     try:
-      df = ak.stock_info_sh_delist()
+      df = _fetch_sh_delist_raw()
       for _, row in df.iterrows():
         code = f"{row['公司代码']}.SH"
         name = str(row.get('公司简称', ''))
@@ -57,7 +85,7 @@ def get_delist_stock_info() -> dict[str, DelistStockInfo]:
 
     # 深交所退市股票
     try:
-      df = ak.stock_info_sz_delist()
+      df = _fetch_sz_delist_raw()
       for _, row in df.iterrows():
         code = f"{row['证券代码']}.SZ"
         name = str(row.get('证券简称', ''))
