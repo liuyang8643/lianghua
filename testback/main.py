@@ -65,10 +65,10 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
 
   for r in results_list:
     key = _config_key(r['individual_config'])
-    state['fitness_cache'][key] = r.get('excess_sharpe', r['sharpe'])
+    state['fitness_cache'][key] = r['sharpe']
 
   if not state['population']:
-    results_list.sort(key=lambda r: r.get('excess_sharpe', r['sharpe']), reverse=True)
+    results_list.sort(key=lambda r: r['sharpe'], reverse=True)
     state['population'] = [r['individual_config'] for r in results_list[:population_size]]
 
   def get_fitness(config):
@@ -80,7 +80,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     unique_cfgs = {}
     for key, val in ga_cache.items():
       cfg = val.get('individual_config')
-      fit = val.get('excess_sharpe', val.get('sharpe', -999))
+      fit = val.get('sharpe', -999)
       if cfg is not None and fit > -900:
         unique_cfgs[key] = (cfg, fit)
     sorted_global = sorted(unique_cfgs.values(), key=lambda x: x[1], reverse=True)
@@ -104,7 +104,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     population_with_fitness = [(ind, fit) for ind in state['population']
                                if (fit := get_fitness(ind)) is not None]
     if not population_with_fitness:
-      population_with_fitness = [(r['individual_config'], r.get('excess_sharpe', r['sharpe'])) for r in results_list]
+      population_with_fitness = [(r['individual_config'], r['sharpe']) for r in results_list]
     population_with_fitness.sort(key=lambda x: x[1], reverse=True)
     parents = [ind for ind, _ in population_with_fitness[:population_size]]
 
@@ -532,7 +532,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
                      weights, buy_n, sell_m, temperatures, holding_period=None,
                      verify_config=None,
                      position_multipliers=None, list_dates_map=None,
-                     lightweight=False):
+                     lightweight=False, rebalance=True):
   """直接 numpy 回测，不创建 TopN 对象。lightweight=True 跳过明细组装，仅返回收益序列。"""
   from core.strategies.sizers.sizer import Sizer
 
@@ -610,6 +610,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
   if lightweight:
     _lw_daily_returns = []
     _lw_last_asset = account.init_cash
+    _daily_return_time = 0.0
 
   for i, dt in enumerate(valid_dates):
     signal_date = dt.date() if hasattr(dt, 'date') else dt
@@ -753,7 +754,51 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
           'signal_dividend_type': 'back', 'execution_dividend_type': 'none',
         })
 
+    if rebalance:
+      pos_snapshot = [(code, dict(pos)) for code, pos in account.positions.items() if code in prices]
+      if len(pos_snapshot) > 1:
+        pos_vals = {code: pos['volume'] * prices[code] for code, pos in pos_snapshot}
+        total_eq = account.current_cash + sum(pos_vals.values())
+        target = total_eq / len(pos_snapshot)
+
+        for code, pos in pos_snapshot:
+          cv = pos_vals[code]
+          if cv > target * 1.01:
+            sell_vol = int((cv - target) / prices[code] / 100) * 100
+            if 0 < sell_vol < pos['volume']:
+              si = stock_indices.get(code)
+              if si is not None:
+                ok, _ = _batch_limit_check(
+                  [code], [si], trade_idx, signal_date,
+                  board_type, base_ratio, list_tidx_arr,
+                  open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=False)
+                if ok[0]:
+                  account.sell_stock(code, sell_vol, prices[code], trade_date,
+                                    clear_reason='rebalance', signal_date=signal_date)
+
+        for code, pos in pos_snapshot:
+          if code not in account.positions:
+            continue
+          cv = account.positions[code]['volume'] * prices[code]
+          if cv < target * 0.99:
+            buy_vol = int((target - cv) / prices[code] / 100) * 100
+            if buy_vol > 0:
+              cost = buy_vol * prices[code]
+              fee = cost * (account.commission + account.transfer_fee + account.slippage)
+              if account.current_cash >= cost + fee:
+                si = stock_indices.get(code)
+                if si is not None:
+                  ok, _ = _batch_limit_check(
+                    [code], [si], trade_idx, signal_date,
+                    board_type, base_ratio, list_tidx_arr,
+                    open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=True)
+                  if ok[0]:
+                    account.buy_stock(code, buy_vol, prices[code], trade_date,
+                                     signal_date=signal_date)
+
     if lightweight:
+      import time as _time
+      _t0 = _time.perf_counter()
       mkt_val = sum(prices.get(c, 0.0) * p['volume'] for c, p in account.positions.items())
       total_asset = account.current_cash + mkt_val
       if _lw_last_asset > 0:
@@ -762,6 +807,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         daily_ret = 0.0
       _lw_daily_returns.append(daily_ret)
       _lw_last_asset = total_asset
+      _daily_return_time += _time.perf_counter() - _t0
     else:
       assets = account.calc_assets(trade_date, prices)
       prev_total_asset = daily_snapshots[-1]['total_asset'] if daily_snapshots else account.init_cash
@@ -796,6 +842,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
       'delist_count': 0, 'round_trip_count': 0, 'current_positions_count': 0,
       'skipped_buy_reasons': {}, 'skipped_sell_reasons': {},
       'final_asset': total_asset,
+      '_daily_return_time_sec': _daily_return_time,
     }
 
   final_signal_date = valid_dates[-1].date() if hasattr(valid_dates[-1], 'date') else valid_dates[-1]
@@ -1037,9 +1084,10 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
     verify_config=verify_config,
     position_multipliers=timing_multipliers,
     list_dates_map=list_dates_map,
+    rebalance=True,
   )
 
-  testback_logger.info(f"回测完成: 总收益={result['total_return']:.2f}%")
+  testback_logger.info(f"回测完成: 总收益={result['total_return']:.2f}%, 日收益计算耗时={result.get('_daily_return_time_sec', 0):.3f}s")
 
   signal_date_strs = [d.strftime('%Y-%m-%d') for d in signal_dates]
   trade_date_strs = [d.strftime('%Y-%m-%d') for d in trade_dates]
@@ -1205,7 +1253,7 @@ def _worker_evaluate(args):
       temperatures=config['temperatures'],
       holding_period=config.get('holding_period'),
       position_multipliers=timing_multipliers, list_dates_map=list_dates_map,
-      lightweight=True)
+      lightweight=True, rebalance=True)
 
     # 释放大内存，worker 常驻复用
     del all_arrays, all_scores, data
@@ -1213,42 +1261,33 @@ def _worker_evaluate(args):
 
     metrics = _compute_metrics_simple(r['daily_returns'])
     sharpe = metrics['sharpe']
-    # 超额夏普 vs 中证1000
-    bench_vals = index_data['sh000852'].astype(float)
-    bench_rets = np.diff(bench_vals) / bench_vals[:-1] * 100.0
-    excess = np.array(r['daily_returns'], dtype=float)[:len(bench_rets)] - bench_rets[:len(r['daily_returns'])]
-    excess = excess[np.isfinite(excess)]
-    if len(excess) >= 2:
-      em, es = float(np.mean(excess)), float(np.std(excess, ddof=1))
-      excess_sharpe = float(em / es * np.sqrt(252.0)) if es > 0 else 0.0
-    else:
-      excess_sharpe = 0.0
     annualized = metrics['annualized']
     dd = metrics['max_drawdown']
     total_return = r['total_return']
     cleared_count = r['cleared_positions_count']
+    daily_ret_time = r.get('_daily_return_time_sec', 0.0)
   except Exception:
     import traceback
     _err = traceback.format_exc()
     sys.stderr.write(_err)
     sys.stderr.flush()
     sharpe = -999.0
-    excess_sharpe = -999.0
     total_return = -999.0
     cleared_count = 0
     dd = 0.0
     annualized = 0.0
+    daily_ret_time = 0.0
 
   return {
     'individual_config': config,
     'total_return': total_return,
     'sharpe': sharpe,
-    'excess_sharpe': excess_sharpe,
     'annualized': annualized,
     'max_drawdown': dd,
     'cleared_positions_count': cleared_count,
     'current_positions_count': 0,
     '_error': locals().get('_err', None),
+    '_daily_return_time_sec': daily_ret_time,
   }
 
 
@@ -1468,7 +1507,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     name, entry = _factor_worker(wargs)
     info[name] = entry
     score_keys.add(name)
-  testback_logger.info(f"29 因子计算完成 ({time.time() - t_f_all:.1f}s)")
+  testback_logger.info(f"{len(factor_classes)} 因子计算完成 ({time.time() - t_f_all:.1f}s)")
 
   # 共用 list_dates
   list_dates_full = _compute_list_dates(npz_stocks, data['open'], npz_dates)
@@ -1543,8 +1582,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
       cache_data = {json_mod.dumps(_config_key(v['individual_config']), ensure_ascii=False): v for v in cache_data}
     for v in cache_data.values():
       v.setdefault('sharpe', v.get('fitness', -999))
-      v.setdefault('excess_sharpe', v.get('sharpe', -999))
-    sorted_results = sorted(cache_data.values(), key=lambda v: v.get('excess_sharpe', v.get('sharpe', -999)), reverse=True)
+    sorted_results = sorted(cache_data.values(), key=lambda v: v.get('sharpe', -999), reverse=True)
     next_configs = [v['individual_config'] for v in sorted_results[:2 * population_size]]
     testback_logger.info(f"热启动: 从 {args.warm_start} 加载 top {len(next_configs)} 个种子配置 (共 {len(cache_data)} 条缓存)")
   else:
@@ -1589,15 +1627,13 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
 
       if not is_debug:
         # 训练集统计
-        excess_sharpes = [r.get('excess_sharpe', r['sharpe']) for r in results_list]
         sharpes = [r['sharpe'] for r in results_list]
-        best_idx = max(range(len(results_list)), key=lambda i: excess_sharpes[i])
+        best_idx = max(range(len(results_list)), key=lambda i: sharpes[i])
         best = results_list[best_idx]
         best_cfg = best['individual_config']
-        best_m = {'sharpe': best['sharpe'], 'excess_sharpe': best.get('excess_sharpe', 0),
+        best_m = {'sharpe': best['sharpe'],
                   'annualized': best['annualized'], 'max_drawdown': best['max_drawdown']}
         avg_sharpe = sum(sharpes) / len(sharpes)
-        avg_excess = sum(r.get('excess_sharpe', 0) for r in results_list) / len(results_list)
         avg_ann = sum(r['annualized'] for r in results_list) / len(results_list)
         avg_dd = sum(r['max_drawdown'] for r in results_list) / len(results_list)
 
@@ -1692,16 +1728,16 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
                 testback_logger.warning(f"保存测试集缓存失败: {e}")
 
           testback_logger.info(
-            f"GA gen{generation + 1}: 训练Sharpe={best_m['sharpe']:.3f}/{avg_sharpe:.3f}(超额={best_m['excess_sharpe']:.3f}/{avg_excess:.3f}) | "
+            f"GA gen{generation + 1}: 训练Sharpe={best_m['sharpe']:.3f}/{avg_sharpe:.3f} | "
             f"验证Sharpe={train_best_val_m['sharpe']:.3f} | "
             f"测试Sharpe={_test_train_best_m['sharpe']:.3f} | "
-            f"{_format_pool(best_cfg.get('stock_pool'))}, hp={best_cfg.get('holding_period')}, pos={best_cfg['buy_n']}{_format_timing(best_cfg)} | "
+            f"{_format_pool(best_cfg.get('stock_pool'))}, hp={best_cfg.get('holding_period')}, pos={best_cfg['buy_n']}{_format_timing(best_cfg)}, rebal={'ON' if best_cfg.get('rebalance') else 'OFF'} | "
             f"{', '.join(f'{k}={v:.1f}' for k, v in sorted_w)}")
           if best_live_cfg is not None:
             live_sorted_w = sorted(best_live_cfg['weights'].items(), key=lambda x: -abs(x[1]))
             testback_logger.info(
               f"实盘: total={best_live_total:.3f}(train={best_live_train_sharpe:.3f}/val={best_live_val_sharpe:.3f}) test={live_test_sharpe:.3f} | "
-              f"{_format_pool(best_live_cfg.get('stock_pool'))}, hp={best_live_cfg.get('holding_period')}, pos={best_live_cfg['buy_n']}{_format_timing(best_live_cfg)} | "
+              f"{_format_pool(best_live_cfg.get('stock_pool'))}, hp={best_live_cfg.get('holding_period')}, pos={best_live_cfg['buy_n']}{_format_timing(best_live_cfg)}, rebal={'ON' if best_live_cfg.get('rebalance') else 'OFF'} | "
               f"{', '.join(f'{k}={v:.1f}' for k, v in live_sorted_w)}")
       if not results_list:
         raise RuntimeError(f"{'调试模式' if is_debug else '第 ' + str(generation + 1) + ' 代'}未获得任何有效回测结果")
@@ -1783,7 +1819,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     timing_str = _format_timing(best_cfg)
     testback_logger.info(f"\n最优参数已保存:")
     testback_logger.info(f"  - {output_dir / 'best_individual_config.json'}")
-    testback_logger.info(f"最优夏普率: {best_fitness:.3f}, 参数: [{w_str}], pool={_format_pool(best_cfg.get('stock_pool'))}, pos={best_cfg['buy_n']}{timing_str}")
+    testback_logger.info(f"最优夏普率: {best_fitness:.3f}, 参数: [{w_str}], pool={_format_pool(best_cfg.get('stock_pool'))}, pos={best_cfg['buy_n']}{timing_str}, rebal={'ON' if best_cfg.get('rebalance') else 'OFF'}")
     testback_logger.info(f"最优buy_n: {best_config['buy_n']}, sell_m: {best_config['sell_m']}")
 
     sharpes = [r['sharpe'] for r in all_results if r.get('sharpe') is not None]

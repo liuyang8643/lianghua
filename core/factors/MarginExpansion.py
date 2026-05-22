@@ -1,6 +1,6 @@
 import numpy as np
 
-class PureProfitYoyAccel:
+class MarginExpansion:
   """利润率扩张加速度 — (profit_yoy - revenue_yoy) 纯因子"""
   hist_days = 0
 

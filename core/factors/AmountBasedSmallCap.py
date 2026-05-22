@@ -3,7 +3,7 @@ import numpy as np
 MIN_RAW_PRICE = 2.0
 
 
-class SmallCap:
+class AmountBasedSmallCap:
   """小盘股因子 - 基于成交额近似市值"""
 
   hist_days = 60

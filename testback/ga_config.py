@@ -3,57 +3,19 @@ from copy import deepcopy
 from itertools import combinations
 from pathlib import Path
 
-
 import numpy as np
 import yaml
 
-from core.factors.AmountBasedSmallCap import AmountBasedSmallCap
 from core.factors.TrueMarketCap import TrueMarketCap
-from core.factors.TMC_MarginExpansion import TMC_MarginExpansion
+from core.factors.AmountBasedSmallCap import AmountBasedSmallCap
 from core.factors.MarginExpansion import MarginExpansion
-from core.factors.TMC_ReversalProfitGrowth10D import TMC_ReversalProfitGrowth10D
-from core.factors.TMC_AdditiveBlend import TMC_AdditiveBlend
-from core.factors.TMC_GARP_Mult import TMC_GARP_Mult
-from core.factors.TMC_ProfitYoy_25_LowVol import TMC_ProfitYoy_25_LowVol
-from core.factors.ShortTermReversal10D import ShortTermReversal10D
 from core.factors.CashFlowQuality import CashFlowQuality
-from core.factors.LowTurnover20D import LowTurnover20D
-from core.factors.ADX14Trend import ADX14Trend
-from core.factors.CloseMom21D import CloseMom21D
-from core.factors.CCI14 import CCI14
-from core.factors.BB_PercentB import BB_PercentB
-from core.factors.OvernightGap1D import OvernightGap1D
-from core.factors.OBVRateOfChange10D import OBVRateOfChange10D
-from core.factors.LowATR14 import LowATR14
-from core.factors.PricePosition256D import PricePosition256D
-from core.factors.EWMADeviation import EWMADeviation
-from core.factors.AroonOscillator14 import AroonOscillator14
-from core.factors.ProfitYoy import ProfitYoy
-from core.factors.ROE import ROE
-from core.factors.EarningsYield import EarningsYield
-from core.factors.MACDHistogram import MACDHistogram
-from core.factors.TRIX import TRIX
-from core.factors.KDJ_Spread import KDJ_Spread
-from core.factors.VolumeRatio5D import VolumeRatio5D
-from core.factors.SAR_Distance import SAR_Distance
-from core.factors.GrossMargin import GrossMargin
-from core.factors.CashFlowYield import CashFlowYield
-from core.factors.RevenueGrowth import RevenueGrowth
 
 _FACTOR_REGISTRY = {
     cls.__name__: cls
     for cls in [
-        AmountBasedSmallCap, TrueMarketCap,
-        ShortTermReversal10D, CashFlowQuality,
-        TMC_MarginExpansion, MarginExpansion,
-        TMC_ReversalProfitGrowth10D, TMC_AdditiveBlend, TMC_GARP_Mult,
-        TMC_ProfitYoy_25_LowVol,
-        LowTurnover20D,
-        ADX14Trend, CloseMom21D, CCI14, BB_PercentB,
-        OvernightGap1D, OBVRateOfChange10D, LowATR14, PricePosition256D, EWMADeviation,
-        AroonOscillator14, ProfitYoy, ROE, EarningsYield,
-        MACDHistogram, TRIX, KDJ_Spread, VolumeRatio5D, SAR_Distance,
-        GrossMargin, CashFlowYield, RevenueGrowth,
+        TrueMarketCap, AmountBasedSmallCap,
+        MarginExpansion, CashFlowQuality,
     ]
 }
 
@@ -191,87 +153,44 @@ def sample_position_count(profile_name: str | None = None):
     return _sample_from_search_space('position_count', profile_name)
 
 
-def sample_holding_period(profile_name: str | None = None, current_value=None):
-    return _sample_from_search_space('holding_period', profile_name)
-
-
-def sample_stock_pool(profile_name: str | None = None, current_value=None):
+def sample_stock_pool(profile_name: str | None = None):
     return _sample_from_search_space('stock_pool', profile_name)
 
 
-def sample_factor_choice(profile_name: str | None = None, current_value=None):
-    return _sample_from_search_space('factor_choice', profile_name)
+def sample_holding_period(profile_name: str | None = None):
+    return _sample_from_search_space('holding_period', profile_name)
 
 
-def sample_timing_base(profile_name: str | None = None, current_value=None):
+def sample_timing_base(profile_name: str | None = None):
     return _sample_from_search_space('timing_base', profile_name)
 
 
-def sample_timing_leverage(profile_name: str | None = None, current_value=None):
+def sample_timing_leverage(profile_name: str | None = None):
     return _sample_from_search_space('timing_leverage', profile_name)
 
 
-def sample_timing_direction(profile_name: str | None = None, current_value=None):
+def sample_timing_direction(profile_name: str | None = None):
     return _sample_from_search_space('timing_direction', profile_name)
 
 
-def sample_timing_enabled(profile_name: str | None = None, current_value=None):
+def sample_timing_enabled(profile_name: str | None = None):
     return _sample_from_search_space('timing_enabled', profile_name)
 
 
-def sample_timing_window(profile_name: str | None = None, current_value=None):
+def sample_timing_window(profile_name: str | None = None):
     return _sample_from_search_space('timing_window', profile_name)
 
 
-def sample_timing_index(profile_name: str | None = None, current_value=None):
+def sample_timing_index(profile_name: str | None = None):
     return _sample_from_search_space('timing_index', profile_name)
 
 
-def build_individual_config(position_count: int, weights: dict | None = None,
-                            factor_choice: str | None = None, stock_pool=None,
-                            holding_period=None,
-                            timing_base=None, timing_leverage=None, timing_direction=None,
-                            timing_enabled=None, timing_window=None, timing_index=None,
-                            profile_name: str | None = None) -> dict:
-    profile = get_profile(profile_name)
-    if factor_choice:
-        other = [f for f in profile['factor_classes'] if f.__name__ != factor_choice][0]
-        weights = {factor_choice: 1.0, other.__name__: 0.0}
-    elif weights is None:
-        spaces = get_profile_weight_search_spaces(profile_name)
-        weights = sample_weights(profile_name) if spaces else get_profile_fixed_weights(profile_name)
-    cfg = {
-        'weights': weights,
-        'buy_n': position_count,
-        'sell_m': position_count,
-        'temperatures': get_profile_fixed_temperatures(profile_name),
-    }
-    for k, v in {'factor_choice': factor_choice, 'stock_pool': stock_pool,
-                 'holding_period': holding_period,
-                 'timing_base': timing_base, 'timing_leverage': timing_leverage, 'timing_direction': timing_direction,
-                 'timing_enabled': timing_enabled, 'timing_window': timing_window, 'timing_index': timing_index}.items():
-        if v is not None:
-            cfg[k] = v
-    return cfg
+def sample_factor_choice(profile_name: str | None = None):
+    space = get_profile_search_spaces(profile_name).get('factor_choice')
+    return _sample_from_space(space) if space else None
 
 
-def generate_initial_configs(size: int, profile_name: str | None = None) -> list[dict]:
-    return [build_individual_config(
-        position_count=sample_position_count(profile_name),
-        factor_choice=sample_factor_choice(profile_name),
-        stock_pool=sample_stock_pool(profile_name),
-        holding_period=sample_holding_period(profile_name),
-        timing_base=sample_timing_base(profile_name),
-        timing_leverage=sample_timing_leverage(profile_name),
-        timing_direction=sample_timing_direction(profile_name),
-        timing_enabled=sample_timing_enabled(profile_name),
-        timing_window=sample_timing_window(profile_name),
-        timing_index=sample_timing_index(profile_name),
-        profile_name=profile_name,
-    ) for _ in range(size)]
-
-
-def repair_config(config: dict, profile_name: str | None = None) -> dict:
+def repair_config(config: dict, profile_name: str | None = None) -> bool:
     """校验并修复 checkpoint 恢复的配置，将不在当前搜索空间内的参数重新随机化。"""
     import random
     spaces = get_profile_search_spaces(profile_name)
@@ -280,7 +199,6 @@ def repair_config(config: dict, profile_name: str | None = None) -> dict:
 
     changed = False
 
-    # position_count → buy_n / sell_m
     pos_space = spaces.get('position_count')
     if pos_space and config.get('buy_n') not in pos_space:
         config['buy_n'] = random.choice(pos_space)
@@ -303,7 +221,6 @@ def repair_config(config: dict, profile_name: str | None = None) -> dict:
             config[cfg_key] = random.choice(space)
             changed = True
 
-    # 修复权重：删除不在当前配置中的因子，补全缺失的因子
     old_weights = config.get('weights', {})
     if weight_spaces:
         new_weights = {}
@@ -322,3 +239,87 @@ def repair_config(config: dict, profile_name: str | None = None) -> dict:
             changed = True
 
     return changed
+
+
+def build_individual_config(
+    position_count: int | None = None,
+    weights: dict | None = None,
+    factor_choice: str | None = None,
+    stock_pool: list | None = None,
+    holding_period: int | None = None,
+    timing_base: float | None = None,
+    timing_leverage: float | None = None,
+    timing_direction: int | None = None,
+    timing_enabled: bool | None = None,
+    timing_window: int | None = None,
+    timing_index: str | None = None,
+    profile_name: str | None = None,
+) -> dict:
+    resolved_choice = factor_choice or None
+    if weights is None:
+        if resolved_choice and isinstance(resolved_choice, str):
+            weights = {resolved_choice: 1.0}
+        else:
+            weights = get_profile_fixed_weights(profile_name)
+    else:
+        weights = dict(weights)
+
+    if factor_choice:
+        filtered = {}
+        for k, v in weights.items():
+            if k == factor_choice:
+                filtered[k] = v
+        weights = filtered
+
+    config: dict = {
+        'weights': weights,
+        'buy_n': position_count if position_count is not None else sample_position_count(profile_name=profile_name),
+        'sell_m': position_count if position_count is not None else sample_position_count(profile_name=profile_name),
+        'temperatures': get_profile_fixed_temperatures(profile_name),
+    }
+    if stock_pool:
+        config['stock_pool'] = stock_pool
+    if holding_period:
+        config['holding_period'] = holding_period
+    config['timing_enabled'] = bool(timing_enabled)
+    if timing_enabled:
+        if timing_base is not None:
+            config['timing_base'] = timing_base
+        if timing_leverage is not None:
+            config['timing_leverage'] = timing_leverage
+        if timing_direction is not None:
+            config['timing_direction'] = timing_direction
+        if timing_window is not None:
+            config['timing_window'] = timing_window
+        if timing_index is not None:
+            config['timing_index'] = timing_index
+    config['rebalance'] = True
+    return config
+
+
+def generate_initial_configs(count: int, profile_name: str | None = None) -> list[dict]:
+    import random
+    profile = get_profile(profile_name)
+    has_weight = profile.get('weight_search_spaces') is not None
+    has_factor_choice = profile.get('factor_choice_space') is not None
+    search_spaces = get_profile_search_spaces(profile_name)
+
+    configs = []
+    for _ in range(count):
+        pc = sample_position_count(profile_name=profile_name)
+        fc = sample_factor_choice(profile_name=profile_name) if has_factor_choice else None
+        sp = sample_stock_pool(profile_name=profile_name) if 'stock_pool' in search_spaces else None
+        hp = sample_holding_period(profile_name=profile_name) if 'holding_period' in search_spaces else None
+        te = sample_timing_enabled(profile_name=profile_name) if 'timing_enabled' in search_spaces else None
+        tb = sample_timing_base(profile_name=profile_name) if te else None
+        tl = sample_timing_leverage(profile_name=profile_name) if te else None
+        td = sample_timing_direction(profile_name=profile_name) if te else None
+        tw = sample_timing_window(profile_name=profile_name) if te else None
+        ti = sample_timing_index(profile_name=profile_name) if te else None
+        w = sample_weights(profile_name=profile_name) if has_weight else None
+        configs.append(build_individual_config(pc, weights=w, factor_choice=fc, stock_pool=sp,
+                                                holding_period=hp, timing_base=tb, timing_leverage=tl,
+                                                timing_direction=td, timing_enabled=te,
+                                                timing_window=tw, timing_index=ti,
+                                                profile_name=profile_name))
+    return configs

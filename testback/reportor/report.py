@@ -1055,7 +1055,6 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     buy_n = config.get('buy_n', 0)
     sell_m = config.get('sell_m', 0)
     temperatures = config.get('temperatures', {})
-    freeze_days = config.get('freeze_days', 0)
     verify_config = report_data.get('verify_config', {}) or {}
     report_metadata = report_data.get('report_metadata', {}) or {}
 
@@ -1198,7 +1197,7 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
 <title>回测报告 - {html_escape(period_str)}</title><link rel="icon" href="data:,"><link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css"><script src="https://unpkg.com/@popperjs/core@2/dist/umd/popper.min.js"></script><script src="https://unpkg.com/tippy.js@6/dist/tippy-bundle.umd.min.js"></script><script src="https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js"></script><style>{styles}</style></head>
 <body><div class="container">
 <div class="report-header"><div class="report-title">回测报告</div><div class="report-subtitle">WBR 量化交易系统 · T-1 信号 / T 日开盘执行 详细报告</div><div class="report-meta"><span>信号周期: {html_escape(signal_period_str)}</span><span>执行周期: {html_escape(trade_period_str or period_str)}</span><span>调仓日数: {trade_days}</span><span>初始资金: {_fmt_money(init_cash)}</span><span>最终资产: {_fmt_money(final_asset)}</span><span>生成时间: {html_escape(generated_time)}</span></div></div>
-<div class="config-box"><strong>因子权重:</strong> {weights_html}<br><strong>温度参数:</strong> {temps_html}<br><strong>调仓配置:</strong> buy_n={buy_n}, sell_m={sell_m} &nbsp;|&nbsp;<strong>冻结天数:</strong> {freeze_days} 交易日<br><strong>调仓规则:</strong> 信号={html_escape(signal_timing)} &nbsp;|&nbsp; 执行={html_escape(trade_timing)} &nbsp;|&nbsp; 价格字段={html_escape(price_field)}<br><strong>复权口径:</strong> 信号={html_escape(signal_dividend_type)} &nbsp;→&nbsp; 执行={html_escape(execution_dividend_type)} &nbsp;|&nbsp;<strong>实际买入次数:</strong> {metrics.get('executed_buy_count', 0)} &nbsp;|&nbsp;<strong>实际卖出次数:</strong> {metrics.get('executed_sell_count', 0)} &nbsp;|&nbsp;<strong>完整 round-trip 数:</strong> {metrics.get('round_trip_count', 0)}</div>
+<div class="config-box"><strong>因子权重:</strong> {weights_html}<br><strong>温度参数:</strong> {temps_html}<br><strong>调仓配置:</strong> buy_n={buy_n}, sell_m={sell_m}<br><strong>调仓规则:</strong> 信号={html_escape(signal_timing)} &nbsp;|&nbsp; 执行={html_escape(trade_timing)} &nbsp;|&nbsp; 价格字段={html_escape(price_field)}<br><strong>复权口径:</strong> 信号={html_escape(signal_dividend_type)} &nbsp;→&nbsp; 执行={html_escape(execution_dividend_type)} &nbsp;|&nbsp;<strong>实际买入次数:</strong> {metrics.get('executed_buy_count', 0)} &nbsp;|&nbsp;<strong>实际卖出次数:</strong> {metrics.get('executed_sell_count', 0)} &nbsp;|&nbsp;<strong>完整 round-trip 数:</strong> {metrics.get('round_trip_count', 0)}</div>
 {verify_notice_html}
 <div class="card"><div class="card-title">核心指标</div><div class="metrics-grid">{metric_cards}</div></div>
 <div class="card"><div class="card-title">分年度指标</div>{_build_per_year_table(per_year_metrics)}</div>

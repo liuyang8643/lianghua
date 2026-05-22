@@ -315,43 +315,35 @@ class StockAccountMocker:
     ))
 
   def calc_position_values(self, prices: dict = None):
-    """ 获取持仓市值
-
-    Args:
-        prices: 已预取的价格字典 {code: price}，优先使用，避免重复查询缓存
-    """
+    """获取持仓市值，直接构造返回值避免 **pos dict 展开。"""
     res = []
     for code, pos in self.positions.items():
-      price = None
-      if prices is not None:
-        price = prices.get(code)
+      price = prices.get(code) if prices is not None else None
       if price is not None:
-        res.append(
-          {
-            **pos,
-            'current_price': price,
-            'current_value': price * pos['volume']
-          }
-        )
+        res.append({
+          'code': pos['code'], 'volume': pos['volume'], 'cost': pos['cost'],
+          'commission': pos['commission'], 'buy_date': pos['buy_date'],
+          'buy_signal_date': pos['buy_signal_date'], 'buy_trade_date': pos['buy_trade_date'],
+          'avg_price': pos['avg_price'], 'price_field': pos['price_field'],
+          'signal_dividend_type': pos['signal_dividend_type'],
+          'execution_dividend_type': pos['execution_dividend_type'],
+          'current_price': price, 'current_value': price * pos['volume'],
+        })
     return res
 
   def get_position(self, code: str):
     """ 获取指定股票持仓 """
     return self.positions.get(code)
 
-  def calc_assets(self, cur_time: datetime, prices: dict = None):
-    """ 计算资产
-
-    Args:
-        cur_time: 当前时间
-        prices: 已预取的价格字典 {code: price}，优先使用
-    """
-    market_value = sum([pos['current_value'] for pos in self.calc_position_values(prices)])
+  def calc_assets(self, cur_time, prices: dict = None):
+    """计算资产。cur_time 可为 date 或 datetime。"""
+    market_value = sum(pos['current_value'] for pos in self.calc_position_values(prices))
     total_asset = self.current_cash + market_value
 
     if self._last_total_asset > 0:
-        daily_return = (total_asset - self._last_total_asset) / self._last_total_asset * 100
-        self.daily_returns[cur_time.date()] = daily_return
+      daily_return = (total_asset - self._last_total_asset) / self._last_total_asset * 100
+      cur_date = cur_time.date() if hasattr(cur_time, 'date') else cur_time
+      self.daily_returns[cur_date] = daily_return
 
     self._last_total_asset = total_asset
 

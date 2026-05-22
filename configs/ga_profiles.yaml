@@ -1,5 +1,5 @@
-version: "2026-05-19"
-default_profile: full_search
+version: "2026-05-23"
+default_profile: core4
 
 mode_configs:
   single:
@@ -24,69 +24,25 @@ mode_configs:
     desc: GA优化模式（默认）
 
 search_spaces:
-  position_count: [50]
+  position_count: [10, 20, 30, 40, 50]
   holding_period: [1]
   board_prefixes: [60, 00, 30, 688]
-  timing_base: [0.3, 0.4, 0.5, 0.6, 0.7]
-  timing_leverage: [1, 5, 10, 15, 20]
-  timing_window: [3, 5, 10, 15, 20, 30, 45, 60]
+  timing_base: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+  timing_leverage: [0.5, 1, 2, 3, 5, 8, 10, 12, 15, 20, 25, 30, 40, 50]
+  timing_window: [2, 3, 5, 7, 10, 15, 20, 25, 30, 45, 60, 90, 120]
   timing_direction: [1, -1]
   timing_index: [sh000300, sh000905, sh000852]
   timing_enabled: [true, false]
   holding_period: [1]
 
 profiles:
-  smallcap_st:
-    desc: AmountBasedSmallCap-only GA profile
-    factor_classes: [AmountBasedSmallCap]
-    search_spaces: [position_count]
-    preload_start: 2010-01-01
-    preload_end: 2026-01-01
-
-  reversal_st:
-    desc: ShortTermReversal10D single-factor profile
-    factor_classes: [ShortTermReversal10D]
-    search_spaces: [position_count]
-    preload_start: 2010-01-01
-    preload_end: 2026-01-01
-
-  cf_quality_st:
-    desc: CashFlowQuality single-factor profile
-    factor_classes: [CashFlowQuality]
-    search_spaces: [position_count]
-    preload_start: 2010-01-01
-    preload_end: 2026-01-01
-
-  smallcap_g2a_roe2x_bottom10:
-    desc: TrueMarketCap single-factor profile (was SmallCapDailyMVMaskRoe2xBottom10, moved to bark)
-    factor_classes: [TrueMarketCap]
-    search_spaces: [position_count]
-    preload_start: 2010-01-01
-    preload_end: 2026-01-01
-
-  tmc_g2a_timing:
-    desc: TrueMarketCap 单因子 + stock_pool + 大盘择时
-    factor_classes: [TrueMarketCap]
-    factor_choice_space: [TrueMarketCap]
+  core4:
+    desc: 4因子核心 — size×2 + quality×1 + margin×1
+    factor_classes: [
+      TrueMarketCap, AmountBasedSmallCap,
+      MarginExpansion, CashFlowQuality,
+    ]
+    weight_range: [-1.0, 1.0, 0.1]
     search_spaces: [position_count, stock_pool, timing_base, timing_leverage, timing_direction, timing_enabled, timing_window, timing_index]
     preload_start: 2010-01-01
     preload_end: 2020-12-31
-
-  full_search:
-    desc: 全因子权重搜索 — 29因子 + 大盘择时，权重[-1,1]步长0.1
-    factor_classes: [
-      AmountBasedSmallCap, TrueMarketCap,
-      ShortTermReversal10D, CashFlowQuality,
-      TMC_MarginExpansion, MarginExpansion,
-      TMC_ReversalProfitGrowth10D, TMC_AdditiveBlend, TMC_GARP_Mult,
-      TMC_ProfitYoy_25_LowVol,
-      LowTurnover20D,
-      ADX14Trend, CloseMom21D, CCI14, BB_PercentB,
-      OvernightGap1D, OBVRateOfChange10D, LowATR14, PricePosition256D, EWMADeviation,
-      AroonOscillator14, ProfitYoy, ROE, EarningsYield,
-      MACDHistogram, TRIX, KDJ_Spread, VolumeRatio5D, SAR_Distance,
-    ]
-    weight_range: [-1.0, 1.0, 0.1]
-    search_spaces: [position_count, stock_pool, holding_period, timing_base, timing_leverage, timing_direction, timing_enabled, timing_window, timing_index]
-    preload_start: 2010-01-01
-    preload_end: 2018-12-31

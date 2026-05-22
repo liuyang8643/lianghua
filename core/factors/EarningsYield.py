@@ -2,7 +2,7 @@ import numpy as np
 
 MIN_PRICE = 2.0
 
-class EPValuation:
+class EarningsYield:
   """盈利率估值: eps/open, 高EP=低估值=高分."""
   hist_days = 2
 

@@ -5,12 +5,12 @@ from typing import Dict, List, Optional, TypedDict
 
 import numpy as np
 
-from core.factors.SmallCap import SmallCap
+from core.factors.AmountBasedSmallCap import AmountBasedSmallCap
 from utils.stock.format import format_qmt_date
 from ..logger import core_logger
 from .runtime import load_runtime_npz
 
-DEFAULT_FACTOR_CLASSES = [SmallCap]
+DEFAULT_FACTOR_CLASSES = [AmountBasedSmallCap]
 
 _load_runtime_npz = load_runtime_npz
 
