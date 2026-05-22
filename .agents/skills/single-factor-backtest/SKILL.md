@@ -28,12 +28,12 @@ description: 在 WBR 中用 `testback/ga.py --mode single` 回测某个单因子
   "ga_profile": "smallcap_only",
   "individual_config": {
     "weights": {
-      "SmallCap": 1.0
+      "AmountBasedSmallCap": 1.0
     },
     "buy_n": 30,
     "sell_m": 30,
     "temperatures": {
-      "SmallCap": 1.0
+      "AmountBasedSmallCap": 1.0
     }
   }
 }

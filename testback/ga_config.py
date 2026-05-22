@@ -10,12 +10,26 @@ from core.factors.TrueMarketCap import TrueMarketCap
 from core.factors.AmountBasedSmallCap import AmountBasedSmallCap
 from core.factors.MarginExpansion import MarginExpansion
 from core.factors.CashFlowQuality import CashFlowQuality
+from core.factors.IdioVol import IdioVol
+from core.factors.MAX5 import MAX5
+from core.factors.ShortTermReversal import ShortTermReversal
+from core.factors.AmihudIlliquidity import AmihudIlliquidity
+from core.factors.DownsideDeviation import DownsideDeviation
+from core.factors.TurnoverMean import TurnoverMean
+from core.factors.VolumeCV import VolumeCV
+from core.factors.DailyRange import DailyRange
+from core.factors.ProfitStability import ProfitStability
+from core.factors.ShareExpansion import ShareExpansion
 
 _FACTOR_REGISTRY = {
     cls.__name__: cls
     for cls in [
         TrueMarketCap, AmountBasedSmallCap,
         MarginExpansion, CashFlowQuality,
+        IdioVol, MAX5, ShortTermReversal,
+        AmihudIlliquidity, DownsideDeviation, TurnoverMean,
+        VolumeCV, DailyRange,
+        ProfitStability, ShareExpansion,
     ]
 }
 
