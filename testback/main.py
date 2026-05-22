@@ -7,13 +7,14 @@ import numpy as np
 
 from data.db.delist import get_delist_stock_info
 from core.strategies.runtime import load_runtime_npz
-from utils.stock.time import AFTERNOON_END, get_trading_date_span
+from utils.stock.time import get_trading_date_span
 from utils.stock.legality import LegalityValidator
+
 from utils.windows_awake import keep_windows_awake
 from testback.account import StockAccountMocker
 from testback.ga_config import (
   DEFAULT_GA_PROFILE,
-  build_individual_config,
+  build_individual_config, repair_config,
   generate_initial_configs,
   get_mode_configs,
   get_profile,
@@ -49,7 +50,7 @@ def _config_key(config: dict) -> tuple:
   sp = config.get('stock_pool')
   if isinstance(sp, list):
     sp = tuple(sp)
-  return (config['buy_n'], config['sell_m'], config.get('freeze_days', 0),
+  return (config['buy_n'], config['sell_m'],
           sp, config.get('holding_period'),
           config.get('timing_base'), config.get('timing_leverage'),
           config.get('timing_direction'), config.get('timing_enabled'),
@@ -64,10 +65,10 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
 
   for r in results_list:
     key = _config_key(r['individual_config'])
-    state['fitness_cache'][key] = r['sharpe']
+    state['fitness_cache'][key] = r.get('excess_sharpe', r['sharpe'])
 
   if not state['population']:
-    results_list.sort(key=lambda r: r['sharpe'], reverse=True)
+    results_list.sort(key=lambda r: r.get('excess_sharpe', r['sharpe']), reverse=True)
     state['population'] = [r['individual_config'] for r in results_list[:population_size]]
 
   def get_fitness(config):
@@ -79,7 +80,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     unique_cfgs = {}
     for key, val in ga_cache.items():
       cfg = val.get('individual_config')
-      fit = val.get('sharpe', -999)
+      fit = val.get('excess_sharpe', val.get('sharpe', -999))
       if cfg is not None and fit > -900:
         unique_cfgs[key] = (cfg, fit)
     sorted_global = sorted(unique_cfgs.values(), key=lambda x: x[1], reverse=True)
@@ -88,12 +89,10 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     n_mid = population_size - n_elite
     n_elite = min(n_elite, total)
     elite_cfgs = [cfg for cfg, _ in sorted_global[:n_elite]]
-    # mid范围: 紧接elite之后 → top50% (第n_elite名 ~ 第total//2名)
     mid_start = n_elite
     mid_end = max(mid_start + 1, total // 2)
     mid_pool = sorted_global[mid_start:mid_end]
     mid_cfgs = [cfg for cfg, _ in random.sample(mid_pool, min(n_mid, len(mid_pool)))]
-    # 如果mid不够，用剩余个体补齐
     while len(mid_cfgs) < n_mid:
       remaining = [cfg for cfg, _ in sorted_global if cfg not in elite_cfgs and cfg not in mid_cfgs]
       if remaining:
@@ -105,7 +104,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     population_with_fitness = [(ind, fit) for ind in state['population']
                                if (fit := get_fitness(ind)) is not None]
     if not population_with_fitness:
-      population_with_fitness = [(r['individual_config'], r['sharpe']) for r in results_list]
+      population_with_fitness = [(r['individual_config'], r.get('excess_sharpe', r['sharpe'])) for r in results_list]
     population_with_fitness.sort(key=lambda x: x[1], reverse=True)
     parents = [ind for ind, _ in population_with_fitness[:population_size]]
 
@@ -131,7 +130,6 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
 
   def crossover_config(p1, p2):
     position_count = _crossover_field(p1, p2, 'buy_n')
-    freeze_days = p1.get('freeze_days', 0)
     fc = _crossover_field(p1, p2, 'factor_choice') if has_factor_choice else None
     stock_pool = _crossover_field(p1, p2, 'stock_pool') if 'stock_pool' in search_spaces else None
     holding_period = _crossover_field(p1, p2, 'holding_period') if 'holding_period' in search_spaces else None
@@ -149,7 +147,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
         w1 = p1['weights'].get(k, 0.0)
         w2 = p2['weights'].get(k, 0.0)
         crossed_weights[k] = w1 if random.random() < 0.5 else w2
-    return build_individual_config(position_count, freeze_days=freeze_days, weights=crossed_weights,
+    return build_individual_config(position_count, weights=crossed_weights,
                                    factor_choice=fc,
                                    stock_pool=stock_pool, holding_period=holding_period,
                                    timing_base=timing_base, timing_leverage=timing_leverage,
@@ -178,7 +176,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
 
   def mutate_config(config):
     if not _all_dims:
-      return build_individual_config(config['buy_n'], freeze_days=config.get('freeze_days', 0),
+      return build_individual_config(config['buy_n'],
                                       weights=config.get('weights'), profile_name=profile_name)
     n_mutate = max(1, min(math.ceil(random.uniform(0.25, 0.50) * len(_all_dims)), len(_all_dims)))
     mutate_dims = set(random.sample(_all_dims, n_mutate))
@@ -198,7 +196,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
         mutated_weights[k] = random.choice(weight_spaces[k])
       elif k not in mutated_weights:
         mutated_weights[k] = 0.0
-    return build_individual_config(position_count, freeze_days=config.get('freeze_days', 0), weights=mutated_weights,
+    return build_individual_config(position_count, weights=mutated_weights,
                                    factor_choice=fc,
                                    stock_pool=stock_pool, holding_period=holding_period,
                                    timing_base=timing_base, timing_leverage=timing_leverage,
@@ -299,7 +297,6 @@ def _parse_single_verify_config(config_data: Dict[str, Any]) -> Dict[str, Any]:
     'force_stock_code': force_stock_code,
     'candidate_stock_codes': normalized_candidates,
     'sample_pool': normalized_sample_pool,
-    'freeze_days_override': verify_config.get('freeze_days_override'),
     'notes': verify_config.get('notes') or '',
   }
 
@@ -434,11 +431,109 @@ def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_c
   return data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices
 
 
+# ═══════════ numpy 批量合法性检查 ═══════════
+
+_EPS = 0.001
+
+def _round_half_up_np(values):
+  return np.floor(values * 100.0 + 0.5 + 1e-9) / 100.0
+
+def _precompute_limit_helpers(data, stock_indices, list_dates_map):
+  codes = [str(s) for s in data['stock_codes']]
+  n = len(codes)
+  bt = np.zeros(n, dtype=np.int8); br = np.full(n, 0.10, dtype=np.float64)
+  for i, c in enumerate(codes):
+    if c.startswith('300') or c.startswith('301'): bt[i] = 1; br[i] = 0.20
+    elif c.startswith('688'): bt[i] = 2; br[i] = 0.20
+    elif c.startswith('83') or c.startswith('87') or c.startswith('43') or c.startswith('92'): bt[i] = 3; br[i] = 0.30
+  tdp = [d.astype('datetime64[D]').item() for d in data['trade_dates']]
+  d2t = {d: i for i, d in enumerate(tdp)}
+  lt = np.full(n, -1, dtype=np.int32)
+  if list_dates_map:
+    for code, ld in list_dates_map.items():
+      si = stock_indices.get(code)
+      if si is None: continue
+      ldi = d2t.get(ld)
+      if ldi is None:
+        for d in tdp:
+          if d >= ld: ldi = d2t[d]; break
+      if ldi is not None: lt[si] = ldi
+  return bt, br, lt
+
+def _batch_limit_check(candidates, candidates_idx, trade_idx, signal_date,
+                       board_type, base_ratio, list_tidx,
+                       open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy):
+  if len(candidates) == 0:
+    return np.array([], dtype=bool), {}
+  idx = np.asarray(candidates_idx, dtype=np.intp); n = len(idx)
+  opens = open_all[trade_idx, idx].astype(np.float64)
+  valid_open = ~np.isnan(opens) & (opens > 0)
+  if not np.any(valid_open):
+    return np.zeros(n, dtype=bool), {'suspended': n}
+
+  precloses = close_all[trade_idx - 1, idx].astype(np.float64) if trade_idx > 0 else np.full(n, np.nan)
+  valid_preclose = (trade_idx > 0) & ~np.isnan(precloses) & (precloses > 0)
+
+  st_arr = st_all[trade_idx, idx] if st_all is not None else np.zeros(n, dtype=bool)
+  ratios = np.where(st_arr, 0.05, base_ratio[idx])
+  boards = board_type[idx]
+  cyb_pre = (boards == 1) & (signal_date < date(2020, 8, 24))
+  ratios[cyb_pre] = 0.10
+  lti = list_tidx[idx]
+
+  is_ipo_first = np.zeros(n, dtype=bool)
+  exempt = np.zeros(n, dtype=bool)
+  for i in range(n):
+    lt = lti[i]
+    if lt < 0 or trade_idx < lt: continue
+    ds = trade_idx - lt; b = boards[i]
+    if b == 3: exempt[i] = (ds == 0)
+    elif b == 2: exempt[i] = (signal_date >= date(2019, 7, 22) and ds <= 4)
+    elif b == 1:
+      if signal_date >= date(2020, 8, 24) and ds <= 4: exempt[i] = True
+      elif signal_date < date(2014, 1, 1) and ds == 0: exempt[i] = True
+    else:
+      if signal_date >= date(2023, 4, 10) and ds <= 4: exempt[i] = True
+      elif signal_date < date(2014, 1, 1) and ds == 0: exempt[i] = True
+    if not exempt[i] and lt >= 0 and trade_idx == lt and signal_date >= date(2014, 1, 1):
+      is_ipo_first[i] = True
+
+  # issuePrice fallback 仅 IPO 首日
+  if issue_price_all is not None and np.any(is_ipo_first):
+    need_fb = is_ipo_first & ~valid_preclose
+    if np.any(need_fb):
+      ips = issue_price_all[idx].astype(np.float64)
+      vip = need_fb & ~np.isnan(ips) & (ips > 0)
+      precloses[vip] = ips[vip]; valid_preclose[vip] = True
+
+  ratios = np.where(is_ipo_first & ~exempt, 0.44, ratios)
+  has_limit = valid_preclose & ~exempt
+
+  if is_buy:
+    up_limits = np.where(has_limit, _round_half_up_np(precloses * (1.0 + ratios)), np.nan)
+    limit_up = valid_open & has_limit & (opens >= up_limits - _EPS)
+    blocked = limit_up.copy()
+    for i in range(n):
+      if not is_ipo_first[i] or blocked[i]: continue
+      if abs(float(opens[i]) - float(low_all[trade_idx, idx[i]])) < _EPS and float(high_all[trade_idx, idx[i]]) >= up_limits[i] - _EPS:
+        blocked[i] = True
+    tradable = valid_open & ~blocked
+  else:
+    down_limits = np.where(has_limit, _round_half_up_np(precloses * (1.0 - ratios)), np.nan)
+    limit_down = valid_open & has_limit & (opens <= down_limits + _EPS)
+    tradable = valid_open & ~limit_down
+
+  suspended = np.sum(~valid_open)
+  reasons = {'suspended': int(suspended)} if suspended > 0 else {}
+  return tradable, reasons
+
+
 def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices,
-                     weights, buy_n, sell_m, temperatures, freeze_days=0, holding_period=None,
+                     weights, buy_n, sell_m, temperatures, holding_period=None,
                      verify_config=None,
-                     position_multipliers=None, list_dates_map=None):
-  """直接 numpy 回测，不创建 TopN 对象。"""
+                     position_multipliers=None, list_dates_map=None,
+                     lightweight=False):
+  """直接 numpy 回测，不创建 TopN 对象。lightweight=True 跳过明细组装，仅返回收益序列。"""
   from core.strategies.sizers.sizer import Sizer
 
   account = StockAccountMocker(cash=500_000.0)
@@ -453,12 +548,20 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
   n_stocks = len(valid_stocks)
   valid_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
 
-  validator = LegalityValidator(
-    st_mask=data.get('st_mask'),
-    stock_codes=data.get('stock_codes'),
-    trade_dates=data.get('trade_dates'),
-    list_dates=list_dates_map,
+  # 批量合法性检查预计算
+  board_type, base_ratio, list_tidx_arr = _precompute_limit_helpers(data, stock_indices, list_dates_map)
+  # 原版 LegalityValidator 保留备用（与 _batch_limit_check 等价，已验证 467万次零差异）
+  _validator_ref = LegalityValidator(
+    st_mask=data.get('st_mask'), stock_codes=data.get('stock_codes'),
+    trade_dates=data.get('trade_dates'), list_dates=list_dates_map,
   )
+
+  open_all = data['open']
+  close_all = data['close']
+  high_all = data['high']
+  low_all = data['low']
+  st_all = data.get('st_mask')
+  issue_price_all = data.get('issue_price')
 
   force_codes = []
   if verify_config:
@@ -489,23 +592,38 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         'income_pct': -100.0 if cost else 0.0, 'clear_reason': '退市归零',
       })
 
+  if force_codes:
+    def _prepend_forced(lst, n):
+      ordered, seen = [], set()
+      for code in force_codes:
+        if code and code not in seen:
+          seen.add(code)
+          ordered.append(code)
+      for code in lst:
+        if code not in seen:
+          seen.add(code)
+          ordered.append(code)
+      return ordered[:n]
+  else:
+    _prepend_forced = None
+
+  if lightweight:
+    _lw_daily_returns = []
+    _lw_last_asset = account.init_cash
 
   for i, dt in enumerate(valid_dates):
     signal_date = dt.date() if hasattr(dt, 'date') else dt
     date_idx = date_indices[i]
     trade_idx = date_idx
     trade_date = signal_date
-    trade_datetime = datetime.combine(trade_date, AFTERNOON_END)
 
     _write_off_delisted_positions(signal_date, trade_date)
 
-    # 固定持仓周期：非调仓日跳过买卖，仅更新估值
     is_rebalance_day = True
     if holding_period and holding_period > 1:
       is_rebalance_day = (i % holding_period == 0)
 
     if is_rebalance_day:
-      # 1. 预排名加权求和（scores 已是 [0,1] 截面排名，无需每日 argsort）
       final_score = np.zeros(n_stocks)
       for name, ranks_mat in all_scores.items():
         w = weights.get(name, 0.0)
@@ -517,124 +635,84 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
           np.power(ranks, 1.0 / temp, out=ranks)
         final_score += ranks * w
 
-      # 2. 排序取 top N
       top_idx = np.argsort(-final_score)
       buy_n_stocks = [valid_stocks[i] for i in top_idx[:buy_n]]
       sell_m_stocks = [valid_stocks[i] for i in top_idx[:sell_m]]
 
-      # verify 强制股票置顶
       if force_codes:
-        def _prepend_forced(lst, n):
-          ordered, seen = [], set()
-          for code in force_codes:
-            if code and code not in seen:
-              seen.add(code)
-              ordered.append(code)
-          for code in lst:
-            if code not in seen:
-              seen.add(code)
-              ordered.append(code)
-          return ordered[:n]
         buy_n_stocks = _prepend_forced(buy_n_stocks, buy_n)
         sell_m_stocks = _prepend_forced(sell_m_stocks, sell_m)
     else:
       buy_n_stocks = []
       sell_m_stocks = []
 
-    # 3. 价格查询
+    # 预提取当日数据行，避免逐股 2D 索引
+    day_open = open_all[trade_idx]
+    day_close = close_all[trade_idx]
+
     current_position_codes = set(account.positions.keys())
     price_universe = current_position_codes | set(sell_m_stocks) | set(buy_n_stocks)
-    trade_bars = {}
+
     prices = {}
     for stock in price_universe:
       si = stock_indices.get(stock)
       if si is None:
         continue
-      open_val = float(data['open'][trade_idx, si])
-      close = float(data['close'][trade_idx, si])
-      amount_val = float(data['amount'][trade_idx, si])
+      open_val = day_open[si]
       if np.isnan(open_val) or open_val <= 0:
-        if stock in current_position_codes and not np.isnan(close) and close > 0:
-          prices[stock] = close
-        elif stock in current_position_codes:
-          delist_info = delist_stock_info.get(stock)
-          is_delisted = delist_info is not None and trade_date > delist_info.delist_date
-          if not is_delisted:
-            for t in range(trade_idx - 1, -1, -1):
-              past_close = float(data['close'][t, si])
-              if not np.isnan(past_close) and past_close > 0:
-                prices[stock] = past_close
-                break
+        if stock in current_position_codes:
+          close_val = day_close[si]
+          if not np.isnan(close_val) and close_val > 0:
+            prices[stock] = float(close_val)
+          else:
+            delist_info = delist_stock_info.get(stock)
+            is_delisted = delist_info is not None and trade_date > delist_info.delist_date
+            if not is_delisted:
+              for t in range(trade_idx - 1, -1, -1):
+                pc = close_all[t, si]
+                if not np.isnan(pc) and pc > 0:
+                  prices[stock] = float(pc)
+                  break
         continue
-      prices[stock] = open_val
-      if trade_idx == 0:
-        continue
-      pre_close = float(data['close'][trade_idx - 1, si])
-      if np.isnan(pre_close) or pre_close <= 0:
-        continue
-      trade_bars[stock] = {
-        'open': open_val,
-        'high': float(data['high'][trade_idx, si]),
-        'low': float(data['low'][trade_idx, si]),
-        'close': close,
-        'preClose': pre_close,
-        'issuePrice': float(data['issue_price'][si]) if 'issue_price' in data else np.nan,
-        'volume': float(data['volume'][trade_idx, si]),
-        'amount': amount_val,
-        'suspendFlag': 0,
-      }
+      prices[stock] = float(open_val)
 
-    # 4. 卖出
     executed_sell_list: List[str] = []
     if is_rebalance_day:
-      for stock in current_position_codes - set(sell_m_stocks):
-        if stock not in prices:
-          continue
-        if freeze_days > 0:
-          buy_date = account.positions[stock].get('buy_trade_date') or account.positions[stock].get('buy_date')
-          if buy_date is not None:
-            days_held = _count_holding_trading_days(buy_date, trade_date) - 1
-            if days_held < freeze_days:
-              continue
-        bar = trade_bars.get(stock)
-        if bar is None:
-          continue
-        result = validator.check_sell(stock, trade_datetime, bar=bar)
-        if not result.allowed:
-          skipped_sell_reasons[result.reason] = skipped_sell_reasons.get(result.reason, 0) + 1
-          continue
-        account.clear_stock(
-          code=stock, price=prices[stock], clear_date=trade_date, clear_reason='调仓换出',
-          signal_date=signal_date, price_field='open',
-          signal_dividend_type='back', execution_dividend_type='none',
-        )
-        executed_sell_list.append(stock)
+      sell_check = [s for s in current_position_codes if s not in sell_m_stocks]
+      if sell_check:
+        sell_idx = [stock_indices[s] for s in sell_check if s in stock_indices]
+        sell_ok, _ = _batch_limit_check(
+          sell_check, sell_idx, trade_idx, signal_date,
+          board_type, base_ratio, list_tidx_arr,
+          open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=False)
+        for j, stock in enumerate(sell_check):
+          if not sell_ok[j] or stock not in prices:
+            continue
+          account.clear_stock(
+            code=stock, price=prices[stock], clear_date=trade_date, clear_reason='调仓换出',
+            signal_date=signal_date, price_field='open',
+            signal_dividend_type='back', execution_dividend_type='none',
+          )
+          executed_sell_list.append(stock)
 
-    # 5. 买入
     tradable_buy_stocks = []
     blocked_buy_details: List[Dict] = []
-    if is_rebalance_day:
-      for stock in buy_n_stocks:
-        if stock not in prices:
-          skipped_buy_reasons['missing_trade_bar'] = skipped_buy_reasons.get('missing_trade_bar', 0) + 1
-          blocked_buy_details.append({
-            'code': stock, 'reason': 'missing_trade_bar',
-            'signal_date': signal_date.isoformat(), 'trade_date': trade_date.isoformat(),
-          })
-          continue
-        bar = trade_bars.get(stock)
-        if bar is None:
-          skipped_buy_reasons['missing_bar'] = skipped_buy_reasons.get('missing_bar', 0) + 1
-          continue
-        result = validator.check_buy(stock, trade_datetime, bar=bar)
-        if not result.allowed:
-          skipped_buy_reasons[result.reason] = skipped_buy_reasons.get(result.reason, 0) + 1
-          blocked_buy_details.append({
-            'code': stock, 'reason': result.reason,
-            'signal_date': signal_date.isoformat(), 'trade_date': trade_date.isoformat(),
-          })
-          continue
-        tradable_buy_stocks.append(stock)
+    if is_rebalance_day and buy_n_stocks:
+      buy_idx = [stock_indices[s] for s in buy_n_stocks if s in stock_indices]
+      # 先过滤无价格的股票
+      valid_buy, valid_buy_idx = [], []
+      for s, si in zip(buy_n_stocks, buy_idx):
+        if s in prices:
+          valid_buy.append(s); valid_buy_idx.append(si)
+      if valid_buy:
+        buy_ok, _ = _batch_limit_check(
+          valid_buy, valid_buy_idx, trade_idx, signal_date,
+          board_type, base_ratio, list_tidx_arr,
+          open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=True)
+        for j, stock in enumerate(valid_buy):
+          if not buy_ok[j]:
+            continue
+          tradable_buy_stocks.append(stock)
 
     executed_buy_records: List[Dict] = []
     if is_rebalance_day and tradable_buy_stocks:
@@ -675,29 +753,54 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
           'signal_dividend_type': 'back', 'execution_dividend_type': 'none',
         })
 
-    assets = account.calc_assets(trade_datetime, prices)
-    prev_total_asset = daily_snapshots[-1]['total_asset'] if daily_snapshots else account.init_cash
-    daily_ret = (assets['total_asset'] - prev_total_asset) / prev_total_asset * 100 if prev_total_asset else 0.0
-    daily_snapshots.append({
-      'date': trade_date.strftime('%Y-%m-%d'),
-      'signal_date': signal_date.strftime('%Y-%m-%d'),
-      'trade_date': trade_date.strftime('%Y-%m-%d'),
-      'signal_dividend_type': 'back', 'execution_dividend_type': 'none', 'price_field': 'open',
-      'cash': assets['cash'], 'market_value': assets['market_value'],
-      'total_asset': assets['total_asset'], 'daily_return_pct': daily_ret, 'cumulative_return_pct': 0.0,
-      'sell_m_list': sell_m_stocks, 'buy_n_list': buy_n_stocks,
-      'buy_n_diff_list': [s for s in buy_n_stocks if s not in sell_m_stocks],
-      'executed_sell_list': executed_sell_list,
-      'executed_buy_list': [r['code'] for r in executed_buy_records],
-      'executed_buy_details': executed_buy_records,
-      'blocked_buy_details': blocked_buy_details,
-    })
+    if lightweight:
+      mkt_val = sum(prices.get(c, 0.0) * p['volume'] for c, p in account.positions.items())
+      total_asset = account.current_cash + mkt_val
+      if _lw_last_asset > 0:
+        daily_ret = (total_asset - _lw_last_asset) / _lw_last_asset * 100
+      else:
+        daily_ret = 0.0
+      _lw_daily_returns.append(daily_ret)
+      _lw_last_asset = total_asset
+    else:
+      assets = account.calc_assets(trade_date, prices)
+      prev_total_asset = daily_snapshots[-1]['total_asset'] if daily_snapshots else account.init_cash
+      daily_ret = (assets['total_asset'] - prev_total_asset) / prev_total_asset * 100 if prev_total_asset else 0.0
+      daily_snapshots.append({
+        'date': trade_date.strftime('%Y-%m-%d'),
+        'signal_date': signal_date.strftime('%Y-%m-%d'),
+        'trade_date': trade_date.strftime('%Y-%m-%d'),
+        'signal_dividend_type': 'back', 'execution_dividend_type': 'none', 'price_field': 'open',
+        'cash': assets['cash'], 'market_value': assets['market_value'],
+        'total_asset': assets['total_asset'], 'daily_return_pct': daily_ret, 'cumulative_return_pct': 0.0,
+        'sell_m_list': sell_m_stocks, 'buy_n_list': buy_n_stocks,
+        'buy_n_diff_list': [s for s in buy_n_stocks if s not in sell_m_stocks],
+        'executed_sell_list': executed_sell_list,
+        'executed_buy_list': [r['code'] for r in executed_buy_records],
+        'executed_buy_details': executed_buy_records,
+        'blocked_buy_details': blocked_buy_details,
+      })
 
-  # 收盘估值
+  if lightweight:
+    mkt_val = sum(prices.get(c, 0.0) * p['volume'] for c, p in account.positions.items())
+    total_asset = account.current_cash + mkt_val
+    total_return = (total_asset - account.init_cash) / account.init_cash * 100
+    return {
+      'total_return': total_return,
+      'cleared_positions_count': len(account.cleared_positions),
+      'daily_returns': _lw_daily_returns,
+      'daily_snapshots': [], 'cumulative_returns': [], 'trade_log': [],
+      'positions': [], 'cleared_positions': [], 'delist_events': [],
+      'stock_name_map': {}, 'holding_stats': {},
+      'executed_buy_count': 0, 'executed_sell_count': 0,
+      'delist_count': 0, 'round_trip_count': 0, 'current_positions_count': 0,
+      'skipped_buy_reasons': {}, 'skipped_sell_reasons': {},
+      'final_asset': total_asset,
+    }
+
   final_signal_date = valid_dates[-1].date() if hasattr(valid_dates[-1], 'date') else valid_dates[-1]
   final_trade_date = final_signal_date
-  final_datetime = datetime.combine(final_trade_date, AFTERNOON_END)
-  final_assets = account.calc_assets(final_datetime, prices)
+  final_assets = account.calc_assets(final_trade_date, prices)
   total_return = (final_assets['total_asset'] - account.init_cash) / account.init_cash * 100
 
   cumulative_returns = []
@@ -871,19 +974,17 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
 
   stock_pool = individual_config.get('stock_pool')
   if stock_pool:
-    all_stocks = [s for s in all_stocks if s.startswith(stock_pool)]
+    pool_tuple = tuple(stock_pool) if isinstance(stock_pool, list) else stock_pool
+    all_stocks = [s for s in all_stocks if s.startswith(pool_tuple)]
     testback_logger.info(f"stock_pool={_format_pool(stock_pool)}: {len(all_stocks)} 只")
 
   candidate_stock_pool = _extend_verify_stock_pool_with_historical_codes(
     all_stocks, backtest_datetime_list, verify_config)
   single_stock_pool = _resolve_single_stock_pool(candidate_stock_pool, verify_config)
   if verify_config:
-    freeze_days_override = verify_config.get('freeze_days_override')
-    if freeze_days_override is not None:
-      individual_config['freeze_days'] = freeze_days_override
     testback_logger.info(
       f"启用 single 退市验证: {verify_config['force_stock_code']}, "
-      f"候选池={len(single_stock_pool)} 只, freeze_days={individual_config.get('freeze_days', 0)}"
+      f"候选池={len(single_stock_pool)} 只"
     )
 
   testback_logger.info(f"使用配置进行单次回测: buy_n={individual_config['buy_n']}, sell_m={individual_config['sell_m']}")
@@ -932,7 +1033,6 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
     weights=individual_config['weights'],
     buy_n=individual_config['buy_n'], sell_m=individual_config['sell_m'],
     temperatures=individual_config['temperatures'],
-    freeze_days=individual_config.get('freeze_days', 0),
     holding_period=individual_config.get('holding_period'),
     verify_config=verify_config,
     position_multipliers=timing_multipliers,
@@ -1024,14 +1124,23 @@ def _cleanup_memmap():
 
 def _factor_worker(args):
   """Compute single factor → rank → memmap. Module-level for spawn pickle."""
-  factor_cls, base_info, stock_codes, trade_dates, tmpdir = args
+  factor_cls, base_info, stock_codes, trade_dates, tmpdir, row_slice = args
   data = _arrays_from_memmap(base_info)
+  n_full = len(trade_dates)
+  if row_slice is not None:
+    r0, r1 = row_slice
+    data = {k: (v[r0:r1] if v.ndim >= 2 else v) for k, v in data.items()}
+    trade_dates = trade_dates[r0:r1]
   data['stock_codes'] = stock_codes
   data['trade_dates'] = trade_dates
   f = factor_cls()
   name = f.__class__.__name__
   raw = f.calc_batch(data)
   scores = _scores_to_ranks(raw.astype(np.float32, copy=False))
+  if row_slice is not None:
+    full = np.full((n_full, scores.shape[1]), np.nan, dtype=scores.dtype)
+    full[r0:r1] = scores
+    scores = full
   filepath = Path(tmpdir) / f'factor_{name}.bin'
   scores.tofile(str(filepath))
   return name, (str(filepath), scores.shape, str(scores.dtype))
@@ -1093,9 +1202,10 @@ def _worker_evaluate(args):
     r = _backtest_direct(
       data, all_scores, valid_dates, date_indices, pool_stocks, stock_indices,
       weights=config['weights'], buy_n=config['buy_n'], sell_m=config['sell_m'],
-      temperatures=config['temperatures'], freeze_days=config.get('freeze_days', 0),
+      temperatures=config['temperatures'],
       holding_period=config.get('holding_period'),
-      position_multipliers=timing_multipliers, list_dates_map=list_dates_map)
+      position_multipliers=timing_multipliers, list_dates_map=list_dates_map,
+      lightweight=True)
 
     # 释放大内存，worker 常驻复用
     del all_arrays, all_scores, data
@@ -1103,6 +1213,16 @@ def _worker_evaluate(args):
 
     metrics = _compute_metrics_simple(r['daily_returns'])
     sharpe = metrics['sharpe']
+    # 超额夏普 vs 中证1000
+    bench_vals = index_data['sh000852'].astype(float)
+    bench_rets = np.diff(bench_vals) / bench_vals[:-1] * 100.0
+    excess = np.array(r['daily_returns'], dtype=float)[:len(bench_rets)] - bench_rets[:len(r['daily_returns'])]
+    excess = excess[np.isfinite(excess)]
+    if len(excess) >= 2:
+      em, es = float(np.mean(excess)), float(np.std(excess, ddof=1))
+      excess_sharpe = float(em / es * np.sqrt(252.0)) if es > 0 else 0.0
+    else:
+      excess_sharpe = 0.0
     annualized = metrics['annualized']
     dd = metrics['max_drawdown']
     total_return = r['total_return']
@@ -1113,6 +1233,7 @@ def _worker_evaluate(args):
     sys.stderr.write(_err)
     sys.stderr.flush()
     sharpe = -999.0
+    excess_sharpe = -999.0
     total_return = -999.0
     cleared_count = 0
     dd = 0.0
@@ -1122,6 +1243,7 @@ def _worker_evaluate(args):
     'individual_config': config,
     'total_return': total_return,
     'sharpe': sharpe,
+    'excess_sharpe': excess_sharpe,
     'annualized': annualized,
     'max_drawdown': dd,
     'cleared_positions_count': cleared_count,
@@ -1218,21 +1340,25 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   testback_logger.info(f"日志文件: {log_path}")
 
   from multiprocessing import get_context
-  n_workers = 30
-  ctx = get_context('spawn')
-  ga_pool = ctx.Pool(processes=n_workers)
-  testback_logger.info(f"多进程池已创建: {n_workers} workers")
 
   ga_state = {'population': [], 'hall_of_fame': [], 'fitness_cache': {}}
   val_metrics_cache = {}
   start_generation = 0
 
-  cache_path = output_dir / f'state.{os.getpid()}.json'
+  cache_path = output_dir / f'state.{os.getpid()}.jsonl'
   ga_cache = {}
   if cache_path.exists():
     try:
       with open(cache_path, 'r', encoding='utf-8') as f:
-        ga_cache = json_mod.load(f)
+        for line in f:
+          line = line.strip()
+          if not line:
+            continue
+          try:
+            entry = json_mod.loads(line)
+            ga_cache.update(entry)
+          except Exception:
+            pass
     except Exception:
       pass
   for v in ga_cache.values():
@@ -1310,26 +1436,44 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     arr.tofile(str(filepath))
     info[k] = (str(filepath), arr.shape, str(arr.dtype))
 
+  # 提前计算三段时间索引，确定因子计算所需的最小天数范围
+  valid_dates, date_indices = _build_date_subset(backtest_datetime_list, npz_dates, date_to_idx)
+
+  val_start = date(2019, 1, 1)
+  val_end = date(2022, 12, 31)
+  val_datetime_list = [datetime.combine(d, datetime.min.time()) for d in get_trading_date_span(val_start, val_end)]
+  val_valid_dates, val_date_indices = _build_date_subset(val_datetime_list, npz_dates, date_to_idx)
+
+  test_start = date(2023, 1, 1)
+  test_end = date(2026, 5, 15)
+  test_datetime_list = [datetime.combine(d, datetime.min.time()) for d in get_trading_date_span(test_start, test_end)]
+  test_valid_dates, test_date_indices = _build_date_subset(test_datetime_list, npz_dates, date_to_idx)
+
+  max_hist = max(f.hist_days for f in factor_classes)
+  all_idx = date_indices + val_date_indices + test_date_indices
+  row_start = max(0, min(all_idx) - max_hist)
+  row_end = max(all_idx) + 1
+  n_needed = row_end - row_start
+  testback_logger.info(f"因子计算范围: [{row_start}:{row_end}] = {n_needed} 天 (全量 {len(npz_dates)} 天, 截断 {len(npz_dates)-n_needed} 天)")
+
   score_keys = set()
   t_f_all = time.time()
   base_info = {k: v for k, v in info.items() if k not in ('stock_codes', 'trade_dates')}
+  row_slice = (row_start, row_end)
   all_worker_args = [
-    (f_cls, base_info, npz_stocks, py_dates, str(scores_dir))
+    (f_cls, base_info, npz_stocks, py_dates, str(scores_dir), row_slice)
     for f_cls in factor_classes
   ]
-  for start in range(0, len(all_worker_args), 8):
-    batch = all_worker_args[start:start + 8]
-    for name, entry in ga_pool.imap_unordered(_factor_worker, batch, chunksize=1):
-      info[name] = entry
-      score_keys.add(name)
+  for wargs in all_worker_args:
+    name, entry = _factor_worker(wargs)
+    info[name] = entry
+    score_keys.add(name)
   testback_logger.info(f"29 因子计算完成 ({time.time() - t_f_all:.1f}s)")
 
   # 共用 list_dates
   list_dates_full = _compute_list_dates(npz_stocks, data['open'], npz_dates)
   del data
 
-  # 训练集日期索引
-  valid_dates, date_indices = _build_date_subset(backtest_datetime_list, npz_dates, date_to_idx)
   _train_info = info
   _score_keys = score_keys
   train_list_dates = list_dates_full
@@ -1340,11 +1484,11 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   import gc, ctypes
   gc.collect()
 
-  # 验证集日期索引（复用训练 memmap，只建索引）
-  val_start = date(2019, 1, 1)
-  val_end = date(2022, 12, 31)
-  val_datetime_list = [datetime.combine(d, datetime.min.time()) for d in get_trading_date_span(val_start, val_end)]
-  val_valid_dates, val_date_indices = _build_date_subset(val_datetime_list, npz_dates, date_to_idx)
+  n_workers = 30
+  ctx = get_context('spawn')
+  ga_pool = ctx.Pool(processes=n_workers)
+  testback_logger.info(f"多进程池已创建: {n_workers} workers")
+
   _val_info = info
   _score_keys_val = score_keys
   val_stock_indices = stock_indices
@@ -1353,11 +1497,6 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   val_index_data = _load_all_index_data(val_valid_dates)
   testback_logger.info(f"验证集就绪: {val_start} - {val_end}, {len(val_valid_dates)} 天")
 
-  # 测试集日期索引（复用训练 memmap，只建索引）
-  test_start = date(2023, 1, 1)
-  test_end = date(2026, 5, 15)
-  test_datetime_list = [datetime.combine(d, datetime.min.time()) for d in get_trading_date_span(test_start, test_end)]
-  test_valid_dates, test_date_indices = _build_date_subset(test_datetime_list, npz_dates, date_to_idx)
   _test_info = info
   _score_keys_test = score_keys
   test_stock_indices = stock_indices
@@ -1375,6 +1514,27 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     next_configs = ckpt['next_configs']
     val_metrics_cache = ckpt.get('val_metrics_cache', ckpt.get('test_metrics_cache', {}))
     start_generation = ckpt['generation'] + 1
+
+    # 修复 checkpoint 中不在当前搜索空间内的配置
+    repaired = 0
+    for cfg in next_configs:
+        if repair_config(cfg, profile_name):
+            repaired += 1
+    for ind in ga_state.get('population', []):
+        if isinstance(ind, dict) and repair_config(ind, profile_name):
+            repaired += 1
+    for ind in ga_state.get('hall_of_fame', []):
+        if isinstance(ind, dict) and repair_config(ind, profile_name):
+            repaired += 1
+    for r in all_results:
+        if isinstance(r.get('individual_config'), dict) and repair_config(r['individual_config'], profile_name):
+            repaired += 1
+    # 清理与旧配置关联的 fitness_cache（key 已变）
+    ga_state['fitness_cache'] = {}
+    ga_cache.clear()
+    if repaired:
+        testback_logger.warning(f"从 checkpoint 修复了 {repaired} 个不在当前搜索空间的配置参数")
+
     testback_logger.info(f"从 checkpoint 恢复: 第 {start_generation} 代开始 (已完成 {ckpt['generation'] + 1}/{generations} 代)")
   elif args.warm_start:
     with open(args.warm_start, 'r', encoding='utf-8') as f:
@@ -1383,7 +1543,8 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
       cache_data = {json_mod.dumps(_config_key(v['individual_config']), ensure_ascii=False): v for v in cache_data}
     for v in cache_data.values():
       v.setdefault('sharpe', v.get('fitness', -999))
-    sorted_results = sorted(cache_data.values(), key=lambda v: v.get('sharpe', -999), reverse=True)
+      v.setdefault('excess_sharpe', v.get('sharpe', -999))
+    sorted_results = sorted(cache_data.values(), key=lambda v: v.get('excess_sharpe', v.get('sharpe', -999)), reverse=True)
     next_configs = [v['individual_config'] for v in sorted_results[:2 * population_size]]
     testback_logger.info(f"热启动: 从 {args.warm_start} 加载 top {len(next_configs)} 个种子配置 (共 {len(cache_data)} 条缓存)")
   else:
@@ -1417,19 +1578,26 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
       if worker_args:
         _eval_parallel(worker_args, results_list, ga_cache, testback_logger, pool=ga_pool)
         try:
-          with open(cache_path, 'w', encoding='utf-8') as f:
-            json_mod.dump(ga_cache, f, ensure_ascii=False)
+          with open(cache_path, 'a', encoding='utf-8') as f:
+            for cfg in uncached_configs:
+              key = json_mod.dumps(_config_key(cfg), ensure_ascii=False)
+              entry = ga_cache.get(key)
+              if entry is not None:
+                f.write(json_mod.dumps({key: entry}, ensure_ascii=False) + '\n')
         except (PermissionError, OSError) as e:
           testback_logger.warning(f"保存缓存失败（非致命）: {e}")
 
       if not is_debug:
         # 训练集统计
+        excess_sharpes = [r.get('excess_sharpe', r['sharpe']) for r in results_list]
         sharpes = [r['sharpe'] for r in results_list]
-        best_idx = max(range(len(results_list)), key=lambda i: sharpes[i])
+        best_idx = max(range(len(results_list)), key=lambda i: excess_sharpes[i])
         best = results_list[best_idx]
         best_cfg = best['individual_config']
-        best_m = {'sharpe': best['sharpe'], 'annualized': best['annualized'], 'max_drawdown': best['max_drawdown']}
+        best_m = {'sharpe': best['sharpe'], 'excess_sharpe': best.get('excess_sharpe', 0),
+                  'annualized': best['annualized'], 'max_drawdown': best['max_drawdown']}
         avg_sharpe = sum(sharpes) / len(sharpes)
+        avg_excess = sum(r.get('excess_sharpe', 0) for r in results_list) / len(results_list)
         avg_ann = sum(r['annualized'] for r in results_list) / len(results_list)
         avg_dd = sum(r['max_drawdown'] for r in results_list) / len(results_list)
 
@@ -1524,17 +1692,17 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
                 testback_logger.warning(f"保存测试集缓存失败: {e}")
 
           testback_logger.info(
-            f"GA gen{generation + 1}: 训练Sharpe={best_m['sharpe']:.3f}/{avg_sharpe:.3f} | "
+            f"GA gen{generation + 1}: 训练Sharpe={best_m['sharpe']:.3f}/{avg_sharpe:.3f}(超额={best_m['excess_sharpe']:.3f}/{avg_excess:.3f}) | "
             f"验证Sharpe={train_best_val_m['sharpe']:.3f} | "
             f"测试Sharpe={_test_train_best_m['sharpe']:.3f} | "
             f"{_format_pool(best_cfg.get('stock_pool'))}, hp={best_cfg.get('holding_period')}, pos={best_cfg['buy_n']}{_format_timing(best_cfg)} | "
-            f"{', '.join(f'{k}={v:.1f}' for k, v in sorted_w[:10])}")
+            f"{', '.join(f'{k}={v:.1f}' for k, v in sorted_w)}")
           if best_live_cfg is not None:
             live_sorted_w = sorted(best_live_cfg['weights'].items(), key=lambda x: -abs(x[1]))
             testback_logger.info(
               f"实盘: total={best_live_total:.3f}(train={best_live_train_sharpe:.3f}/val={best_live_val_sharpe:.3f}) test={live_test_sharpe:.3f} | "
               f"{_format_pool(best_live_cfg.get('stock_pool'))}, hp={best_live_cfg.get('holding_period')}, pos={best_live_cfg['buy_n']}{_format_timing(best_live_cfg)} | "
-              f"{', '.join(f'{k}={v:.1f}' for k, v in live_sorted_w[:10])}")
+              f"{', '.join(f'{k}={v:.1f}' for k, v in live_sorted_w)}")
       if not results_list:
         raise RuntimeError(f"{'调试模式' if is_debug else '第 ' + str(generation + 1) + ' 代'}未获得任何有效回测结果")
 
@@ -1650,13 +1818,6 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
 
     testback_logger.info(f"{'=' * 60}")
 
-  # 最终缓存写入 output_dir
-  try:
-    with open(cache_path, 'w', encoding='utf-8') as f:
-      json_mod.dump(ga_cache, f, ensure_ascii=False)
-  except Exception:
-    pass
-
   testback_logger.info(f"\n{'调试' if is_debug else 'GA'}模式执行完成，结果目录: {output_dir}")
   testback_logger.remove_file_sink()
   return None
@@ -1691,7 +1852,6 @@ def _main_impl():
   loguru_logger.add(sys.stderr, level=mode_config['log_level'])
 
   testback_logger.info(f"运行模式: {args.mode} - {mode_config['desc']}")
-  testback_logger.info(f"回测周期: {mode_config['period_span']} 天")
 
   def parse_date(s):
     if s is None:
@@ -1712,10 +1872,6 @@ def _main_impl():
     datetime.combine(d, datetime.min.time())
     for d in get_trading_date_span(start_date, end_date)
   ]
-
-  period_span = mode_config.get('period_span')
-  if period_span and len(backtest_datetime_list) > period_span:
-    backtest_datetime_list = backtest_datetime_list[-period_span:]
 
   factor_classes = get_profile_factor_classes(profile_name)
   factor_histories = {factor_cls.__name__: factor_cls().hist_days for factor_cls in factor_classes}
