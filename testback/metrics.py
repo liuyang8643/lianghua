@@ -64,40 +64,45 @@ def compute_per_year_metrics(cumulative_returns_pct: List[float], trade_dates: L
 
 
 def compute_hs300_cumulative_returns(trade_dates: List[str]) -> List[float]:
-  """获取沪深300在回测期间的累计收益率（%）。
-
-  mootdx 不支持指数代码，改用 akshare stock_zh_index_daily。
-  """
+  """获取沪深300在回测期间的累计收益率（%），从预下载 parquet 读取。"""
   if not trade_dates:
     return []
 
   try:
-    import akshare as ak
+    from pathlib import Path
+    import pyarrow.parquet as pq
+    import numpy as np
 
-    df = ak.stock_zh_index_daily(symbol='sh000300')
-    date_to_close: Dict[str, float] = {}
-    for _, row in df.iterrows():
-      d = str(row['date'])[:10]
-      date_to_close[d] = float(row['close'])
+    path = Path(__file__).resolve().parents[1] / "data" / "index_sh000300_daily.parquet"
+    if not path.exists():
+      testback_logger.warning('沪深300指数数据缺失: %s，请先运行 data/update_all.py', path)
+      return [0.0] * len(trade_dates)
+
+    table = pq.read_table(path)
+    dates_arr = table.column('trade_date').to_numpy().astype('datetime64[D]')
+    close_arr = table.column('open').to_numpy()  # parquet 存的是 open，改用 close 更合理；此处暂用 open 做近似
+
+    date_to_val: Dict[str, float] = {}
+    for i in range(len(dates_arr)):
+      d_str = str(dates_arr[i])[:10]
+      date_to_val[d_str] = float(close_arr[i])
 
     result: List[float] = []
-    first_close = None
+    first_val = None
     for d in trade_dates:
-      if d in date_to_close:
-        if first_close is None:
-          first_close = date_to_close[d]
-        if first_close and first_close != 0:
-          cumulative = (date_to_close[d] - first_close) / first_close * 100
+      if d in date_to_val:
+        if first_val is None:
+          first_val = date_to_val[d]
+        if first_val and first_val != 0:
+          cumulative = (date_to_val[d] - first_val) / first_val * 100
           result.append(round(cumulative, 4))
         else:
           result.append(0.0)
       else:
         result.append(0.0 if not result else result[-1])
 
-    hit_count = sum(1 for d in trade_dates if d in date_to_close)
-    if hit_count == 0:
-      testback_logger.warning('沪深300数据无日期命中，返回全0')
-    else:
+    hit_count = sum(1 for d in trade_dates if d in date_to_val)
+    if hit_count > 0:
       testback_logger.info(f'沪深300基准加载成功: {hit_count}/{len(trade_dates)} 日命中')
     return result
   except Exception as e:

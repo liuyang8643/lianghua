@@ -5,14 +5,15 @@
 1. **验收规则**：完成实质性产出后，必须调用 verify agent 做独立验收，不得自行报告完成。
 2. **调试规则**：先小量（10~50只/7~30天）→ 全量 → 长周期。>20s 无日志 → 卡死，立即 kill。运行用 `python -u`。
 3. **代码精简**：避免防御性编程、冗余 try/except、无意义抽象。写完回头删废代码。
+4. **执行优先级**：agent-team > subagent > main-agent + verify-agent。优先用 team 并行分发任务。
 
 ## 架构红线（不可违反）
 
 ### 回测 vs 实盘 严格分离
 
-| 层面 | 回测 (`testback/ga.py`) | 实盘 (`trading/main.py`) |
+| 层面 | 回测 (`testback/main.py`) | 实盘 (`trading/main.py`) |
 |---|---|---|
-| 数据 | `_load_runtime_npz()` 合并 npz → 全量 numpy | `TopN` + `get_market_data_batch` 逐股查 |
+| 数据 | `load_runtime_npz()` 合并 npz → 全量 numpy | `TopN` + `get_market_data_batch` 逐股查 |
 | 因子 | `f.calc_batch(panel)` 全量向量化 | 通过 `_precomputed_scores` 注入 |
 | 归一化 | `_backtest_direct` 内联 rank 归一化 | `BatchNormFactor.batch_normalize()` |
 | 选股 | `np.argsort(-final_score)[:n]` | `TopN.get_ordered_stocks(n)` |
@@ -36,6 +37,10 @@
 
 ### 预下载
 
+**全量更新流程**：执行全部预下载脚本 → 先删光昨天 parquet → 再全量拉取到今天。
+
+**原因**：实盘开盘时触发预下载，此时获取到的日线 close/high/low 是盘中快照而非收盘值，数据错误。因此次日必须先删除昨天的不完整数据，再重新拉取完整日线覆盖到今天。
+
 | 数据 | 来源 | 产物 |
 |---|---|---|
 | K线日线 | mootdx | parquet |
@@ -45,13 +50,11 @@
 | 财务面板 | PershareIndex | parquet |
 | 股本 | balance.parquet cap_stk | parquet |
 | 发行价 | akshare stock_ipo_info | parquet |
-| 资金流向 | 本地 parquet | parquet |
-
 目录：`data/{数据源}/{parquet&runtime}/{数据&构建脚本}`
 
 ### Runtime 构建
 
-入口：`python data/build_runtime.py`，产出按年分段 npz，回测时 `_load_runtime_npz` 自动合并。
+入口：`python data/build_runtime.py`，产出按年分段 npz，回测时 `load_runtime_npz` 自动合并。
 
 ```python
 np.savez_compressed('runtime_{start}_{end}.npz',
@@ -64,23 +67,21 @@ np.savez_compressed('runtime_{start}_{end}.npz',
 )
 ```
 
-### 回测入口 `testback/ga.py`
+### 回测入口 `testback/main.py`
 
 ```
 导入 → ga_optimizer → 工具函数
-     → _backtest_with_config (保留兼容，TopN路径)
-     → _load_shared_data → _compute_factor_scores (npz+因子)
+     → _compute_factor_scores (npz+因子)
      → _backtest_direct (核心：纯numpy逐日rank→排序→交易)
-     → run_single_mode → run_debug_mode(串行) → run_ga_mode(GA评估并行) → main
+     → run_single_mode → _run_ga(GA/调试) → main
 ```
 
 | 函数 | 职责 |
 |---|---|
-| `_compute_factor_scores` | 合并npz → 逐因子 calc_batch → 返回 (data, all_scores, valid_dates, ...) |
+| `_compute_factor_scores` | 合并npz → 逐因子 calc_batch → 返回 (data, all_scores, ...) |
 | `_backtest_direct` | 逐日 rank 归一化 → argsort 取 topN → 查 open → 先卖后买 |
-| `_backtest_with_config` | TopN 路径回测（实盘用，回测三模式不调用） |
-| `run_single_mode` | 解析config → compute → backtest → 报告 |
-| `run_ga_mode` | 多代进化，GA 个体评估 `multiprocessing.Pool` 并行 |
+| `run_single_mode` | 解析 config → compute → backtest → 报告 |
+| `_run_ga` | GA/调试模式，个体评估 `multiprocessing.Pool` 并行，支持 is_debug 串行 |
 
 ## 性能基准
 

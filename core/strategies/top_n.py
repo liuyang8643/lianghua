@@ -1,18 +1,36 @@
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, TypedDict
 
 import numpy as np
-import pandas as pd
 
-from core.factors.helpers.interface import FactorResult, BaseFactor
-from core.factors.helpers.batch_norm import BatchNormFactor
 from core.factors.SmallCap import SmallCap
 from utils.stock.format import format_qmt_date
 from ..logger import core_logger
+from .runtime import load_runtime_npz
 
 DEFAULT_FACTOR_CLASSES = [SmallCap]
+
+_load_runtime_npz = load_runtime_npz
+
+
+class FactorResult(TypedDict):
+    score: Optional[float]
+    err: Optional[str]
+
+
+def _rank_normalize(scores: np.ndarray) -> np.ndarray:
+    """Cross-sectional rank normalize per row. No Python loops.
+    Higher score → rank closer to 1.0. NaN → 0.0."""
+    nans = np.isnan(scores)
+    filled = np.where(nans, np.inf, scores)
+    order = np.argsort(filled, axis=1)
+    positions = np.empty(order.shape, dtype=np.float32)
+    row_idx = np.arange(order.shape[0])[:, None]
+    positions[row_idx, order] = np.arange(order.shape[1], dtype=np.float32)
+    n_valid = np.sum(~nans, axis=1)
+    return np.where(nans, 0.0, positions / np.maximum(n_valid[:, None] - 1, 1))
 
 
 class TopN:
@@ -34,7 +52,7 @@ class TopN:
 
         self._factor_classes: List[type] = factor_classes or DEFAULT_FACTOR_CLASSES
 
-        self.factors: List[BaseFactor] = []
+        self.factors = []
         self._factor_names: List[str] = []
         for f_cls in self._factor_classes:
             f = f_cls()
@@ -55,17 +73,36 @@ class TopN:
     def get_normalized_scores(
         self,
         temperatures: Dict[str, float],
-        method: str = 'softmax'
+        method: str = 'rank'
     ) -> Dict[str, Dict[str, float]]:
+        """Rank normalize + temperature. Uses raw per-stock scores from self.factor_scores."""
         normalized = {}
         for factor_name, raw_scores in self.factor_scores.items():
-            temperature = temperatures.get(factor_name, 1.0)
-            norm_scores = BatchNormFactor.batch_normalize(
-                raw_scores=raw_scores,
-                temperature=temperature,
-                method=method
-            )
-            normalized[factor_name] = norm_scores
+            temp = temperatures.get(factor_name, 1.0)
+            if not raw_scores:
+                normalized[factor_name] = {}
+                continue
+
+            stocks, scores = [], []
+            for stock, result in raw_scores.items():
+                s = result.get('score')
+                e = result.get('err')
+                if e is None and s is not None:
+                    stocks.append(stock)
+                    scores.append(s)
+
+            if not stocks:
+                normalized[factor_name] = {}
+                continue
+
+            n = len(stocks)
+            arr = np.array(scores)
+            order = np.argsort(arr)[::-1]
+            norm = np.empty(n, dtype=np.float64)
+            norm[order] = 1.0 - (np.arange(n) / n)
+            if temp != 1.0:
+                norm = norm ** (1.0 / temp)
+            normalized[factor_name] = dict(zip(stocks, norm.tolist()))
         return normalized
 
     def _get_full_ordered_stocks(
@@ -132,117 +169,6 @@ class TopN:
     ) -> List[str]:
         ordered = self._get_full_ordered_stocks(weights, temperatures, norm_method)
         return ordered[:n] if n < len(ordered) else ordered
-
-
-_RUNTIME_DIR = Path(__file__).resolve().parents[2] / "data" / "runtime"
-
-
-def _load_runtime_npz(dates: List[datetime]) -> dict | None:
-    """加载覆盖指定日期范围的 runtime npz 文件（支持多文件合并）。"""
-    if not _RUNTIME_DIR.exists():
-        return None
-
-    min_date = np.datetime64(min(dt.date() for dt in dates))
-    # 为最后一个 signal_date 的 trade_date（次日）预留缓冲
-    max_date = np.datetime64(max(dt.date() for dt in dates)) + np.timedelta64(7, 'D')
-
-    npz_files = sorted(_RUNTIME_DIR.glob("runtime_*.npz"))
-    parts = []
-    for npz_path in npz_files:
-        try:
-            data = dict(np.load(npz_path, allow_pickle=False))
-            d0, d1 = data['trade_dates'][0], data['trade_dates'][-1]
-            if d0 <= max_date and d1 >= min_date:
-                parts.append(data)
-                core_logger.info(f"  {npz_path.name}: {len(data['trade_dates'])}d x {len(data['stock_codes'])}s")
-        except Exception:
-            continue
-
-    if not parts:
-        return None
-    if len(parts) == 1:
-        return parts[0]
-
-    core_logger.info(f"合并 {len(parts)} 个 npz 文件...")
-
-    # 所有 NPZ 构建时使用相同的 stock_codes（全量 K线文件），只需拼接
-    first_codes = parts[0]['stock_codes']
-    codes_match = all(np.array_equal(p['stock_codes'], first_codes) for p in parts[1:])
-
-    all_dates = np.concatenate([p['trade_dates'] for p in parts])
-    all_dates = np.unique(all_dates)
-    all_dates.sort()
-
-    if codes_match:
-        n_stocks = len(first_codes)
-        merged = {
-            'stock_codes': first_codes,
-            'trade_dates': all_dates,
-        }
-        offsets_list = [np.searchsorted(all_dates, p['trade_dates']) for p in parts]
-        _2D_FIELDS = ['open', 'high', 'low', 'close', 'volume', 'amount',
-                      'total_share', 'eps', 'roe', 'profit_yoy', 'revenue_yoy',
-                      'operating_cf_ps', 'gross_margin', 'retail_net_flow', 'st_mask']
-        for field in _2D_FIELDS:
-            if field not in parts[0]:
-                continue
-            dtype = np.bool_ if field == 'st_mask' else np.float64
-            fill = False if field == 'st_mask' else np.nan
-            arr = np.full((len(all_dates), n_stocks), fill, dtype=dtype)
-            for pi, p in enumerate(parts):
-                arr[offsets_list[pi]] = p[field]
-            merged[field] = arr
-        # 1D fields: take from last part (most complete)
-        for field in ['issue_price']:
-            if field in parts[0]:
-                merged[field] = parts[-1][field]
-    else:
-        # 慢路径：NPZ 股票列表不一致，需要 union（理论上不会走到这里）
-        all_stocks = []
-        seen = set()
-        for p in parts:
-            for s in p['stock_codes']:
-                s_str = str(s)
-                if s_str not in seen:
-                    seen.add(s_str)
-                    all_stocks.append(s_str)
-        n_stocks = len(all_stocks)
-        stock_to_idx = {s: i for i, s in enumerate(all_stocks)}
-        merged = {
-            'stock_codes': np.array(all_stocks, dtype='U12'),
-            'trade_dates': all_dates,
-        }
-        offsets_list = [np.searchsorted(all_dates, p['trade_dates']) for p in parts]
-        _2D_FIELDS = ['open', 'high', 'low', 'close', 'volume', 'amount',
-                      'total_share', 'eps', 'roe', 'profit_yoy', 'revenue_yoy',
-                      'operating_cf_ps', 'gross_margin', 'retail_net_flow', 'st_mask']
-        for field in _2D_FIELDS:
-            if field not in parts[0]:
-                continue
-            dtype = np.bool_ if field == 'st_mask' else np.float64
-            fill = False if field == 'st_mask' else np.nan
-            arr = np.full((len(all_dates), n_stocks), fill, dtype=dtype)
-            for pi, p in enumerate(parts):
-                p_stocks = [str(s) for s in p['stock_codes']]
-                col_idx = np.array([stock_to_idx.get(s, -1) for s in p_stocks])
-                valid = col_idx >= 0
-                if not valid.any():
-                    continue
-                for di in range(len(offsets_list[pi])):
-                    arr[offsets_list[pi][di], col_idx[valid]] = p[field][di, valid]
-            merged[field] = arr
-        if 'issue_price' in parts[0]:
-            arr = np.full(n_stocks, np.nan, dtype=np.float64)
-            for pi, p in enumerate(parts):
-                p_stocks = [str(s) for s in p['stock_codes']]
-                for j, s in enumerate(p_stocks):
-                    t = stock_to_idx.get(s, -1)
-                    if t >= 0 and np.isnan(arr[t]) and not np.isnan(p['issue_price'][j]):
-                        arr[t] = p['issue_price'][j]
-            merged['issue_price'] = arr
-
-    core_logger.info(f"合并完成: {len(all_dates)}d x {len(merged['stock_codes'])}s")
-    return merged
 
 
 def compute_topn_range(
@@ -316,7 +242,7 @@ def compute_topn_range(
         factor_meta.append((name, f))
 
     # 批量计算所有因子分数
-    all_scores: dict[str, pd.DataFrame] = {}
+    all_scores: dict[str, np.ndarray] = {}
     for name, f in factor_meta:
         panel = {
             'stock_codes': npz_stocks,
@@ -337,10 +263,10 @@ def compute_topn_range(
             'operating_cf_ps': data['operating_cf_ps'],
             'gross_margin': data['gross_margin'],
         }
-        scores_df = f.calc_batch(panel)
-        all_scores[name] = scores_df
+        raw = f.calc_batch(panel)
+        all_scores[name] = _rank_normalize(raw.astype(np.float32, copy=False))
 
-    core_logger.info(f"因子批量计算完成 ({time.time() - t0:.1f}s)")
+    core_logger.info(f"因子批量计算+归一化完成 ({time.time() - t0:.1f}s)")
 
     # 构建每日 TopN 实例
     t1 = time.time()
@@ -351,14 +277,11 @@ def compute_topn_range(
         date_idx = date_indices[i]
         precomputed: dict[str, dict[str, FactorResult]] = {}
         for name in all_scores:
-            scores_row = all_scores[name].iloc[date_idx, valid_stock_cols].values
-            isnan = np.isnan(scores_row)
-            batch: dict[str, FactorResult] = {}
-            for j, s in enumerate(valid_stocks):
-                if not isnan[j]:
-                    batch[s] = FactorResult(score=float(scores_row[j]), err=None)
-                else:
-                    batch[s] = FactorResult(score=None, err="nan")
+            scores_row = all_scores[name][date_idx, valid_stock_cols]
+            batch: dict[str, FactorResult] = {
+                s: FactorResult(score=float(scores_row[j]), err=None)
+                for j, s in enumerate(valid_stocks)
+            }
             precomputed[name] = batch
 
         topn = TopN(valid_stocks, dt, weights=weights, factor_classes=factor_classes,

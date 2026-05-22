@@ -1,8 +1,6 @@
 import re
 from datetime import date, datetime, time, timedelta
-from functools import lru_cache
-
-from utils.network import retry_on_network_error
+from pathlib import Path
 
 DAY_START = time(0, 0)
 MORNING_START = time(9, 30)
@@ -10,21 +8,17 @@ MORNING_END = time(11, 30)
 AFTERNOON_START = time(13, 0)
 AFTERNOON_END = time(15, 0)
 
-@retry_on_network_error(max_retries=1, delay=2.0)
-def _fetch_trading_calendar_state() -> tuple[frozenset[date], date | None, date | None]:
-  import akshare as ak
 
-  df = ak.tool_trade_date_hist_sina()
-  dates = sorted(set(df['trade_date']))
-  if not dates:
-    return frozenset(), None, None
-  return frozenset(dates), dates[0], dates[-1]
-
-
-@lru_cache(maxsize=1)
 def _get_trading_calendar_state() -> tuple[frozenset[date], date | None, date | None]:
   try:
-    return _fetch_trading_calendar_state()
+    import pyarrow.parquet as pq
+    path = Path(__file__).resolve().parents[2] / "data" / "trading_calendar.parquet"
+    if not path.exists():
+      return frozenset(), None, None
+    dates = sorted(pq.read_table(path).column('trade_date').to_pylist())
+    if not dates:
+      return frozenset(), None, None
+    return frozenset(dates), dates[0], dates[-1]
   except Exception:
     return frozenset(), None, None
 
@@ -57,7 +51,6 @@ def _weekday_span(start_date: date, end_date: date) -> list[date]:
   return res_span
 
 
-@lru_cache(maxsize=4096)
 def is_trading_day(target_date: date = None) -> bool:
   if target_date is None:
     target_date = date.today()
@@ -84,7 +77,6 @@ def is_current_trading(base_time: datetime = None) -> bool:
   )
   return is_trading_day(input_time.date()) and trading_hours
 
-@lru_cache(maxsize=512)
 def get_last_trading_day(base_date: date = None) -> date:
   """
   获取最近的交易日
@@ -107,7 +99,6 @@ def get_last_trading_day(base_date: date = None) -> date:
 
   return _get_last_weekday(base_date)
 
-@lru_cache(maxsize=512)
 def get_next_trading_day(base_date: date = None) -> date:
   """
   获取下一个交易日

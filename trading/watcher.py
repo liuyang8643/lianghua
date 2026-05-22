@@ -5,7 +5,7 @@ from xtquant.xttype import XtOrder, XtTrade, XtOrderError, XtCancelError
 from trading.helper import get_order_status_label, get_order_type_label, get_price_type_label
 from trading.lark.sender import LarkMsgLevel, lark_sender
 from trading.logger import trading_logger
-from core.database import get_stock_detail
+from data.db import get_stock_detail
 from utils.stock.format import get_stock_desc
 
 

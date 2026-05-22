@@ -4,7 +4,7 @@ Tests _fetch_all_a_stocks() and the higher-level get_all_stock_code_list().
 """
 import time
 import pytest
-from core.database.stock_list import _fetch_all_a_stocks, get_all_stock_code_list
+from data.db.stock_list import _fetch_all_a_stocks, get_all_stock_code_list
 
 
 class TestFetchAllAStocks:
@@ -65,7 +65,6 @@ class TestFetchAllAStocks:
     def test_timeout_within_60_seconds(self):
         """Verify _fetch_all_a_stocks() completes within 60 seconds."""
         start = time.time()
-        _fetch_all_a_stocks.cache_clear()
         result = _fetch_all_a_stocks()
         elapsed = time.time() - start
         assert elapsed < 60, f"Took {elapsed:.1f}s, expected < 60s"

@@ -7,7 +7,7 @@ import time
 from datetime import date
 import pytest
 
-from core.database.stock_name import (
+from data.db.stock_name import (
     get_stock_name_at_date,
     is_st_at_date,
     is_star_st_at_date,
@@ -155,7 +155,7 @@ class TestBuildStMask:
     @pytest.mark.cninfo
     def test_small_stock_list(self):
         """Test build_st_mask() with a small list of stocks and dates."""
-        from core.database.stock_name import build_st_mask
+        from data.db.stock_name import build_st_mask
 
         trade_dates = [
             date(2018, 1, 1),
@@ -185,7 +185,7 @@ class TestBuildStMask:
     @pytest.mark.cninfo
     def test_empty_inputs(self):
         """Empty input lists should return an empty DataFrame."""
-        from core.database.stock_name import build_st_mask
+        from data.db.stock_name import build_st_mask
         import pandas as pd
 
         mask1 = build_st_mask([], [date(2023, 1, 1)])
@@ -198,7 +198,7 @@ class TestBuildStMask:
     @pytest.mark.cninfo
     def test_single_stock_single_date(self):
         """Minimal case: one stock, one date."""
-        from core.database.stock_name import build_st_mask
+        from data.db.stock_name import build_st_mask
 
         mask = build_st_mask(["600519.SH"], [date(2023, 1, 1)])
         assert mask is not None
@@ -209,7 +209,7 @@ class TestBuildStMask:
     @pytest.mark.cninfo
     def test_timeout_within_60_seconds(self):
         """build_st_mask for a small set should complete in under 60 seconds."""
-        from core.database.stock_name import build_st_mask
+        from data.db.stock_name import build_st_mask
 
         start = time.time()
         trade_dates = [
@@ -229,7 +229,7 @@ class TestPrefetch:
     @pytest.mark.cninfo
     def test_prefetch_small_set(self):
         """Test prefetching a small set of stock histories."""
-        from core.database.stock_name import prefetch_stock_histories
+        from data.db.stock_name import prefetch_stock_histories
 
         count = prefetch_stock_histories(["600186.SH", "600519.SH"])
         assert isinstance(count, int)
@@ -240,7 +240,7 @@ class TestPrefetch:
     @pytest.mark.cninfo
     def test_prefetch_empty_list(self):
         """Prefetching an empty list should return 0."""
-        from core.database.stock_name import prefetch_stock_histories
+        from data.db.stock_name import prefetch_stock_histories
 
         count = prefetch_stock_histories([])
         assert count == 0

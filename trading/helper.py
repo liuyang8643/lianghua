@@ -1,7 +1,7 @@
 from typing import Optional
 from xtquant import xtconstant
 
-from core.database import get_stock_detail
+from data.db import get_stock_detail
 
 def get_order_type_label(order_type):
   if order_type == xtconstant.STOCK_BUY:

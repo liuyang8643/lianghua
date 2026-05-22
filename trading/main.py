@@ -10,7 +10,7 @@ from xtquant import xtconstant, xtdata
 
 from configs import TRADE_ACCOUNT
 from core import allow_buy_stock_code_list, get_market_data_batch, get_trade_bars
-from core.database.stock_name import get_stock_name_at_date
+from data.db.stock_name import get_stock_name_at_date
 from core.strategies import TopN
 from core.strategies.sizers import Sizer
 from testback.ga_config import get_profile_factor_classes, resolve_profile_name

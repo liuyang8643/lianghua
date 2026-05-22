@@ -5,7 +5,7 @@ import numpy as np
 from typing import Literal, Optional, TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
-  from core.database import StockDetail, StockTradingData
+  from data.db import StockDetail, StockTradingData
 
 LimitRegimeName = Literal['main_board', 'cyb', 'kcb', 'bse', 'st', 'unlimited']
 
@@ -29,7 +29,7 @@ def is_st_stock(stock_code: str) -> bool:
   Returns:
     True 表示是 ST 股票
   """
-  from core.database import get_stock_detail
+  from data.db import get_stock_detail
   detail = get_stock_detail(stock_code)
   return bool(detail and 'ST' in detail.get('InstrumentName', ''))
 
@@ -178,7 +178,7 @@ def _is_st_from_detail(detail: Optional['StockDetail']) -> bool:
 
 def _get_historical_st_checker():
   """延迟加载历史 ST 判断函数，避免常规路径引入额外依赖。"""
-  from core.database.stock_name import is_st_at_date
+  from data.db.stock_name import is_st_at_date
 
   return is_st_at_date
 
@@ -289,7 +289,7 @@ def resolve_limit_regime(
   """
   trade_day = _to_trade_date(trade_date)
   if detail is None:
-    from core.database import get_stock_detail
+    from data.db import get_stock_detail
 
     detail = get_stock_detail(stock_code)
   is_st = _resolve_st_status(stock_code, trade_day, detail)

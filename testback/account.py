@@ -57,17 +57,20 @@ class TradeRecord(TypedDict):
 class StockAccountMocker:
   def __init__(
       self,
-      # 初始资金
       cash: float,
-      # 交易费率
-      commission: float,
-      # 最小交易费
-      min_commission: float,
+      commission: float = 0.0000854,
+      min_commission: float = 0.1,
+      stamp_tax: float = 0.0005,
+      transfer_fee: float = 0.00002,
+      slippage: float = 0.001,
   ):
     self.init_cash = cash
     self.current_cash = cash
     self.commission = commission
     self.min_commission = min_commission
+    self.stamp_tax = stamp_tax
+    self.transfer_fee = transfer_fee
+    self.slippage = slippage
     self.cleared_positions: list[MockStockClearedPosition] = []
     self.positions: Dict[str, MockStockPosition] = {}
     self.daily_returns: Dict[sys_date, float] = {}
@@ -76,6 +79,15 @@ class StockAccountMocker:
 
   def calc_commission(self, cost: float):
     return max(cost * self.commission, self.min_commission)
+
+  def calc_stamp_tax(self, amount: float):
+    return amount * self.stamp_tax
+
+  def calc_transfer_fee(self, amount: float):
+    return amount * self.transfer_fee
+
+  def calc_slippage(self, amount: float):
+    return amount * self.slippage
 
   def buy_stock(
       self,
@@ -92,10 +104,13 @@ class StockAccountMocker:
     """ 买入股票 """
     cost = volume * price
     commission = self.calc_commission(cost)
-    total_cost = cost + commission
+    transfer_fee = self.calc_transfer_fee(cost)
+    slippage = self.calc_slippage(cost)
+    total_fee = commission + transfer_fee + slippage
+    total_cost = cost + total_fee
     if total_cost > self.current_cash:
-      testback_logger = __import__('testback.logger', fromlist=['testback_logger']).testback_logger
-      testback_logger.warning(f'Cash not enough, skip buy: {code}, cost: {total_cost:.2f}, cash: {self.current_cash:.2f}')
+      # testback_logger = __import__('testback.logger', fromlist=['testback_logger']).testback_logger
+      # testback_logger.warning(f'Cash not enough, skip buy: {code}, cost: {total_cost:.2f}, cash: {self.current_cash:.2f}')
       return False
 
     signal_date = signal_date or buy_date
@@ -106,14 +121,14 @@ class StockAccountMocker:
       pos = self.positions[code]
       pos['volume'] += volume
       pos['cost'] += cost
-      pos['commission'] += commission
+      pos['commission'] += total_fee
       pos['avg_price'] = pos['cost'] / pos['volume']
     else:
       self.positions[code] = {
         'code': code,
         'volume': volume,
         'cost': cost,
-        'commission': commission,
+        'commission': total_fee,
         'buy_date': buy_date,
         'buy_signal_date': signal_date,
         'buy_trade_date': buy_date,
@@ -133,7 +148,7 @@ class StockAccountMocker:
       'price_field': price_field,
       'volume': volume,
       'amount': cost,
-      'commission': commission,
+      'commission': total_fee,
       'cost': cost,
       'income': None,
       'reason': reason,
@@ -167,7 +182,11 @@ class StockAccountMocker:
     cost_basis = original_pos['avg_price'] * volume
     gain = volume * price if price is not None else 0
     commission = self.calc_commission(gain)
-    total_gain = gain - commission
+    stamp_tax_fee = self.calc_stamp_tax(gain)
+    transfer_fee = self.calc_transfer_fee(gain)
+    slippage = self.calc_slippage(gain)
+    total_fee = commission + stamp_tax_fee + transfer_fee + slippage
+    total_gain = gain - total_fee
     realized_income = total_gain - cost_basis
 
     self.current_cash += total_gain
@@ -182,7 +201,7 @@ class StockAccountMocker:
       'price_field': price_field,
       'volume': volume,
       'amount': gain,
-      'commission': commission,
+      'commission': total_fee,
       'cost': cost_basis,
       'income': realized_income,
       'reason': clear_reason,
@@ -190,14 +209,14 @@ class StockAccountMocker:
       'execution_dividend_type': execution_dividend_type,
     })
 
-    pos['commission'] += commission
+    pos['commission'] += total_fee
     pos['volume'] -= volume
     pos['cost'] -= cost_basis
 
     if pos['volume'] == 0:
       cleared_pos: MockStockPosition = {
         **original_pos,
-        'commission': original_pos['commission'] + commission,
+        'commission': original_pos['commission'] + total_fee,
       }
       del self.positions[code]
       self.cleared_positions.append(MockStockClearedPosition(

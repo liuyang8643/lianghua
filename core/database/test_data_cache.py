@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from core.database import data as data_module
+from data.db import data as data_module
 
 
 class TestMarketDataFromCache(unittest.TestCase):
@@ -68,7 +68,7 @@ class TestMarketDataFromCache(unittest.TestCase):
       ]
     )
 
-    with patch.object(data_module, 'get_history_data_after_download', return_value={'000023.SZ': df}) as mock_loader:
+    with patch.object(data_module, 'get_history_data', return_value={'000023.SZ': df}) as mock_loader:
       result = data_module.get_market_data_batch(
         stock_codes=['000023.SZ'],
         count=1,
@@ -93,7 +93,7 @@ class TestMarketDataFromCache(unittest.TestCase):
       ]
     )
 
-    with patch.object(data_module, 'get_history_data_after_download', return_value={'000023.SZ': df}):
+    with patch.object(data_module, 'get_history_data', return_value={'000023.SZ': df}):
       result = data_module.get_market_data_batch(
         stock_codes=['000023.SZ'],
         count=2,
@@ -124,7 +124,7 @@ class TestMarketDataFromCache(unittest.TestCase):
       ]
     )
 
-    with patch.object(data_module, 'get_history_data_after_download', return_value={'000023.SZ': df}):
+    with patch.object(data_module, 'get_history_data', return_value={'000023.SZ': df}):
       result = data_module.get_market_data_batch(
         stock_codes=['000023.SZ'],
         count=2,
@@ -165,7 +165,7 @@ class TestMarketDataFromCache(unittest.TestCase):
       ]
     )
 
-    with patch.object(data_module, 'get_history_data_after_download', return_value={'000023.SZ': fallback_df}):
+    with patch.object(data_module, 'get_history_data', return_value={'000023.SZ': fallback_df}):
       result = data_module.get_market_data_batch(
         stock_codes=['000023.SZ'],
         count=1,
@@ -185,7 +185,7 @@ class TestMarketDataFromCache(unittest.TestCase):
       ]
     )
 
-    with patch.object(data_module, 'get_history_data_after_download', return_value={'000023.SZ': fallback_df}):
+    with patch.object(data_module, 'get_history_data', return_value={'000023.SZ': fallback_df}):
       result = data_module.get_market_data_batch(
         stock_codes=['000023.SZ'],
         count=1,
@@ -205,7 +205,7 @@ class TestMarketDataFromCache(unittest.TestCase):
       ]
     )
 
-    with patch.object(data_module, 'get_history_data_after_download', return_value={'301667.SZ': short_df}), \
+    with patch.object(data_module, 'get_history_data', return_value={'301667.SZ': short_df}), \
          patch.object(data_module, '_get_expected_history_count', return_value=2):
       result = data_module.get_market_data_batch(
         stock_codes=['301667.SZ'],

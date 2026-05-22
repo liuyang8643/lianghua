@@ -2,7 +2,6 @@
 import socket
 import time
 import functools
-from core.logger import core_logger
 
 
 def set_socket_timeout(seconds: float = 30):
@@ -51,6 +50,7 @@ def retry_on_network_error(max_retries=1, delay=2.0):
           restore_socket_timeout(socket.getdefaulttimeout())
           if _is_network_error(e) and attempt < max_retries:
             last_err = e
+            from core.logger import core_logger
             core_logger.debug(
               f"Retrying {func.__name__} after {e} (attempt {attempt + 1})"
             )

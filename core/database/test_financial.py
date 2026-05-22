@@ -3,7 +3,7 @@ import time
 from datetime import date
 import pytest
 
-from core.database.financial.data import (
+from data.db.financial.data import (
     get_financial_data,
     get_financial_indicator,
     get_financial_indicators,

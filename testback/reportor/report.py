@@ -223,7 +223,7 @@ def _build_kline_chart(code: str, trade_log: List[Dict], trade_dates: List[str],
     try:
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
-        from core.database import get_market_data_from_cache
+        from data.db import get_market_data_from_cache
     except Exception:
         return ''
 
@@ -244,16 +244,16 @@ def _build_kline_chart(code: str, trade_log: List[Dict], trade_dates: List[str],
     except Exception:
         return ''
 
-    if data is None or data.empty or len(data) < 5:
+    if data is None or len(data.get('close', [])) < 5:
         return ''
 
-    timestamps = data['time'].values
+    timestamps = data['time']
     dates = [datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d') for ts in timestamps]
-    opens = data['open'].values
-    highs = data['high'].values
-    lows = data['low'].values
-    closes = data['close'].values
-    volumes = data['amount'].values
+    opens = data['open']
+    highs = data['high']
+    lows = data['low']
+    closes = data['close']
+    volumes = data['amount']
 
     stock_trades = _get_stock_trades(trade_log, code)
     buys = stock_trades['buys']

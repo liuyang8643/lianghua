@@ -4,10 +4,8 @@
 """
 import hashlib
 import inspect
-from functools import lru_cache
 from typing import Callable
 
-@lru_cache(maxsize=32)
 def hash_function_code(func: Callable) -> str:
   """
   获取函数所在文件的完整源代码并生成哈希值

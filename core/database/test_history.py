@@ -1,15 +1,13 @@
 """Tests for mootdx K-line history data source.
 
-Tests get_history_data(), get_history_data_after_download(), and
-related utility functions (both mock-based unit tests and real network tests).
+Tests get_history_data() and related utility functions (both mock-based unit tests and real network tests).
 """
 import time
 from datetime import datetime, date
 import pytest
 import pandas as pd
-from core.database.history import (
+from data.db.history import (
     get_history_data,
-    get_history_data_after_download,
     _to_mootdx_code,
     _mootdx_frequency,
     _convert_to_wbr,
@@ -148,30 +146,6 @@ class TestExpectedHistoryCount:
         )
         count = _get_expected_history_count("000001.SZ", datetime(2026, 4, 10, 15, 0, 0), "1d", 60)
         assert count == 60
-
-
-class TestGetHistoryDataAfterDownload:
-    """Test get_history_data_after_download (mocked)."""
-
-    def test_passes_through(self, monkeypatch):
-        data = pd.DataFrame({
-            "time": [int(datetime(2026, 4, 10, 15, 0, 0).timestamp() * 1000)],
-            "open": [1.0],
-            "high": [1.1],
-            "low": [0.9],
-            "close": [1.0],
-            "volume": [10000],
-            "amount": [100000.0],
-        })
-
-        def mock_get(codes, count, base_time, period, div_type):
-            return {"000001.SZ": data}
-
-        monkeypatch.setattr("core.database.history.get_history_data", mock_get)
-        result = get_history_data_after_download(
-            ["000001.SZ"], 5, datetime(2026, 4, 10, 15, 0, 0), "1d", "back"
-        )
-        assert result["000001.SZ"] is data
 
 
 # ==================== Network Integration Tests ====================

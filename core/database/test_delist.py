@@ -5,7 +5,7 @@ Tests get_delist_stock_info() and the DelistStockInfo data structure.
 import time
 import pytest
 from datetime import date
-from core.database.delist import get_delist_stock_info, DelistStockInfo
+from data.db.delist import get_delist_stock_info, DelistStockInfo
 
 
 class TestGetDelistStockInfo:
@@ -91,22 +91,15 @@ class TestGetDelistStockInfo:
             assert info.delist_date is not None
 
     @pytest.mark.network
-    def test_lru_cache_works(self):
-        """The function uses lru_cache, so second call should be near-instant."""
-        # First call to populate cache
-        get_delist_stock_info.cache_clear()
-        _ = get_delist_stock_info()
-        # Second call should be cached
-        start = time.time()
-        result2 = get_delist_stock_info()
-        elapsed = time.time() - start
-        assert elapsed < 5, f"Cached call took {elapsed:.3f}s, expected < 5s"
-        assert len(result2) > 0
+    def test_get_delist_stock_info(self):
+        """读取退市股票信息并验证返回格式。"""
+        result = get_delist_stock_info()
+        assert isinstance(result, dict)
+        assert len(result) > 0
 
     @pytest.mark.network
     def test_timeout_within_60_seconds(self):
         """Verify get_delist_stock_info() completes within 60 seconds."""
-        get_delist_stock_info.cache_clear()
         start = time.time()
         result = get_delist_stock_info()
         elapsed = time.time() - start

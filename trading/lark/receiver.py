@@ -13,7 +13,7 @@ def create_lark_handler(trader: Trader):
 
   def handle_action_query_positions():
     """ 查询持仓信息 """
-    from core.database import get_stock_detail
+    from data.db import get_stock_detail
     from utils.stock.format import get_stock_desc
     trading_logger.debug(f'开始查询持仓信息...')
     position_info = [

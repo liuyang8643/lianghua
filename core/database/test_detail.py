@@ -4,7 +4,7 @@ Tests get_stock_detail() and internal _fetch_stock_detail_akshare().
 """
 import time
 import pytest
-from core.database.detail import get_stock_detail
+from data.db.detail import get_stock_detail
 
 
 class TestGetStockDetail:

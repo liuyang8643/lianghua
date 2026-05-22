@@ -1,7 +1,9 @@
+from __future__ import annotations
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from core.database.type import StockDetail
+if TYPE_CHECKING:
+  from data.db.type import StockDetail
 
 def get_stock_code(stock_detail: StockDetail) -> str:
   return f"{stock_detail['ExchangeCode']}.{stock_detail['ExchangeID']}" if stock_detail else '-'

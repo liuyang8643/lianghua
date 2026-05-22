@@ -6,7 +6,7 @@ from xtquant.xttype import StockAccount, XtOrder, XtAsset, XtPosition, XtTrade
 from xtquant import xtconstant, xtdata
 
 from configs import TRADE_ACCOUNT
-from core.database import get_stock_detail
+from data.db import get_stock_detail
 from trading.helper import get_price_type
 from trading.watcher import TraderCallback
 from trading.logger import trading_logger

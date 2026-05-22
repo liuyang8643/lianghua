@@ -4,16 +4,53 @@ from itertools import combinations
 from pathlib import Path
 
 
+import numpy as np
 import yaml
 
-from core.factors import SmallCap
-from core.factors.blend_factors import SmallCapDailyMVMaskRoe2xBottom10, TrueMarketCap
+from core.factors.SmallCap import SmallCap
+from core.factors.TrueMarketCap import TrueMarketCap
+from core.factors.SmallCapMarginExpansion import SmallCapMarginExpansion
+from core.factors.PureProfitYoyAccel import PureProfitYoyAccel
+from core.factors.QualityReversal10D import QualityReversal10D
+from core.factors.TMC_GARP_Broad import TMC_GARP_Broad
+from core.factors.TMC_GARP_Mult import TMC_GARP_Mult
+from core.factors.TMC_ProfitYoy_25_LowVol import TMC_ProfitYoy_25_LowVol
 from core.factors.ShortTermReversal import ShortTermReversal
 from core.factors.CashFlowQuality import CashFlowQuality
+from core.factors.LowTurnover20D import LowTurnover20D
+from core.factors.ADX14Trend import ADX14Trend
+from core.factors.CloseMom21D import CloseMom21D
+from core.factors.CCI14 import CCI14
+from core.factors.BB20Position import BB20Position
+from core.factors.OvernightGap1D import OvernightGap1D
+from core.factors.OBVSlope import OBVSlope
+from core.factors.ATR14 import ATR14
+from core.factors.PricePosition256D import PricePosition256D
+from core.factors.EWMADivergence import EWMADivergence
+from core.factors.Aroon14 import Aroon14
+from core.factors.ProfitYoy import ProfitYoy
+from core.factors.ROE import ROE
+from core.factors.EPValuation import EPValuation
+from core.factors.MACD import MACD
+from core.factors.TRIX import TRIX
+from core.factors.KDJ import KDJ
+from core.factors.Turnover import Turnover
+from core.factors.SAR import SAR
 
 _FACTOR_REGISTRY = {
     cls.__name__: cls
-    for cls in [SmallCap, SmallCapDailyMVMaskRoe2xBottom10, TrueMarketCap, ShortTermReversal, CashFlowQuality]
+    for cls in [
+        SmallCap, TrueMarketCap,
+        ShortTermReversal, CashFlowQuality,
+        SmallCapMarginExpansion, PureProfitYoyAccel,
+        QualityReversal10D, TMC_GARP_Broad, TMC_GARP_Mult,
+        TMC_ProfitYoy_25_LowVol,
+        LowTurnover20D,
+        ADX14Trend, CloseMom21D, CCI14, BB20Position,
+        OvernightGap1D, OBVSlope, ATR14, PricePosition256D, EWMADivergence,
+        Aroon14, ProfitYoy, ROE, EPValuation,
+        MACD, TRIX, KDJ, Turnover, SAR,
+    ]
 }
 
 _CFG = yaml.safe_load((Path(__file__).parent.parent / 'configs' / 'ga_profiles.yaml').read_text())
@@ -53,6 +90,11 @@ for _name, _p in _GA_PROFILES_RAW.items():
     }
     if _p.get('factor_choice_space'):
         _profile['factor_choice_space'] = _p['factor_choice_space']
+    if _p.get('weight_range'):
+        min_w, max_w, step = _p['weight_range']
+        vals = [0.0 if abs(x) < 1e-9 else round(float(x), 2) for x in np.arange(min_w, max_w + step / 2, step)]
+        _profile['weight_search_spaces'] = {n: vals for n in _factors}
+        _profile['fixed_weights'] = None
     GA_PROFILES[_name] = _profile
 
 
@@ -145,6 +187,10 @@ def sample_position_count(profile_name: str | None = None):
     return _sample_from_search_space('position_count', profile_name)
 
 
+def sample_holding_period(profile_name: str | None = None, current_value=None):
+    return _sample_from_search_space('holding_period', profile_name)
+
+
 def sample_stock_pool(profile_name: str | None = None, current_value=None):
     return _sample_from_search_space('stock_pool', profile_name)
 
@@ -153,8 +199,12 @@ def sample_factor_choice(profile_name: str | None = None, current_value=None):
     return _sample_from_search_space('factor_choice', profile_name)
 
 
-def sample_timing_sensitivity(profile_name: str | None = None, current_value=None):
-    return _sample_from_search_space('timing_sensitivity', profile_name)
+def sample_timing_base(profile_name: str | None = None, current_value=None):
+    return _sample_from_search_space('timing_base', profile_name)
+
+
+def sample_timing_leverage(profile_name: str | None = None, current_value=None):
+    return _sample_from_search_space('timing_leverage', profile_name)
 
 
 def sample_timing_direction(profile_name: str | None = None, current_value=None):
@@ -165,8 +215,8 @@ def sample_timing_enabled(profile_name: str | None = None, current_value=None):
     return _sample_from_search_space('timing_enabled', profile_name)
 
 
-def sample_ma_period(profile_name: str | None = None, current_value=None):
-    return _sample_from_search_space('ma_period', profile_name)
+def sample_timing_window(profile_name: str | None = None, current_value=None):
+    return _sample_from_search_space('timing_window', profile_name)
 
 
 def sample_timing_index(profile_name: str | None = None, current_value=None):
@@ -175,8 +225,9 @@ def sample_timing_index(profile_name: str | None = None, current_value=None):
 
 def build_individual_config(position_count: int, freeze_days: int = 0, weights: dict | None = None,
                             factor_choice: str | None = None, stock_pool=None,
-                            timing_sensitivity=None, timing_direction=None,
-                            timing_enabled=None, ma_period=None, timing_index=None,
+                            holding_period=None,
+                            timing_base=None, timing_leverage=None, timing_direction=None,
+                            timing_enabled=None, timing_window=None, timing_index=None,
                             profile_name: str | None = None) -> dict:
     profile = get_profile(profile_name)
     if factor_choice:
@@ -192,8 +243,9 @@ def build_individual_config(position_count: int, freeze_days: int = 0, weights: 
         'temperatures': get_profile_fixed_temperatures(profile_name),
     }
     for k, v in {'factor_choice': factor_choice, 'stock_pool': stock_pool,
-                 'timing_sensitivity': timing_sensitivity, 'timing_direction': timing_direction,
-                 'timing_enabled': timing_enabled, 'ma_period': ma_period, 'timing_index': timing_index}.items():
+                 'holding_period': holding_period,
+                 'timing_base': timing_base, 'timing_leverage': timing_leverage, 'timing_direction': timing_direction,
+                 'timing_enabled': timing_enabled, 'timing_window': timing_window, 'timing_index': timing_index}.items():
         if v is not None:
             cfg[k] = v
     if freeze_days:
@@ -206,10 +258,12 @@ def generate_initial_configs(size: int, profile_name: str | None = None) -> list
         position_count=sample_position_count(profile_name),
         factor_choice=sample_factor_choice(profile_name),
         stock_pool=sample_stock_pool(profile_name),
-        timing_sensitivity=sample_timing_sensitivity(profile_name),
+        holding_period=sample_holding_period(profile_name),
+        timing_base=sample_timing_base(profile_name),
+        timing_leverage=sample_timing_leverage(profile_name),
         timing_direction=sample_timing_direction(profile_name),
         timing_enabled=sample_timing_enabled(profile_name),
-        ma_period=sample_ma_period(profile_name),
+        timing_window=sample_timing_window(profile_name),
         timing_index=sample_timing_index(profile_name),
         profile_name=profile_name,
     ) for _ in range(size)]

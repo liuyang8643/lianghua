@@ -1,5 +1,5 @@
 version: "2026-05-19"
-default_profile: smallcap_st
+default_profile: full_search
 
 mode_configs:
   single:
@@ -28,12 +28,15 @@ mode_configs:
 
 search_spaces:
   position_count: [5, 15, 25, 35]
+  holding_period: [3, 7, 14, 21, 30]
   board_prefixes: [60, 00, 30, 688]
-  timing_sensitivity: [0.5, 0.75, 1.0, 1.5, 2.0]
-  ma_period: [3, 7, 14, 21, 30, 60, 90, 120, 180]
+  timing_base: [0.3, 0.4, 0.5, 0.6, 0.7]
+  timing_leverage: [1, 5, 10, 15, 20]
+  timing_window: [3, 5, 10, 15, 20, 30, 45, 60]
   timing_direction: [1, -1]
   timing_index: [sh000300, sh000905, sh000852]
   timing_enabled: [true, false]
+  holding_period: [3, 7, 14, 21, 30]
 
 profiles:
   smallcap_st:
@@ -58,16 +61,35 @@ profiles:
     preload_end: 2026-01-01
 
   smallcap_g2a_roe2x_bottom10:
-    desc: SmallCapDailyMVMaskRoe2xBottom10 single-factor profile
-    factor_classes: [SmallCapDailyMVMaskRoe2xBottom10]
+    desc: TrueMarketCap single-factor profile (was SmallCapDailyMVMaskRoe2xBottom10, moved to bark)
+    factor_classes: [TrueMarketCap]
     search_spaces: [position_count]
     preload_start: 2010-01-01
     preload_end: 2026-01-01
 
   tmc_g2a_timing:
-    desc: TrueMarketCap 或 G2a(ROE×2) 单因子 + stock_pool + 大盘择时
-    factor_classes: [TrueMarketCap, SmallCapDailyMVMaskRoe2xBottom10]
-    factor_choice_space: [TrueMarketCap, SmallCapDailyMVMaskRoe2xBottom10]
-    search_spaces: [position_count, stock_pool, factor_choice, timing_sensitivity, timing_direction, timing_enabled, ma_period, timing_index]
+    desc: TrueMarketCap 单因子 + stock_pool + 大盘择时
+    factor_classes: [TrueMarketCap]
+    factor_choice_space: [TrueMarketCap]
+    search_spaces: [position_count, stock_pool, timing_base, timing_leverage, timing_direction, timing_enabled, timing_window, timing_index]
     preload_start: 2010-01-01
     preload_end: 2020-12-31
+
+  full_search:
+    desc: 全因子权重搜索 — 29因子 + 大盘择时，权重[-1,1]步长0.1
+    factor_classes: [
+      SmallCap, TrueMarketCap,
+      ShortTermReversal, CashFlowQuality,
+      SmallCapMarginExpansion, PureProfitYoyAccel,
+      QualityReversal10D, TMC_GARP_Broad, TMC_GARP_Mult,
+      TMC_ProfitYoy_25_LowVol,
+      LowTurnover20D,
+      ADX14Trend, CloseMom21D, CCI14, BB20Position,
+      OvernightGap1D, OBVSlope, ATR14, PricePosition256D, EWMADivergence,
+      Aroon14, ProfitYoy, ROE, EPValuation,
+      MACD, TRIX, KDJ, Turnover, SAR,
+    ]
+    weight_range: [-1.0, 1.0, 0.1]
+    search_spaces: [position_count, stock_pool, holding_period, timing_base, timing_leverage, timing_direction, timing_enabled, timing_window, timing_index]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
