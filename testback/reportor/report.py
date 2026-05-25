@@ -588,6 +588,7 @@ def _make_daily_table(daily_snapshots: List[Dict], stock_name_map: Dict[str, str
         {'label': '总资产(¥)', 'sort_type': 'number'},
         {'label': '日收益率', 'sort_type': 'number'},
         {'label': '累计收益率', 'sort_type': 'number'},
+        {'label': '仓位', 'sort_type': 'number'},
         {'label': '候选 buy_n 列表', 'sort_type': 'text'},
         {'label': '实际买卖', 'sort_type': 'text'},
     ]
@@ -612,6 +613,9 @@ def _make_daily_table(daily_snapshots: List[Dict], stock_name_map: Dict[str, str
         )
         buy_summary_html, buy_list_text = _make_stock_count_summary(buy_n_list, stock_name_map)
         trade_summary_html, trade_summary_title = _make_trade_count_summary(executed_buy_list, executed_sell_list, stock_name_map)
+        total_asset = s.get('total_asset', 0)
+        market_value = s.get('market_value', 0)
+        pos_ratio = (market_value / total_asset * 100) if total_asset > 0 else 0.0
         rows.append([
             _make_cell(html_escape(signal_date), signal_date),
             _make_cell(html_escape(trade_date), trade_date),
@@ -621,6 +625,7 @@ def _make_daily_table(daily_snapshots: List[Dict], stock_name_map: Dict[str, str
             _make_cell(f'{s["total_asset"]:,.2f}', s['total_asset']),
             _make_cell(f'<span class="{daily_cls}">{_fmt_pct(daily_pct)}</span>', daily_pct),
             _make_cell(f'<span class="{cum_cls}">{_fmt_pct(cum_pct)}</span>', cum_pct),
+            _make_cell(f'{pos_ratio:.1f}%', pos_ratio),
             _make_cell(buy_summary_html, buy_list_text, title=buy_list_text),
             _make_cell(trade_summary_html, action_sort, title=trade_summary_title),
         ])

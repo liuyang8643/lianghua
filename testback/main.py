@@ -7,6 +7,7 @@ import numpy as np
 
 from data.db.delist import get_delist_stock_info
 from core.strategies.runtime import load_runtime_npz
+from core.strategies.scoring import scores_to_ranks, batch_limit_check, precompute_limit_helpers
 from utils.stock.time import get_trading_date_span
 from utils.stock.legality import LegalityValidator
 
@@ -31,7 +32,6 @@ from testback.ga_config import (
   sample_timing_base,
   sample_timing_leverage,
   sample_timing_direction,
-  sample_timing_enabled,
   sample_timing_index,
   sample_timing_window,
 )
@@ -43,6 +43,7 @@ from testback.logger import testback_logger
 
 # ========== GA 核心函数 ==========
 
+_ALL_A_SHARE_PREFIXES = ('60', '00', '30', '688')
 _BT_KEYS = ['open','high','low','close','volume','amount','st_mask','stock_codes','trade_dates','issue_price','stock_names']
 
 def _config_key(config: dict) -> tuple:
@@ -53,7 +54,7 @@ def _config_key(config: dict) -> tuple:
   return (config['buy_n'], config['sell_m'],
           sp, config.get('holding_period'),
           config.get('timing_base'), config.get('timing_leverage'),
-          config.get('timing_direction'), config.get('timing_enabled'),
+          config.get('timing_direction'),
           config.get('timing_window'), config.get('timing_index'),
           tuple(sorted(w.items())))
 
@@ -85,14 +86,16 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
         unique_cfgs[key] = (cfg, fit)
     sorted_global = sorted(unique_cfgs.values(), key=lambda x: x[1], reverse=True)
     total = len(sorted_global)
-    n_elite = int(population_size * 0.9)
+    n_elite = min(20, total)
     n_mid = population_size - n_elite
-    n_elite = min(n_elite, total)
     elite_cfgs = [cfg for cfg, _ in sorted_global[:n_elite]]
-    mid_start = n_elite
+    mid_start = 45
     mid_end = max(mid_start + 1, total // 2)
-    mid_pool = sorted_global[mid_start:mid_end]
-    mid_cfgs = [cfg for cfg, _ in random.sample(mid_pool, min(n_mid, len(mid_pool)))]
+    if mid_start < total:
+      mid_pool = sorted_global[mid_start:mid_end]
+      mid_cfgs = [cfg for cfg, _ in random.sample(mid_pool, min(n_mid, len(mid_pool)))]
+    else:
+      mid_cfgs = []
     while len(mid_cfgs) < n_mid:
       remaining = [cfg for cfg, _ in sorted_global if cfg not in elite_cfgs and cfg not in mid_cfgs]
       if remaining:
@@ -136,7 +139,6 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     timing_base = _crossover_field(p1, p2, 'timing_base') if 'timing_base' in search_spaces else None
     timing_leverage = _crossover_field(p1, p2, 'timing_leverage') if 'timing_leverage' in search_spaces else None
     timing_dir = _crossover_field(p1, p2, 'timing_direction') if 'timing_direction' in search_spaces else None
-    timing_enabled = _crossover_field(p1, p2, 'timing_enabled') if 'timing_enabled' in search_spaces else None
     timing_window = _crossover_field(p1, p2, 'timing_window') if 'timing_window' in search_spaces else None
     timing_index = _crossover_field(p1, p2, 'timing_index') if 'timing_index' in search_spaces else None
     crossed_weights = None
@@ -152,7 +154,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
                                    stock_pool=stock_pool, holding_period=holding_period,
                                    timing_base=timing_base, timing_leverage=timing_leverage,
                                    timing_direction=timing_dir,
-                                   timing_enabled=timing_enabled, timing_window=timing_window,
+                                   timing_window=timing_window,
                                    timing_index=timing_index, profile_name=profile_name)
 
   weight_spaces = get_profile_weight_search_spaces(profile_name) if has_weight_search else {}
@@ -165,7 +167,6 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     if 'timing_base' in search_spaces: dims.append('timing_base')
     if 'timing_leverage' in search_spaces: dims.append('timing_leverage')
     if 'timing_direction' in search_spaces: dims.append('timing_direction')
-    if 'timing_enabled' in search_spaces: dims.append('timing_enabled')
     if 'timing_window' in search_spaces: dims.append('timing_window')
     if 'timing_index' in search_spaces: dims.append('timing_index')
     for k in weight_spaces: dims.append(f'weight_{k}')
@@ -187,7 +188,6 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     timing_base = sample_timing_base(profile_name=profile_name) if 'timing_base' in mutate_dims else config.get('timing_base')
     timing_leverage = sample_timing_leverage(profile_name=profile_name) if 'timing_leverage' in mutate_dims else config.get('timing_leverage')
     timing_dir = sample_timing_direction(profile_name=profile_name) if 'timing_direction' in mutate_dims else config.get('timing_direction')
-    timing_enabled = sample_timing_enabled(profile_name=profile_name) if 'timing_enabled' in mutate_dims else config.get('timing_enabled')
     timing_window = sample_timing_window(profile_name=profile_name) if 'timing_window' in mutate_dims else config.get('timing_window')
     timing_index = sample_timing_index(profile_name=profile_name) if 'timing_index' in mutate_dims else config.get('timing_index')
     mutated_weights = dict(config.get('weights', {}))
@@ -201,7 +201,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
                                    stock_pool=stock_pool, holding_period=holding_period,
                                    timing_base=timing_base, timing_leverage=timing_leverage,
                                    timing_direction=timing_dir,
-                                   timing_enabled=timing_enabled, timing_window=timing_window,
+                                   timing_window=timing_window,
                                    timing_index=timing_index, profile_name=profile_name)
 
   children = []
@@ -359,28 +359,11 @@ def _extend_verify_stock_pool_with_historical_codes(
 
 # ========== 直接回测路径（无TopN对象） ==========
 
-def _scores_to_ranks(scores: np.ndarray) -> np.ndarray:
-  """将原始得分转为每日截面排名 (0~1, 1=最优), NaN 给 0。原地修改。"""
-  n_days = scores.shape[0]
-  ranks = np.empty_like(scores, dtype=np.float32)
-  for d in range(n_days):
-    row = scores[d]
-    nans = np.isnan(row)
-    valid_mask = ~nans
-    n_valid = valid_mask.sum()
-    if n_valid == 0:
-      ranks[d] = 0.0
-      continue
-    order = np.argsort(row[valid_mask])[::-1]
-    ranks[d, nans] = 0.0
-    col_idx = np.where(valid_mask)[0]
-    ranks[d, col_idx[order]] = 1.0 - np.arange(n_valid, dtype=np.float32) / n_valid
-  return ranks
-
 
 def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_classes):
   """加载 NPZ 并批量计算因子分数，返回 (data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices)。"""
-  data = load_runtime_npz(backtest_datetime_list)
+  max_lookback = max((getattr(c, 'hist_days', 0) for c in factor_classes), default=0) or None
+  data = load_runtime_npz(backtest_datetime_list, max_lookback=max_lookback)
   if data is None:
     first_d = backtest_datetime_list[0].strftime('%Y%m%d')
     last_d = backtest_datetime_list[-1].strftime('%Y%m%d')
@@ -425,116 +408,21 @@ def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_c
   all_scores: dict[str, np.ndarray] = {}
   for name, f in factor_meta:
     raw = f.calc_batch(factor_data)
-    all_scores[name] = _scores_to_ranks(raw.astype(np.float32, copy=False))
+    all_scores[name] = scores_to_ranks(raw.astype(np.float32, copy=False))
 
   testback_logger.info(f"因子批量+预排名完成 ({time.time() - t0:.1f}s), {len(valid_dates)} 个调仓日")
   return data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices
 
 
-# ═══════════ numpy 批量合法性检查 ═══════════
-
-_EPS = 0.001
-
-def _round_half_up_np(values):
-  return np.floor(values * 100.0 + 0.5 + 1e-9) / 100.0
-
-def _precompute_limit_helpers(data, stock_indices, list_dates_map):
-  codes = [str(s) for s in data['stock_codes']]
-  n = len(codes)
-  bt = np.zeros(n, dtype=np.int8); br = np.full(n, 0.10, dtype=np.float64)
-  for i, c in enumerate(codes):
-    if c.startswith('300') or c.startswith('301'): bt[i] = 1; br[i] = 0.20
-    elif c.startswith('688'): bt[i] = 2; br[i] = 0.20
-    elif c.startswith('83') or c.startswith('87') or c.startswith('43') or c.startswith('92'): bt[i] = 3; br[i] = 0.30
-  tdp = [d.astype('datetime64[D]').item() for d in data['trade_dates']]
-  d2t = {d: i for i, d in enumerate(tdp)}
-  lt = np.full(n, -1, dtype=np.int32)
-  if list_dates_map:
-    for code, ld in list_dates_map.items():
-      si = stock_indices.get(code)
-      if si is None: continue
-      ldi = d2t.get(ld)
-      if ldi is None:
-        for d in tdp:
-          if d >= ld: ldi = d2t[d]; break
-      if ldi is not None: lt[si] = ldi
-  return bt, br, lt
-
-def _batch_limit_check(candidates, candidates_idx, trade_idx, signal_date,
-                       board_type, base_ratio, list_tidx,
-                       open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy):
-  if len(candidates) == 0:
-    return np.array([], dtype=bool), {}
-  idx = np.asarray(candidates_idx, dtype=np.intp); n = len(idx)
-  opens = open_all[trade_idx, idx].astype(np.float64)
-  valid_open = ~np.isnan(opens) & (opens > 0)
-  if not np.any(valid_open):
-    return np.zeros(n, dtype=bool), {'suspended': n}
-
-  precloses = close_all[trade_idx - 1, idx].astype(np.float64) if trade_idx > 0 else np.full(n, np.nan)
-  valid_preclose = (trade_idx > 0) & ~np.isnan(precloses) & (precloses > 0)
-
-  st_arr = st_all[trade_idx, idx] if st_all is not None else np.zeros(n, dtype=bool)
-  ratios = np.where(st_arr, 0.05, base_ratio[idx])
-  boards = board_type[idx]
-  cyb_pre = (boards == 1) & (signal_date < date(2020, 8, 24))
-  ratios[cyb_pre] = 0.10
-  lti = list_tidx[idx]
-
-  is_ipo_first = np.zeros(n, dtype=bool)
-  exempt = np.zeros(n, dtype=bool)
-  for i in range(n):
-    lt = lti[i]
-    if lt < 0 or trade_idx < lt: continue
-    ds = trade_idx - lt; b = boards[i]
-    if b == 3: exempt[i] = (ds == 0)
-    elif b == 2: exempt[i] = (signal_date >= date(2019, 7, 22) and ds <= 4)
-    elif b == 1:
-      if signal_date >= date(2020, 8, 24) and ds <= 4: exempt[i] = True
-      elif signal_date < date(2014, 1, 1) and ds == 0: exempt[i] = True
-    else:
-      if signal_date >= date(2023, 4, 10) and ds <= 4: exempt[i] = True
-      elif signal_date < date(2014, 1, 1) and ds == 0: exempt[i] = True
-    if not exempt[i] and lt >= 0 and trade_idx == lt and signal_date >= date(2014, 1, 1):
-      is_ipo_first[i] = True
-
-  # issuePrice fallback 仅 IPO 首日
-  if issue_price_all is not None and np.any(is_ipo_first):
-    need_fb = is_ipo_first & ~valid_preclose
-    if np.any(need_fb):
-      ips = issue_price_all[idx].astype(np.float64)
-      vip = need_fb & ~np.isnan(ips) & (ips > 0)
-      precloses[vip] = ips[vip]; valid_preclose[vip] = True
-
-  ratios = np.where(is_ipo_first & ~exempt, 0.44, ratios)
-  has_limit = valid_preclose & ~exempt
-
-  if is_buy:
-    up_limits = np.where(has_limit, _round_half_up_np(precloses * (1.0 + ratios)), np.nan)
-    limit_up = valid_open & has_limit & (opens >= up_limits - _EPS)
-    blocked = limit_up.copy()
-    for i in range(n):
-      if not is_ipo_first[i] or blocked[i]: continue
-      if abs(float(opens[i]) - float(low_all[trade_idx, idx[i]])) < _EPS and float(high_all[trade_idx, idx[i]]) >= up_limits[i] - _EPS:
-        blocked[i] = True
-    tradable = valid_open & ~blocked
-  else:
-    down_limits = np.where(has_limit, _round_half_up_np(precloses * (1.0 - ratios)), np.nan)
-    limit_down = valid_open & has_limit & (opens <= down_limits + _EPS)
-    tradable = valid_open & ~limit_down
-
-  suspended = np.sum(~valid_open)
-  reasons = {'suspended': int(suspended)} if suspended > 0 else {}
-  return tradable, reasons
+# ═══════════ numpy 批量合法性检查 — 从 core.strategies.scoring 导入 ═══════════
 
 
 def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices,
                      weights, buy_n, sell_m, temperatures, holding_period=None,
                      verify_config=None,
                      position_multipliers=None, list_dates_map=None,
-                     lightweight=False, rebalance=True):
+                     lightweight=False):
   """直接 numpy 回测，不创建 TopN 对象。lightweight=True 跳过明细组装，仅返回收益序列。"""
-  from core.strategies.sizers.sizer import Sizer
 
   account = StockAccountMocker(cash=500_000.0)
   delist_stock_info = get_delist_stock_info()
@@ -549,7 +437,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
   valid_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
 
   # 批量合法性检查预计算
-  board_type, base_ratio, list_tidx_arr = _precompute_limit_helpers(data, stock_indices, list_dates_map)
+  board_type, base_ratio, list_tidx_arr = precompute_limit_helpers(data, stock_indices, list_dates_map)
   # 原版 LegalityValidator 保留备用（与 _batch_limit_check 等价，已验证 467万次零差异）
   _validator_ref = LegalityValidator(
     st_mask=data.get('st_mask'), stock_codes=data.get('stock_codes'),
@@ -607,10 +495,11 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
   else:
     _prepend_forced = None
 
+  _last_valid_price: dict[str, float] = {}
+  _last_valid_close_price: dict[str, float] = {}
   if lightweight:
     _lw_daily_returns = []
     _lw_last_asset = account.init_cash
-    _daily_return_time = 0.0
 
   for i, dt in enumerate(valid_dates):
     signal_date = dt.date() if hasattr(dt, 'date') else dt
@@ -661,52 +550,39 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         continue
       open_val = day_open[si]
       if np.isnan(open_val) or open_val <= 0:
-        if stock in current_position_codes:
-          close_val = day_close[si]
-          if not np.isnan(close_val) and close_val > 0:
-            prices[stock] = float(close_val)
-          else:
-            delist_info = delist_stock_info.get(stock)
-            is_delisted = delist_info is not None and trade_date > delist_info.delist_date
-            if not is_delisted:
-              for t in range(trade_idx - 1, -1, -1):
-                pc = close_all[t, si]
-                if not np.isnan(pc) and pc > 0:
-                  prices[stock] = float(pc)
-                  break
+        if stock in _last_valid_price:
+          prices[stock] = _last_valid_price[stock]
         continue
-      prices[stock] = float(open_val)
+      prices[stock] = _last_valid_price[stock] = float(open_val)
+
+    # 估值用收盘价，独立于交易用开盘价
+    close_prices = {}
+    for stock in price_universe:
+      si = stock_indices.get(stock)
+      if si is None:
+        continue
+      close_val = day_close[si]
+      if not np.isnan(close_val) and close_val > 0:
+        close_prices[stock] = _last_valid_close_price[stock] = float(close_val)
+      elif stock in _last_valid_close_price:
+        close_prices[stock] = _last_valid_close_price[stock]
+      elif stock in _last_valid_price:
+        close_prices[stock] = _last_valid_price[stock]
 
     executed_sell_list: List[str] = []
-    if is_rebalance_day:
-      sell_check = [s for s in current_position_codes if s not in sell_m_stocks]
-      if sell_check:
-        sell_idx = [stock_indices[s] for s in sell_check if s in stock_indices]
-        sell_ok, _ = _batch_limit_check(
-          sell_check, sell_idx, trade_idx, signal_date,
-          board_type, base_ratio, list_tidx_arr,
-          open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=False)
-        for j, stock in enumerate(sell_check):
-          if not sell_ok[j] or stock not in prices:
-            continue
-          account.clear_stock(
-            code=stock, price=prices[stock], clear_date=trade_date, clear_reason='调仓换出',
-            signal_date=signal_date, price_field='open',
-            signal_dividend_type='back', execution_dividend_type='none',
-          )
-          executed_sell_list.append(stock)
+    executed_sell_details: List[Dict] = []
+    executed_buy_records: List[Dict] = []
 
     tradable_buy_stocks = []
     blocked_buy_details: List[Dict] = []
     if is_rebalance_day and buy_n_stocks:
       buy_idx = [stock_indices[s] for s in buy_n_stocks if s in stock_indices]
-      # 先过滤无价格的股票
       valid_buy, valid_buy_idx = [], []
       for s, si in zip(buy_n_stocks, buy_idx):
         if s in prices:
           valid_buy.append(s); valid_buy_idx.append(si)
       if valid_buy:
-        buy_ok, _ = _batch_limit_check(
+        buy_ok, _ = batch_limit_check(
           valid_buy, valid_buy_idx, trade_idx, signal_date,
           board_type, base_ratio, list_tidx_arr,
           open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=True)
@@ -715,91 +591,73 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
             continue
           tradable_buy_stocks.append(stock)
 
-    executed_buy_records: List[Dict] = []
-    if is_rebalance_day and tradable_buy_stocks:
-      stock_infos = [(s, prices[s]) for s in tradable_buy_stocks]
-      effective_cash = account.current_cash
-      if position_multipliers is not None and not np.isnan(position_multipliers[i]):
-        effective_cash = account.current_cash * position_multipliers[i]
-      allocations = Sizer.allocate(stock_infos, total_capital=effective_cash)
-      for stock, volume in allocations.items():
-        if stock in account.positions or volume <= 0:
-          continue
-        price = prices[stock]
-        buy_fee_rate = account.commission + account.transfer_fee + account.slippage
-        max_vol = int(account.current_cash / (price * (1 + buy_fee_rate)))
-        max_vol = max_vol // 100 * 100
-        volume = min(volume, max_vol)
-        if volume <= 0:
-          skipped_buy_reasons['insufficient_cash'] = skipped_buy_reasons.get('insufficient_cash', 0) + 1
-          blocked_buy_details.append({
-            'code': stock, 'reason': 'insufficient_cash',
-            'signal_date': signal_date.isoformat(), 'trade_date': trade_date.isoformat(),
-          })
-          continue
-        if not account.buy_stock(
-          code=stock, volume=volume, price=price, buy_date=trade_date,
-          signal_date=signal_date, price_field='open',
-          signal_dividend_type='back', execution_dividend_type='none',
-        ):
-          skipped_buy_reasons['insufficient_cash'] = skipped_buy_reasons.get('insufficient_cash', 0) + 1
-          blocked_buy_details.append({
-            'code': stock, 'reason': 'insufficient_cash',
-            'signal_date': signal_date.isoformat(), 'trade_date': trade_date.isoformat(),
-          })
-          continue
-        executed_buy_records.append({
-          'code': stock, 'signal_date': signal_date.isoformat(), 'trade_date': trade_date.isoformat(),
-          'price': price, 'price_field': 'open', 'volume': volume,
-          'signal_dividend_type': 'back', 'execution_dividend_type': 'none',
-        })
+    if is_rebalance_day and (account.positions or buy_n_stocks):
+      pos_vals = {c: p['volume'] * prices.get(c, 0) for c, p in account.positions.items()}
+      total_eq = account.current_cash + sum(pos_vals.values())
+      timing_mult = position_multipliers[i] if (position_multipliers is not None and not np.isnan(position_multipliers[i])) else 1.0
+      base_target = total_eq * timing_mult / buy_n
 
-    if rebalance:
-      pos_snapshot = [(code, dict(pos)) for code, pos in account.positions.items() if code in prices]
-      if len(pos_snapshot) > 1:
-        pos_vals = {code: pos['volume'] * prices[code] for code, pos in pos_snapshot}
-        total_eq = account.current_cash + sum(pos_vals.values())
-        target = total_eq / len(pos_snapshot)
+      # 多退少补: 不在 buy_n 的持仓 target=0 → 多退到0=换出
+      all_codes = set(account.positions.keys()) | set(buy_n_stocks)
+      buy_n_set = set(buy_n_stocks)
 
-        for code, pos in pos_snapshot:
-          cv = pos_vals[code]
-          if cv > target * 1.01:
-            sell_vol = int((cv - target) / prices[code] / 100) * 100
-            if 0 < sell_vol < pos['volume']:
-              si = stock_indices.get(code)
-              if si is not None:
-                ok, _ = _batch_limit_check(
-                  [code], [si], trade_idx, signal_date,
-                  board_type, base_ratio, list_tidx_arr,
-                  open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=False)
-                if ok[0]:
-                  account.sell_stock(code, sell_vol, prices[code], trade_date,
-                                    clear_reason='rebalance', signal_date=signal_date)
+      sell_candidates = []
+      for code in all_codes:
+        if code not in prices: continue
+        cv = pos_vals.get(code, 0); pos = account.positions.get(code)
+        tgt = base_target if code in buy_n_set else 0.0
+        if pos and cv > tgt * 1.01:
+          sv = pos['volume'] if tgt == 0 else int((cv - tgt) / prices[code] / 100) * 100
+          if 0 < sv <= pos['volume'] and (si := stock_indices.get(code)) is not None:
+            sell_candidates.append((code, sv, si))
 
-        for code, pos in pos_snapshot:
-          if code not in account.positions:
-            continue
-          cv = account.positions[code]['volume'] * prices[code]
-          if cv < target * 0.99:
-            buy_vol = int((target - cv) / prices[code] / 100) * 100
-            if buy_vol > 0:
-              cost = buy_vol * prices[code]
-              fee = cost * (account.commission + account.transfer_fee + account.slippage)
-              if account.current_cash >= cost + fee:
-                si = stock_indices.get(code)
-                if si is not None:
-                  ok, _ = _batch_limit_check(
-                    [code], [si], trade_idx, signal_date,
-                    board_type, base_ratio, list_tidx_arr,
-                    open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=True)
-                  if ok[0]:
-                    account.buy_stock(code, buy_vol, prices[code], trade_date,
-                                     signal_date=signal_date)
+      if sell_candidates:
+        sc, _, si_list = zip(*sell_candidates)
+        ok, _ = batch_limit_check(list(sc), list(si_list), trade_idx, signal_date,
+          board_type, base_ratio, list_tidx_arr,
+          open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=False)
+        for j, (code, sv, _) in enumerate(sell_candidates):
+          if ok[j]:
+            tgt = base_target if code in buy_n_set else 0.0
+            reason = '换出' if tgt == 0 else f'多退({sv}股)'
+            account.sell_stock(code, sv, prices[code], trade_date,
+                               clear_reason=reason, signal_date=signal_date)
+            executed_sell_list.append(code)
+            executed_sell_details.append({
+              'code': code, 'shares': sv, 'price': prices[code],
+              'reason': reason, 'cv_before': pos_vals.get(code, 0),
+              'target': tgt,
+            })
+
+      # 买入候选: 低于 target 99% (新仓 cv=0 自然涵盖)，仅限已通过涨跌停检查的 buy_n
+      buy_candidates = []
+      fee_rate = account.commission + account.transfer_fee + account.slippage
+      for code in tradable_buy_stocks:
+        if code not in prices: continue
+        cv = pos_vals.get(code, 0)
+        if cv < base_target * 0.99:
+          bv = int((base_target - cv) / prices[code] / 100) * 100
+          if bv > 0 and account.current_cash >= bv * prices[code] * (1 + fee_rate) \
+              and (si := stock_indices.get(code)) is not None:
+            buy_candidates.append((code, bv, si))
+
+      if buy_candidates:
+        bc, _, bi_list = zip(*buy_candidates)
+        ok, _ = batch_limit_check(list(bc), list(bi_list), trade_idx, signal_date,
+          board_type, base_ratio, list_tidx_arr,
+          open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=True)
+        for j, (code, bv, _) in enumerate(buy_candidates):
+          if ok[j]:
+            account.buy_stock(code, bv, prices[code], trade_date, signal_date=signal_date)
+            executed_buy_records.append({
+              'code': code, 'signal_date': signal_date.isoformat(),
+              'trade_date': trade_date.isoformat(), 'price': prices[code],
+              'price_field': 'open', 'volume': bv,
+              'signal_dividend_type': 'back', 'execution_dividend_type': 'none',
+            })
 
     if lightweight:
-      import time as _time
-      _t0 = _time.perf_counter()
-      mkt_val = sum(prices.get(c, 0.0) * p['volume'] for c, p in account.positions.items())
+      mkt_val = sum(close_prices.get(c, 0.0) * p['volume'] for c, p in account.positions.items())
       total_asset = account.current_cash + mkt_val
       if _lw_last_asset > 0:
         daily_ret = (total_asset - _lw_last_asset) / _lw_last_asset * 100
@@ -807,9 +665,8 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         daily_ret = 0.0
       _lw_daily_returns.append(daily_ret)
       _lw_last_asset = total_asset
-      _daily_return_time += _time.perf_counter() - _t0
     else:
-      assets = account.calc_assets(trade_date, prices)
+      assets = account.calc_assets(trade_date, close_prices)
       prev_total_asset = daily_snapshots[-1]['total_asset'] if daily_snapshots else account.init_cash
       daily_ret = (assets['total_asset'] - prev_total_asset) / prev_total_asset * 100 if prev_total_asset else 0.0
       daily_snapshots.append({
@@ -819,16 +676,17 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         'signal_dividend_type': 'back', 'execution_dividend_type': 'none', 'price_field': 'open',
         'cash': assets['cash'], 'market_value': assets['market_value'],
         'total_asset': assets['total_asset'], 'daily_return_pct': daily_ret, 'cumulative_return_pct': 0.0,
-        'sell_m_list': sell_m_stocks, 'buy_n_list': buy_n_stocks,
-        'buy_n_diff_list': [s for s in buy_n_stocks if s not in sell_m_stocks],
+        'sell_m_list': sell_m_stocks, 'buy_n_list': tradable_buy_stocks,
+        'buy_n_diff_list': [s for s in tradable_buy_stocks if s not in sell_m_stocks],
         'executed_sell_list': executed_sell_list,
+        'executed_sell_details': executed_sell_details,
         'executed_buy_list': [r['code'] for r in executed_buy_records],
         'executed_buy_details': executed_buy_records,
         'blocked_buy_details': blocked_buy_details,
       })
 
   if lightweight:
-    mkt_val = sum(prices.get(c, 0.0) * p['volume'] for c, p in account.positions.items())
+    mkt_val = sum(close_prices.get(c, 0.0) * p['volume'] for c, p in account.positions.items())
     total_asset = account.current_cash + mkt_val
     total_return = (total_asset - account.init_cash) / account.init_cash * 100
     return {
@@ -842,12 +700,11 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
       'delist_count': 0, 'round_trip_count': 0, 'current_positions_count': 0,
       'skipped_buy_reasons': {}, 'skipped_sell_reasons': {},
       'final_asset': total_asset,
-      '_daily_return_time_sec': _daily_return_time,
     }
 
   final_signal_date = valid_dates[-1].date() if hasattr(valid_dates[-1], 'date') else valid_dates[-1]
   final_trade_date = final_signal_date
-  final_assets = account.calc_assets(final_trade_date, prices)
+  final_assets = account.calc_assets(final_trade_date, close_prices)
   total_return = (final_assets['total_asset'] - account.init_cash) / account.init_cash * 100
 
   cumulative_returns = []
@@ -860,7 +717,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
 
   daily_returns = [snap.get('daily_return_pct', 0.0) for snap in daily_snapshots]
 
-  positions = account.calc_position_values(prices)
+  positions = account.calc_position_values(close_prices)
   for position in positions:
     position['holding_days'] = _count_holding_trading_days(
       position.get('buy_trade_date') or position.get('buy_date'), final_trade_date)
@@ -938,8 +795,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
   }
 
 
-def _find_latest_checkpoint() -> Path | None:
-  """自动找到 results/ 下最新的 GA checkpoint 目录。"""
+def _find_latest_ga_dir() -> Path | None:
   results_dir = Path('results')
   if not results_dir.is_dir():
     return None
@@ -949,8 +805,7 @@ def _find_latest_checkpoint() -> Path | None:
       continue
     if not (d.name.startswith('ga_') or d.name.startswith('debug_')):
       continue
-    ckpt = d / 'checkpoint.pkl'
-    if ckpt.exists():
+    if (d / 'all_results.jsonl').exists():
       candidates.append((d.name, d))
   if not candidates:
     return None
@@ -958,32 +813,38 @@ def _find_latest_checkpoint() -> Path | None:
   return candidates[0][1]
 
 
-def _save_checkpoint(output_dir: Path, generation: int, ga_state: dict, ga_cache: dict,
-           all_results: list, generation_results: list, next_configs: list,
-           val_metrics_cache: dict):
-  import pickle
-  ckpt = {
-    'generation': generation,
-    'ga_state': ga_state,
-    'ga_cache': ga_cache,
-    'all_results': all_results,
-    'generation_results': generation_results,
-    'next_configs': next_configs,
-    'val_metrics_cache': val_metrics_cache,
+def _rebuild_from_jsonl(output_dir: Path) -> tuple[dict, int]:
+  import json as _json
+  ga_cache = {}
+  last_gen = -1
+  jsonl_path = output_dir / 'all_results.jsonl'
+  if jsonl_path.exists():
+    with open(jsonl_path, 'r', encoding='utf-8') as f:
+      for line in f:
+        line = line.strip()
+        if not line:
+          continue
+        r = _json.loads(line)
+        cfg = r['config']
+        key = _config_key(cfg)
+        sharpe = r['sharpe']
+        if key not in ga_cache or sharpe > ga_cache[key].get('sharpe', -999):
+          ga_cache[key] = {'individual_config': cfg, 'sharpe': sharpe}
+        if r['generation'] > last_gen:
+          last_gen = r['generation']
+  return ga_cache, last_gen
+
+
+def _rebuild_ga_state(ga_cache: dict) -> dict:
+  """从 ga_cache 重建 ga_state（population + hall_of_fame + fitness_cache）。"""
+  sorted_entries = sorted(ga_cache.values(), key=lambda v: v.get('sharpe', -999), reverse=True)
+  hall_of_fame = [v['individual_config'] for v in sorted_entries[:100]]
+  fitness_cache = {_config_key(v['individual_config']): v['sharpe'] for v in sorted_entries}
+  return {
+    'population': [],
+    'hall_of_fame': hall_of_fame,
+    'fitness_cache': fitness_cache,
   }
-  tmp = output_dir / 'checkpoint.pkl.tmp'
-  with open(tmp, 'wb') as f:
-    pickle.dump(ckpt, f)
-  tmp.replace(output_dir / 'checkpoint.pkl')
-
-
-def _load_checkpoint(checkpoint_dir: Path) -> dict:
-  import pickle
-  ckpt_path = checkpoint_dir / 'checkpoint.pkl'
-  if not ckpt_path.exists():
-    raise FileNotFoundError(f'checkpoint 文件不存在: {ckpt_path}')
-  with open(ckpt_path, 'rb') as f:
-    return pickle.load(f)
 
 
 def _resolve_output_dir(output_dir_arg: str | None, mode: str) -> Path:
@@ -1019,11 +880,10 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
   testback_logger.info(f"日志文件: {output_dir / 'single.log'}")
   testback_logger.info(f"从文件加载 Individual_config: {args.individual_config}")
 
-  stock_pool = individual_config.get('stock_pool')
-  if stock_pool:
-    pool_tuple = tuple(stock_pool) if isinstance(stock_pool, list) else stock_pool
-    all_stocks = [s for s in all_stocks if s.startswith(pool_tuple)]
-    testback_logger.info(f"stock_pool={_format_pool(stock_pool)}: {len(all_stocks)} 只")
+  stock_pool = individual_config.get('stock_pool') or _ALL_A_SHARE_PREFIXES
+  pool_tuple = tuple(stock_pool) if isinstance(stock_pool, list) else stock_pool
+  all_stocks = [s for s in all_stocks if s.startswith(pool_tuple)]
+  testback_logger.info(f"stock_pool={_format_pool(pool_tuple)}: {len(all_stocks)} 只")
 
   candidate_stock_pool = _extend_verify_stock_pool_with_historical_codes(
     all_stocks, backtest_datetime_list, verify_config)
@@ -1084,10 +944,9 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
     verify_config=verify_config,
     position_multipliers=timing_multipliers,
     list_dates_map=list_dates_map,
-    rebalance=True,
   )
 
-  testback_logger.info(f"回测完成: 总收益={result['total_return']:.2f}%, 日收益计算耗时={result.get('_daily_return_time_sec', 0):.3f}s")
+  testback_logger.info(f"回测完成: 总收益={result['total_return']:.2f}%")
 
   signal_date_strs = [d.strftime('%Y-%m-%d') for d in signal_dates]
   trade_date_strs = [d.strftime('%Y-%m-%d') for d in trade_dates]
@@ -1156,8 +1015,23 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
   return result
 
 
-# === 文件后备 memmap 数据共享（Windows spawn，每数组独立文件 → offset=0 天然对齐） ===
+# === SharedMemory 数据共享（Windows spawn，替代 memmap 文件 I/O） ===
 _MEMMAP_DIRS: list = []
+_SHM_BLOCKS: list = []  # (SharedMemory, np.ndarray) 引用，防止被 GC 回收
+
+# Per-worker cache: pool initializer 打开一次，所有 eval 复用
+_worker_shm_cache: dict = {}
+
+def _worker_initializer(shm_entries):
+  """Pool initializer：每个 worker 进程启动时打开 SharedMemory，缓存在模块全局。
+  shm_entries: [(name, shm_name, shape, dtype_str), ...]"""
+  from multiprocessing.shared_memory import SharedMemory
+  global _worker_shm_cache
+  _worker_shm_cache = {}
+  for name, shm_name, shape, dtype_str in shm_entries:
+    shm = SharedMemory(name=shm_name)
+    arr = np.ndarray(shape, dtype=np.dtype(dtype_str), buffer=shm.buf)
+    _worker_shm_cache[name] = (shm, arr)
 
 def _arrays_from_memmap(info: dict) -> dict:
   return {name: np.memmap(filepath, dtype=np.dtype(dtype_str), mode='r', shape=shape)
@@ -1168,6 +1042,16 @@ def _cleanup_memmap():
   for d in _MEMMAP_DIRS:
     shutil.rmtree(d, ignore_errors=True)
   _MEMMAP_DIRS.clear()
+
+def _cleanup_shm():
+  """清理所有 SharedMemory 块（主进程调用）"""
+  for shm, _ in _SHM_BLOCKS:
+    try:
+      shm.close()
+      shm.unlink()
+    except Exception:
+      pass
+  _SHM_BLOCKS.clear()
 
 
 def _factor_worker(args):
@@ -1184,7 +1068,7 @@ def _factor_worker(args):
   f = factor_cls()
   name = f.__class__.__name__
   raw = f.calc_batch(data)
-  scores = _scores_to_ranks(raw.astype(np.float32, copy=False))
+  scores = scores_to_ranks(raw.astype(np.float32, copy=False))
   if row_slice is not None:
     full = np.full((n_full, scores.shape[1]), np.nan, dtype=scores.dtype)
     full[r0:r1] = scores
@@ -1234,60 +1118,38 @@ def _load_all_index_data(valid_dates):
 
 
 def _worker_evaluate(args):
-  try:
-    train_info, score_keys, valid_dates, date_indices, stock_indices, \
-        all_stocks_list, config, index_data, list_dates_map = args
+  train_info, score_keys, valid_dates, date_indices, stock_indices, \
+      all_stocks_list, config, index_data, list_dates_map = args
 
-    all_arrays = _arrays_from_memmap(train_info)
-    data = {k: v for k, v in all_arrays.items() if k not in score_keys}
-    all_scores = {k: v for k, v in all_arrays.items() if k in score_keys}
+  global _worker_shm_cache
 
-    stock_pool = config.get('stock_pool')
-    pool_stocks = [s for s in all_stocks_list if s.startswith(tuple(stock_pool))] if stock_pool else list(all_stocks_list)
+  needed = score_keys | {'open', 'close', 'high', 'low', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates'}
+  all_arrays = {k: arr for k, (shm, arr) in _worker_shm_cache.items() if k in needed}
+  data = {k: v for k, v in all_arrays.items() if k not in score_keys}
+  all_scores = {k: v for k, v in all_arrays.items() if k in score_keys}
 
-    timing_multipliers = _compute_timing_multipliers(config, valid_dates, index_data)
+  stock_pool = config.get('stock_pool') or _ALL_A_SHARE_PREFIXES
+  pool_stocks = [s for s in all_stocks_list if s.startswith(tuple(stock_pool))]
 
-    r = _backtest_direct(
-      data, all_scores, valid_dates, date_indices, pool_stocks, stock_indices,
-      weights=config['weights'], buy_n=config['buy_n'], sell_m=config['sell_m'],
-      temperatures=config['temperatures'],
-      holding_period=config.get('holding_period'),
-      position_multipliers=timing_multipliers, list_dates_map=list_dates_map,
-      lightweight=True, rebalance=True)
+  timing_multipliers = _compute_timing_multipliers(config, valid_dates, index_data)
 
-    # 释放大内存，worker 常驻复用
-    del all_arrays, all_scores, data
-    import gc; gc.collect()
+  r = _backtest_direct(
+    data, all_scores, valid_dates, date_indices, pool_stocks, stock_indices,
+    weights=config['weights'], buy_n=config['buy_n'], sell_m=config['sell_m'],
+    temperatures=config['temperatures'],
+    holding_period=config.get('holding_period'),
+    position_multipliers=timing_multipliers, list_dates_map=list_dates_map,
+    lightweight=True)
 
-    metrics = _compute_metrics_simple(r['daily_returns'])
-    sharpe = metrics['sharpe']
-    annualized = metrics['annualized']
-    dd = metrics['max_drawdown']
-    total_return = r['total_return']
-    cleared_count = r['cleared_positions_count']
-    daily_ret_time = r.get('_daily_return_time_sec', 0.0)
-  except Exception:
-    import traceback
-    _err = traceback.format_exc()
-    sys.stderr.write(_err)
-    sys.stderr.flush()
-    sharpe = -999.0
-    total_return = -999.0
-    cleared_count = 0
-    dd = 0.0
-    annualized = 0.0
-    daily_ret_time = 0.0
-
+  metrics = _compute_metrics_simple(r['daily_returns'])
   return {
     'individual_config': config,
-    'total_return': total_return,
-    'sharpe': sharpe,
-    'annualized': annualized,
-    'max_drawdown': dd,
-    'cleared_positions_count': cleared_count,
+    'total_return': r['total_return'],
+    'sharpe': metrics['sharpe'],
+    'annualized': metrics['annualized'],
+    'max_drawdown': metrics['max_drawdown'],
+    'cleared_positions_count': r['cleared_positions_count'],
     'current_positions_count': 0,
-    '_error': locals().get('_err', None),
-    '_daily_return_time_sec': daily_ret_time,
   }
 
 
@@ -1349,8 +1211,6 @@ def _eval_parallel(worker_args, results_list, ga_cache, logger, pool):
     results_list.append(result)
     key = json_mod.dumps(_config_key(result['individual_config']), ensure_ascii=False)
     ga_cache[key] = result
-    if result.get('sharpe', -999) <= -900:
-      logger.warning(f"  失败: {result.get('_error', '未知')[:200]}")
   gc.collect()
 
 
@@ -1381,51 +1241,21 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   from multiprocessing import get_context
 
   ga_state = {'population': [], 'hall_of_fame': [], 'fitness_cache': {}}
-  val_metrics_cache = {}
   start_generation = 0
-
-  cache_path = output_dir / f'state.{os.getpid()}.jsonl'
   ga_cache = {}
-  if cache_path.exists():
-    try:
-      with open(cache_path, 'r', encoding='utf-8') as f:
-        for line in f:
-          line = line.strip()
-          if not line:
-            continue
-          try:
-            entry = json_mod.loads(line)
-            ga_cache.update(entry)
-          except Exception:
-            pass
-    except Exception:
-      pass
-  for v in ga_cache.values():
-    v.setdefault('annualized', 0.0)
-    v.setdefault('max_drawdown', 0.0)
-  if ga_cache:
-    testback_logger.info(f"加载 GA 缓存: {len(ga_cache)} 条")
 
   val_cache_path = output_dir / 'val_cache.json'
   val_eval_cache = {}
   if val_cache_path.exists():
-    try:
-      with open(val_cache_path, 'r', encoding='utf-8') as f:
-        val_eval_cache = json_mod.load(f)
-    except Exception:
-      pass
-  if val_eval_cache:
+    with open(val_cache_path, 'r', encoding='utf-8') as f:
+      val_eval_cache = json_mod.load(f)
     testback_logger.info(f"加载验证集缓存: {len(val_eval_cache)} 条")
 
   test_cache_path = output_dir / 'test_cache.json'
   test_eval_cache = {}
   if test_cache_path.exists():
-    try:
-      with open(test_cache_path, 'r', encoding='utf-8') as f:
-        test_eval_cache = json_mod.load(f)
-    except Exception:
-      pass
-  if test_eval_cache:
+    with open(test_cache_path, 'r', encoding='utf-8') as f:
+      test_eval_cache = json_mod.load(f)
     testback_logger.info(f"加载测试集缓存: {len(test_eval_cache)} 条")
 
   t0 = time.time()
@@ -1484,7 +1314,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   val_valid_dates, val_date_indices = _build_date_subset(val_datetime_list, npz_dates, date_to_idx)
 
   test_start = date(2023, 1, 1)
-  test_end = date(2026, 5, 15)
+  test_end = date(2026, 5, 22)
   test_datetime_list = [datetime.combine(d, datetime.min.time()) for d in get_trading_date_span(test_start, test_end)]
   test_valid_dates, test_date_indices = _build_date_subset(test_datetime_list, npz_dates, date_to_idx)
 
@@ -1513,6 +1343,24 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   list_dates_full = _compute_list_dates(npz_stocks, data['open'], npz_dates)
   del data
 
+  # === 构建 SharedMemory 供 worker 高速访问（替代 memmap 磁盘 I/O）===
+  from multiprocessing.shared_memory import SharedMemory
+  needed_shm = score_keys | {'open', 'close', 'high', 'low', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates'}
+  shm_entries = []
+  for name in needed_shm:
+    if name not in info:
+      continue
+    filepath, shape, dtype_str = info[name]
+    arr = np.memmap(filepath, dtype=np.dtype(dtype_str), mode='r', shape=shape)
+    contig = np.ascontiguousarray(arr)
+    shm = SharedMemory(create=True, size=contig.nbytes)
+    shared_arr = np.ndarray(contig.shape, dtype=contig.dtype, buffer=shm.buf)
+    shared_arr[:] = contig
+    _SHM_BLOCKS.append((shm, shared_arr))
+    shm_entries.append((name, shm.name, shape, dtype_str))
+  shm_gb = sum(int(np.prod(e[2])) * np.dtype(e[3]).itemsize for e in shm_entries) / 1024**3
+  testback_logger.info(f"SharedMemory 就绪: {len(shm_entries)} 数组 ({shm_gb:.1f} GB)")
+
   _train_info = info
   _score_keys = score_keys
   train_list_dates = list_dates_full
@@ -1523,9 +1371,9 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   import gc, ctypes
   gc.collect()
 
-  n_workers = 30
+  n_workers = 28
   ctx = get_context('spawn')
-  ga_pool = ctx.Pool(processes=n_workers)
+  ga_pool = ctx.Pool(processes=n_workers, initializer=_worker_initializer, initargs=(shm_entries,))
   testback_logger.info(f"多进程池已创建: {n_workers} workers")
 
   _val_info = info
@@ -1544,37 +1392,18 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   test_index_data = _load_all_index_data(test_valid_dates)
   testback_logger.info(f"测试集就绪: {test_start} - {test_end}, {len(test_valid_dates)} 天")
 
+  generation_results = []
   if resume_dir:
-    ckpt = _load_checkpoint(resume_dir)
-    ga_state = ckpt['ga_state']
-    ga_cache = ckpt['ga_cache']
-    all_results = ckpt['all_results']
-    generation_results = ckpt['generation_results']
-    next_configs = ckpt['next_configs']
-    val_metrics_cache = ckpt.get('val_metrics_cache', ckpt.get('test_metrics_cache', {}))
-    start_generation = ckpt['generation'] + 1
-
-    # 修复 checkpoint 中不在当前搜索空间内的配置
-    repaired = 0
-    for cfg in next_configs:
-        if repair_config(cfg, profile_name):
-            repaired += 1
-    for ind in ga_state.get('population', []):
-        if isinstance(ind, dict) and repair_config(ind, profile_name):
-            repaired += 1
-    for ind in ga_state.get('hall_of_fame', []):
-        if isinstance(ind, dict) and repair_config(ind, profile_name):
-            repaired += 1
-    for r in all_results:
-        if isinstance(r.get('individual_config'), dict) and repair_config(r['individual_config'], profile_name):
-            repaired += 1
-    # 清理与旧配置关联的 fitness_cache（key 已变）
-    ga_state['fitness_cache'] = {}
-    ga_cache.clear()
-    if repaired:
-        testback_logger.warning(f"从 checkpoint 修复了 {repaired} 个不在当前搜索空间的配置参数")
-
-    testback_logger.info(f"从 checkpoint 恢复: 第 {start_generation} 代开始 (已完成 {ckpt['generation'] + 1}/{generations} 代)")
+    ga_cache, last_gen = _rebuild_from_jsonl(resume_dir)
+    gr_path = resume_dir / 'generation_results.pkl'
+    if gr_path.exists():
+      generation_results = pickle.loads(gr_path.read_bytes())
+    ga_state = _rebuild_ga_state(ga_cache)
+    next_configs = ga_optimizer([], state=ga_state, population_size=population_size,
+                                hall_of_fame_size=population_size, profile_name=profile_name,
+                                ga_cache=ga_cache)
+    start_generation = last_gen + 1
+    testback_logger.info(f"从 JSONL 恢复: {len(ga_cache)} 个唯一配置, 第 {start_generation} 代开始")
   elif args.warm_start:
     with open(args.warm_start, 'r', encoding='utf-8') as f:
       cache_data = json_mod.load(f)
@@ -1587,10 +1416,6 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     testback_logger.info(f"热启动: 从 {args.warm_start} 加载 top {len(next_configs)} 个种子配置 (共 {len(cache_data)} 条缓存)")
   else:
     next_configs = generate_initial_configs(2 * population_size, profile_name=profile_name)
-
-  if not resume_dir:
-    all_results = []
-    generation_results = []
 
   try:
     for generation in range(start_generation, generations):
@@ -1615,15 +1440,6 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
       results_list = list(cached_results)
       if worker_args:
         _eval_parallel(worker_args, results_list, ga_cache, testback_logger, pool=ga_pool)
-        try:
-          with open(cache_path, 'a', encoding='utf-8') as f:
-            for cfg in uncached_configs:
-              key = json_mod.dumps(_config_key(cfg), ensure_ascii=False)
-              entry = ga_cache.get(key)
-              if entry is not None:
-                f.write(json_mod.dumps({key: entry}, ensure_ascii=False) + '\n')
-        except (PermissionError, OSError) as e:
-          testback_logger.warning(f"保存缓存失败（非致命）: {e}")
 
       if not is_debug:
         # 训练集统计
@@ -1664,11 +1480,8 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
             _eval_parallel(val_worker_args, val_res, {}, testback_logger, pool=ga_pool)
             train_best_val_m = {'sharpe': val_res[0]['sharpe'], 'annualized': val_res[0]['annualized'], 'max_drawdown': val_res[0]['max_drawdown']} if val_res else {'sharpe': 0, 'annualized': 0, 'max_drawdown': 0}
             val_eval_cache[val_best_key] = dict(train_best_val_m)
-            try:
-              with open(val_cache_path, 'w', encoding='utf-8') as f:
-                json_mod.dump(val_eval_cache, f, ensure_ascii=False)
-            except (PermissionError, OSError) as e:
-              testback_logger.warning(f"保存验证集缓存失败: {e}")
+            with open(val_cache_path, 'w', encoding='utf-8') as f:
+              json_mod.dump(val_eval_cache, f, ensure_ascii=False)
           # 训练最优个体的 val metrics 写入 ga_cache
           ga_cache[val_best_key]['val_sharpe'] = train_best_val_m['sharpe']
           ga_cache[val_best_key]['val_annualized'] = train_best_val_m['annualized']
@@ -1687,11 +1500,8 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
             _eval_parallel(test_worker_args, test_res, {}, testback_logger, pool=ga_pool)
             _test_train_best_m = {'sharpe': test_res[0]['sharpe'], 'annualized': test_res[0]['annualized'], 'max_drawdown': test_res[0]['max_drawdown']} if test_res else {'sharpe': 0, 'annualized': 0, 'max_drawdown': 0}
             test_eval_cache[best_test_key] = dict(_test_train_best_m)
-            try:
-              with open(test_cache_path, 'w', encoding='utf-8') as f:
-                json_mod.dump(test_eval_cache, f, ensure_ascii=False)
-            except (PermissionError, OSError) as e:
-              testback_logger.warning(f"保存测试集缓存失败: {e}")
+            with open(test_cache_path, 'w', encoding='utf-8') as f:
+              json_mod.dump(test_eval_cache, f, ensure_ascii=False)
 
           # 实盘个体：全部历史中 (train+val)/2 最高者
           best_live_total = -999.0
@@ -1721,11 +1531,8 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
               _eval_parallel(live_test_args, live_test_res, {}, testback_logger, pool=ga_pool)
               live_test_sharpe = live_test_res[0]['sharpe'] if live_test_res else 0.0
               test_eval_cache[live_test_key] = {'sharpe': live_test_sharpe, 'annualized': live_test_res[0].get('annualized', 0) if live_test_res else 0, 'max_drawdown': live_test_res[0].get('max_drawdown', 0) if live_test_res else 0}
-              try:
-                with open(test_cache_path, 'w', encoding='utf-8') as f:
-                  json_mod.dump(test_eval_cache, f, ensure_ascii=False)
-              except (PermissionError, OSError) as e:
-                testback_logger.warning(f"保存测试集缓存失败: {e}")
+              with open(test_cache_path, 'w', encoding='utf-8') as f:
+                json_mod.dump(test_eval_cache, f, ensure_ascii=False)
 
           testback_logger.info(
             f"GA gen{generation + 1}: 训练Sharpe={best_m['sharpe']:.3f}/{avg_sharpe:.3f} | "
@@ -1747,7 +1554,6 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
         result['generation'] = generation
         result['fitness'] = result['sharpe']
 
-      all_results.extend(results_list)
 
       if not is_debug:
         fitnesses = [ind['fitness'] for ind in results_list]
@@ -1757,6 +1563,13 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
           'max_fitness': max(fitnesses), 'mean_fitness': sum(fitnesses) / len(fitnesses),
           'min_fitness': min(fitnesses),
         }
+        best_in_gen = max(results_list, key=lambda x: x['fitness'])
+        generation_stats['best_weights'] = dict(best_in_gen['individual_config']['weights'])
+        generation_stats['best_buy_n'] = best_in_gen['individual_config']['buy_n']
+        generation_stats['best_stock_pool'] = best_in_gen['individual_config'].get('stock_pool')
+        generation_stats['best_timing_enabled'] = best_in_gen['individual_config'].get('timing_enabled')
+        generation_stats['best_timing_base'] = best_in_gen['individual_config'].get('timing_base')
+        generation_stats['best_timing_leverage'] = best_in_gen['individual_config'].get('timing_leverage')
         if report_gen:
           generation_stats['val_best_sharpe'] = float(train_best_val_m['sharpe'])
           generation_stats['val_best_annualized'] = float(train_best_val_m['annualized'])
@@ -1766,38 +1579,50 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
           generation_stats['test_train_best_mdd'] = float(_test_train_best_m['max_drawdown'])
         generation_results.append(generation_stats)
 
-        try:
-          with open(output_dir / 'generation_results.pkl', 'wb') as f:
-            pickle.dump(generation_results, f)
+        import json as _json
+        best_key = _config_key(best_in_gen['individual_config'])
+        best_val = train_best_val_m if report_gen else None
+        best_test = _test_train_best_m if report_gen else None
+        with open(output_dir / 'all_results.jsonl', 'a', encoding='utf-8') as _f:
+          for _r in results_list:
+            entry = {
+              'generation': _r['generation'],
+              'sharpe': _r['sharpe'], 'annualized': _r['annualized'],
+              'max_drawdown': _r['max_drawdown'], 'total_return': _r['total_return'],
+              'val_sharpe': _r.get('val_sharpe'), 'config': _r['individual_config'],
+            }
+            if _config_key(_r['individual_config']) == best_key:
+              if best_val:
+                entry['val_sharpe'] = best_val['sharpe']
+                entry['val_annualized'] = best_val['annualized']
+                entry['val_max_drawdown'] = best_val['max_drawdown']
+              if best_test:
+                entry['test_sharpe'] = best_test['sharpe']
+                entry['test_annualized'] = best_test['annualized']
+                entry['test_max_drawdown'] = best_test['max_drawdown']
+            _f.write(_json.dumps(entry, ensure_ascii=False) + '\n')
 
-          best_in_gen = max(results_list, key=lambda x: x['fitness'])
-          profile_metadata = get_profile_metadata(profile_name)
-          best_result = {
-            **profile_metadata,
-            'individual_config': best_in_gen['individual_config'],
-            'fitness': best_in_gen['fitness'], 'generation': generation + 1,
-            'generation_time': generation_time, 'population_size': len(results_list),
-          }
-          with open(output_dir / 'best_individual_config.json', 'w', encoding='utf-8') as f:
-            json_mod.dump(best_result, f, indent=2, ensure_ascii=False)
-        except (PermissionError, OSError) as e:
-          testback_logger.warning(f"保存generation_results失败（非致命）: {e}")
+        with open(output_dir / 'generation_results.pkl', 'wb') as f:
+          pickle.dump(generation_results, f)
+
+        profile_metadata = get_profile_metadata(profile_name)
+        best_result = {
+          **profile_metadata,
+          'individual_config': best_in_gen['individual_config'],
+          'fitness': best_in_gen['fitness'], 'generation': generation + 1,
+          'generation_time': generation_time, 'population_size': len(results_list),
+        }
+        with open(output_dir / 'best_individual_config.json', 'w', encoding='utf-8') as f:
+          json_mod.dump(best_result, f, indent=2, ensure_ascii=False)
 
       next_configs = ga_optimizer(results_list, state=ga_state, population_size=population_size,
                                   hall_of_fame_size=population_size, profile_name=profile_name,
                                   ga_cache=ga_cache)
 
-      if not is_debug:
-        _save_checkpoint(output_dir, generation, ga_state, ga_cache,
-                         all_results, generation_results, next_configs, val_metrics_cache)
-        # 限制 all_results 大小，防止内存无界增长
-        max_results = 5000
-        if len(all_results) > max_results:
-          all_results = all_results[-max_results:]
-
   finally:
     ga_pool.terminate()
     ga_pool.join()
+    _cleanup_shm()
     _cleanup_memmap()
 
   if not is_debug:
@@ -1822,16 +1647,13 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     testback_logger.info(f"最优夏普率: {best_fitness:.3f}, 参数: [{w_str}], pool={_format_pool(best_cfg.get('stock_pool'))}, pos={best_cfg['buy_n']}{timing_str}, rebal={'ON' if best_cfg.get('rebalance') else 'OFF'}")
     testback_logger.info(f"最优buy_n: {best_config['buy_n']}, sell_m: {best_config['sell_m']}")
 
-    sharpes = [r['sharpe'] for r in all_results if r.get('sharpe') is not None]
-    returns = [r['total_return'] for r in all_results]
+    sharpes = [v['sharpe'] for v in ga_cache.values() if v.get('sharpe') is not None]
     testback_logger.info(f"\n{'=' * 60}")
     testback_logger.info("回测执行完成")
-    testback_logger.info(f"  总回测次数: {len(all_results)}")
+    testback_logger.info(f"  总回测次数: {sum(g.get('population_size', len(g.get('best_weights', {}))) for g in generation_results)}")
+    testback_logger.info(f"  唯一配置数: {len(ga_cache)}")
     testback_logger.info(f"  平均夏普率: {sum(sharpes) / len(sharpes):.3f}")
     testback_logger.info(f"  最大夏普率: {max(sharpes):.3f}")
-    testback_logger.info(f"  平均收益率: {sum(returns) / len(returns):.2f}%")
-    testback_logger.info(f"  最大收益率: {max(returns):.2f}%")
-    testback_logger.info(f"  正收益策略: {len([r for r in returns if r > 0])} 个")
     testback_logger.info(f"{'=' * 60}")
 
   # 最终测试集评估（2022-2026，不参与优化）
@@ -1876,7 +1698,7 @@ def _main_impl():
   parser.add_argument('--end-date', type=str, default=None)
   parser.add_argument('--warm-start', type=str, default=None, help='热启动种群 JSON 文件路径')
   parser.add_argument('--resume', type=str, nargs='?', const='auto', default=None,
-                      help='从 checkpoint 恢复: 不传则自动找最新, 或指定目录路径')
+                      help='从 JSONL 恢复: 不传则自动找最新, 或指定目录路径')
   parser.add_argument('--profile', type=str, default=None)
   args = parser.parse_args()
 
@@ -1931,16 +1753,16 @@ def _main_impl():
     resume_dir = None
     if args.resume:
       if args.resume == 'auto':
-        resume_dir = _find_latest_checkpoint()
+        resume_dir = _find_latest_ga_dir()
         if resume_dir is None:
-          testback_logger.error('--resume 未找到可恢复的 checkpoint')
+          testback_logger.error('--resume 未找到可恢复的 GA 目录（需含 all_results.jsonl）')
           sys.exit(1)
       else:
         resume_dir = Path(args.resume)
-        if not resume_dir.is_dir() or not (resume_dir / 'checkpoint.pkl').exists():
-          testback_logger.error(f'--resume 指定目录无效或缺少 checkpoint.pkl: {resume_dir}')
+        if not resume_dir.is_dir() or not (resume_dir / 'all_results.jsonl').exists():
+          testback_logger.error(f'--resume 指定目录无效或缺少 all_results.jsonl: {resume_dir}')
           sys.exit(1)
-      testback_logger.info(f'从 checkpoint 恢复: {resume_dir}')
+      testback_logger.info(f'从 JSONL 恢复: {resume_dir}')
     result = _run_ga(args, mode_config, backtest_datetime_list, filtered_stocks, profile_name=profile_name, resume_dir=resume_dir)
 
   te = datetime.now()

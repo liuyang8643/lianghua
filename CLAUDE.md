@@ -14,24 +14,24 @@
 
 | 层面 | 回测 (`testback/main.py`) | 实盘 (`trading/main.py`) |
 |---|---|---|
-| 数据 | `load_runtime_npz()` 合并 npz → 全量 numpy | `TopN` + `get_market_data_batch` 逐股查 |
-| 因子 | `f.calc_batch(panel)` 全量向量化 | 通过 `_precomputed_scores` 注入 |
-| 归一化 | `_backtest_direct` 内联 rank 归一化 | `BatchNormFactor.batch_normalize()` |
-| 选股 | `np.argsort(-final_score)[:n]` | `TopN.get_ordered_stocks(n)` |
+| 数据 | `load_runtime_npz()` 合并 npz → numpy | `load_runtime_npz(max_lookback)` 裁剪 → numpy |
+| 因子 | `f.calc_batch(panel)` 全量向量化 | 同回测，共享 `_compute_factor_scores` 逻辑 |
+| 选股 | `np.argsort(-final_score)[:n]` | 同回测 |
 | 进程 | **GA 评估多进程并行，其余单进程串行** | 单进程实时 |
 
-- **回测路径绝不创建 TopN 对象**
-- **回测路径不调 xtdata/mootdx/S3/CNINFO 等外部数据源**
+- **所有数据源有且仅有 runtime NPZ**，禁止 xtdata/mootdx/S3/CNINFO 等外部数据源出现在因子/选股/交易路径
 - **因子 calc_batch 纯 numpy 向量化，禁止逐股票遍历**。5000+ 股票×20 年耗时应 < 1s，超过必有 bug。
 - **多进程/多线程红线**：仅 `_run_ga` 中 GA 个体评估可用 `multiprocessing.Pool`。其他所有地方（因子计算、数据加载、实盘路径）禁止多进程/多线程。
 
 ### 已删除的组件（禁止恢复）
 
-- `SharedMemoryCache` — 回测路径已移除（仅 `core/database/data.py` 实盘缓存保留）
+- `TopN` — 整个 `core/strategies/top_n.py` 模块，回测/实盘统一用 numpy 直接选股
+- `SharedMemoryCache` — `utils/shared_memory.py`，全部数据走 NPZ 无需额外缓存层
+- `get_market_data_batch` / `get_market_data_from_cache` 等 xtdata/mootdx 数据函数 — 已从实盘路径删除，仅保留 `get_market_data_from_cache` 供回测报告 HTML 图表从 parquet 直读
 - `joblib.Parallel` — 已移除，使用 `multiprocessing.Pool`（仅 GA 评估使用）
 - `_wrap_process_worker` / `_prepare_shared_topn` / `_put_topn_window_slice` — 共享内存 TopN 预计算
 - `_sample_topn_window` — GA 窗口采样（现全量回测）
-- `compute_topn_range` — 回测不再调用（实盘仍用）
+- `compute_topn_range` — 随 TopN 模块删除
 - `testback_cache` 全局变量
 
 ## 数据管线

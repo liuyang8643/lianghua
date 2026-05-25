@@ -12,7 +12,11 @@ class LarkMsgLevel(Enum):
 
 class LarkSender:
   def __init__(self, app_id: str, app_secret: str):
-    self.client = lark.Client.builder().app_id(app_id).app_secret(app_secret).build()
+    self._configured = bool(app_id and app_secret)
+    if self._configured:
+      self.client = lark.Client.builder().app_id(app_id).app_secret(app_secret).build()
+    else:
+      self.client = None
 
   @staticmethod
   def log_res(res: lark.BaseResponse):
@@ -20,11 +24,17 @@ class LarkSender:
       lark.logger.error(f"发送消息失败：[{res.code}]{res.msg}")
     return res
 
+  def _skip(self, method):
+    if not self._configured:
+      return lark.BaseResponse()
+
   def send_msg(self, msg: str):
+    if not self._configured:
+      return
     create_message_req = (
       CreateMessageRequest
       .builder()
-      .receive_id_type('email')
+      .receive_id_type('chat_id')
       .request_body(
         CreateMessageRequestBody
         .builder()
@@ -38,10 +48,12 @@ class LarkSender:
     return self.log_res(res)
 
   def send_card(self, card_data: dict):
+    if not self._configured:
+      return
     create_message_req = (
       CreateMessageRequest
       .builder()
-      .receive_id_type('email')
+      .receive_id_type('chat_id')
       .request_body(
         CreateMessageRequestBody
         .builder()
@@ -62,6 +74,8 @@ class LarkSender:
     return self.log_res(res)
 
   def send_file(self, file_path: str, file_name: str = None):
+    if not self._configured:
+      return
     import os, io
     file_name = file_name or os.path.basename(file_path)
     with open(file_path, 'rb') as f:
@@ -83,7 +97,7 @@ class LarkSender:
     file_key = upload_resp.data.file_key
     msg_req = (
       CreateMessageRequest.builder()
-      .receive_id_type('email')
+      .receive_id_type('chat_id')
       .request_body(
         CreateMessageRequestBody.builder()
         .receive_id(LARK_RECEIVE_ID)
@@ -103,17 +117,14 @@ class LarkSender:
       sub_title: str = None,
 
   ):
-    return self.send_card(
-      {
-        "template_id": 'AAqS6QpkHvP8I',
-        "template_variable": {
-          "title": title if title else '',
-          "sub_title": sub_title if sub_title else '',
-          "msg_color": level.value,
-          "content": content,
-        }
-      }
-    )
+    lines = []
+    if title:
+      lines.append(f"【{title}】")
+    if sub_title:
+      lines.append(sub_title)
+    if content:
+      lines.append(content)
+    return self.send_msg("\n".join(lines))
 
 lark_sender = LarkSender(LARK_APP_ID, LARK_APP_SECRET)
 

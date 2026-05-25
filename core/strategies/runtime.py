@@ -1,7 +1,7 @@
 """Runtime NPZ 数据加载 — 无因子依赖，回测和实盘共用。"""
 from pathlib import Path
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 
@@ -9,13 +9,29 @@ from ..logger import core_logger
 
 _RUNTIME_DIR = Path(__file__).resolve().parents[2] / "data" / "runtime"
 
+_2D_FIELDS = ['open', 'high', 'low', 'close', 'volume', 'amount',
+              'total_share', 'eps', 'roe', 'profit_yoy', 'revenue_yoy',
+              'operating_cf_ps', 'gross_margin', 'st_mask', 'bps']
+_1D_FIELDS = ['issue_price', 'stock_names']
 
-def load_runtime_npz(dates: List[datetime]) -> dict | None:
+
+def load_runtime_npz(dates: List[datetime], max_lookback: Optional[int] = None) -> dict | None:
+    """加载 runtime NPZ 数据。
+
+    Args:
+        dates: 信号日期列表（回测=全部调仓日, 实盘=当日）
+        max_lookback: 可选，裁剪数据只保留 min(dates)-max_lookback 到 max(dates)+5 个交易日。
+                      用于实盘/单回测减少内存；GA 不传此参数加载全量。
+    """
     if not _RUNTIME_DIR.exists():
         return None
 
     min_date = np.datetime64(min(dt.date() for dt in dates))
     max_date = np.datetime64(max(dt.date() for dt in dates)) + np.timedelta64(7, 'D')
+
+    trim_start = None
+    if max_lookback is not None and max_lookback > 0:
+        trim_start = min_date - np.timedelta64(int(max_lookback * 1.5) + 10, 'D')
 
     npz_files = sorted(_RUNTIME_DIR.glob("runtime_*.npz"))
     parts = []
@@ -24,6 +40,14 @@ def load_runtime_npz(dates: List[datetime]) -> dict | None:
             data = dict(np.load(npz_path, allow_pickle=False))
             d0, d1 = data['trade_dates'][0], data['trade_dates'][-1]
             if d0 <= max_date and d1 >= min_date:
+                if trim_start is not None:
+                    td = data['trade_dates']
+                    si = max(0, int(np.searchsorted(td, trim_start)))
+                    ei = min(len(td), int(np.searchsorted(td, max_date)) + 5)
+                    data['trade_dates'] = td[si:ei]
+                    for f in _2D_FIELDS:
+                        if f in data:
+                            data[f] = data[f][si:ei]
                 parts.append(data)
                 core_logger.info(f"  {npz_path.name}: {len(data['trade_dates'])}d x {len(data['stock_codes'])}s")
         except Exception as e:
@@ -48,9 +72,6 @@ def load_runtime_npz(dates: List[datetime]) -> dict | None:
         n_stocks = len(first_codes)
         merged = {'stock_codes': first_codes, 'trade_dates': all_dates}
         offsets_list = [np.searchsorted(all_dates, p['trade_dates']) for p in parts]
-        _2D_FIELDS = ['open', 'high', 'low', 'close', 'volume', 'amount',
-                      'total_share', 'eps', 'roe', 'profit_yoy', 'revenue_yoy',
-                      'operating_cf_ps', 'gross_margin', 'st_mask', 'bps']
         for field in _2D_FIELDS:
             if field not in parts[0]:
                 continue
@@ -60,7 +81,7 @@ def load_runtime_npz(dates: List[datetime]) -> dict | None:
             for pi, p in enumerate(parts):
                 arr[offsets_list[pi]] = p[field]
             merged[field] = arr
-        for field in ['issue_price', 'stock_names']:
+        for field in _1D_FIELDS:
             if field in parts[0]:
                 merged[field] = parts[-1][field]
     else:
@@ -79,9 +100,6 @@ def load_runtime_npz(dates: List[datetime]) -> dict | None:
             'trade_dates': all_dates,
         }
         offsets_list = [np.searchsorted(all_dates, p['trade_dates']) for p in parts]
-        _2D_FIELDS = ['open', 'high', 'low', 'close', 'volume', 'amount',
-                      'total_share', 'eps', 'roe', 'profit_yoy', 'revenue_yoy',
-                      'operating_cf_ps', 'gross_margin', 'st_mask', 'bps']
         for field in _2D_FIELDS:
             if field not in parts[0]:
                 continue

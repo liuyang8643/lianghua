@@ -1,5 +1,5 @@
 version: "2026-05-23"
-default_profile: core14
+default_profile: core
 
 mode_configs:
   single:
@@ -11,53 +11,37 @@ mode_configs:
   debug:
     population_size: 2
     generations: 3
-    window_days: 60
     log_level: DEBUG
     save_charts: false
     desc: 调试模式（最小GA）
   ga:
     population_size: 50
     generations: 10000
-    window_days: 250
     log_level: INFO
     save_charts: false
     desc: GA优化模式（默认）
 
 search_spaces:
-  position_count: [10, 20, 30, 40, 50]
+  position_count: [20, 30, 40, 50]
   holding_period: [1]
   board_prefixes: [60, 00, 30, 688]
-  timing_base: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-  timing_leverage: [0.5, 1, 2, 3, 5, 8, 10, 12, 15, 20, 25, 30, 40, 50]
-  timing_window: [2, 3, 5, 7, 10, 15, 20, 25, 30, 45, 60, 90, 120]
+  timing_base: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
+  timing_leverage: [0, 0.5, 1, 2, 3, 5, 8, 10, 12, 15, 20, 25, 30, 40, 50]
+  timing_window: [2, 3, 5, 7, 10, 15, 20, 25, 30, 45, 60, 90, 120, 252]
   timing_direction: [1, -1]
   timing_index: [sh000300, sh000905, sh000852]
-  timing_enabled: [true, false]
   holding_period: [1]
 
 profiles:
-  core4:
-    desc: 4因子核心 — size×2 + quality×1 + margin×1
+  core:
+    desc: 11因子 — size×2 + liquidity×3 + vol×3 + behavioral×3
     factor_classes: [
       TrueMarketCap, AmountBasedSmallCap,
-      MarginExpansion, CashFlowQuality,
+      AmihudIlliquidity, VolumeCV, TurnoverMean,
+      IdioVol, DownsideDeviation, DailyRange,
+      MAX5, OvernightGap, High52Week,
     ]
     weight_range: [-1.0, 1.0, 0.1]
-    search_spaces: [position_count, stock_pool, timing_base, timing_leverage, timing_direction, timing_enabled, timing_window, timing_index]
-    preload_start: 2010-01-01
-    preload_end: 2020-12-31
-
-  core14:
-    desc: 14因子全量 — size×2 + quality×2 + vol×3 + reversal + liquidity×2 + range + cv + profit_stab + share_exp
-    factor_classes: [
-      TrueMarketCap, AmountBasedSmallCap,
-      MarginExpansion, CashFlowQuality,
-      IdioVol, MAX5, ShortTermReversal,
-      AmihudIlliquidity, DownsideDeviation, TurnoverMean,
-      VolumeCV, DailyRange,
-      ProfitStability, ShareExpansion,
-    ]
-    weight_range: [-1.0, 1.0, 0.1]
-    search_spaces: [position_count, stock_pool, timing_base, timing_leverage, timing_direction, timing_enabled, timing_window, timing_index]
-    preload_start: 2010-01-01
-    preload_end: 2020-12-31
+    search_spaces: [position_count]
+    preload_start: 1993-01-01
+    preload_end: 2018-12-31

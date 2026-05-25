@@ -3,22 +3,29 @@ import numpy as np
 MIN_RAW_PRICE = 2.0
 
 
+def _shift(arr):
+    result = np.empty_like(arr)
+    result[0] = np.nan
+    result[1:] = arr[:-1]
+    return result
+
+
 class AmihudIlliquidity:
-  """Amihud非流动性 — |ret|/amount均值，不流动溢价独立于规模"""
+  """Amihud非流动性 — |ret|/amount均值（基于已知数据），不流动溢价"""
   hist_days = 20
 
   def calc_batch(self, panel: dict) -> np.ndarray:
-    close = panel["close"]
-    amount = panel["amount"]
+    close_known = _shift(panel["close"])
+    amount_known = _shift(panel["amount"])
     raw_open = panel["open"]
     st_mask = panel["st_mask"]
 
-    ret = np.empty_like(close)
+    ret = np.empty_like(close_known)
     ret[0] = np.nan
-    ret[1:] = close[1:] / close[:-1] - 1.0
+    ret[1:] = close_known[1:] / close_known[:-1] - 1.0
 
     with np.errstate(divide='ignore', invalid='ignore'):
-        illiq = np.abs(ret) / (amount / 1e8)
+        illiq = np.abs(ret) / (amount_known / 1e8)
 
     w = self.hist_days
     n_valid = np.cumsum(~np.isnan(illiq), axis=0).astype(float)

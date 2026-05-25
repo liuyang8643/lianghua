@@ -105,13 +105,14 @@ class Trader:
     return None
 
   def clear_position(self, code: str, reason: str = None):
-    """清仓"""
+    """清仓，返回 order_id 或 None"""
     position = self.query_stock_position(code)
     if position and position.can_use_volume > 0:
-      self.order(xtconstant.STOCK_SELL, code, position.can_use_volume, order_remark=reason)
+      return self.order(xtconstant.STOCK_SELL, code, position.can_use_volume, order_remark=reason)
     else:
       detail = get_stock_detail(code)
       trading_logger.warning(f"{get_stock_desc(detail)} 当前没有可卖出仓位或持仓查询失败，无法清仓")
+      return None
 
   def query_buy_trades(self) -> List[XtTrade]:
     """查询当日成交"""

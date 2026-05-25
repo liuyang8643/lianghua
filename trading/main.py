@@ -6,311 +6,529 @@ import sys
 import threading
 from types import SimpleNamespace
 
+import numpy as np
 from xtquant import xtconstant, xtdata
 
 from configs import TRADE_ACCOUNT
-from core import allow_buy_stock_code_list, get_market_data_batch, get_trade_bars
+from data.db import allow_buy_stock_code_list
+from core.strategies.runtime import load_runtime_npz
+from core.strategies.scoring import scores_to_ranks, batch_limit_check, precompute_limit_helpers
 from data.db.stock_name import get_stock_name_at_date
-from core.strategies import TopN
-from core.strategies.sizers import Sizer
 from testback.ga_config import get_profile_factor_classes, resolve_profile_name
+
+def _get_name(code, signal_date):
+    name = get_stock_name_at_date(code, signal_date)
+    if name:
+        return name
+    # 兜底：CNINFO parquet 缺 bare_code 列时直接从 xtdata 查
+    try:
+        from xtquant import xtdata
+        detail = xtdata.get_instrument_detail(code)
+        if detail:
+            name = detail.get('InstrumentName', '').strip()
+    except Exception:
+        pass
+    return name or ''
 from trading.logger import trading_logger
 from utils.recorder import recorder
 from utils.stock.time import AFTERNOON_END, get_last_trading_day
-from utils.stock.legality import LegalityValidator
 
 from .lark.receiver import create_lark_handler
 from .manual_confirm import build_manual_confirmation_text, is_manual_confirmation_approved
 from .scheduler import TradingScheduler
 from .trader import Trader
-
-_BOARD_LABELS = {
-  'main_board': '主板', 'cyb': '创业板', 'kcb': '科创板', 'bse': '北交所',
-  'st': 'ST', 'unlimited': '新股',
-}
+from .helper import get_order_status_label
 
 
 def _get_signal_date(trade_date):
-  signal_date = get_last_trading_day(trade_date)
-  if signal_date >= trade_date:
-    signal_date = get_last_trading_day(trade_date - timedelta(days=1))
-  return signal_date
+    signal_date = get_last_trading_day(trade_date)
+    if signal_date >= trade_date:
+        signal_date = get_last_trading_day(trade_date - timedelta(days=1))
+    return signal_date
 
 
-def _submit_sell_order(store: TradingScheduler, code: str, signal_date, trade_date):
-  try:
-    store.trader.clear_position(code, reason=f'调仓换出 signal={signal_date.isoformat()} trade={trade_date.isoformat()}')
-    trading_logger.info(f"已提交卖出委托: {code}")
-    recorder.mark("提交卖出委托")
-  except ValueError as e:
-    trading_logger.info(f"{code} 卖出前校验拦截: {e}")
-  except Exception as e:
-    trading_logger.exception(f"{code} 卖出委托失败: {e}")
+def _submit_sell_order(store, code, shares, signal_date, trade_date):
+    """提交卖出委托。shares=-1 表示全部清仓。返回 {code, order_type, order_id, shares} 或 None。"""
+    try:
+        if shares < 0:
+            order_id = store.trader.clear_position(code, reason=f'rebalance signal={signal_date.isoformat()} trade={trade_date.isoformat()}')
+        else:
+            order_id = store.trader.order(
+                xtconstant.STOCK_SELL, code, shares, None,
+                order_remark=f'rebalance signal={signal_date.isoformat()} trade={trade_date.isoformat()}'
+            )
+        if order_id is None:
+            trading_logger.info(f"{code} 无需卖出或委托未发出")
+            return None
+        trading_logger.info(f"已提交卖出委托: {code} {'全仓' if shares < 0 else f'{shares}股'} order_id={order_id}")
+        recorder.mark("提交卖出委托")
+        return {'code': code, 'order_type': 'SELL', 'order_id': order_id, 'shares': shares}
+    except ValueError as e:
+        trading_logger.info(f"{code} 卖出前校验拦截: {e}")
+    except Exception as e:
+        trading_logger.exception(f"{code} 卖出委托失败: {e}")
+    return None
 
 
-def _submit_buy_order(store: TradingScheduler, code: str, shares: int, signal_date, trade_date):
-  try:
-    store.trader.order(
-      xtconstant.STOCK_BUY,
-      code,
-      shares,
-      None,
-      order_remark=f'调仓买入 signal={signal_date.isoformat()} trade={trade_date.isoformat()}'
-    )
-    trading_logger.info(f"已提交买入委托: {code} * {shares} 股")
-    recorder.mark("提交买入委托")
-  except ValueError as e:
-    trading_logger.info(f"{code} 买入前校验拦截: {e}")
-  except Exception as e:
-    trading_logger.exception(f"{code} 买入委托失败: {e}")
+def _submit_buy_order(store, code, shares, signal_date, trade_date):
+    try:
+        order_id = store.trader.order(
+            xtconstant.STOCK_BUY, code, shares, None,
+            order_remark=f'rebalance signal={signal_date.isoformat()} trade={trade_date.isoformat()}'
+        )
+        trading_logger.info(f"已提交买入委托: {code} * {shares} 股 order_id={order_id}")
+        recorder.mark("提交买入委托")
+        return {'code': code, 'order_type': 'BUY', 'order_id': order_id, 'shares': shares}
+    except ValueError as e:
+        trading_logger.info(f"{code} 买入前校验拦截: {e}")
+    except Exception as e:
+        trading_logger.exception(f"{code} 买入委托失败: {e}")
+    return None
 
 
 def _print_and_confirm_manual_plan(pending: dict, execute_buy: bool, execute_sell: bool) -> bool:
-  message = build_manual_confirmation_text(pending, execute_buy=execute_buy, execute_sell=execute_sell)
-  print(message)
-  try:
-    user_input = input("确认执行> ")
-  except EOFError:
-    trading_logger.warning("无法读取交互输入（非交互环境），已取消确认")
-    return False
-  return is_manual_confirmation_approved(user_input)
+    message = build_manual_confirmation_text(pending, execute_buy=execute_buy, execute_sell=execute_sell)
+    print(message)
+    try:
+        user_input = input("确认执行> ")
+    except EOFError:
+        trading_logger.warning("无法读取交互输入（非交互环境），已取消确认")
+        return False
+    return is_manual_confirmation_approved(user_input)
+
+
+def _compute_live_scores(signal_datetime, all_stocks, weights, factor_classes):
+    """实盘因子计算，与回测 _compute_factor_scores 逻辑一致。"""
+    max_lookback = max((getattr(c, 'hist_days', 0) for c in factor_classes), default=0) or None
+    data = load_runtime_npz([signal_datetime], max_lookback=max_lookback)
+    if data is None:
+        raise FileNotFoundError(f"未找到覆盖 {signal_datetime} 的 runtime npz 文件")
+
+    npz_stocks = [str(s) for s in data['stock_codes']]
+    stock_indices = {c: i for i, c in enumerate(npz_stocks)}
+    valid_stocks = [s for s in all_stocks if s in stock_indices]
+
+    npz_dates = data['trade_dates']
+    date_to_idx = {}
+    for i, d in enumerate(npz_dates):
+        date_to_idx[d.astype('datetime64[D]').item()] = i
+    sd = signal_datetime.date() if hasattr(signal_datetime, 'date') else signal_datetime
+    date_idx = date_to_idx.get(sd)
+    if date_idx is None:
+        raise ValueError(f"信号日期 {sd} 不在 runtime npz 日期范围内")
+
+    import time
+    t0 = time.time()
+
+    py_dates = [d.astype('datetime64[D]').item() for d in npz_dates]
+    factor_data = {**data, 'stock_codes': npz_stocks, 'trade_dates': py_dates}
+    all_scores = {}
+    for f_cls in factor_classes:
+        f = f_cls()
+        name = f.__class__.__name__
+        if weights is not None and weights.get(name, 0.0) == 0:
+            continue
+        raw = f.calc_batch(factor_data)
+        all_scores[name] = scores_to_ranks(raw.astype(np.float32, copy=False))
+
+    trading_logger.info(f"实时因子计算完成 ({time.time() - t0:.1f}s), {len(all_scores)} 个因子")
+    return data, all_scores, date_idx, valid_stocks, stock_indices
 
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser()
-  parser.add_argument('--individual-config', type=str, required=True, help='Individual_config JSON文件路径')
-  parser.add_argument('--buy', action='store_true', help='忽略时间窗口，立即执行一次买入（需手工yes确认）')
-  parser.add_argument('--sell', action='store_true', help='忽略时间窗口，立即执行一次卖出（需手工yes确认）')
-  args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--individual-config', type=str, required=True, help='Individual_config JSON文件路径')
+    parser.add_argument('--buy', action='store_true', help='忽略时间窗口，立即执行一次买入（需手工yes确认）')
+    parser.add_argument('--sell', action='store_true', help='忽略时间窗口，立即执行一次卖出（需手工yes确认）')
+    args = parser.parse_args()
 
-  with open(args.individual_config, 'r', encoding='utf-8') as f:
-    config_data = json.load(f)
-  profile_name = resolve_profile_name(config_data)
-  factor_classes = get_profile_factor_classes(profile_name)
-  individual_config = config_data['individual_config']
-  weights = individual_config['weights']
-  temperatures = individual_config['temperatures']
-  buy_n = individual_config['buy_n']
-  sell_m = individual_config['sell_m']
+    with open(args.individual_config, 'r', encoding='utf-8') as f:
+        config_data = json.load(f)
+    profile_name = resolve_profile_name(config_data)
+    factor_classes = get_profile_factor_classes(profile_name)
+    individual_config = config_data['individual_config']
+    weights = individual_config['weights']
+    temperatures = individual_config['temperatures']
+    buy_n = individual_config['buy_n']
+    sell_m = individual_config.get('sell_m', buy_n)
 
-  trading_logger.info(f"加载Individual_config: {args.individual_config}")
-  trading_logger.info(f"配置参数: buy_n={buy_n}, sell_m={sell_m}, factors={sorted(weights.keys())}")
+    trading_logger.info(f"加载Individual_config: {args.individual_config}")
+    trading_logger.info(f"配置参数: buy_n={buy_n}, sell_m={sell_m}, factors={sorted(weights.keys())}")
 
-  td = Trader(TRADE_ACCOUNT)
+    td = Trader(TRADE_ACCOUNT)
 
-  threading.Thread(target=create_lark_handler, args=[td], daemon=True).start()
+    threading.Thread(target=create_lark_handler, args=[td], daemon=True).start()
 
-  def before_trade(store: TradingScheduler):
-    trade_now = datetime.now()
-    trade_date = trade_now.date()
-    signal_date = _get_signal_date(trade_date)
-    signal_datetime = datetime.combine(signal_date, datetime.min.time())
+    def before_trade(store):
+        trade_now = datetime.now()
+        trade_date = trade_now.date()
+        signal_date = _get_signal_date(trade_date)
+        signal_datetime = datetime.combine(signal_date, datetime.min.time())
 
-    trading_logger.info(
-      f"开始预计算调仓: signal_date={signal_date.isoformat()}, trade_date={trade_date.isoformat()}, "
-      f"signal_dividend_type=back, execution_price_type=peer_price_first"
-    )
-    recorder.mark("开始选股")
-
-    if store.whole_sub_id is None:
-      store.whole_sub_id = xtdata.subscribe_whole_quote(['SH', 'SZ'])
-
-    asset = store.trader.query_asset()
-    if asset is None:
-      trading_logger.warning("资产查询失败，跳过本轮调仓")
-      store.pending_rebalance = None
-      return
-
-    all_stocks = allow_buy_stock_code_list(target_date=trade_date)
-    filtered_stocks = list(all_stocks)
-    trading_logger.info(f"候选股票池: {len(filtered_stocks)} 只")
-    get_market_data_batch(filtered_stocks, 2, base_time=signal_datetime, dividend_type='back')
-
-    trade_bar_time = datetime.combine(trade_date, AFTERNOON_END)
-
-    topn = TopN(
-      filtered_stocks,
-      signal_datetime,
-      weights=weights,
-      factor_classes=factor_classes,
-      dividend_type='back'
-    )
-    sell_m_stocks = topn.get_ordered_stocks(
-      n=sell_m,
-      temperatures=temperatures,
-      norm_method='rank'
-    )
-    buy_n_stocks = topn.get_ordered_stocks(
-      n=buy_n,
-      temperatures=temperatures,
-      norm_method='rank'
-    )
-
-    validator = LegalityValidator()
-    positions = {p.stock_code: p for p in store.trader.query_positions()}
-    sell_candidates = sorted(set(positions) - set(sell_m_stocks))
-    sell_bars = get_trade_bars(sell_candidates, trade_bar_time)
-    allowed_sell_codes = []
-    sell_details = []
-    for code in sell_candidates:
-      bar = sell_bars.get(code)
-      if bar is None or bar.get('open') is None:
-        trading_logger.info(f"{code} 跳过卖出: bar缺失")
-        continue
-      open_price = float(bar['open'])
-      result = validator.check_sell(code, trade_date, bar)
-      if not result.allowed:
         trading_logger.info(
-          f"{code} 跳过卖出: reason={result.reason}, regime={result.regime_name}, "
-          f"up_limit={result.up_limit}, down_limit={result.down_limit}"
+            f"开始预计算调仓: signal_date={signal_date.isoformat()}, trade_date={trade_date.isoformat()}"
         )
-        continue
-      allowed_sell_codes.append(code)
-      position = positions.get(code)
-      volume = int(position.can_use_volume) if position is not None else 0
-      sell_details.append({
-        'code': code,
-        'name': get_stock_name_at_date(code, signal_date),
-        'board': _BOARD_LABELS.get(result.regime_name, result.regime_name),
-        'volume': volume,
-        'est_price': open_price,
-        'est_amount': volume * open_price,
-      })
+        recorder.mark("开始选股")
 
-    buy_trade_bars = get_trade_bars(buy_n_stocks, trade_bar_time)
-    tradable_buy_stocks = []
-    sizing_prices = {}
-    buy_regimes = {}
-    for code in buy_n_stocks:
-      bar = buy_trade_bars.get(code)
-      if bar is None or bar.get('open') is None:
-        trading_logger.info(f"{code} 跳过买入: bar缺失")
-        continue
-      open_price = float(bar['open'])
-      result = validator.check_buy(code, trade_date, bar)
-      if not result.allowed:
+        # 快速数据更新
+        from data.update_live import update_live_quick
+        try:
+            update_live_quick()
+        except Exception as e:
+            trading_logger.warning(f"快速数据更新失败, 继续使用已有数据: {e}")
+
+        if store.whole_sub_id is None:
+            store.whole_sub_id = xtdata.subscribe_whole_quote(['SH', 'SZ'])
+
+        asset = store.trader.query_asset()
+        if asset is None:
+            trading_logger.warning("资产查询失败，跳过本轮调仓")
+            store.pending_rebalance = None
+            return
+
+        all_stocks = allow_buy_stock_code_list(target_date=trade_date)
+        trading_logger.info(f"候选股票池: {len(all_stocks)} 只")
+        # 因子计算（与回测一致）
+        try:
+            data, all_scores, score_date_idx, valid_stocks, stock_indices = _compute_live_scores(
+                signal_datetime, all_stocks, weights, factor_classes)
+        except Exception as e:
+            trading_logger.error(f"因子计算失败: {e}")
+            store.pending_rebalance = None
+            return
+
+        valid_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
+
+        # 加权选股（与回测一致）
+        final_score = np.zeros(len(valid_stocks))
+        for name, ranks_mat in all_scores.items():
+            w = weights.get(name, 0.0)
+            if w == 0:
+                continue
+            ranks = ranks_mat[score_date_idx][valid_cols]
+            temp = temperatures.get(name, 1.0)
+            if temp != 1.0:
+                np.power(ranks, 1.0 / temp, out=ranks)
+            final_score += ranks * w
+
+        top_idx = np.argsort(-final_score)
+        buy_n_stocks = [valid_stocks[i] for i in top_idx[:buy_n]]
+        trading_logger.info(f"选股完成 Top{buy_n}: {buy_n_stocks[:5]}...")
+
+        # 涨跌停检查预计算
+        board_type, base_ratio, list_tidx = precompute_limit_helpers(data, stock_indices)
+        open_all = data['open']
+        close_all = data['close']
+        high_all = data['high']
+        low_all = data['low']
+        st_all = data.get('st_mask')
+        issue_price_all = data.get('issue_price')
+
+        trade_idx = score_date_idx + 1 if score_date_idx + 1 < len(data['trade_dates']) else score_date_idx
+        trade_dt64 = data['trade_dates'][trade_idx]
+        exec_date = trade_dt64.astype('datetime64[D]').item() if hasattr(trade_dt64, 'astype') else trade_date
+
+        # 获取当日价格
+        day_open = open_all[trade_idx]
+        day_close = close_all[trade_idx]
+        # 获取持仓（手动触发时 QMT 可能尚未同步，等最多 5s）
+        import time
+        positions = {}
+        for attempt in range(6):
+            raw = store.trader.query_positions()
+            if raw:
+                positions = {p.stock_code: p for p in raw if p.volume > 0}
+                break
+            if attempt == 0:
+                trading_logger.warning("QMT 持仓为空，等待同步...")
+            time.sleep(1)
+        can_sell = sum(1 for p in positions.values() if p.can_use_volume > 0)
+        trading_logger.info(f"持仓: {len(positions)} 只 (可卖{can_sell}), 总市值={sum(p.market_value for p in positions.values()):.0f}")
+        _last_valid_price = {}
+
+        prices = {}
+        for code in set(positions.keys()) | set(buy_n_stocks):
+            si = stock_indices.get(code)
+            if si is None:
+                continue
+            open_val = day_open[si]
+            if np.isnan(open_val) or open_val <= 0:
+                if code in _last_valid_price:
+                    prices[code] = _last_valid_price[code]
+                continue
+            prices[code] = _last_valid_price[code] = float(open_val)
+
+        # 多退少补 rebalance（与回测一致）
+        # 注意：用 volume(总持仓) 算市值，避免 T+0 买入后 can_use_volume=0 导致重复买入
+        pos_vals = {c: p.volume * prices.get(c, 0) for c, p in positions.items()}
+        total_eq = asset.total_asset
+        timing_mult = 1.0
+        base_target = total_eq * timing_mult / buy_n
+        buy_n_set = set(buy_n_stocks)
+
+        sell_orders = []   # [(code, shares)]  shares=-1 表示全清
+        buy_orders = {}    # {code: shares}
+
+        all_codes = set(positions.keys()) | buy_n_set
+        for code in all_codes:
+            if code not in prices:
+                continue
+            cv = pos_vals.get(code, 0)
+            tgt = base_target if code in buy_n_set else 0.0
+
+            # 多退
+            if code in positions and cv > tgt * 1.01:
+                if tgt == 0:
+                    sell_orders.append((code, -1))  # 不在 buy_n → 全清
+                else:
+                    sv = int((cv - tgt) / prices[code] / 100) * 100
+                    pos = positions[code]
+                    if 0 < sv < pos.can_use_volume:
+                        sell_orders.append((code, sv))
+
+            # 少补 — 仅 buy_n 内的
+            if code in buy_n_set and cv < base_target * 0.99:
+                bv = int((base_target - cv) / prices[code] / 100) * 100
+                if bv > 0:
+                    buy_orders[code] = bv
+
+        # 涨跌停过滤卖出
+        if sell_orders:
+            sc = [c for c, _ in sell_orders]
+            si_list = [stock_indices[c] for c in sc if c in stock_indices]
+            ok, _ = batch_limit_check(
+                sc, si_list, trade_idx, exec_date,
+                board_type, base_ratio, list_tidx,
+                open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=False)
+            sell_orders = [(c, s) for j, (c, s) in enumerate(sell_orders) if ok[j]]
+
+        # 涨跌停过滤买入
+        if buy_orders:
+            bc = list(buy_orders.keys())
+            bi_list = [stock_indices[c] for c in bc if c in stock_indices]
+            ok, _ = batch_limit_check(
+                bc, bi_list, trade_idx, exec_date,
+                board_type, base_ratio, list_tidx,
+                open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=True)
+            buy_orders = {c: s for j, (c, s) in enumerate(buy_orders.items()) if ok[j]}
+
+        # 准备 pending_rebalance
+        sell_details = []
+        for code, shares in sell_orders:
+            pos = positions.get(code)
+            vol = shares if shares > 0 else (pos.can_use_volume if pos else 0)
+            reason = '换出' if shares < 0 else f'多退({shares}股)'
+            sell_details.append({
+                'code': code,
+                'name': _get_name(code, signal_date),
+                'board': '',
+                'volume': vol,
+                'est_price': prices.get(code, 0),
+                'est_amount': vol * prices.get(code, 0),
+                'reason': reason,
+            })
+
+        buy_details = []
+        for code, shares in buy_orders.items():
+            buy_details.append({
+                'code': code,
+                'name': _get_name(code, signal_date),
+                'board': '',
+                'shares': shares,
+                'est_price': prices.get(code, 0),
+                'est_amount': shares * prices.get(code, 0),
+            })
+
+        # 打印多退少补详情
         trading_logger.info(
-          f"{code} 跳过买入: reason={result.reason}, regime={result.regime_name}, "
-          f"up_limit={result.up_limit}, down_limit={result.down_limit}"
+            f"====== 多退少补计划: target={base_target:.0f}, 权益={total_eq:.0f}, 持仓={len(positions)}只 ======"
         )
-        continue
-      if positions.get(code):
-        continue
-      sizing_prices[code] = open_price
-      buy_regimes[code] = _BOARD_LABELS.get(result.regime_name, result.regime_name)
-      tradable_buy_stocks.append(code)
+        if sell_details:
+            for d in sell_details:
+                trading_logger.info(
+                    f"  [卖] {d['code']} {d.get('name','')} {d['reason']}: "
+                    f"{d['volume']}股 @{d['est_price']:.2f} ≈{d['est_amount']:.0f}"
+                )
+        else:
+            trading_logger.info("  [卖] 无")
+        if buy_details:
+            for d in buy_details:
+                trading_logger.info(
+                    f"  [买] {d['code']} {d.get('name','')} 少补: "
+                    f"{d['shares']}股 @{d['est_price']:.2f} ≈{d['est_amount']:.0f}"
+                )
+        else:
+            trading_logger.info("  [买] 无")
+        trading_logger.info("=" * 60)
 
-    allocations = Sizer.allocate(
-      [(s, sizing_prices[s]) for s in tradable_buy_stocks],
-      asset.total_asset
+        store.pending_rebalance = {
+            'signal_date': signal_date,
+            'trade_date': trade_date,
+            'sell_orders': sell_orders,
+            'buy_allocations': buy_orders,
+            'sell_details': sell_details,
+            'buy_details': buy_details,
+            'prices': prices,
+            'stock_indices': stock_indices,
+        }
+
+        trading_logger.info(
+            f"调仓预计算完成: sell={len(sell_orders)}, buy={len(buy_orders)}, "
+            f"target={base_target:.0f}, equity={total_eq:.0f}"
+        )
+        recorder.mark("完成调仓预计算")
+
+    def execute_trade(store, execute_sell=True, execute_buy=True):
+        import time
+        pending = getattr(store, 'pending_rebalance', None)
+        if not pending:
+            trading_logger.warning("没有可执行的调仓计划，跳过本轮下单")
+            return
+
+        signal_date = pending['signal_date']
+        trade_date = pending['trade_date']
+        sell_orders = pending.get('sell_orders', [])
+        buy_allocations = pending.get('buy_allocations', {})
+        prices = pending.get('prices', {})
+
+        trading_logger.info(
+            f"开始调仓: sell={len(sell_orders)} buy={len(buy_allocations)} "
+            f"signal={signal_date.isoformat()} trade={trade_date.isoformat()}"
+        )
+
+        submitted = []  # [{code, order_type, order_id, shares}]
+
+        if execute_sell and sell_orders:
+            with ThreadPoolExecutor(max_workers=min(16, len(sell_orders))) as executor:
+                futures = [
+                    executor.submit(_submit_sell_order, store, code, shares, signal_date, trade_date)
+                    for code, shares in sell_orders
+                ]
+                for future in as_completed(futures):
+                    r = future.result()
+                    if r:
+                        submitted.append(r)
+
+        if execute_buy and buy_allocations:
+            buy_items = list(buy_allocations.items())
+            for i, (code, shares) in enumerate(buy_items):
+                if i > 0:
+                    time.sleep(0.3)
+                # 资金检查：不足则降量
+                asset = store.trader.query_asset()
+                if asset and asset.cash > 0:
+                    est_price = prices.get(code, 0)
+                    if est_price > 0:
+                        max_shares = int(asset.cash * 0.99 / est_price / 100) * 100
+                        if max_shares < shares:
+                            if max_shares >= 100:
+                                trading_logger.warning(f"{code} 资金不足 {shares}→{max_shares}股")
+                                shares = max_shares
+                            else:
+                                trading_logger.warning(f"{code} 资金不足,跳过")
+                                continue
+                r = _submit_buy_order(store, code, shares, signal_date, trade_date)
+                if r:
+                    submitted.append(r)
+
+        store.pending_rebalance = None
+
+        # 轮询等待所有委托进入终态
+        TERMINAL = {xtconstant.ORDER_SUCCEEDED, xtconstant.ORDER_CANCELED,
+                    xtconstant.ORDER_JUNK, xtconstant.ORDER_PART_CANCEL}
+        waited = 0
+        while waited < 30:
+            pending_orders = []
+            for s in submitted:
+                o = store.trader.query_order(s['order_id'])
+                if o and o.order_status not in TERMINAL:
+                    pending_orders.append(s['code'])
+            if not pending_orders:
+                break
+            time.sleep(1)
+            waited += 1
+        if waited >= 30:
+            trading_logger.warning(f"等待成交超时, 仍有{len(pending_orders)}笔未终态: {pending_orders[:5]}...")
+
+        # 汇总
+        ok_list = []
+        fail_list = []
+        partial_list = []
+        for s in submitted:
+            o = store.trader.query_order(s['order_id'])
+            status = get_order_status_label(o.order_status) if o else '查询失败'
+            msg = o.status_msg if o else ''
+            traded = o.traded_volume if o else 0
+            price = o.traded_price if o else 0
+            vol = o.order_volume if o else 0
+            line = f"{s['order_type']:4s} {s['code']} {s['shares']}股 → {status}"
+            if traded and traded != vol:
+                line += f" {traded}/{vol}股"
+            if price:
+                line += f" @{price:.2f}"
+            if status in ('已成',):
+                ok_list.append(line)
+            elif status in ('废单', '已撤', '部撤'):
+                fail_list.append(f"{line} {msg}")
+            else:
+                partial_list.append(f"{line} {msg}")
+
+        if ok_list:
+            trading_logger.info(f"=== 成交 {len(ok_list)} 笔 ===")
+            for l in ok_list:
+                trading_logger.info(f"  {l}")
+        if partial_list:
+            trading_logger.warning(f"=== 未完成 {len(partial_list)} 笔 ===")
+            for l in partial_list:
+                trading_logger.warning(f"  {l}")
+        if fail_list:
+            trading_logger.error(f"=== 失败 {len(fail_list)} 笔 ===")
+            for l in fail_list:
+                trading_logger.error(f"  {l}")
+
+    def after_trade(store):
+        if store.whole_sub_id is not None:
+            xtdata.unsubscribe_quote(store.whole_sub_id)
+            store.whole_sub_id = None
+        store.pending_rebalance = None
+
+    scheduler = TradingScheduler(
+        td,
+        before_trade=before_trade,
+        execute_trade=execute_trade,
+        while_trade=[],
+        after_trade=after_trade,
     )
-    allocations = {code: shares for code, shares in allocations.items() if shares > 0}
-    buy_details = [
-      {
-        'code': code,
-        'name': get_stock_name_at_date(code, signal_date),
-        'board': buy_regimes.get(code),
-        'shares': int(shares),
-        'est_price': float(sizing_prices[code]),
-        'est_amount': int(shares) * float(sizing_prices[code]),
-      }
-      for code, shares in allocations.items()
-    ]
 
-    store.pending_rebalance = {
-      'signal_date': signal_date,
-      'trade_date': trade_date,
-      'sell_codes': allowed_sell_codes,
-      'buy_allocations': allocations,
-      'sell_details': sell_details,
-      'buy_details': buy_details,
-    }
+    manual_trigger = args.buy or args.sell
+    if manual_trigger:
+        execute_buy = args.buy
+        execute_sell = args.sell
+        if args.buy and args.sell:
+            execute_buy = True
+            execute_sell = True
 
-    trading_logger.info(
-      f"调仓预计算完成: sell_candidates={len(allowed_sell_codes)}, buy_candidates={len(allocations)}, "
-      f"signal_date={signal_date.isoformat()}, trade_date={trade_date.isoformat()}"
-    )
-    recorder.mark("完成调仓预计算")
+        store = SimpleNamespace(trader=td, whole_sub_id=None, pending_rebalance=None)
+        try:
+            before_trade(store)
+            pending = getattr(store, 'pending_rebalance', None)
+            if not pending:
+                trading_logger.warning("没有生成可执行计划，已取消本次手动触发")
+                sys.exit(0)
 
-  def execute_trade(store: TradingScheduler, execute_sell: bool = True, execute_buy: bool = True):
-    pending = getattr(store, 'pending_rebalance', None)
-    if not pending:
-      trading_logger.warning("没有可执行的调仓计划，跳过本轮下单")
-      return
+            confirmed = _print_and_confirm_manual_plan(
+                pending,
+                execute_buy=execute_buy,
+                execute_sell=execute_sell,
+            )
+            if not confirmed:
+                trading_logger.warning("手动确认未通过，已取消本次交易")
+                sys.exit(0)
 
-    signal_date = pending['signal_date']
-    trade_date = pending['trade_date']
-    sell_codes = pending['sell_codes']
-    buy_allocations = pending['buy_allocations']
-
-    planned_sell_count = len(sell_codes) if execute_sell else 0
-    planned_buy_count = len(buy_allocations) if execute_buy else 0
-    trading_logger.info(
-      f"开始执行调仓: sell_orders={planned_sell_count}, buy_orders={planned_buy_count}, "
-      f"signal_date={signal_date.isoformat()}, trade_date={trade_date.isoformat()}"
-    )
-
-    if execute_sell and sell_codes:
-      with ThreadPoolExecutor(max_workers=min(16, len(sell_codes))) as executor:
-        futures = [executor.submit(_submit_sell_order, store, code, signal_date, trade_date) for code in sell_codes]
-        for future in as_completed(futures):
-          future.result()
-
-    if execute_buy and buy_allocations:
-      with ThreadPoolExecutor(max_workers=min(16, len(buy_allocations))) as executor:
-        futures = [
-          executor.submit(_submit_buy_order, store, code, shares, signal_date, trade_date)
-          for code, shares in buy_allocations.items()
-        ]
-        for future in as_completed(futures):
-          future.result()
-
-    store.pending_rebalance = None
-    trading_logger.debug("调仓执行结束")
-
-  def after_trade(store: TradingScheduler):
-    if store.whole_sub_id is not None:
-      xtdata.unsubscribe_quote(store.whole_sub_id)
-      store.whole_sub_id = None
-    store.pending_rebalance = None
-
-  scheduler = TradingScheduler(
-    td,
-    before_trade=before_trade,
-    execute_trade=execute_trade,
-    while_trade=[],
-    after_trade=after_trade,
-  )
-
-  manual_trigger = args.buy or args.sell
-  if manual_trigger:
-    execute_buy = args.buy
-    execute_sell = args.sell
-    if args.buy and args.sell:
-      execute_buy = True
-      execute_sell = True
-
-    store = SimpleNamespace(trader=td, whole_sub_id=None, pending_rebalance=None)
-    try:
-      before_trade(store)
-      pending = getattr(store, 'pending_rebalance', None)
-      if not pending:
-        trading_logger.warning("没有生成可执行计划，已取消本次手动触发")
+            execute_trade(store, execute_sell=execute_sell, execute_buy=execute_buy)
+            trading_logger.info("手动单次触发执行完成")
+        finally:
+            after_trade(store)
         sys.exit(0)
 
-      confirmed = _print_and_confirm_manual_plan(
-        pending,
-        execute_buy=execute_buy,
-        execute_sell=execute_sell,
-      )
-      if not confirmed:
-        trading_logger.warning("手动确认未通过，已取消本次交易")
-        sys.exit(0)
-
-      execute_trade(store, execute_sell=execute_sell, execute_buy=execute_buy)
-      trading_logger.info("手动单次触发执行完成")
-    finally:
-      after_trade(store)
-    sys.exit(0)
-
-  scheduler.start_check_trading()
+    scheduler.start_check_trading()

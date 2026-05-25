@@ -1,7 +1,5 @@
-from typing import Optional
 from xtquant import xtconstant
 
-from data.db import get_stock_detail
 
 def get_order_type_label(order_type):
   if order_type == xtconstant.STOCK_BUY:
@@ -51,22 +49,7 @@ def get_price_type_label(price_type: int) -> str:
   else:
     return str(price_type)
 
-def get_price_type(order_type: int, stock_code: str, price: float = None) -> Optional[int]:
+def get_price_type(order_type: int, stock_code: str, price: float = None) -> int:
   if price:
-    # 固定价格委托
     return xtconstant.FIX_PRICE
-
-  if order_type == xtconstant.STOCK_BUY:
-    ''' 对手方最优价格委托 '''
-    return xtconstant.MARKET_PEER_PRICE_FIRST
-  elif order_type == xtconstant.STOCK_SELL:
-    ''' 五档即成剩撤 '''
-    detail = get_stock_detail(stock_code)
-    if detail['ExchangeID'] == 'SH':
-      return xtconstant.MARKET_SH_CONVERT_5_CANCEL
-    elif detail['ExchangeID'] == 'SZ':
-      return xtconstant.MARKET_SZ_CONVERT_5_CANCEL
-    else:
-      return xtconstant.MARKET_PEER_PRICE_FIRST
-
-  return None  # 未知订单类型，返回 None
+  return xtconstant.MARKET_PEER_PRICE_FIRST

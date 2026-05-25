@@ -10,7 +10,6 @@ from utils.stock.format import get_stock_desc
 
 
 class TraderCallback(XtQuantTraderCallback):
-  """ 订阅账户变更 """
 
   def __init__(self, trader):
     self.trader = trader
@@ -22,50 +21,39 @@ class TraderCallback(XtQuantTraderCallback):
     trading_logger.error("交易连接已断开")
 
   def on_stock_order(self, order: XtOrder):
-    if order.order_status not in [
-      xtconstant.ORDER_REPORTED,
-      xtconstant.ORDER_CANCELED,
-    ]:
-      # 只处理已报和已撤的订单
-      return
-
     detail = get_stock_detail(order.stock_code)
-    sub_title = f"{get_order_type_label(order.order_type)} {get_stock_desc(detail)}"
-    content = f"""\
-委托信息：{f'{get_price_type_label(order.price_type)} {order.order_volume} 股' if order.price is None else f'￥{order.price:.2f} * {order.order_volume}股 ≈ ￥{(order.price * order.order_volume):.2f}'}
-委托状态：[{get_order_status_label(order.order_status)}]{order.status_msg}
-<hr/>{order.strategy_name} {order.order_remark}"""
+    desc = f"{get_order_type_label(order.order_type)} {get_stock_desc(detail)}"
+    status_label = get_order_status_label(order.order_status)
+    price_info = f'{get_price_type_label(order.price_type)} {order.order_volume} 股'
+    status = order.order_status
 
-    lark_sender.send_notification_card(
-      level=LarkMsgLevel.Info,
-      title="订单已提交",
-      sub_title=sub_title,
-      content=content
-    )
-    trading_logger.debug(f"订单已提交：\n{sub_title}\n{content}")
+    if status == xtconstant.ORDER_SUCCEEDED:
+        trading_logger.success(f"已成: {desc} {price_info}")
+        lark_sender.send_notification_card(
+            level=LarkMsgLevel.Success, title="已成", sub_title=desc,
+            content=f"{price_info}")
+    elif status in (xtconstant.ORDER_CANCELED, xtconstant.ORDER_JUNK, xtconstant.ORDER_PART_CANCEL):
+        trading_logger.error(f"废单/已撤: {desc} [{status_label}] {order.status_msg}")
+        lark_sender.send_notification_card(
+            level=LarkMsgLevel.Danger, title="废单/已撤", sub_title=desc,
+            content=f"{price_info} {order.status_msg}")
+    elif status == xtconstant.ORDER_REPORTED:
+        trading_logger.info(f"已报: {desc} {price_info}")
+        lark_sender.send_notification_card(
+            level=LarkMsgLevel.Info, title="已报", sub_title=desc,
+            content=f"{price_info}")
 
   def on_stock_trade(self, trade: XtTrade):
     detail = get_stock_detail(trade.stock_code)
-    sub_title = f"{get_order_type_label(trade.order_type)} {get_stock_desc(detail)}"
-    content = f"""\
-成交信息：￥{trade.traded_price:.2f} * {trade.traded_volume}股
-成交金额：￥{trade.traded_amount:.2f} + 手续费 ￥{trade.commission:.2f}
-<hr/>{trade.strategy_name} {trade.order_remark}"""
-
+    desc = f"{get_order_type_label(trade.order_type)} {get_stock_desc(detail)}"
     lark_sender.send_notification_card(
-      level=LarkMsgLevel.Success,
-      title="订单已成交",
-      sub_title=sub_title,
-      content=content
-    )
-    trading_logger.success(f"订单已成交：\n{sub_title}\n{content}")
-
-    # 完全清仓则取消订阅
-    if trade.order_type == xtconstant.STOCK_SELL:
-      position = self.trader.query_stock_position(trade.stock_code)
+        level=LarkMsgLevel.Success, title="成交", sub_title=desc,
+        content=f"￥{trade.traded_price:.2f} * {trade.traded_volume}股 ≈ ￥{trade.traded_amount:.2f}")
 
   def on_order_error(self, order_error: XtOrderError):
     trading_logger.error(f"订单错误：{order_error.error_msg}")
+    lark_sender.send_notification_card(
+        level=LarkMsgLevel.Danger, title="订单错误", content=order_error.error_msg)
 
   def on_cancel_error(self, cancel_error: XtCancelError):
     trading_logger.error(f"撤单失败：{cancel_error.error_msg}")

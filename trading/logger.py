@@ -6,6 +6,9 @@ from configs import LOGGER_PATH
 from utils.logger import BaseLogger
 
 def lark_sink(message):
+  from configs import LARK_APP_ID
+  if not LARK_APP_ID:
+    return
   from .lark.sender import LarkMsgLevel, lark_sender
   """飞书卡片日志输出"""
   record = message.record

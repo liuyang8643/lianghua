@@ -8,28 +8,23 @@ import yaml
 
 from core.factors.TrueMarketCap import TrueMarketCap
 from core.factors.AmountBasedSmallCap import AmountBasedSmallCap
-from core.factors.MarginExpansion import MarginExpansion
-from core.factors.CashFlowQuality import CashFlowQuality
 from core.factors.IdioVol import IdioVol
 from core.factors.MAX5 import MAX5
-from core.factors.ShortTermReversal import ShortTermReversal
 from core.factors.AmihudIlliquidity import AmihudIlliquidity
 from core.factors.DownsideDeviation import DownsideDeviation
 from core.factors.TurnoverMean import TurnoverMean
 from core.factors.VolumeCV import VolumeCV
 from core.factors.DailyRange import DailyRange
-from core.factors.ProfitStability import ProfitStability
-from core.factors.ShareExpansion import ShareExpansion
+from core.factors.High52Week import High52Week
+from core.factors.OvernightGap import OvernightGap
 
 _FACTOR_REGISTRY = {
     cls.__name__: cls
     for cls in [
         TrueMarketCap, AmountBasedSmallCap,
-        MarginExpansion, CashFlowQuality,
-        IdioVol, MAX5, ShortTermReversal,
-        AmihudIlliquidity, DownsideDeviation, TurnoverMean,
-        VolumeCV, DailyRange,
-        ProfitStability, ShareExpansion,
+        AmihudIlliquidity, VolumeCV, TurnoverMean,
+        IdioVol, DownsideDeviation, DailyRange,
+        MAX5, OvernightGap, High52Week,
     ]
 }
 
@@ -187,10 +182,6 @@ def sample_timing_direction(profile_name: str | None = None):
     return _sample_from_search_space('timing_direction', profile_name)
 
 
-def sample_timing_enabled(profile_name: str | None = None):
-    return _sample_from_search_space('timing_enabled', profile_name)
-
-
 def sample_timing_window(profile_name: str | None = None):
     return _sample_from_search_space('timing_window', profile_name)
 
@@ -225,7 +216,6 @@ def repair_config(config: dict, profile_name: str | None = None) -> bool:
         'timing_base': 'timing_base',
         'timing_leverage': 'timing_leverage',
         'timing_direction': 'timing_direction',
-        'timing_enabled': 'timing_enabled',
         'timing_window': 'timing_window',
         'timing_index': 'timing_index',
     }
@@ -264,7 +254,6 @@ def build_individual_config(
     timing_base: float | None = None,
     timing_leverage: float | None = None,
     timing_direction: int | None = None,
-    timing_enabled: bool | None = None,
     timing_window: int | None = None,
     timing_index: str | None = None,
     profile_name: str | None = None,
@@ -295,18 +284,17 @@ def build_individual_config(
         config['stock_pool'] = stock_pool
     if holding_period:
         config['holding_period'] = holding_period
-    config['timing_enabled'] = bool(timing_enabled)
-    if timing_enabled:
-        if timing_base is not None:
-            config['timing_base'] = timing_base
-        if timing_leverage is not None:
-            config['timing_leverage'] = timing_leverage
-        if timing_direction is not None:
-            config['timing_direction'] = timing_direction
-        if timing_window is not None:
-            config['timing_window'] = timing_window
-        if timing_index is not None:
-            config['timing_index'] = timing_index
+    config['timing_enabled'] = timing_base is not None
+    if timing_base is not None:
+        config['timing_base'] = timing_base
+    if timing_leverage is not None:
+        config['timing_leverage'] = timing_leverage
+    if timing_direction is not None:
+        config['timing_direction'] = timing_direction
+    if timing_window is not None:
+        config['timing_window'] = timing_window
+    if timing_index is not None:
+        config['timing_index'] = timing_index
     config['rebalance'] = True
     return config
 
@@ -324,16 +312,15 @@ def generate_initial_configs(count: int, profile_name: str | None = None) -> lis
         fc = sample_factor_choice(profile_name=profile_name) if has_factor_choice else None
         sp = sample_stock_pool(profile_name=profile_name) if 'stock_pool' in search_spaces else None
         hp = sample_holding_period(profile_name=profile_name) if 'holding_period' in search_spaces else None
-        te = sample_timing_enabled(profile_name=profile_name) if 'timing_enabled' in search_spaces else None
-        tb = sample_timing_base(profile_name=profile_name) if te else None
-        tl = sample_timing_leverage(profile_name=profile_name) if te else None
-        td = sample_timing_direction(profile_name=profile_name) if te else None
-        tw = sample_timing_window(profile_name=profile_name) if te else None
-        ti = sample_timing_index(profile_name=profile_name) if te else None
+        tb = sample_timing_base(profile_name=profile_name) if 'timing_base' in search_spaces else None
+        tl = sample_timing_leverage(profile_name=profile_name) if 'timing_leverage' in search_spaces else None
+        td = sample_timing_direction(profile_name=profile_name) if 'timing_direction' in search_spaces else None
+        tw = sample_timing_window(profile_name=profile_name) if 'timing_window' in search_spaces else None
+        ti = sample_timing_index(profile_name=profile_name) if 'timing_index' in search_spaces else None
         w = sample_weights(profile_name=profile_name) if has_weight else None
         configs.append(build_individual_config(pc, weights=w, factor_choice=fc, stock_pool=sp,
                                                 holding_period=hp, timing_base=tb, timing_leverage=tl,
-                                                timing_direction=td, timing_enabled=te,
+                                                timing_direction=td,
                                                 timing_window=tw, timing_index=ti,
                                                 profile_name=profile_name))
     return configs

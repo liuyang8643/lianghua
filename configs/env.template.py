@@ -13,7 +13,7 @@ QMT_ROOT_DIR = [
 # 交易账户配置
 TRADE_ACCOUNT = '你的账户ID'
 
-# 飞书机器人配置
+# 飞书机器人配置（回测可留空）
 LARK_APP_ID = "你的飞书机器人ID"
 LARK_APP_SECRET = "你的飞书机器人密钥"
-LARK_RECEIVE_ID = "你的飞书邮箱"
+LARK_RECEIVE_ID = "你的飞书chat_id"

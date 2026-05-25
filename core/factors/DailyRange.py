@@ -3,19 +3,26 @@ import numpy as np
 MIN_RAW_PRICE = 2.0
 
 
+def _shift(arr):
+    result = np.empty_like(arr)
+    result[0] = np.nan
+    result[1:] = arr[:-1]
+    return result
+
+
 class DailyRange:
-  """日内振幅 — (high-low)/close均值，高振幅=分歧大=负面"""
+  """日内振幅 — 已知(high-low)/close均值，高振幅=分歧大=负面"""
   hist_days = 20
 
   def calc_batch(self, panel: dict) -> np.ndarray:
-    high = panel["high"]
-    low = panel["low"]
-    close = panel["close"]
+    high_known = _shift(panel["high"])
+    low_known = _shift(panel["low"])
+    close_known = _shift(panel["close"])
     raw_open = panel["open"]
     st_mask = panel["st_mask"]
 
     with np.errstate(divide='ignore', invalid='ignore'):
-        day_range = (high - low) / close
+        day_range = (high_known - low_known) / close_known
 
     w = self.hist_days
     n_valid = np.cumsum(~np.isnan(day_range), axis=0).astype(float)
