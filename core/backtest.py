@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 
-
+from core.ga import resolve_profile_name
 from core.runtime import load_runtime_npz
 from core.scoring import scores_to_ranks, batch_limit_check, precompute_limit_helpers
 from data.db.delist import get_delist_stock_info
@@ -687,6 +687,7 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
 
   with open(args.individual_config, 'r', encoding='utf-8') as f:
     config_data = json.load(f)
+  profile_name = resolve_profile_name(config_data)
   individual_config = dict(config_data['individual_config'])
   verify_config = _parse_single_verify_config(config_data)
 

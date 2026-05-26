@@ -1,0 +1,9 @@
+{
+  "ga_profile": "smallcap_st",
+  "all_factor_names": ["TMC_ProfitYoy_20"],
+  "individual_config": {
+    "weights": {"TMC_ProfitYoy_20": 1.0},
+    "buy_n": 10, "sell_m": 10,
+    "temperatures": {"TMC_ProfitYoy_20": 1.0}
+  }
+}

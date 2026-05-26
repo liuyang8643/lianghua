@@ -1,0 +1,46 @@
+version: "2026-05-23"
+default_profile: core
+
+mode_configs:
+  single:
+    population_size: 1
+    generations: 1
+    log_level: DEBUG
+    save_charts: true
+    desc: 单次回测模式
+  debug:
+    population_size: 2
+    generations: 3
+    log_level: DEBUG
+    save_charts: false
+    desc: 调试模式（最小GA）
+  ga:
+    population_size: 50
+    generations: 10000
+    log_level: INFO
+    save_charts: false
+    desc: GA优化模式（默认）
+
+search_spaces:
+  position_count: [20, 30, 40, 50]
+  holding_period: [1]
+  board_prefixes: [60, 00, 30, 688]
+  timing_base: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
+  timing_leverage: [0, 0.5, 1, 2, 3, 5, 8, 10, 12, 15, 20, 25, 30, 40, 50]
+  timing_window: [2, 3, 5, 7, 10, 15, 20, 25, 30, 45, 60, 90, 120, 252]
+  timing_direction: [1, -1]
+  timing_index: [sh000300, sh000905, sh000852]
+  holding_period: [1]
+
+profiles:
+  core:
+    desc: 6因子 — size×2 + liquidity×2 + behavioral×2
+    factor_classes: [
+      TrueMarketCap, AmountBasedSmallCap,
+      AmihudIlliquidity, VolumeCV,
+      OvernightGap, High52Week,
+    ]
+    weight_range: [-1.0, 1.0, 0.1]
+    search_spaces: [position_count]
+    preload_start: 1993-01-01
+    preload_end: 2018-12-31
