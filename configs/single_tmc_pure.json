@@ -1,5 +1,5 @@
 {
-  "ga_profile": "core8",
+  "ga_profile": "core",
   "all_factor_names": ["TrueMarketCap"],
   "individual_config": {
     "weights": {"TrueMarketCap": 1.0},

@@ -39,17 +39,15 @@ uv pip install TA-Lib
 ### 单回测
 
 ```bash
-# 完整流程
-python run_backtest.py --start 2024-01-01 --end 2024-12-31
-
-# 带数据构建
-python run_backtest.py --start 2024-01-01 --end 2024-12-31 --build
+uv run python testback/run_backtest.py \
+  --start-date 20240101 --end-date 20241231 \
+  --individual-config configs/single_tmc_pure.json
 ```
 
 ### GA 参数搜索
 
 ```bash
-python -u -m testback.main --mode ga
+uv run python testback/run_ga.py --mode ga
 ```
 
 ### 添加新因子

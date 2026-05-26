@@ -33,7 +33,10 @@ from trading.logger import trading_logger
 from utils.recorder import recorder
 
 from .lark.receiver import create_lark_handler
+from .lark.sender import lark_sender, LarkMsgLevel
 from .manual_confirm import build_manual_confirmation_text, is_manual_confirmation_approved
+from .persistence import live_trade_recorder
+from .post_close import run_post_close, run_update_all
 from .scheduler import TradingScheduler
 from .trader import Trader
 from .helper import get_order_status_label
@@ -127,20 +130,36 @@ def _compute_live_scores(signal_datetime, all_stocks, weights, factor_classes):
     return data, all_scores, date_idx, valid_stocks, stock_indices
 
 
+class MutableTime:
+    """可变的模拟时钟。暴露 __call__ 用作 time_provider，set() 用于快进。"""
+    def __init__(self, dt: datetime):
+        self._dt = dt
+    def __call__(self) -> datetime:
+        return self._dt
+    def set(self, dt: datetime):
+        self._dt = dt
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--individual-config', type=str, required=True, help='Individual_config JSON文件路径')
+    parser.add_argument('--skip', type=str, help='跳过数据更新，按指定系统时间(YYYYMMDDHHMM)模拟实盘流程(快进模式)')
     parser.add_argument('--buy', action='store_true', help='忽略时间窗口，立即执行一次买入（需手工yes确认）')
     parser.add_argument('--sell', action='store_true', help='忽略时间窗口，立即执行一次卖出（需手工yes确认）')
     parser.add_argument('--update-all', action='store_true', help='执行全量数据更新（删除昨日不完整数据→全量下载→构建runtime NPZ）后退出')
     args = parser.parse_args()
 
     if args.update_all:
-        from data.update_all import update_offline_toNow
-        update_offline_toNow()
+        run_update_all(None)
         sys.exit(0)
 
+    skip_update = args.skip is not None
     is_manual = args.buy or args.sell
+    if skip_update:
+        skip_dt = datetime.strptime(args.skip, '%Y%m%d%H%M')
+        trading_logger.info(f"跳过数据更新, 模拟时间: {skip_dt}")
+    else:
+        skip_dt = None
 
     with open(args.individual_config, 'r', encoding='utf-8') as f:
         config_data = json.load(f)
@@ -170,12 +189,13 @@ if __name__ == '__main__':
         )
         recorder.mark("开始选股")
 
-        # 快速数据更新
-        from data.update_live import update_live_quick
-        try:
-            update_live_quick()
-        except Exception as e:
-            trading_logger.warning(f"快速数据更新失败, 继续使用已有数据: {e}")
+        # 快速数据更新（--skip 模式下跳过）
+        if not skip_update:
+            from data.update_live import update_live_quick
+            try:
+                update_live_quick()
+            except Exception as e:
+                trading_logger.warning(f"快速数据更新失败, 继续使用已有数据: {e}")
 
         if store.whole_sub_id is None:
             store.whole_sub_id = xtdata.subscribe_whole_quote(['SH', 'SZ'])
@@ -392,6 +412,17 @@ if __name__ == '__main__':
         )
         recorder.mark("完成调仓预计算")
 
+        # 飞书通知：开盘准备完成
+        try:
+            lines = [f"开盘准备完成 @ {trade_date.isoformat()}"]
+            lines.append(f"持仓 {len(positions)} 只 | 权益 ¥{total_eq:,.0f}")
+            lines.append(f"计划卖出 {len(sell_orders)} 只 | 买入 {len(buy_orders)} 只")
+            if buy_details:
+                lines.append(f"Top{buy_n}: {', '.join(d['code'] for d in buy_details[:5])}{'...' if len(buy_details) > 5 else ''}")
+            lark_sender.send_msg('\n'.join(lines))
+        except Exception as e:
+            trading_logger.warning(f"飞书通知失败: {e}")
+
     def execute_trade(store, execute_sell=True, execute_buy=True):
         import time
         pending = getattr(store, 'pending_rebalance', None)
@@ -506,13 +537,32 @@ if __name__ == '__main__':
             store.whole_sub_id = None
         store.pending_rebalance = None
 
+    def post_close(store):
+        try:
+            run_post_close(store)
+        except Exception as e:
+            trading_logger.exception(f"盘后对比失败: {e}")
+
+    def update_all(store):
+        try:
+            run_update_all(store)
+        except Exception as e:
+            trading_logger.exception(f"全量更新失败: {e}")
+
+    sim_clock = MutableTime(skip_dt) if skip_update else None
     scheduler = TradingScheduler(
         td,
         before_trade=before_trade,
         execute_trade=execute_trade,
         while_trade=[],
         after_trade=after_trade,
+        post_close=post_close,
+        update_all=update_all,
+        time_provider=sim_clock,
+        fast_forward=skip_update,
     )
+    scheduler._individual_config = individual_config
+    scheduler._factor_classes = factor_classes
 
     if is_manual:
         execute_buy = args.buy

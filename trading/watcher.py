@@ -50,6 +50,21 @@ class TraderCallback(XtQuantTraderCallback):
         level=LarkMsgLevel.Success, title="成交", sub_title=desc,
         content=f"￥{trade.traded_price:.2f} * {trade.traded_volume}股 ≈ ￥{trade.traded_amount:.2f}")
 
+    try:
+      from .persistence import live_trade_recorder
+      direction = 'buy' if trade.order_type == xtconstant.STOCK_BUY else 'sell'
+      amt = float(trade.traded_amount)
+      fee = max(amt * 0.0000854, 0.1) + amt * 0.00002
+      if direction == 'sell':
+        fee += amt * 0.0005
+      live_trade_recorder.record_fill(
+          code=trade.stock_code, direction=direction,
+          price=float(trade.traded_price), shares=int(trade.traded_volume),
+          amount=amt, order_id=trade.order_id,
+          name=detail.get('InstrumentName', '') if detail else '', fee=fee)
+    except Exception as e:
+      trading_logger.warning(f"记录成交失败: {e}")
+
   def on_order_error(self, order_error: XtOrderError):
     trading_logger.error(f"订单错误：{order_error.error_msg}")
     lark_sender.send_notification_card(
