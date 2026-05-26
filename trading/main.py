@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, date
+from datetime import datetime
 import argparse
 import json
 import sys
@@ -31,20 +31,12 @@ def _get_name(code, signal_date):
     return name or ''
 from trading.logger import trading_logger
 from utils.recorder import recorder
-from utils.stock.time import AFTERNOON_END, get_last_trading_day
 
 from .lark.receiver import create_lark_handler
 from .manual_confirm import build_manual_confirmation_text, is_manual_confirmation_approved
 from .scheduler import TradingScheduler
 from .trader import Trader
 from .helper import get_order_status_label
-
-
-def _get_signal_date(trade_date):
-    signal_date = get_last_trading_day(trade_date)
-    if signal_date >= trade_date:
-        signal_date = get_last_trading_day(trade_date - timedelta(days=1))
-    return signal_date
 
 
 def _submit_sell_order(store, code, shares, signal_date, trade_date):
@@ -140,7 +132,15 @@ if __name__ == '__main__':
     parser.add_argument('--individual-config', type=str, required=True, help='Individual_config JSON文件路径')
     parser.add_argument('--buy', action='store_true', help='忽略时间窗口，立即执行一次买入（需手工yes确认）')
     parser.add_argument('--sell', action='store_true', help='忽略时间窗口，立即执行一次卖出（需手工yes确认）')
+    parser.add_argument('--update-all', action='store_true', help='执行全量数据更新（删除昨日不完整数据→全量下载→构建runtime NPZ）后退出')
     args = parser.parse_args()
+
+    if args.update_all:
+        from data.update_all import update_offline_toNow
+        update_offline_toNow()
+        sys.exit(0)
+
+    is_manual = args.buy or args.sell
 
     with open(args.individual_config, 'r', encoding='utf-8') as f:
         config_data = json.load(f)
@@ -162,7 +162,7 @@ if __name__ == '__main__':
     def before_trade(store):
         trade_now = datetime.now()
         trade_date = trade_now.date()
-        signal_date = _get_signal_date(trade_date)
+        signal_date = trade_date
         signal_datetime = datetime.combine(signal_date, datetime.min.time())
 
         trading_logger.info(
@@ -193,9 +193,24 @@ if __name__ == '__main__':
             data, all_scores, score_date_idx, valid_stocks, stock_indices = _compute_live_scores(
                 signal_datetime, all_stocks, weights, factor_classes)
         except Exception as e:
-            trading_logger.error(f"因子计算失败: {e}")
-            store.pending_rebalance = None
-            return
+            if is_manual:
+                from datetime import timedelta
+                from utils.stock.time import get_last_trading_day
+                fallback = get_last_trading_day(trade_date)
+                if fallback >= trade_date:
+                    fallback = get_last_trading_day(trade_date - timedelta(days=1))
+                trading_logger.warning(
+                    f"今日({trade_date.isoformat()})无NPZ数据，回退至前一交易日({fallback.isoformat()})计算因子"
+                )
+                signal_date = fallback
+                trading_logger.info(f"更新: signal_date={signal_date.isoformat()}, trade_date={trade_date.isoformat()}")
+                signal_datetime = datetime.combine(signal_date, datetime.min.time())
+                data, all_scores, score_date_idx, valid_stocks, stock_indices = _compute_live_scores(
+                    signal_datetime, all_stocks, weights, factor_classes)
+            else:
+                trading_logger.error(f"因子计算失败: {e}")
+                store.pending_rebalance = None
+                return
 
         valid_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
 
@@ -230,7 +245,6 @@ if __name__ == '__main__':
 
         # 获取当日价格
         day_open = open_all[trade_idx]
-        day_close = close_all[trade_idx]
         # 获取持仓（手动触发时 QMT 可能尚未同步，等最多 5s）
         import time
         positions = {}
@@ -500,8 +514,7 @@ if __name__ == '__main__':
         after_trade=after_trade,
     )
 
-    manual_trigger = args.buy or args.sell
-    if manual_trigger:
+    if is_manual:
         execute_buy = args.buy
         execute_sell = args.sell
         if args.buy and args.sell:

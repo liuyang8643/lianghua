@@ -34,12 +34,11 @@ search_spaces:
 
 profiles:
   core:
-    desc: 11因子 — size×2 + liquidity×3 + vol×3 + behavioral×3
+    desc: 6因子 — size×2 + liquidity×2 + behavioral×2
     factor_classes: [
       TrueMarketCap, AmountBasedSmallCap,
-      AmihudIlliquidity, VolumeCV, TurnoverMean,
-      IdioVol, DownsideDeviation, DailyRange,
-      MAX5, OvernightGap, High52Week,
+      AmihudIlliquidity, VolumeCV,
+      OvernightGap, High52Week,
     ]
     weight_range: [-1.0, 1.0, 0.1]
     search_spaces: [position_count]

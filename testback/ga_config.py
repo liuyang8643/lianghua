@@ -8,13 +8,8 @@ import yaml
 
 from core.factors.TrueMarketCap import TrueMarketCap
 from core.factors.AmountBasedSmallCap import AmountBasedSmallCap
-from core.factors.IdioVol import IdioVol
-from core.factors.MAX5 import MAX5
 from core.factors.AmihudIlliquidity import AmihudIlliquidity
-from core.factors.DownsideDeviation import DownsideDeviation
-from core.factors.TurnoverMean import TurnoverMean
 from core.factors.VolumeCV import VolumeCV
-from core.factors.DailyRange import DailyRange
 from core.factors.High52Week import High52Week
 from core.factors.OvernightGap import OvernightGap
 
@@ -22,9 +17,8 @@ _FACTOR_REGISTRY = {
     cls.__name__: cls
     for cls in [
         TrueMarketCap, AmountBasedSmallCap,
-        AmihudIlliquidity, VolumeCV, TurnoverMean,
-        IdioVol, DownsideDeviation, DailyRange,
-        MAX5, OvernightGap, High52Week,
+        AmihudIlliquidity, VolumeCV,
+        OvernightGap, High52Week,
     ]
 }
 

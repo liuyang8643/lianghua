@@ -905,6 +905,12 @@ def _build_metric_cards(metrics: Dict, holding_stats: Dict) -> str:
         ('实际卖出次数', str(metrics.get('executed_sell_count', 0)),
          'neutral',
          '本次回测实际成交的卖出笔数。'),
+        ('平均每天买入', f"{metrics.get('avg_daily_buys', 0):.2f}",
+         'neutral',
+         '报告期内平均每个交易日买入的股票只数。'),
+        ('平均每天卖出', f"{metrics.get('avg_daily_sells', 0):.2f}",
+         'neutral',
+         '报告期内平均每个交易日卖出的股票只数。'),
         ('完整 round-trip', str(metrics.get('round_trip_count', 0)),
          'neutral',
          '已完成买入并完成对应卖出的持仓数量。'),
@@ -1106,6 +1112,8 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
         'round_trip_count': report_data.get('round_trip_count', len(cleared_positions)),
         'cleared_positions_count': report_data.get('cleared_positions_count', len(cleared_positions)),
         'current_positions_count': report_data.get('current_positions_count', len(positions)),
+        'avg_daily_buys': metrics.get('executed_buy_count', 0) / max(trade_days, 1),
+        'avg_daily_sells': metrics.get('executed_sell_count', 0) / max(trade_days, 1),
         **holding_stats,
     })
 
@@ -1138,6 +1146,8 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
             'final_asset': final_asset,
             'round_trips': metrics.get('round_trip_count', 0),
             'avg_holding_days': metrics.get('average_holding_days', 0),
+            'avg_daily_buys': round(metrics.get('avg_daily_buys', 0), 2),
+            'avg_daily_sells': round(metrics.get('avg_daily_sells', 0), 2),
             'delist_count': metrics.get('delist_count', 0),
         },
         'meta': {
