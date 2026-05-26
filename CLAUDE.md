@@ -89,7 +89,7 @@ run_single_mode (单回测入口)
 
 ```bash
 # 单回测（core profile, TrueMarketCap 因子）
-python -u -m testback.main --mode single \
+python -u -m testback.single \
   --start-date 20240101 --end-date 20241231 \
   --individual-config configs/single_tmc_pure.json
 

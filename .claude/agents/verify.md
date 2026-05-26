@@ -18,12 +18,12 @@ description: 独立验收员，模拟一个严苛的人类 reviewer 做完全独
 ### 回测（单次完整回测，构建缓存 + 全量模拟交易）
 
 ```bash
-cd D:/coding/WBR && uv run python -m testback.main --mode single --individual-config results/<path>/<name>_config.json
+cd D:/coding/WBR && uv run python -m testback.single --individual-config results/<path>/<name>_config.json
 ```
 
 example:
 ```bash
-cd D:/coding/WBR && uv run python -m testback.main --mode single --individual-config "results/financial_smallcap_top25_20100101_20260430/G2a_SmallCapDailyMVMaskRoe2xBottom10_config.json"
+cd D:/coding/WBR && uv run python -m testback.single --individual-config "results/financial_smallcap_top25_20100101_20260430/G2a_SmallCapDailyMVMaskRoe2xBottom10_config.json"
 ```
 
 ### 实盘（调仓预计算 + 下单验证，非交互跳过确认）
