@@ -1,9 +1,0 @@
-{
-  "ga_profile": "smallcap_st",
-  "all_factor_names": ["AmountBasedSmallCap"],
-  "individual_config": {
-    "weights": {"AmountBasedSmallCap": 1.0},
-    "buy_n": 25, "sell_m": 25,
-    "temperatures": {"AmountBasedSmallCap": 1.0}
-  }
-}

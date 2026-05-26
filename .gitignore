@@ -28,6 +28,20 @@ logs/
 data/
 results/
 
+# ---- Proprietary (hidden from WBR public repo) ----
+core/ga/
+core/factors/AmihudIlliquidity.py
+core/factors/AmountBasedSmallCap.py
+core/factors/High52Week.py
+core/factors/OvernightGap.py
+core/factors/VolumeCV.py
+core/factors/helpers/
+core/factors/results/
+configs/
+testback/main.py
+trading/
+scripts/
+
 # ---- MCP runtime ----
 .mcp.json
 .playwright-mcp/

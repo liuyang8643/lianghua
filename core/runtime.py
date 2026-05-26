@@ -5,9 +5,9 @@ from typing import List, Optional
 
 import numpy as np
 
-from ..logger import core_logger
+from .logger import core_logger
 
-_RUNTIME_DIR = Path(__file__).resolve().parents[2] / "data" / "runtime"
+_RUNTIME_DIR = Path(__file__).resolve().parents[1] / "data" / "runtime"
 
 _2D_FIELDS = ['open', 'high', 'low', 'close', 'volume', 'amount',
               'total_share', 'eps', 'roe', 'profit_yoy', 'revenue_yoy',

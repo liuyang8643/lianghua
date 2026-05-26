@@ -1,9 +1,0 @@
-{
-  "ga_profile": "smallcap_st",
-  "all_factor_names": ["TrueMarketCap", "LowTurnover20D"],
-  "individual_config": {
-    "weights": {"TrueMarketCap": 0.7, "LowTurnover20D": 0.3},
-    "buy_n": 25, "sell_m": 25,
-    "temperatures": {"TrueMarketCap": 1.0, "LowTurnover20D": 1.0}
-  }
-}
