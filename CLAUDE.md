@@ -1,10 +1,10 @@
 # AI 维护守则
-
+所有实施完成后，由verify-agent单独验收
 
 
 ### 回测 vs 实盘 严格分离
 
-| 层面 | 回测 (`core/backtest.py` + `testback/single.py` + `testback/ga_run.py`) | 实盘 (`trading/main.py`) |
+| 层面 | 回测 (`core/backtest.py` + `testback/main.py`) | 实盘 (`trading/main.py`) |
 |---|---|---|
 | 数据 | `load_runtime_npz()` 加载 npz → numpy | `load_runtime_npz(max_lookback)` 裁剪 → numpy |
 | 因子 | `f.calc_batch(panel)` 全量向量化 | 同回测，共享 `_compute_factor_scores` 逻辑 |
@@ -64,16 +64,16 @@ run_single_mode (单回测入口)
 | `_compute_factor_scores` | `core/backtest.py` | 加载npz → 逐因子 calc_batch → scores_to_ranks 排名 → 返回 (data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices) |
 | `_backtest_direct` | `core/backtest.py` | 权重+温度加权 → argsort 取 topN → 查 open → 先卖后买 |
 | `run_single_mode` | `core/backtest.py` | 解析 config → compute → backtest → 报告 |
-| `_run_ga` | `testback/ga_run.py` | GA/调试模式，个体评估 `multiprocessing.Pool` 并行 |
+| `_run_ga` | `testback/main.py` | GA/调试模式，个体评估 `multiprocessing.Pool` 并行 |
 
-### 入口架构
+### GA 入口 `testback/main.py`
 
-| 入口 | 职责 |
-|---|---|
-| `testback/single.py` | 单回测入口，零 GA 依赖，`run_single_mode` |
-| `testback/ga_run.py` | GA 引擎入口（私有），`ga_optimizer` + `_worker_*` 并行 |
+```
+导入 core/backtest.py 的回测函数 + core/ga/ 的配置函数
+  → _main_impl (argparse) → run_single_mode (single) / _run_ga (GA/debug)
+```
 
-`testback/single.py` 直接调用 `core/backtest.py` 的 `run_single_mode`，不依赖 `core/ga/`。
+`testback/main.py` 仅保留 GA 引擎逻辑（`_run_ga`, `_worker_*`, `ga_optimizer`），单回测核心函数全部在 `core/backtest.py`。`run_single_mode` 通过 `from core.backtest import run_single_mode` 导入。
 
 ## 性能基准
 
@@ -89,7 +89,7 @@ run_single_mode (单回测入口)
 
 ```bash
 # 单回测（core profile, TrueMarketCap 因子）
-python -u -m testback.single \
+python -u -m testback.main --mode single \
   --start-date 20240101 --end-date 20241231 \
   --individual-config configs/single_tmc_pure.json
 

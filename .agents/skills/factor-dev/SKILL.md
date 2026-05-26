@@ -51,7 +51,7 @@ class FactorName:
 每个新因子写入后，先用 single 模式验证无报错：
 
 ```powershell
-uv run python -u -m testback.single `
+uv run python -u -m testback.main --mode single `
   --individual-config configs/single_<factor_name>.json `
   --start-date 20200101 --end-date 20201231 `
   > $env:TEMP\smoke_<factor_name>.log 2>&1
@@ -76,7 +76,7 @@ if ($mem -lt 30) { Write-Warning "空闲内存不足: $mem GB"; exit 1 }
 Write-Host "OK: 进程=0, 空闲内存=$([math]::Round($mem,1))GB"
 ```
 
-**注册因子**：编辑 `configs/ga_profiles.yaml`，在 `_FACTOR_REGISTRY` 的 import 和列表中加入新因子类。
+**注册因子**：编辑 `testback/ga_config.py`，在 `_FACTOR_REGISTRY` 的 import 和列表中加入新因子类。
 
 **更新 profile**：编辑 `configs/ga_profiles.yaml`，在 `core4` profile 的 `factor_classes` 中加入新因子名。
 
@@ -88,7 +88,7 @@ Write-Host "OK: 进程=0, 空闲内存=$([math]::Round($mem,1))GB"
 $logPath = Join-Path $env:TEMP ("ga-factor-dev-" + (Get-Date -Format 'yyyyMMdd_HHmmss') + ".log")
 $outputDir = "results/ga_factor_dev_" + (Get-Date -Format 'yyyyMMdd_HHmmss')
 
-uv run python -u -m testback.ga_run --profile core4 --output-dir $outputDir > $logPath 2>&1
+uv run python -u -m testback.main --mode ga --profile core4 --output-dir $outputDir > $logPath 2>&1
 ```
 
 ### 5. 数据分析

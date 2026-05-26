@@ -1,20 +1,20 @@
 ---
 name: single-factor-backtest
-description: 在 WBR 中用 `testback/single.py` 回测某个单因子在指定日期区间内的表现。用于基于 `results/single_smallcap_30d_smoketest_config.json` 准备单次回测配置、覆盖 `--start-date` 和 `--end-date`、生成 `results/single_*` HTML 报告，或排查某个单因子在 single 模式下的收益、换仓与持仓表现。
+description: 在 WBR 中用 `testback/ga.py --mode single` 回测某个单因子在指定日期区间内的表现。用于基于 `results/single_smallcap_30d_smoketest_config.json` 准备单次回测配置、覆盖 `--start-date` 和 `--end-date`、生成 `results/single_*` HTML 报告，或排查某个单因子在 single 模式下的收益、换仓与持仓表现。
 ---
 
 # 单因子回测
 
 ## 概述
 
-使用 [`testback/single.py`](testback/single.py)，对一个因子在指定区间内做一次完整回测。把 [`results/single_smallcap_30d_smoketest_config.json`](results/single_smallcap_30d_smoketest_config.json) 当成最小模板，而不是日期来源。
+使用 [`testback/ga.py`](C:/Users/Sleaf/PycharmProjects/WBR/testback/ga.py) 的 `single` 模式，对一个因子在指定区间内做一次完整回测。把 [`results/single_smallcap_30d_smoketest_config.json`](C:/Users/Sleaf/PycharmProjects/WBR/results/single_smallcap_30d_smoketest_config.json) 当成最小模板，而不是日期来源。
 
 ## 工作流
 
 1. 复制样例配置到新的 JSON 文件，不要直接覆盖仓库里的 smoketest 文件，除非用户明确要求。
 2. 在新配置里只保留一个目标因子权重，并同步更新 `temperatures`。
 3. 如果任务指定了时间段，始终显式传 `--start-date` 和 `--end-date`；不要依赖默认区间。
-4. 从仓库根目录运行 `uv run python testback/single.py ...`，优先显式传 `--output-dir`，并把程序输出重定向到临时日志文件，不要让完整 stdout/stderr 直接进入对话上下文。
+4. 从仓库根目录运行 `uv run python testback/ga.py --mode single ...`，优先显式传 `--output-dir`，并把程序输出重定向到临时日志文件，不要让完整 stdout/stderr 直接进入对话上下文。
 5. 先根据退出码判断是否成功；成功时只确认输出目录、HTML 报告路径和临时日志路径，不要读取或转述程序输出内容。
 6. 只有在命令失败时，才读取临时日志的最新 200 行，结合报错堆栈分析原因并提出修复方案。
 7. 如果在数据准备阶段出现 `xtquant` 或本地行情连接问题，再使用 `$qmt-launch`。
@@ -52,7 +52,8 @@ description: 在 WBR 中用 `testback/single.py` 回测某个单因子在指定�
 $logPath = Join-Path $env:TEMP ("single-factor-backtest-" + (Get-Date -Format 'yyyyMMdd_HHmmss') + ".log")
 $outputDir = "results\\single_my_factor_20240101_20240331"
 
-uv run python testback/single.py `
+uv run python testback/ga.py `
+  --mode single `
   --individual-config results\single_my_factor.json `
   --start-date 2024-01-01 `
   --end-date 2024-03-31 `
@@ -76,8 +77,8 @@ if ($exitCode -ne 0) {
 ## 日期与 Profile
 
 - `results/single_smallcap_30d_smoketest_config.json` 这个文件名里的 `30d` 只是样例名称，不会自动限制回测区间。
-- [`testback/single.py`](testback/single.py) 通过 `--individual-config` JSON 文件指定因子权重和持仓参数，不依赖 profile。
-- 如果目标因子不在 `core/factors/` 中，先编写因子文件并确认能被 `pkgutil` 自动发现。
+- [`testback/ga.py`](C:/Users/Sleaf/PycharmProjects/WBR/testback/ga.py) 在主流程里先按 CLI `--profile` 计算因子历史需求和共享数据预加载窗口，再进入 `single` 模式。
+- 如果目标因子不在当前默认 profile `smallcap_only` 里，不要假设预加载窗口一定正确。优先传一个包含该因子的 `--profile`；如果仓库里还没有对应 profile，就先更新 [`testback/ga_config.py`](C:/Users/Sleaf/PycharmProjects/WBR/testback/ga_config.py)。
 
 ## 注意事项
 

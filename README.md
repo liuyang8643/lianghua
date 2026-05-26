@@ -49,7 +49,7 @@ python run_backtest.py --start 2024-01-01 --end 2024-12-31 --build
 ### GA 参数搜索
 
 ```bash
-python -u -m testback.ga_run
+python -u -m testback.main --mode ga
 ```
 
 ### 添加新因子
