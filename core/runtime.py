@@ -5,7 +5,7 @@ from typing import List, Optional
 
 import numpy as np
 
-from ..logger import core_logger
+from .logger import core_logger
 
 _RUNTIME_DIR = Path(__file__).resolve().parents[2] / "data" / "runtime"
 
