@@ -30,31 +30,28 @@ uv pip install TA-Lib
 
 ## 实盘运行
 
-> 非首次运行可直接跳到第 5 步
-
-1. 复制 `configs/env.template.py` 为 `env.py`，修改配置项
-2. 复制 `_copy.ps1` 到 gjqmt\bin.x64 目录下执行
-3. 登录 QMT，勾选极简模式
-4. 检查 `_linkMini` 是否成功生成
-5. 运行 `.\run.ps1` 启动实盘交易
+1. 配置 `configs/env.py`（QMT路径、账号等）
+2. 登录 QMT，勾选极简模式
+3. 运行 `.\run.ps1` 启动实盘交易
 
 ## 开发指引
 
-### 因子 benchmark
+### 单回测
 
-```powershell
-python -m core.factors.benchmark.benchmark
+```bash
+# 完整流程
+python run_backtest.py --start 2024-01-01 --end 2024-12-31
 
-# 可选环境变量
-$env:BENCHMARK_START_DATE = '2024-01-01'
-$env:BENCHMARK_GENERATE_HTML = '1'
+# 带数据构建
+python run_backtest.py --start 2024-01-01 --end 2024-12-31 --build
 ```
 
-详见 `core/factors/benchmark/README.md`。
+### GA 参数搜索
 
-### 因子可视化
-
-```powershell
-python -m core.factors.benchmark.web_chart
-python -m core.factors.benchmark.web_chart --code 600000.SH --port 9090
+```bash
+python -u -m testback.main --mode ga
 ```
+
+### 添加新因子
+
+在 `core/factors/` 下创建新 `.py` 文件，定义类包含 `hist_days` 属性 + `calc_batch(self, panel)` 方法，`registry.py` 自动发现注册。
