@@ -1,0 +1,11 @@
+{
+  "ga_profile": "core8",
+  "all_factor_names": ["TrueMarketCap"],
+  "individual_config": {
+    "weights": {"TrueMarketCap": 1.0},
+    "buy_n": 25,
+    "sell_m": 25,
+    "temperatures": {"TrueMarketCap": 1.0},
+    "rebalance": true
+  }
+}

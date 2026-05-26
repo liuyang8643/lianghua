@@ -1,0 +1,16 @@
+{
+  "ga_profile": "smallcap_g2a_roe2x_bottom10",
+  "all_factor_names": [
+    "SmallCapDailyMVMaskRoe2xBottom10"
+  ],
+  "individual_config": {
+    "weights": {
+      "SmallCapDailyMVMaskRoe2xBottom10": 1.0
+    },
+    "buy_n": 25,
+    "sell_m": 25,
+    "temperatures": {
+      "SmallCapDailyMVMaskRoe2xBottom10": 1.0
+    }
+  }
+}

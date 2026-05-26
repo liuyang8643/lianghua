@@ -1,0 +1,9 @@
+{
+  "ga_profile": "smallcap_st",
+  "all_factor_names": ["TrueMarketCap", "ShortTermReversal10D"],
+  "individual_config": {
+    "weights": {"TrueMarketCap": 0.95, "ShortTermReversal10D": -0.05},
+    "buy_n": 25, "sell_m": 25,
+    "temperatures": {"TrueMarketCap": 1.0, "ShortTermReversal10D": 1.0}
+  }
+}
