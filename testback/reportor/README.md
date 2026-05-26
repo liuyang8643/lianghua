@@ -37,7 +37,7 @@
 
 ## 数据流
 
-1. `testback/ga.py` 在 single 模式下构造 `report_data`
+1. `core/backtest.py:run_single_mode()` 在 single 模式下构造 `report_data`
 2. `generate_single_report()` 从 `report_data` 计算：
    - 核心指标
    - 月度统计
