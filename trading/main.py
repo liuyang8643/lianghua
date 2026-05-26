@@ -11,10 +11,10 @@ from xtquant import xtconstant, xtdata
 
 from configs import TRADE_ACCOUNT
 from data.db import allow_buy_stock_code_list
-from core.strategies.runtime import load_runtime_npz
-from core.strategies.scoring import scores_to_ranks, batch_limit_check, precompute_limit_helpers
+from core.runtime import load_runtime_npz
+from core.scoring import scores_to_ranks, batch_limit_check, precompute_limit_helpers
 from data.db.stock_name import get_stock_name_at_date
-from testback.ga_config import get_profile_factor_classes, resolve_profile_name
+from core.ga import get_profile_factor_classes, resolve_profile_name
 
 def _get_name(code, signal_date):
     name = get_stock_name_at_date(code, signal_date)
