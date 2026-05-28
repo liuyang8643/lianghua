@@ -1,18 +1,9 @@
 # WBR 量化交易系统
 
-基于 QMT (`xtquant`) 的 Windows-only Python 量化交易项目，实盘 + GA 参数搜索 + 因子 benchmark。
-
-## 项目架构
-
-```
-数据预下载(parquet) → runtime构建(np.savez) → np.load(秒级) → numpy向量化因子(毫秒) → 纯numpy回测(秒级)
-```
-
-回测与实盘路径严格分离。回测路径零中间对象——因子 `calc_batch(panel)` 一次算完全量，`_backtest_direct` 纯 numpy 循环执行交易。详见 CLAUDE.md。
 
 ## 环境要求
 
-- Windows + Python 3.12 + [QMT 客户端](https://download.gjzq.com.cn/gjty/organ/gjzqqmt.rar)
+- Windows + Python 3.12 + [QMT 客户端]
 - uv 包管理器
 
 ### 安装
@@ -23,9 +14,6 @@ irm https://astral.sh/uv/install.ps1 | iex
 
 # 安装依赖
 uv sync
-
-# TA-Lib（如安装失败用预编译whl）
-uv pip install TA-Lib
 ```
 
 ## 实盘运行

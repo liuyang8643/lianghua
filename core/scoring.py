@@ -1,12 +1,73 @@
-"""共享打分与风控模块 — 回测和实盘共用，纯 numpy 无外部依赖。"""
+"""共享打分与风控模块 — 回测和实盘共用，纯 numpy 无外部依赖。
+
+红线（CLAUDE.md §2.2）：T 日开盘契约——选股/合法性检查 **只允许使用 open[T]**，
+当日的 close/high/low/volume/amount 全部视为前视野泄露。需要"前收"统一用 close[T-1]。
+"""
 import numpy as np
 from datetime import date
+from typing import Optional
 
 _EPS = 0.001
 
 
 def _round_half_up_np(values):
     return np.floor(values * 100.0 + 0.5 + 1e-9) / 100.0
+
+
+def select_topn(
+    all_scores: dict,
+    score_idx: int,
+    valid_stocks: list[str],
+    valid_cols: np.ndarray,
+    weights: dict[str, float],
+    temperatures: dict[str, float],
+    top_n: int,
+    force_codes: Optional[list[str]] = None,
+) -> tuple[list[str], np.ndarray]:
+    """加权打分 + 截面排序 + 取前 N。回测和实盘必须共用此函数。
+
+    Args:
+        all_scores: {factor_name: ranks_mat (n_dates, n_full_stocks)} 归一化排名矩阵
+        score_idx: 信号日索引（回测=date_idx, 实盘=score_date_idx, 都等于 T 日 NPZ 索引）
+        valid_stocks: 候选股 codes（已经过 stock_indices 过滤）
+        valid_cols: 候选股在 ranks_mat 中的列索引 np.intp 数组
+        weights: {factor_name: weight}
+        temperatures: {factor_name: temperature}
+        top_n: 取前 N 只
+        force_codes: 强制纳入的 codes（保留位次，前置）；None 表示不启用
+
+    Returns:
+        (topn_stocks, final_score_arr)
+            topn_stocks: 选出的 top-N 股票代码列表
+            final_score_arr: 全候选股的加权打分（按 valid_stocks 顺序，用于落地 plan）
+    """
+    final_score = np.zeros(len(valid_stocks))
+    for name, ranks_mat in all_scores.items():
+        w = weights.get(name, 0.0)
+        if w == 0:
+            continue
+        ranks = ranks_mat[score_idx][valid_cols]
+        temp = temperatures.get(name, 1.0)
+        if temp != 1.0:
+            np.power(ranks, 1.0 / temp, out=ranks)
+        final_score += ranks * w
+
+    top_idx = np.argsort(-final_score)
+    topn = [valid_stocks[i] for i in top_idx[:top_n]]
+
+    if force_codes:
+        ordered, seen = [], set()
+        for code in force_codes:
+            if code and code not in seen:
+                seen.add(code)
+                ordered.append(code)
+        for code in topn:
+            if code not in seen:
+                seen.add(code)
+                ordered.append(code)
+        topn = ordered[:top_n]
+
+    return topn, final_score
 
 
 def scores_to_ranks(scores: np.ndarray) -> np.ndarray:
@@ -30,8 +91,18 @@ def scores_to_ranks(scores: np.ndarray) -> np.ndarray:
 
 def batch_limit_check(candidates, candidates_idx, trade_idx, signal_date,
                       board_type, base_ratio, list_tidx,
-                      open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy):
-    """向量化涨跌停检查。与 LegalityValidator 等价，已验证 467 万次零差异。"""
+                      open_all, close_all, st_all, issue_price_all, is_buy):
+    """向量化涨跌停检查（T 日开盘成交契约）。
+
+    数据使用：
+      - open_all[trade_idx]       ← T 日开盘价（合法，9:30 集合竞价后即可知）
+      - close_all[trade_idx - 1]  ← 前一交易日收盘价作为 preclose
+      - st_all[trade_idx]         ← T 日 ST 状态（盘前已知，合法）
+      - issue_price_all[..]       ← IPO 首日 preclose 兜底
+
+    禁止使用：T 日的 high/low/close/volume/amount，全部是数据泄露。
+    实盘 9:30 下单时不可能拿到这些当日 LHC 信息。
+    """
     if len(candidates) == 0:
         return np.array([], dtype=bool), {}
     idx = np.asarray(candidates_idx, dtype=np.intp); n = len(idx)
@@ -80,12 +151,10 @@ def batch_limit_check(candidates, candidates_idx, trade_idx, signal_date,
     if is_buy:
         up_limits = np.where(has_limit, _round_half_up_np(precloses * (1.0 + ratios)), np.nan)
         limit_up = valid_open & has_limit & (opens >= up_limits - _EPS)
-        blocked = limit_up.copy()
-        for i in range(n):
-            if not is_ipo_first[i] or blocked[i]: continue
-            if abs(float(opens[i]) - float(low_all[trade_idx, idx[i]])) < _EPS and float(high_all[trade_idx, idx[i]]) >= up_limits[i] - _EPS:
-                blocked[i] = True
-        tradable = valid_open & ~blocked
+        # 注：旧版用 T 日 high/low 判断 IPO 首日"开盘没涨停但盘中触及涨停"的秒封场景。
+        # 因 high/low 是 T 日盘中数据、实盘 9:30 不可知，移除该判断以避免数据泄露。
+        # 副作用：回测会乐观接受 IPO 首日开盘价 < 涨停价的成交，实盘也是同样下单（QMT 撮合决定是否成交）。
+        tradable = valid_open & ~limit_up
     else:
         down_limits = np.where(has_limit, _round_half_up_np(precloses * (1.0 - ratios)), np.nan)
         limit_down = valid_open & has_limit & (opens <= down_limits + _EPS)
@@ -118,3 +187,28 @@ def precompute_limit_helpers(data, stock_indices, list_dates_map=None):
                     if d >= ld: ldi = d2t[d]; break
             if ldi is not None: lt[si] = ldi
     return bt, br, lt
+
+
+def build_legality_context(data, stock_indices, list_dates_map=None):
+    """构建 batch_limit_check 所需的全部上下文。回测和实盘必须共用此工厂。
+
+    Args:
+        data: load_runtime_npz 返回的 dict
+        stock_indices: {code: col_idx}
+        list_dates_map: {code: list_date} 可选；回测从 db.delist 等渠道传入
+
+    Returns:
+        dict 含 batch_limit_check 所需全部参数：
+            open_all, close_all, st_all, issue_price_all,
+            board_type, base_ratio, list_tidx
+    """
+    board_type, base_ratio, list_tidx = precompute_limit_helpers(data, stock_indices, list_dates_map)
+    return {
+        'open_all': data['open'],
+        'close_all': data['close'],
+        'st_all': data.get('st_mask'),
+        'issue_price_all': data.get('issue_price'),
+        'board_type': board_type,
+        'base_ratio': base_ratio,
+        'list_tidx': list_tidx,
+    }

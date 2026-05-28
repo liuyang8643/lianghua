@@ -64,50 +64,50 @@ def compute_per_year_metrics(cumulative_returns_pct: List[float], trade_dates: L
 
 
 def compute_hs300_cumulative_returns(trade_dates: List[str]) -> List[float]:
-  """获取沪深300在回测期间的累计收益率（%），从预下载 parquet 读取。"""
+  """获取沪深300在回测期间的累计收益率（%），从预下载 parquet 读取。
+
+  数据缺失（FileNotFoundError）属预下载问题，直接抛错由调用方决定如何处理；
+  不再静默返回全 0，避免基准失真造成夏普虚高。
+  """
   if not trade_dates:
     return []
 
-  try:
-    from pathlib import Path
-    import pyarrow.parquet as pq
-    import numpy as np
+  from pathlib import Path
+  import pyarrow.parquet as pq
 
-    path = Path(__file__).resolve().parents[1] / "data" / "index_sh000300_daily.parquet"
-    if not path.exists():
-      testback_logger.warning('沪深300指数数据缺失: %s，请先运行 data/update_all.py', path)
-      return [0.0] * len(trade_dates)
+  path = Path(__file__).resolve().parents[1] / "data" / "index_sh000300_daily.parquet"
+  if not path.exists():
+    raise FileNotFoundError(
+        f'沪深300指数数据缺失: {path}，请先运行 data/update_all.py'
+    )
 
-    table = pq.read_table(path)
-    dates_arr = table.column('trade_date').to_numpy().astype('datetime64[D]')
-    close_arr = table.column('open').to_numpy()  # parquet 存的是 open，改用 close 更合理；此处暂用 open 做近似
+  table = pq.read_table(path)
+  dates_arr = table.column('trade_date').to_numpy().astype('datetime64[D]')
+  close_arr = table.column('open').to_numpy()  # parquet 存的是 open，改用 close 更合理；此处暂用 open 做近似
 
-    date_to_val: Dict[str, float] = {}
-    for i in range(len(dates_arr)):
-      d_str = str(dates_arr[i])[:10]
-      date_to_val[d_str] = float(close_arr[i])
+  date_to_val: Dict[str, float] = {}
+  for i in range(len(dates_arr)):
+    d_str = str(dates_arr[i])[:10]
+    date_to_val[d_str] = float(close_arr[i])
 
-    result: List[float] = []
-    first_val = None
-    for d in trade_dates:
-      if d in date_to_val:
-        if first_val is None:
-          first_val = date_to_val[d]
-        if first_val and first_val != 0:
-          cumulative = (date_to_val[d] - first_val) / first_val * 100
-          result.append(round(cumulative, 4))
-        else:
-          result.append(0.0)
+  result: List[float] = []
+  first_val = None
+  for d in trade_dates:
+    if d in date_to_val:
+      if first_val is None:
+        first_val = date_to_val[d]
+      if first_val and first_val != 0:
+        cumulative = (date_to_val[d] - first_val) / first_val * 100
+        result.append(round(cumulative, 4))
       else:
-        result.append(0.0 if not result else result[-1])
+        result.append(0.0)
+    else:
+      result.append(0.0 if not result else result[-1])
 
-    hit_count = sum(1 for d in trade_dates if d in date_to_val)
-    if hit_count > 0:
-      testback_logger.info(f'沪深300基准加载成功: {hit_count}/{len(trade_dates)} 日命中')
-    return result
-  except Exception as e:
-    testback_logger.warning(f'获取沪深300数据时出错: {e}，返回全0基准线')
-    return [0.0] * len(trade_dates)
+  hit_count = sum(1 for d in trade_dates if d in date_to_val)
+  if hit_count > 0:
+    testback_logger.info(f'沪深300基准加载成功: {hit_count}/{len(trade_dates)} 日命中')
+  return result
 
 
 def compute_strategy_metrics(

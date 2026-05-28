@@ -1,24 +1,41 @@
-# AI 维护守则
-所有实施完成后，由verify-agent单独验收
+# WBR 项目说明
 
+> 所有实施完成后，由 verify-agent 单独验收。
 
-### 回测 vs 实盘 严格分离
+## 1. 核心目标
 
-| 层面 | 回测 (`core/backtest.py` + `testback/main.py`) | 实盘 (`trading/main.py`) |
-|---|---|---|
-| 数据 | `load_runtime_npz()` 加载 npz → numpy | `load_runtime_npz(max_lookback)` 裁剪 → numpy |
-| 因子 | `f.calc_batch(panel)` 全量向量化 | 同回测，共享 `_compute_factor_scores` 逻辑 |
-| 选股 | `np.argsort(-final_score)[:n]` | 同回测 |
-| 进程 | **GA 评估多进程并行，其余单进程串行** | 单进程实时 |
+1. **回测速度要快**。因子计算全部矩阵计算。预下载模块负责所有数据源联网获取，除了买卖模块，其他任何模块数据源的网络获取是禁止的。
+2. **回测避免任何形式上的数据泄露**，如回测使用当前股票列表（会排除历史退市）、买卖合法性检查（不同板块不同时间段规则完全不同）、因子前视野。
+3. **回测和实盘完全对齐**。策略逻辑（因子策略 topn 等）完全复用，仅实际买卖调用接口不同。并配套开发实盘回测 diff 模块，实盘期间记录所有 diff 需要的信息，盘后再跑一遍当天回测看 diff。
+4、**代码精简**。项目尽量模块化复用，避免冗余代码、冗余文件。代码理论上不允许防御性编程和容错，如try\get等（除非是逻辑需要）。
 
-- **所有数据源有且仅有 runtime NPZ**，禁止 xtdata/mootdx/S3/CNINFO 等外部数据源出现在因子/选股/交易路径
-- **因子 calc_batch 纯 numpy 向量化，禁止逐股票遍历**。5000+ 股票×20 年耗时应 < 1s，超过必有 bug。
+## 2. 整体架构
+
+### 2.1 数据与计算流
+
+```mermaid
+flowchart LR
+    PreDownload["预下载<br/>parquet"] --> BuildRuntime["Runtime 构建<br/>np.savez"]
+    BuildRuntime --> LoadNpz["加载 NPZ<br/>~6s"]
+    LoadNpz --> ComputeFactor["因子矩阵计算<br/>numpy 向量化<br/>~3.5s / 因子"]
+    ComputeFactor --> LegalCheck["买卖合法性检查<br/>numpy"]
+    LegalCheck --> Backtest["账户收益 numpy 回测<br/>~12s (~4000 调仓日)"]
+    Backtest --> Report["报告生成<br/>~2s"]
+```
+
+因子矩阵维度为 `[回测天数, 股票个数, 因子历史需要天数]`，单因子计算耗时在毫秒级。
+
+### 2.2 红线规则
+
+- **数据源红线（按是否联网判断）**：除 `data/update_*.py` 预下载入口、`trading/` 买卖模块（QMT/xtdata）外，**所有其它模块禁止任何形式的网络获取**（akshare / requests / mootdx / xtdata / CNINFO 等）。NPZ + 预下载产物 parquet 均可读，因为它们不联网。
+- **T 日价格红线（最高优先级，防数据泄露）**：信号触发、买卖合法性检查、账户成交价 **只允许使用 `open[T]`**。当日的 `high[T] / low[T] / close[T] / volume[T] / amount[T]` 全部视为前视野泄露，禁止出现在选股 / 风控 / 估值路径。需要"前收"时统一使用 `close[T-1]`。
+- **因子 `calc_batch` 纯 numpy 向量化，禁止逐股票遍历**。5000+ 股票 × 20 年耗时应 < 1s，超过必有 bug。
 - **多进程/多线程红线**：仅 `_run_ga` 中 GA 个体评估可用 `multiprocessing.Pool`。其他所有地方（因子计算、数据加载、实盘路径）禁止多进程/多线程。
+- **回测/实盘对齐红线**：选股、买卖合法性检查、Top-N 排序等逻辑必须由 `core/` 提供唯一实现，回测和实盘共同调用；**禁止任何相同逻辑出现两份实现**。
 
+## 3. 数据管线
 
-## 数据管线
-
-### 预下载
+### 3.1 预下载
 
 **全量更新流程**：执行全部预下载脚本 → 先删光昨天 parquet → 再全量拉取到今天。
 
@@ -26,16 +43,17 @@
 
 | 数据 | 来源 | 产物 |
 |---|---|---|
-| K线日线 | akshare | data/k-line/{code}.parquet |
-| 股票列表 | xtdata | data/stock_list/ |
-| 退市列表 | akshare | data/delist/ |
-| 名称/ST历史 | CNINFO API | data/stock_name/ |
-| 财务面板 | akshare | data/financial/ |
-| 股本 | akshare | data/financial/ |
-| 发行价 | akshare stock_ipo_info | data/issue_price/ |
-目录：`data/{k-line, runtime, db, financial, stock_list, stock_name, ...}`
+| K线日线 | akshare | `data/k-line/{code}.parquet` |
+| 股票列表 | xtdata | `data/stock_list/` |
+| 退市列表 | akshare | `data/delist/` |
+| 名称/ST 历史 | CNINFO API | `data/stock_name/` |
+| 财务面板 | akshare | `data/financial/` |
+| 股本 | akshare | `data/financial/` |
+| 发行价 | akshare `stock_ipo_info` | `data/issue_price/` |
 
-### Runtime 构建
+目录：`data/{k-line, runtime, db, financial, stock_list, stock_name, ...}`。
+
+### 3.2 Runtime 构建
 
 入口：`python data/build_runtime.py`，产出 `data/runtime/runtime_{start}_{end}.npz`，回测时 `load_runtime_npz` 自动加载。
 
@@ -50,49 +68,9 @@ np.savez_compressed('runtime_{start}_{end}.npz',
 )
 ```
 
-### 回测核心 `core/backtest.py`
 
-```
-run_single_mode (单回测入口)
-  → _compute_factor_scores (加载npz → 逐因子 calc_batch → scores_to_ranks)
-  → _backtest_direct (权重+温度 → argsort 取 topN → 查 open → 先卖后买)
-  → compute_strategy_metrics → generate_single_report
-```
-
-| 函数 | 位置 | 职责 |
-|---|---|---|
-| `_compute_factor_scores` | `core/backtest.py` | 加载npz → 逐因子 calc_batch → scores_to_ranks 排名 → 返回 (data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices) |
-| `_backtest_direct` | `core/backtest.py` | 权重+温度加权 → argsort 取 topN → 查 open → 先卖后买 |
-| `run_single_mode` | `core/backtest.py` | 解析 config → compute → backtest → 报告 |
-| `_run_ga` | `testback/main.py` | GA/调试模式，个体评估 `multiprocessing.Pool` 并行 |
-
-### GA 入口 `testback/main.py`
-
-```
-导入 core/backtest.py 的回测函数 + core/ga/ 的配置函数
-  → _main_impl (argparse) → run_single_mode (single) / _run_ga (GA/debug)
-```
-
-`testback/main.py` 仅保留 GA 引擎逻辑（`_run_ga`, `_worker_*`, `ga_optimizer`），单回测核心函数全部在 `core/backtest.py`。`run_single_mode` 通过 `from core.backtest import run_single_mode` 导入。
-
-## 性能基准
-
-| 指标 | 值 |
-|---|---|
-| NPZ加载 (1文件, ~4000d×~5200s) | ~6s |
-| 因子计算 (单因子) | ~3.5s |
-| 回测循环 (~4000调仓日) | ~12s |
-| 报告生成 | ~2s |
-| **20年全量总耗时** | **~27s** |
-
-## 验收命令
+## 5. 验收命令
 
 ```bash
-# 单回测（core profile, TrueMarketCap 因子）
-python -u -m testback.main --mode single \
-  --start-date 20240101 --end-date 20241231 \
-  --individual-config configs/single_tmc_pure.json
-
-# WBR 精简入口
-python run_backtest.py --start 2024-01-01 --end 2024-12-31
+uv run python run_backtest --start 2024-01-01 --end 2024-12-31
 ```

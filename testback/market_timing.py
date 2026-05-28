@@ -33,7 +33,7 @@ def load_index_open(symbol, trade_dates=None):
             date_to_val[dates_arr[i].item()] = open_arr[i]
 
         aligned = np.array([
-            date_to_val.get(d.date() if hasattr(d, 'date') else d, np.nan)
+            date_to_val.get(d.date(), np.nan)
             for d in trade_dates
         ], dtype=np.float64)
 

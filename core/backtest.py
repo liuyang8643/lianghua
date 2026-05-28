@@ -10,7 +10,7 @@ import numpy as np
 
 from core.ga import resolve_profile_name
 from core.runtime import load_runtime_npz
-from core.scoring import scores_to_ranks, batch_limit_check, precompute_limit_helpers
+from core.scoring import scores_to_ranks, batch_limit_check, build_legality_context, select_topn
 from data.db.delist import get_delist_stock_info
 from testback.account import StockAccountMocker
 from testback.logger import testback_logger
@@ -162,7 +162,7 @@ def _extend_verify_stock_pool_with_historical_codes(
 
 def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_classes):
   """加载 NPZ 并批量计算因子分数，返回 (data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices)。"""
-  max_lookback = max((getattr(c, 'hist_days', 0) for c in factor_classes), default=0) or None
+  max_lookback = max((c.hist_days for c in factor_classes), default=0) or None
   data = load_runtime_npz(backtest_datetime_list, max_lookback=max_lookback)
   if data is None:
     first_d = backtest_datetime_list[0].strftime('%Y%m%d')
@@ -181,7 +181,7 @@ def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_c
   date_indices = []
   valid_dates = []
   for dt in backtest_datetime_list:
-    d = dt.date() if hasattr(dt, 'date') else dt
+    d = dt.date()
     di = date_to_idx.get(d)
     if di is None:
       continue
@@ -221,26 +221,24 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
                      lightweight=False):
   """直接 numpy 回测，不创建 TopN 对象。lightweight=True 跳过明细组装，仅返回收益序列。"""
 
-  account = StockAccountMocker(cash=500_000.0)
+  account = StockAccountMocker(cash=700_000.0)
   delist_stock_info = get_delist_stock_info()
 
   daily_snapshots: List[Dict] = []
   prices: dict[str, float] = {}
-  skipped_buy_reasons: Dict[str, int] = {}
-  skipped_sell_reasons: Dict[str, int] = {}
   delist_events: List[Dict] = []
 
   n_stocks = len(valid_stocks)
   valid_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
 
-  board_type, base_ratio, list_tidx_arr = precompute_limit_helpers(data, stock_indices, list_dates_map)
-
-  open_all = data['open']
-  close_all = data['close']
-  high_all = data['high']
-  low_all = data['low']
-  st_all = data.get('st_mask')
-  issue_price_all = data.get('issue_price')
+  legal_ctx = build_legality_context(data, stock_indices, list_dates_map)
+  open_all = legal_ctx['open_all']
+  close_all = legal_ctx['close_all']
+  st_all = legal_ctx['st_all']
+  issue_price_all = legal_ctx['issue_price_all']
+  board_type = legal_ctx['board_type']
+  base_ratio = legal_ctx['base_ratio']
+  list_tidx_arr = legal_ctx['list_tidx']
 
   force_codes = []
   if verify_config:
@@ -271,21 +269,6 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         'income_pct': -100.0 if cost else 0.0, 'clear_reason': '退市归零',
       })
 
-  if force_codes:
-    def _prepend_forced(lst, n):
-      ordered, seen = [], set()
-      for code in force_codes:
-        if code and code not in seen:
-          seen.add(code)
-          ordered.append(code)
-      for code in lst:
-        if code not in seen:
-          seen.add(code)
-          ordered.append(code)
-      return ordered[:n]
-  else:
-    _prepend_forced = None
-
   _last_valid_price: dict[str, float] = {}
   _last_valid_close_price: dict[str, float] = {}
   if lightweight:
@@ -293,7 +276,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
     _lw_last_asset = account.init_cash
 
   for i, dt in enumerate(valid_dates):
-    signal_date = dt.date() if hasattr(dt, 'date') else dt
+    signal_date = dt.date()
     date_idx = date_indices[i]
     trade_idx = date_idx
     trade_date = signal_date
@@ -305,24 +288,14 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
       is_rebalance_day = (i % holding_period == 0)
 
     if is_rebalance_day:
-      final_score = np.zeros(n_stocks)
-      for name, ranks_mat in all_scores.items():
-        w = weights.get(name, 0.0)
-        if w == 0:
-          continue
-        ranks = ranks_mat[date_idx][valid_cols]
-        temp = temperatures.get(name, 1.0)
-        if temp != 1.0:
-          np.power(ranks, 1.0 / temp, out=ranks)
-        final_score += ranks * w
-
-      top_idx = np.argsort(-final_score)
-      buy_n_stocks = [valid_stocks[i] for i in top_idx[:buy_n]]
-      sell_m_stocks = [valid_stocks[i] for i in top_idx[:sell_m]]
-
-      if force_codes:
-        buy_n_stocks = _prepend_forced(buy_n_stocks, buy_n)
-        sell_m_stocks = _prepend_forced(sell_m_stocks, sell_m)
+      n_target = max(buy_n, sell_m)
+      topn_max, _ = select_topn(
+          all_scores, date_idx, valid_stocks, valid_cols,
+          weights, temperatures, n_target,
+          force_codes=force_codes if force_codes else None,
+      )
+      buy_n_stocks = topn_max[:buy_n]
+      sell_m_stocks = topn_max[:sell_m]
     else:
       buy_n_stocks = []
       sell_m_stocks = []
@@ -363,7 +336,6 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
     executed_buy_records: List[Dict] = []
 
     tradable_buy_stocks = []
-    blocked_buy_details: List[Dict] = []
     if is_rebalance_day and buy_n_stocks:
       buy_idx = [stock_indices[s] for s in buy_n_stocks if s in stock_indices]
       valid_buy, valid_buy_idx = [], []
@@ -374,11 +346,13 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         buy_ok, _ = batch_limit_check(
           valid_buy, valid_buy_idx, trade_idx, signal_date,
           board_type, base_ratio, list_tidx_arr,
-          open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=True)
+          open_all, close_all, st_all, issue_price_all, is_buy=True)
         for j, stock in enumerate(valid_buy):
           if not buy_ok[j]:
             continue
           tradable_buy_stocks.append(stock)
+
+    prev_positions = set(account.positions.keys())
 
     if is_rebalance_day and (account.positions or buy_n_stocks):
       pos_vals = {c: p['volume'] * prices.get(c, 0) for c, p in account.positions.items()}
@@ -403,7 +377,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         sc, _, si_list = zip(*sell_candidates)
         ok, _ = batch_limit_check(list(sc), list(si_list), trade_idx, signal_date,
           board_type, base_ratio, list_tidx_arr,
-          open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=False)
+          open_all, close_all, st_all, issue_price_all, is_buy=False)
         for j, (code, sv, _) in enumerate(sell_candidates):
           if ok[j]:
             tgt = base_target if code in buy_n_set else 0.0
@@ -432,16 +406,20 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         bc, _, bi_list = zip(*buy_candidates)
         ok, _ = batch_limit_check(list(bc), list(bi_list), trade_idx, signal_date,
           board_type, base_ratio, list_tidx_arr,
-          open_all, close_all, high_all, low_all, st_all, issue_price_all, is_buy=True)
+          open_all, close_all, st_all, issue_price_all, is_buy=True)
         for j, (code, bv, _) in enumerate(buy_candidates):
           if ok[j]:
             account.buy_stock(code, bv, prices[code], trade_date, signal_date=signal_date)
             executed_buy_records.append({
               'code': code, 'signal_date': signal_date.isoformat(),
               'trade_date': trade_date.isoformat(), 'price': prices[code],
-              'price_field': 'open', 'volume': bv,
+              'price_field': 'open', 'shares': bv,
               'signal_dividend_type': 'back', 'execution_dividend_type': 'none',
             })
+
+    curr_positions = set(account.positions.keys())
+    entered_stocks = [c for c in curr_positions if c not in prev_positions]
+    exited_stocks = [c for c in prev_positions if c not in curr_positions]
 
     if lightweight:
       mkt_val = sum(close_prices.get(c, 0.0) * p['volume'] for c, p in account.positions.items())
@@ -456,6 +434,8 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
       assets = account.calc_assets(trade_date, close_prices)
       prev_total_asset = daily_snapshots[-1]['total_asset'] if daily_snapshots else account.init_cash
       daily_ret = (assets['total_asset'] - prev_total_asset) / prev_total_asset * 100 if prev_total_asset else 0.0
+      # positions_eod: 当日收盘后持仓快照，用于多日回测的 T 日 daily_pnl 重建
+      positions_eod = account.calc_position_values(close_prices)
       daily_snapshots.append({
         'date': trade_date.strftime('%Y-%m-%d'),
         'signal_date': signal_date.strftime('%Y-%m-%d'),
@@ -463,13 +443,17 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         'signal_dividend_type': 'back', 'execution_dividend_type': 'none', 'price_field': 'open',
         'cash': assets['cash'], 'market_value': assets['market_value'],
         'total_asset': assets['total_asset'], 'daily_return_pct': daily_ret, 'cumulative_return_pct': 0.0,
-        'sell_m_list': sell_m_stocks, 'buy_n_list': tradable_buy_stocks,
+        'sell_m_list': sell_m_stocks,
+        'raw_buy_n_list': buy_n_stocks,
+        'buy_n_list': tradable_buy_stocks,
         'buy_n_diff_list': [s for s in tradable_buy_stocks if s not in sell_m_stocks],
         'executed_sell_list': executed_sell_list,
         'executed_sell_details': executed_sell_details,
         'executed_buy_list': [r['code'] for r in executed_buy_records],
         'executed_buy_details': executed_buy_records,
-        'blocked_buy_details': blocked_buy_details,
+        'entered_stocks': entered_stocks,
+        'exited_stocks': exited_stocks,
+        'positions_eod': positions_eod,
       })
 
   if lightweight:
@@ -485,11 +469,10 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
       'stock_name_map': {}, 'holding_stats': {},
       'executed_buy_count': 0, 'executed_sell_count': 0,
       'delist_count': 0, 'round_trip_count': 0, 'current_positions_count': 0,
-      'skipped_buy_reasons': {}, 'skipped_sell_reasons': {},
       'final_asset': total_asset,
     }
 
-  final_signal_date = valid_dates[-1].date() if hasattr(valid_dates[-1], 'date') else valid_dates[-1]
+  final_signal_date = valid_dates[-1].date()
   final_trade_date = final_signal_date
   final_assets = account.calc_assets(final_trade_date, close_prices)
   total_return = (final_assets['total_asset'] - account.init_cash) / account.init_cash * 100
@@ -576,8 +559,6 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
     'executed_buy_count': executed_buy_count,
     'executed_sell_count': executed_sell_count,
     'delist_count': len(delist_events),
-    'skipped_buy_reasons': skipped_buy_reasons,
-    'skipped_sell_reasons': skipped_sell_reasons,
     'final_asset': final_assets['total_asset'],
   }
 
@@ -726,7 +707,7 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
 
   list_dates_map = _compute_list_dates(data['stock_codes'], data['open'], data['trade_dates'])
 
-  signal_dates = [d.date() if hasattr(d, 'date') else d for d in valid_dates]
+  signal_dates = [d.date() for d in valid_dates]
   trade_dates = list(signal_dates)
   testback_logger.info(
     f"回测信号范围: {signal_dates[0]} ~ {signal_dates[-1]}，"
@@ -763,8 +744,8 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
 
   metrics = compute_strategy_metrics(
     cumulative_returns_pct=result.get('cumulative_returns', []),
-    trade_dates=trade_date_strs, init_cash=500_000.0,
-    final_asset=result.get('final_asset', 500_000.0),
+    trade_dates=trade_date_strs, init_cash=700_000.0,
+    final_asset=result.get('final_asset', 700_000.0),
     trade_log=result.get('trade_log', []),
   )
   hs300_returns = compute_hs300_cumulative_returns(trade_date_strs)
@@ -788,13 +769,13 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
     'executed_sell_count': result.get('executed_sell_count', 0),
     'delist_count': result.get('delist_count', 0),
     'round_trip_count': result.get('round_trip_count', result.get('cleared_positions_count', 0)),
-    'final_asset': result.get('final_asset', 500_000.0),
+    'final_asset': result.get('final_asset', 700_000.0),
     'metrics': metrics,
     'per_year_metrics': per_year_metrics,
     'hs300_returns': hs300_returns,
     'cleared_positions_count': result['cleared_positions_count'],
     'current_positions_count': result['current_positions_count'],
-    'init_cash': 500_000.0,
+    'init_cash': 700_000.0,
     'verify_config': verify_config,
     'report_metadata': {
       'config_path': str(Path(args.individual_config).resolve()),
@@ -812,24 +793,11 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
   }
 
   if mode_config['save_charts']:
-    try:
-      from testback.reportor import generate_single_report
-      html_path = generate_single_report(report_data, output_dir)
-      testback_logger.info(f"可视化报告已保存至: {html_path}")
-    except ImportError:
-      testback_logger.warning("testback.report 模块未找到，跳过可视化报告生成")
-    except Exception as e:
-      testback_logger.warning(f"可视化报告生成失败: {e}")
+    from testback.reportor import generate_single_report
+    html_path = generate_single_report(report_data, output_dir)
+    testback_logger.info(f"可视化报告已保存至: {html_path}")
 
   testback_logger.remove_file_sink()
   return result
 
 
-# ========== 通知工具 ==========
-
-def _try_send_feishu(msg: str):
-  try:
-    from trading.lark.sender import lark_sender
-    lark_sender.send_msg(msg)
-  except Exception:
-    pass

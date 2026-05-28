@@ -36,23 +36,19 @@ def load_runtime_npz(dates: List[datetime], max_lookback: Optional[int] = None) 
     npz_files = sorted(_RUNTIME_DIR.glob("runtime_*.npz"))
     parts = []
     for npz_path in npz_files:
-        try:
-            data = dict(np.load(npz_path, allow_pickle=False))
-            d0, d1 = data['trade_dates'][0], data['trade_dates'][-1]
-            if d0 <= max_date and d1 >= min_date:
-                if trim_start is not None:
-                    td = data['trade_dates']
-                    si = max(0, int(np.searchsorted(td, trim_start)))
-                    ei = min(len(td), int(np.searchsorted(td, max_date)) + 5)
-                    data['trade_dates'] = td[si:ei]
-                    for f in _2D_FIELDS:
-                        if f in data:
-                            data[f] = data[f][si:ei]
-                parts.append(data)
-                core_logger.info(f"  {npz_path.name}: {len(data['trade_dates'])}d x {len(data['stock_codes'])}s")
-        except Exception as e:
-            core_logger.warning(f"  加载 {npz_path.name} 失败: {e}")
-            continue
+        data = dict(np.load(npz_path, allow_pickle=False))
+        d0, d1 = data['trade_dates'][0], data['trade_dates'][-1]
+        if d0 <= max_date and d1 >= min_date:
+            if trim_start is not None:
+                td = data['trade_dates']
+                si = max(0, int(np.searchsorted(td, trim_start)))
+                ei = min(len(td), int(np.searchsorted(td, max_date)) + 5)
+                data['trade_dates'] = td[si:ei]
+                for f in _2D_FIELDS:
+                    if f in data:
+                        data[f] = data[f][si:ei]
+            parts.append(data)
+            core_logger.info(f"  {npz_path.name}: {len(data['trade_dates'])}d x {len(data['stock_codes'])}s")
 
     if not parts:
         return None

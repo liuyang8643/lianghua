@@ -124,6 +124,26 @@ def is_convertible_bond(stock_code: str) -> bool:
   return stock_code.startswith('11') or stock_code.startswith('12') or stock_code.startswith('13')
 
 
+def min_buy_shares(stock_code: str) -> int:
+  """
+  市价委托的最小买入数量（股）。
+
+  规则来源 — QMT 实盘报错验证：
+  - 科创板 688：「上海科创板市价委托最小买入数量为200」
+  - 创业板 300/301：深交所市价委托最小数量同为 200 股
+  - 主板 / 北交所：100 股
+
+  Args:
+    stock_code: 股票代码
+
+  Returns:
+    最小买入股数（100 或 200）
+  """
+  if is_kcb_stock(stock_code) or is_cyb_stock(stock_code):
+    return 200
+  return 100
+
+
 def _to_trade_date(trade_date: datetime | date) -> date:
   """将 datetime 或 date 转换为 date 对象"""
   return trade_date.date() if isinstance(trade_date, datetime) else trade_date
@@ -191,18 +211,14 @@ def _resolve_st_status(
   """
   按指定交易日解析 ST 状态。
 
-  对于历史日期，优先使用历史名称/ST 事件记录；实时路径退回当前详情。
+  历史日期使用 parquet 中的历史 ST 事件记录；实时路径(>=today)用当前详情。
+  历史数据缺失时一律返回 False（非 ST），避免把当前 ST 状态回投到历史造成数据泄露。
   """
   if detail is not None and trade_day >= date.today():
     return _is_st_from_detail(detail)
 
-  try:
-    historical_checker = _get_historical_st_checker()
-    return bool(historical_checker(stock_code, trade_day))
-  except Exception:
-    if detail is not None:
-      return _is_st_from_detail(detail)
-    return is_st_stock(stock_code)
+  historical_checker = _get_historical_st_checker()
+  return bool(historical_checker(stock_code, trade_day))
 
 
 def _is_limit_exempt_window(stock_code: str, trade_date: date, detail: Optional['StockDetail']) -> bool:

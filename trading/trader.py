@@ -124,6 +124,34 @@ class Trader:
 
     return list(qmt_buy_trades)
 
+  def query_all_trades(self) -> List[XtTrade]:
+    """查询当日全部成交（含 buy + sell，本策略 + 其他策略）。
+
+    post_close 兜底回填用：watcher.on_stock_order 回调有时漏触发，
+    导致 fills_{T}.parquet 不完整；用此 API 与 fills 对账后补齐。
+    """
+    all_trades = self.client.query_stock_trades(self.account)
+    return list(all_trades) if all_trades is not None else []
+
+  def query_bank_transfers(self, start_date: str, end_date: str) -> list:
+    """查询银证转账流水（含日内入金/出金）。
+
+    Args:
+        start_date / end_date: 'YYYYMMDD' 格式日期
+
+    Returns:
+        BankTransferStream 列表。每条含 business_type / occur_amount / transfer_time 等。
+        若未连通或 QMT 不支持，返回 []。
+    """
+    try:
+      stream = self.client.query_bank_transfer_stream(
+        self.account, start_date, end_date
+      )
+      return list(stream) if stream else []
+    except Exception as e:
+      trading_logger.warning(f"查询银证转账流水失败 {start_date}-{end_date}: {e}")
+      return []
+
 def get_position(trader: Trader, only_can_sell: bool) -> List[XtPosition]:
   # 固定仓位，不自动卖出
   fixed_position_codes = []

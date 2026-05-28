@@ -217,134 +217,6 @@ def _get_stock_trades(trade_log: List[Dict], code: str) -> Dict:
 
 
 
-def _build_kline_chart(code: str, trade_log: List[Dict], trade_dates: List[str],
-                       stock_name_map: Dict[str, str]) -> str:
-    """为单只股票生成K线图（蜡烛图+成交量+买卖点标记）"""
-    try:
-        import plotly.graph_objects as go
-        from plotly.subplots import make_subplots
-        from data.db import get_market_data_from_cache
-    except Exception:
-        return ''
-
-    if not trade_dates:
-        return ''
-
-    try:
-        from datetime import timedelta
-        first_date = datetime.strptime(trade_dates[0], '%Y-%m-%d')
-        last_date = datetime.strptime(trade_dates[-1], '%Y-%m-%d')
-        start_dt = first_date - timedelta(days=60)
-        end_dt = last_date + timedelta(days=60)
-    except Exception:
-        return ''
-
-    try:
-        data = get_market_data_from_cache(code, 300, end_dt, '1d', dividend_type='back')
-    except Exception:
-        return ''
-
-    if data is None or len(data.get('close', [])) < 5:
-        return ''
-
-    timestamps = data['time']
-    dates = [datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d') for ts in timestamps]
-    opens = data['open']
-    highs = data['high']
-    lows = data['low']
-    closes = data['close']
-    volumes = data['amount']
-
-    stock_trades = _get_stock_trades(trade_log, code)
-    buys = stock_trades['buys']
-    sells = stock_trades['sells']
-
-    buy_x, buy_y = [], []
-    for b in buys:
-        d_str = b['trade_date']
-        if d_str in dates:
-            idx = dates.index(d_str)
-            buy_x.append(d_str)
-            buy_y.append(float(b.get('price', closes[idx])))
-
-    sell_x, sell_y = [], []
-    for s in sells:
-        d_str = s['trade_date']
-        if d_str in dates:
-            idx = dates.index(d_str)
-            sell_x.append(d_str)
-            sell_y.append(float(s.get('price', closes[idx])))
-
-    fig = make_subplots(
-        rows=2,
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.06,
-        row_heights=[0.72, 0.28],
-        subplot_titles=('', '成交量'),
-    )
-
-    fig.add_trace(go.Candlestick(
-        x=dates,
-        open=opens,
-        high=highs,
-        low=lows,
-        close=closes,
-        name='K线',
-        increasing_line_color='#26A69A',
-        decreasing_line_color='#EF5350',
-        increasing_fillcolor='#26A69A',
-        decreasing_fillcolor='#EF5350',
-        opacity=0.9,
-    ), row=1, col=1)
-
-    if buy_x:
-        fig.add_trace(go.Scatter(
-            x=buy_x,
-            y=buy_y,
-            mode='markers',
-            name='买入',
-            marker=dict(symbol='triangle-up', size=14, color='#2E7D32', line=dict(width=1, color='white')),
-            hovertemplate='买入<br>执行日: %{x}<br>价格: %{y:.4f}<extra></extra>',
-        ), row=1, col=1)
-
-    if sell_x:
-        fig.add_trace(go.Scatter(
-            x=sell_x,
-            y=sell_y,
-            mode='markers',
-            name='卖出',
-            marker=dict(symbol='triangle-down', size=14, color='#C62828', line=dict(width=1, color='white')),
-            hovertemplate='卖出<br>执行日: %{x}<br>价格: %{y:.4f}<extra></extra>',
-        ), row=1, col=1)
-
-    colors = ['#26A69A' if c >= o else '#EF5350' for c, o in zip(closes, opens)]
-    fig.add_trace(go.Bar(
-        x=dates,
-        y=volumes,
-        name='成交量',
-        marker_color=colors,
-        opacity=0.7,
-        hovertemplate='<b>%{x}</b><br>成交额: %{y:,.0f}<extra></extra>',
-    ), row=2, col=1)
-
-    display_code = _fmt_stock(code, stock_name_map)
-    fig.update_layout(
-        title=dict(text=f'K线走势 · {display_code}', x=0.5, font=dict(size=15)),
-        height=500,
-        showlegend=True,
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-        hovermode='x unified',
-        xaxis_rangeslider_visible=False,
-    )
-    fig.update_xaxes(title_text='', row=2, col=1)
-    fig.update_yaxes(title_text='价格', row=1, col=1)
-    fig.update_yaxes(title_text='成交额', row=2, col=1)
-
-    return fig.to_html(full_html=False, include_plotlyjs='cdn')
-
-
-
 # ---------------------------------------------------------------------------
 # 基准数据
 # ---------------------------------------------------------------------------
@@ -578,6 +450,22 @@ def _make_trade_count_summary(buys: List[str], sells: List[str], stock_name_map:
     return '<br>'.join(parts), '\n'.join(title_lines)
 
 
+def _make_position_change_summary(entered: List[str], exited: List[str], stock_name_map: Dict[str, str]) -> tuple[str, str]:
+    parts = []
+    title_lines = []
+    if entered:
+        detail = '\n'.join([_fmt_stock(code, stock_name_map) for code in entered])
+        parts.append(f'新进 {len(entered)} 只{_make_detail_icon(detail)}')
+        title_lines.extend([_fmt_stock(code, stock_name_map) for code in entered])
+    if exited:
+        detail = '\n'.join([_fmt_stock(code, stock_name_map) for code in exited])
+        parts.append(f'剔除 {len(exited)} 只{_make_detail_icon(detail)}')
+        title_lines.extend([_fmt_stock(code, stock_name_map) for code in exited])
+    if not parts:
+        return '<span class="muted">—</span>', ''
+    return '<br>'.join(parts), '\n'.join(title_lines)
+
+
 def _make_daily_table(daily_snapshots: List[Dict], stock_name_map: Dict[str, str]) -> Dict[str, Any]:
     headers = [
         {'label': '信号日', 'sort_type': 'date', 'align': 'center'},
@@ -591,6 +479,7 @@ def _make_daily_table(daily_snapshots: List[Dict], stock_name_map: Dict[str, str
         {'label': '仓位', 'sort_type': 'number'},
         {'label': '候选 buy_n 列表', 'sort_type': 'text'},
         {'label': '实际买卖', 'sort_type': 'text'},
+        {'label': '持仓变化', 'sort_type': 'text'},
     ]
     if not daily_snapshots:
         return _make_table(headers, [], 'daily-table', '暂无每日快照数据', row_height=92, max_height=540)
@@ -604,15 +493,20 @@ def _make_daily_table(daily_snapshots: List[Dict], stock_name_map: Dict[str, str
         buy_n_list = s.get('buy_n_list', [])
         executed_buy_list = s.get('executed_buy_list', [])
         executed_sell_list = s.get('executed_sell_list', [])
+        entered_stocks = s.get('entered_stocks', [])
+        exited_stocks = s.get('exited_stocks', [])
         signal_date = _get_signal_date(s)
         trade_date = _get_trade_date(s)
         execution_basis = _format_execution_basis(s)
         action_sort = '|'.join(
             [f'B:{_fmt_stock(code, stock_name_map)}' for code in executed_buy_list] +
-            [f'S:{_fmt_stock(code, stock_name_map)}' for code in executed_sell_list]
+            [f'S:{_fmt_stock(code, stock_name_map)}' for code in executed_sell_list] +
+            [f'E:{_fmt_stock(code, stock_name_map)}' for code in entered_stocks] +
+            [f'X:{_fmt_stock(code, stock_name_map)}' for code in exited_stocks]
         )
         buy_summary_html, buy_list_text = _make_stock_count_summary(buy_n_list, stock_name_map)
         trade_summary_html, trade_summary_title = _make_trade_count_summary(executed_buy_list, executed_sell_list, stock_name_map)
+        change_summary_html, change_summary_title = _make_position_change_summary(entered_stocks, exited_stocks, stock_name_map)
         total_asset = s.get('total_asset', 0)
         market_value = s.get('market_value', 0)
         pos_ratio = (market_value / total_asset * 100) if total_asset > 0 else 0.0
@@ -628,6 +522,7 @@ def _make_daily_table(daily_snapshots: List[Dict], stock_name_map: Dict[str, str
             _make_cell(f'{pos_ratio:.1f}%', pos_ratio),
             _make_cell(buy_summary_html, buy_list_text, title=buy_list_text),
             _make_cell(trade_summary_html, action_sort, title=trade_summary_title),
+            _make_cell(change_summary_html, '', title=change_summary_title),
         ])
     return _make_table(headers, rows, 'daily-table', '暂无每日快照数据', row_height=92, max_height=540)
 
@@ -978,72 +873,6 @@ def _build_metric_cards(metrics: Dict, holding_stats: Dict) -> str:
 
 
 
-def _build_trade_stats_table(metrics: Dict) -> Dict[str, Any]:
-    headers = [
-        {'label': '指标', 'sort_type': 'text'},
-        {'label': '数值', 'sort_type': 'text', 'align': 'right'},
-    ]
-    rows = [
-        [_make_cell('实际买入次数', '实际买入次数'), _make_cell(str(metrics.get('executed_buy_count', 0)), metrics.get('executed_buy_count', 0))],
-        [_make_cell('实际卖出次数', '实际卖出次数'), _make_cell(str(metrics.get('executed_sell_count', 0)), metrics.get('executed_sell_count', 0))],
-        [_make_cell('已清仓持仓数', '已清仓持仓数'), _make_cell(str(metrics.get('cleared_positions_count', 0)), metrics.get('cleared_positions_count', 0))],
-        [_make_cell('完整 round-trip 数', '完整 round-trip 数'), _make_cell(str(metrics.get('round_trip_count', 0)), metrics.get('round_trip_count', 0))],
-        [_make_cell('当前持仓数', '当前持仓数'), _make_cell(str(metrics.get('current_positions_count', 0)), metrics.get('current_positions_count', 0))],
-        [_make_cell('盈利清仓数', '盈利清仓数'), _make_cell(str(metrics.get('wins', 0)), metrics.get('wins', 0))],
-        [_make_cell('亏损清仓数', '亏损清仓数'), _make_cell(str(metrics.get('losses', 0)), metrics.get('losses', 0))],
-        [_make_cell('清仓胜率', '清仓胜率'), _make_cell(f"{metrics.get('win_rate', 0):.1f}%", metrics.get('win_rate', 0))],
-        [_make_cell('平均单次清仓盈亏', '平均单次清仓盈亏'), _make_cell(_fmt_money(metrics.get('avg_profit', 0)), metrics.get('avg_profit', 0))],
-        [_make_cell('平均盈利', '平均盈利'), _make_cell(_fmt_money(metrics.get('avg_win', 0)), metrics.get('avg_win', 0))],
-        [_make_cell('平均亏损', '平均亏损'), _make_cell(_fmt_money(metrics.get('avg_loss', 0)), metrics.get('avg_loss', 0))],
-        [_make_cell('最大单次盈利', '最大单次盈利'), _make_cell(_fmt_money(metrics.get('max_profit', 0)), metrics.get('max_profit', 0))],
-        [_make_cell('最大单次亏损', '最大单次亏损'), _make_cell(_fmt_money(metrics.get('max_loss', 0)), metrics.get('max_loss', 0))],
-        [_make_cell('总手续费', '总手续费'), _make_cell(_fmt_money(metrics.get('total_commission', 0)), metrics.get('total_commission', 0))],
-        [_make_cell('退市归零次数', '退市归零次数'), _make_cell(str(metrics.get('delist_count', 0)), metrics.get('delist_count', 0))],
-    ]
-    return _make_table(headers, rows, 'trade-stats-table', '暂无交易统计', row_height=44, max_height=360)
-
-
-
-def _build_holding_stats_table(holding_stats: Dict) -> Dict[str, Any]:
-    headers = [
-        {'label': '指标', 'sort_type': 'text'},
-        {'label': '数值', 'sort_type': 'text', 'align': 'right'},
-    ]
-    rows = [
-        [_make_cell('平均持仓天数', '平均持仓天数'), _make_cell(f"{holding_stats.get('average_holding_days', 0):.2f} 交易日", holding_stats.get('average_holding_days', 0))],
-        [_make_cell('当前持仓平均持仓天数', '当前持仓平均持仓天数'), _make_cell(f"{holding_stats.get('average_current_holding_days', 0):.2f} 交易日", holding_stats.get('average_current_holding_days', 0))],
-        [_make_cell('已清仓平均持仓天数', '已清仓平均持仓天数'), _make_cell(f"{holding_stats.get('average_cleared_holding_days', 0):.2f} 交易日", holding_stats.get('average_cleared_holding_days', 0))],
-        [_make_cell('最长持仓天数', '最长持仓天数'), _make_cell(f"{holding_stats.get('max_holding_days', 0)} 交易日", holding_stats.get('max_holding_days', 0))],
-        [_make_cell('最短持仓天数', '最短持仓天数'), _make_cell(f"{holding_stats.get('min_holding_days', 0)} 交易日", holding_stats.get('min_holding_days', 0))],
-    ]
-    return _make_table(headers, rows, 'holding-stats-table', '暂无持仓统计', row_height=44, max_height=300)
-
-
-def _build_metric_details_table(metrics: Dict, holding_stats: Dict) -> Dict[str, Any]:
-    headers = [
-        {'label': '指标', 'sort_type': 'text'},
-        {'label': '数值', 'sort_type': 'text', 'align': 'right'},
-    ]
-    rows = [
-        [_make_cell('已清仓持仓数', '已清仓持仓数'), _make_cell(str(metrics.get('cleared_positions_count', 0)), metrics.get('cleared_positions_count', 0))],
-        [_make_cell('当前持仓数', '当前持仓数'), _make_cell(str(metrics.get('current_positions_count', 0)), metrics.get('current_positions_count', 0))],
-        [_make_cell('盈利清仓数', '盈利清仓数'), _make_cell(str(metrics.get('wins', 0)), metrics.get('wins', 0))],
-        [_make_cell('亏损清仓数', '亏损清仓数'), _make_cell(str(metrics.get('losses', 0)), metrics.get('losses', 0))],
-        [_make_cell('清仓胜率', '清仓胜率'), _make_cell(f"{metrics.get('win_rate', 0):.1f}%", metrics.get('win_rate', 0))],
-        [_make_cell('平均单次清仓盈亏', '平均单次清仓盈亏'), _make_cell(_fmt_money(metrics.get('avg_profit', 0)), metrics.get('avg_profit', 0))],
-        [_make_cell('平均盈利', '平均盈利'), _make_cell(_fmt_money(metrics.get('avg_win', 0)), metrics.get('avg_win', 0))],
-        [_make_cell('平均亏损', '平均亏损'), _make_cell(_fmt_money(metrics.get('avg_loss', 0)), metrics.get('avg_loss', 0))],
-        [_make_cell('最大单次盈利', '最大单次盈利'), _make_cell(_fmt_money(metrics.get('max_profit', 0)), metrics.get('max_profit', 0))],
-        [_make_cell('最大单次亏损', '最大单次亏损'), _make_cell(_fmt_money(metrics.get('max_loss', 0)), metrics.get('max_loss', 0))],
-        [_make_cell('总手续费', '总手续费'), _make_cell(_fmt_money(metrics.get('total_commission', 0)), metrics.get('total_commission', 0))],
-        [_make_cell('当前持仓平均持仓天数', '当前持仓平均持仓天数'), _make_cell(f"{holding_stats.get('average_current_holding_days', 0):.2f} 交易日", holding_stats.get('average_current_holding_days', 0))],
-        [_make_cell('已清仓平均持仓天数', '已清仓平均持仓天数'), _make_cell(f"{holding_stats.get('average_cleared_holding_days', 0):.2f} 交易日", holding_stats.get('average_cleared_holding_days', 0))],
-        [_make_cell('最长持仓天数', '最长持仓天数'), _make_cell(f"{holding_stats.get('max_holding_days', 0)} 交易日", holding_stats.get('max_holding_days', 0))],
-        [_make_cell('最短持仓天数', '最短持仓天数'), _make_cell(f"{holding_stats.get('min_holding_days', 0)} 交易日", holding_stats.get('min_holding_days', 0))],
-    ]
-    return _make_table(headers, rows, 'metric-details-table', '暂无指标明细', row_height=44, max_height=320)
-
-
 # ---------------------------------------------------------------------------
 # 主报告生成
 # ---------------------------------------------------------------------------
@@ -1069,7 +898,7 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     verify_config = report_data.get('verify_config', {}) or {}
     report_metadata = report_data.get('report_metadata', {}) or {}
 
-    init_cash = report_data.get('init_cash', 500_000.0)
+    init_cash = report_data.get('init_cash', 700_000.0)
     cumulative_returns = report_data.get('cumulative_returns', []) or []
     trade_dates = report_data.get('trade_dates', []) or []
     trade_log = report_data.get('trade_log', []) or []

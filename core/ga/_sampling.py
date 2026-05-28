@@ -79,10 +79,11 @@ def build_individual_config(
     if factor_choice:
         weights = {k: v for k, v in weights.items() if k == factor_choice}
 
+    n = position_count if position_count is not None else sample_position_count(profile_name=profile_name)
     cfg: dict = {
         'weights': weights,
-        'buy_n': position_count if position_count is not None else sample_position_count(profile_name=profile_name),
-        'sell_m': position_count if position_count is not None else sample_position_count(profile_name=profile_name),
+        'buy_n': n,
+        'sell_m': n,
         'temperatures': get_profile_fixed_temperatures(profile_name),
     }
     if stock_pool:

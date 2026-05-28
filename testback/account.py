@@ -30,12 +30,6 @@ class MockStockClearedPosition(TypedDict):
   pos: MockStockPosition
 
 
-class DailyReturnRecord(TypedDict):
-  date: sys_date
-  total_asset: float
-  daily_return: float
-
-
 class TradeRecord(TypedDict):
   code: str
   action: str  # 'buy' or 'sell'
@@ -73,9 +67,7 @@ class StockAccountMocker:
     self.slippage = slippage
     self.cleared_positions: list[MockStockClearedPosition] = []
     self.positions: Dict[str, MockStockPosition] = {}
-    self.daily_returns: Dict[sys_date, float] = {}
     self.trade_log: List[TradeRecord] = []
-    self._last_total_asset: float = cash
 
   def calc_commission(self, cost: float):
     return max(cost * self.commission, self.min_commission)
@@ -336,47 +328,13 @@ class StockAccountMocker:
     return self.positions.get(code)
 
   def calc_assets(self, cur_time, prices: dict = None):
-    """计算资产。cur_time 可为 date 或 datetime。"""
+    """计算资产。cur_time 仅用作语义占位，账户净值由外部 daily_snapshots 维护。"""
     market_value = sum(pos['current_value'] for pos in self.calc_position_values(prices))
-    total_asset = self.current_cash + market_value
-
-    if self._last_total_asset > 0:
-      daily_return = (total_asset - self._last_total_asset) / self._last_total_asset * 100
-      cur_date = cur_time.date() if hasattr(cur_time, 'date') else cur_time
-      self.daily_returns[cur_date] = daily_return
-
-    self._last_total_asset = total_asset
-
     return {
       'cash': self.current_cash,
       'market_value': market_value,
-      'total_asset': total_asset,
+      'total_asset': self.current_cash + market_value,
     }
-
-  def get_daily_returns(self) -> Dict[sys_date, float]:
-    """获取所有交易日的每日收益率"""
-    return self.daily_returns.copy()
-
-  def get_cumulative_returns(self) -> List[float]:
-    """获取累计收益率列表（%，从第1天开始）
-
-    用于可视化报告。
-    第1天收益率为0（或第1天的日收益率），
-    后续天为复利累计。
-    """
-    if not self.daily_returns:
-      return []
-
-    sorted_dates = sorted(self.daily_returns.keys())
-    cumulative = []
-    cumulative_value = 1.0
-
-    for d in sorted_dates:
-      daily_ret = self.daily_returns[d]
-      cumulative_value *= (1 + daily_ret / 100)
-      cumulative.append((cumulative_value - 1) * 100)
-
-    return cumulative
 
   def get_trade_log(self) -> List[Dict]:
     """获取交易日志"""

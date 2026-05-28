@@ -1,8 +1,26 @@
+import logging as _stdlib_logging
 import threading
 from datetime import timedelta
 
 from trading.trader import Trader, get_position
 from trading.logger import trading_logger
+
+
+def _silence_lark_unknown_event_errors():
+  """屏蔽 Lark SDK 对未注册事件类型的 'processor not found' ERROR。
+
+  飞书后台开通的某些事件订阅（例如 im.chat.access_event.bot_p2p_chat_entered_v1
+  P2P 进入聊天）我们并未在 EventDispatcherHandler 上注册处理器，
+  SDK 收到时只会丢弃事件，无业务影响 — 但每次都打 ERROR 污染日志。
+  """
+  class _Filter(_stdlib_logging.Filter):
+    def filter(self, record):
+      return 'processor not found' not in record.getMessage()
+  for name in ('lark_oapi', 'lark'):
+    _stdlib_logging.getLogger(name).addFilter(_Filter())
+
+
+_silence_lark_unknown_event_errors()
 
 def create_lark_handler(trader: Trader):
   """ https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/server-side-sdk/python--sdk/handle-events """

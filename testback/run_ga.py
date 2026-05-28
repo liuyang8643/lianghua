@@ -42,7 +42,7 @@ from core.backtest import (
   _compute_factor_scores, _backtest_direct,
   _compute_list_dates, _compute_timing_multipliers, _compute_metrics_simple,
   _load_all_index_data,
-  _format_pool, _format_timing, _try_send_feishu,
+  _format_pool, _format_timing,
   _resolve_output_dir,
   run_single_mode,
 )
@@ -312,8 +312,8 @@ def _cleanup_shm():
     try:
       shm.close()
       shm.unlink()
-    except Exception:
-      pass
+    except Exception as e:
+      testback_logger.warning(f"SharedMemory 清理失败 {shm.name}: {e}")
   _SHM_BLOCKS.clear()
 
 
@@ -437,7 +437,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     date_indices = []
     valid_dates = []
     for dt in date_list:
-      d = dt.date() if hasattr(dt, 'date') else dt
+      d = dt.date()
       di = date_to_idx.get(d)
       if di is None:
         continue
@@ -486,7 +486,8 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   val_valid_dates, val_date_indices = _build_date_subset(val_datetime_list, npz_dates, date_to_idx)
 
   test_start = date(2023, 1, 1)
-  test_end = date(2026, 5, 22)
+  # 测试集末日跟随 backtest_datetime_list（即 GA 预加载区间末日），避免硬编码过期
+  test_end = backtest_datetime_list[-1].date()
   test_datetime_list = [datetime.combine(d, datetime.min.time()) for d in get_trading_date_span(test_start, test_end)]
   test_valid_dates, test_date_indices = _build_date_subset(test_datetime_list, npz_dates, date_to_idx)
 
@@ -533,14 +534,11 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   shm_gb = sum(int(np.prod(e[2])) * np.dtype(e[3]).itemsize for e in shm_entries) / 1024**3
   testback_logger.info(f"SharedMemory 就绪: {len(shm_entries)} 数组 ({shm_gb:.1f} GB)")
 
-  _train_info = info
-  _score_keys = score_keys
-  train_list_dates = list_dates_full
   testback_logger.info(f"训练集就绪 ({time.time() - t0:.1f}s), {len(all_valid_stocks)} 只, {len(valid_dates)} 天")
 
   index_data = _load_all_index_data(valid_dates)
 
-  import gc, ctypes
+  import gc
   gc.collect()
 
   n_workers = 28
@@ -548,19 +546,9 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   ga_pool = ctx.Pool(processes=n_workers, initializer=_worker_initializer, initargs=(shm_entries,))
   testback_logger.info(f"多进程池已创建: {n_workers} workers")
 
-  _val_info = info
-  _score_keys_val = score_keys
-  val_stock_indices = stock_indices
-  val_valid_stocks = all_valid_stocks
-  val_list_dates = list_dates_full
   val_index_data = _load_all_index_data(val_valid_dates)
   testback_logger.info(f"验证集就绪: {val_start} - {val_end}, {len(val_valid_dates)} 天")
 
-  _test_info = info
-  _score_keys_test = score_keys
-  test_stock_indices = stock_indices
-  test_valid_stocks = all_valid_stocks
-  test_list_dates = list_dates_full
   test_index_data = _load_all_index_data(test_valid_dates)
   testback_logger.info(f"测试集就绪: {test_start} - {test_end}, {len(test_valid_dates)} 天")
 
@@ -604,8 +592,8 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
           uncached_configs.append(cfg)
 
       worker_args = [
-        (_train_info, _score_keys, valid_dates, date_indices, stock_indices,
-         all_valid_stocks, config, index_data, train_list_dates)
+        (info, score_keys, valid_dates, date_indices, stock_indices,
+         all_valid_stocks, config, index_data, list_dates_full)
         for config in uncached_configs
       ]
 
@@ -645,8 +633,8 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
             train_best_val_m = dict(val_eval_cache[val_best_key])
           else:
             val_worker_args = [
-              (_val_info, _score_keys, val_valid_dates, val_date_indices, val_stock_indices,
-               val_valid_stocks, best_cfg, val_index_data, val_list_dates)
+              (info, score_keys, val_valid_dates, val_date_indices, stock_indices,
+               all_valid_stocks, best_cfg, val_index_data, list_dates_full)
             ]
             val_res = []
             _eval_parallel(val_worker_args, val_res, {}, testback_logger, pool=ga_pool)
@@ -665,8 +653,8 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
             _test_train_best_m = dict(test_eval_cache[best_test_key])
           else:
             test_worker_args = [
-              (_test_info, _score_keys_test, test_valid_dates, test_date_indices, test_stock_indices,
-               test_valid_stocks, best_cfg, test_index_data, test_list_dates)
+              (info, score_keys, test_valid_dates, test_date_indices, stock_indices,
+               all_valid_stocks, best_cfg, test_index_data, list_dates_full)
             ]
             test_res = []
             _eval_parallel(test_worker_args, test_res, {}, testback_logger, pool=ga_pool)
@@ -696,8 +684,8 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
               live_test_sharpe = test_eval_cache[live_test_key]['sharpe']
             else:
               live_test_args = [
-                (_test_info, _score_keys_test, test_valid_dates, test_date_indices, test_stock_indices,
-                 test_valid_stocks, best_live_cfg, test_index_data, test_list_dates)
+                (info, score_keys, test_valid_dates, test_date_indices, stock_indices,
+                 all_valid_stocks, best_live_cfg, test_index_data, list_dates_full)
               ]
               live_test_res = []
               _eval_parallel(live_test_args, live_test_res, {}, testback_logger, pool=ga_pool)
@@ -791,6 +779,22 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
                                   hall_of_fame_size=population_size, profile_name=profile_name,
                                   ga_cache=ga_cache)
 
+    # 最终测试集评估必须在 Pool terminate 前完成（共用 ga_pool）
+    if not is_debug:
+      testback_logger.info(f"\n{'=' * 60}")
+      testback_logger.info(f"最终测试集评估 ({test_start} - {test_end})")
+      train_best_config = ga_state['hall_of_fame'][0]
+      train_test_args = [(
+        info, score_keys, test_valid_dates, test_date_indices, stock_indices,
+        all_valid_stocks, train_best_config, test_index_data, list_dates_full
+      )]
+      train_test_results = []
+      _eval_parallel(train_test_args, train_test_results, {}, testback_logger, pool=ga_pool)
+      if train_test_results:
+        tr = train_test_results[0]
+        testback_logger.info(f"  [训练最优] 测试夏普={tr['sharpe']:.3f}, 年化={tr['annualized']:.1f}%, 回撤={tr['max_drawdown']:.1f}%")
+      testback_logger.info(f"{'=' * 60}")
+
   finally:
     ga_pool.terminate()
     ga_pool.join()
@@ -826,26 +830,6 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     testback_logger.info(f"  唯一配置数: {len(ga_cache)}")
     testback_logger.info(f"  平均夏普率: {sum(sharpes) / len(sharpes):.3f}")
     testback_logger.info(f"  最大夏普率: {max(sharpes):.3f}")
-    testback_logger.info(f"{'=' * 60}")
-
-  # 最终测试集评估（2022-2026，不参与优化）
-  if not is_debug:
-    testback_logger.info(f"\n{'=' * 60}")
-    testback_logger.info("最终测试集评估 (2022-2026)")
-
-    # 评估训练最优个体
-    train_best_config = ga_state['hall_of_fame'][0]
-    train_test_args = [(
-      _test_info, _score_keys, test_valid_dates, test_date_indices, test_stock_indices,
-      test_valid_stocks, train_best_config, test_index_data, test_list_dates
-    )]
-    train_test_results = []
-    _eval_parallel(train_test_args, train_test_results, {}, testback_logger, pool=ga_pool)
-    if train_test_results:
-      tr = train_test_results[0]
-      testback_logger.info(f"  [训练最优] 测试夏普={tr['sharpe']:.3f}, 年化={tr['annualized']:.1f}%, 回撤={tr['max_drawdown']:.1f}%")
-
-
     testback_logger.info(f"{'=' * 60}")
 
   testback_logger.info(f"\n{'调试' if is_debug else 'GA'}模式执行完成，结果目录: {output_dir}")
@@ -920,7 +904,7 @@ def main():
     if keep_awake_enabled:
       testback_logger.info('已启用 Windows 防休眠，任务结束后自动恢复')
 
-  result = _run_ga(args, mode_config, backtest_datetime_list, filtered_stocks, profile_name=profile_name, resume_dir=resume_dir)
+    result = _run_ga(args, mode_config, backtest_datetime_list, filtered_stocks, profile_name=profile_name, resume_dir=resume_dir)
 
   te = datetime.now()
   testback_logger.info(f"总耗时: {(te - ts).total_seconds():.2f} 秒")

@@ -10,17 +10,14 @@ AFTERNOON_END = time(15, 0)
 
 
 def _get_trading_calendar_state() -> tuple[frozenset[date], date | None, date | None]:
-  try:
-    import pyarrow.parquet as pq
-    path = Path(__file__).resolve().parents[2] / "data" / "trading_calendar.parquet"
-    if not path.exists():
-      return frozenset(), None, None
-    dates = sorted(pq.read_table(path).column('trade_date').to_pylist())
-    if not dates:
-      return frozenset(), None, None
-    return frozenset(dates), dates[0], dates[-1]
-  except Exception:
+  import pyarrow.parquet as pq
+  path = Path(__file__).resolve().parents[2] / "data" / "trading_calendar.parquet"
+  if not path.exists():
     return frozenset(), None, None
+  dates = sorted(pq.read_table(path).column('trade_date').to_pylist())
+  if not dates:
+    return frozenset(), None, None
+  return frozenset(dates), dates[0], dates[-1]
 
 
 def _is_weekday(target_date: date) -> bool:
