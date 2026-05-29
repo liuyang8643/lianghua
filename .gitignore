@@ -1,3 +1,6 @@
+# 仅忽略非代码产物：数据、日志、缓存、构建物、密钥、IDE、agent 运行时。
+# 全部代码与配置（含 configs/、trading/、core/、testback/、scripts/、data 下的 *.py）均入库。
+
 # ---- Python ----
 __pycache__/
 *.pyc
@@ -24,34 +27,23 @@ logs/
 *.pid
 *.png
 
-# ---- Data & Results ----
-data/
+# ---- Data products (large, non-code)。仅保留 data 下的脚本 *.py ----
+data/*
+!data/*.py
 results/
-
-# ---- Proprietary (hidden from WBR public repo) ----
-core/ga/
-core/factors/AmihudIlliquidity.py
-core/factors/AmountBasedSmallCap.py
-core/factors/High52Week.py
-core/factors/OvernightGap.py
-core/factors/VolumeCV.py
-core/factors/helpers/
 core/factors/results/
-configs/
-testback/run_ga.py
-trading/
-scripts/
 
 # ---- MCP runtime ----
 .mcp.json
 .playwright-mcp/
 **/.cache/
 
-# ---- Per-project runtime (projects/<name>/) ----
+# ---- Per-project runtime ----
 projects/
 tests/
 
-# ---- Local Claude ----
+# ---- Agent runtime (仅忽略草稿与本地配置，已入库的 skills/rules 保留) ----
+.agents/todos/
 .claude/skills/
 .claude/settings.local.json
 .claude-runtime/

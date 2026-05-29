@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import argparse
 import json
@@ -7,7 +6,7 @@ import threading
 from types import SimpleNamespace
 
 import numpy as np
-from xtquant import xtconstant, xtdata
+from xtquant import xtdata
 
 from configs import TRADE_ACCOUNT
 from data.db import allow_buy_stock_code_list
@@ -81,46 +80,7 @@ from .persistence import live_trade_recorder
 from .post_close import run_post_close, run_update_all
 from .scheduler import TradingScheduler
 from .trader import Trader
-from .helper import get_order_status_label
-
-
-def _submit_sell_order(store, code, shares, signal_date, trade_date):
-    """提交卖出委托。shares=-1 表示全部清仓。返回 {code, order_type, order_id, shares} 或 None。"""
-    try:
-        if shares < 0:
-            order_id = store.trader.clear_position(code, reason=f'rebalance signal={signal_date.isoformat()} trade={trade_date.isoformat()}')
-        else:
-            order_id = store.trader.order(
-                xtconstant.STOCK_SELL, code, shares, None,
-                order_remark=f'rebalance signal={signal_date.isoformat()} trade={trade_date.isoformat()}'
-            )
-        if order_id is None:
-            trading_logger.info(f"{code} 无需卖出或委托未发出")
-            return None
-        trading_logger.info(f"已提交卖出委托: {code} {'全仓' if shares < 0 else f'{shares}股'} order_id={order_id}")
-        recorder.mark("提交卖出委托")
-        return {'code': code, 'order_type': 'SELL', 'order_id': order_id, 'shares': shares}
-    except ValueError as e:
-        trading_logger.info(f"{code} 卖出前校验拦截: {e}")
-    except Exception as e:
-        trading_logger.exception(f"{code} 卖出委托失败: {e}")
-    return None
-
-
-def _submit_buy_order(store, code, shares, signal_date, trade_date):
-    try:
-        order_id = store.trader.order(
-            xtconstant.STOCK_BUY, code, shares, None,
-            order_remark=f'rebalance signal={signal_date.isoformat()} trade={trade_date.isoformat()}'
-        )
-        trading_logger.info(f"已提交买入委托: {code} * {shares} 股 order_id={order_id}")
-        recorder.mark("提交买入委托")
-        return {'code': code, 'order_type': 'BUY', 'order_id': order_id, 'shares': shares}
-    except ValueError as e:
-        trading_logger.info(f"{code} 买入前校验拦截: {e}")
-    except Exception as e:
-        trading_logger.exception(f"{code} 买入委托失败: {e}")
-    return None
+from .executor import RebalanceExecutor
 
 
 def _print_and_confirm_manual_plan(pending: dict) -> bool:
@@ -219,6 +179,7 @@ if __name__ == '__main__':
     trading_logger.info(f"配置参数: buy_n={buy_n}, sell_m={sell_m}, factors={sorted(weights.keys())}")
 
     td = Trader(TRADE_ACCOUNT)
+    rebalance_executor = RebalanceExecutor(td)
 
     threading.Thread(target=create_lark_handler, args=[td], daemon=True).start()
 
@@ -457,6 +418,7 @@ if __name__ == '__main__':
             'trade_date': trade_date,
             'sell_orders': sell_orders,
             'buy_allocations': buy_orders,
+            'buy_n_stocks': buy_n_stocks,  # topN 顺序，买入按此串行优先级
             'sell_details': sell_details,
             'buy_details': buy_details,
             'prices': prices,
@@ -507,22 +469,10 @@ if __name__ == '__main__':
             trading_logger.warning(f"飞书战报初始化失败: {e}")
 
     def execute_trade(store, execute_sell=True, execute_buy=True):
-        import time
         pending = store.pending_rebalance
         if not pending:
             trading_logger.warning("没有可执行的调仓计划，跳过本轮下单")
             return
-
-        signal_date = pending['signal_date']
-        trade_date = pending['trade_date']
-        sell_orders = pending.get('sell_orders', [])
-        buy_allocations = pending.get('buy_allocations', {})
-        prices = pending.get('prices', {})
-
-        trading_logger.info(
-            f"开始调仓: sell={len(sell_orders)} buy={len(buy_allocations)} "
-            f"signal={signal_date.isoformat()} trade={trade_date.isoformat()}"
-        )
 
         if dry_run:
             trading_logger.info("=== DRY RUN: 跳过实际买卖下单 ===")
@@ -530,102 +480,8 @@ if __name__ == '__main__':
             store.pending_rebalance = None
             return
 
-        submitted = []  # [{code, order_type, order_id, shares}]
-
-        if execute_sell and sell_orders:
-            with ThreadPoolExecutor(max_workers=min(16, len(sell_orders))) as executor:
-                futures = [
-                    executor.submit(_submit_sell_order, store, code, shares, signal_date, trade_date)
-                    for code, shares in sell_orders
-                ]
-                for future in as_completed(futures):
-                    r = future.result()
-                    if r:
-                        submitted.append(r)
-
-        if execute_buy and buy_allocations:
-            from utils.stock.info import min_buy_shares as _min_buy
-            buy_items = list(buy_allocations.items())
-            for i, (code, shares) in enumerate(buy_items):
-                if i > 0:
-                    time.sleep(0.3)
-                # 资金检查：不足则降量
-                # 用 est_price * 1.005 留 0.5% 滑点缓冲（市价单实际成交价 > 估算价 是常态）
-                asset = store.trader.query_asset()
-                if asset and asset.cash > 0:
-                    est_price = prices.get(code, 0)
-                    if est_price > 0:
-                        max_shares = int(asset.cash / (est_price * 1.005) / 100) * 100
-                        min_lot = _min_buy(code)
-                        if max_shares < shares:
-                            if max_shares >= min_lot:
-                                trading_logger.warning(f"{code} 资金不足 {shares}→{max_shares}股")
-                                shares = max_shares
-                            else:
-                                trading_logger.warning(f"{code} 资金不足,跳过")
-                                continue
-                r = _submit_buy_order(store, code, shares, signal_date, trade_date)
-                if r:
-                    submitted.append(r)
-
+        rebalance_executor.execute(pending, execute_sell=execute_sell, execute_buy=execute_buy)
         store.pending_rebalance = None
-
-        # 轮询等待所有委托进入终态
-        TERMINAL = {xtconstant.ORDER_SUCCEEDED, xtconstant.ORDER_CANCELED,
-                    xtconstant.ORDER_JUNK, xtconstant.ORDER_PART_CANCEL}
-        waited = 0
-        while waited < 30:
-            pending_orders = []
-            for s in submitted:
-                o = store.trader.query_order(s['order_id'])
-                if o and o.order_status not in TERMINAL:
-                    pending_orders.append(s['code'])
-            if not pending_orders:
-                break
-            time.sleep(1)
-            waited += 1
-        if waited >= 30:
-            trading_logger.warning(f"等待成交超时, 仍有{len(pending_orders)}笔未终态: {pending_orders[:5]}...")
-
-        # 汇总
-        from data.db import get_stock_detail
-        ok_list = []
-        fail_list = []
-        partial_list = []
-        for s in submitted:
-            o = store.trader.query_order(s['order_id'])
-            status = get_order_status_label(o.order_status) if o else '查询失败'
-            msg = o.status_msg if o else ''
-            traded = o.traded_volume if o else 0
-            price = o.traded_price if o else 0
-            vol = o.order_volume if o else 0
-            detail = get_stock_detail(s['code'])
-            name = (detail.get('InstrumentName', '') if detail else '').strip()
-            label = f"{s['code']} {name}".strip()
-            line = f"{s['order_type']:4s} {label} {s['shares']}股 → {status}"
-            if traded and traded != vol:
-                line += f" {traded}/{vol}股"
-            if price:
-                line += f" @{price:.2f}"
-            if status in ('已成',):
-                ok_list.append(line)
-            elif status in ('废单', '已撤', '部撤'):
-                fail_list.append(f"{line} {msg}")
-            else:
-                partial_list.append(f"{line} {msg}")
-
-        if ok_list:
-            trading_logger.info(f"=== 成交 {len(ok_list)} 笔 ===")
-            for l in ok_list:
-                trading_logger.info(f"  {l}")
-        if partial_list:
-            trading_logger.warning(f"=== 未完成 {len(partial_list)} 笔 ===")
-            for l in partial_list:
-                trading_logger.warning(f"  {l}")
-        if fail_list:
-            trading_logger.error(f"=== 失败 {len(fail_list)} 笔 ===")
-            for l in fail_list:
-                trading_logger.error(f"  {l}")
 
     def after_trade(store):
         if store.whole_sub_id is not None:
