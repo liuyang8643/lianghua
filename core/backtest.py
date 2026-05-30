@@ -360,8 +360,8 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
       timing_mult = position_multipliers[i] if (position_multipliers is not None and not np.isnan(position_multipliers[i])) else 1.0
       base_target = total_eq * timing_mult / buy_n
 
-      all_codes = set(account.positions.keys()) | set(buy_n_stocks)
       buy_n_set = set(buy_n_stocks)
+      all_codes = list(buy_n_stocks) + [c for c in account.positions.keys() if c not in buy_n_set]
 
       sell_candidates = []
       for code in all_codes:
