@@ -53,6 +53,122 @@ def _resolve_backtest_start(trade_date: date) -> date:
     return first_move if isinstance(first_move, date) else first_move.date()
 
 
+def _extract_live_seed(pos_df, summary_df, prev_date: date):
+    """从 positions_{T-1} 与 daily_summary 提取单日回放的种子。
+
+    Returns (seed_cash, seed_positions, y_positions_eod) 或 None：
+      - seed_cash: T-1 日终现金（实盘真实可用现金基线）
+      - seed_positions: {code: {'volume', 'avg_price'}}，喂给 _backtest_direct 做起始持仓
+      - y_positions_eod: T-1 收盘持仓快照（last_price 估值），合成 T-1 snapshot 算 daily_pnl 基线
+    任一关键数据缺失返回 None（调用方回退连续回测）。
+    """
+    if pos_df is None or pos_df.empty or summary_df is None or summary_df.empty:
+        return None
+    prev_rows = summary_df[summary_df['date'] == prev_date]
+    if prev_rows.empty or 'cash' not in prev_rows.columns:
+        return None
+    seed_cash = float(prev_rows['cash'].iloc[-1])
+
+    seed_positions: dict[str, dict] = {}
+    y_positions_eod: list[dict] = []
+    for _, r in pos_df.iterrows():
+        vol = int(r['volume'])
+        if vol <= 0:
+            continue
+        code = r['code']
+        avg = float(r['avg_price']) if pd.notna(r.get('avg_price')) else 0.0
+        lp = float(r['last_price']) if pd.notna(r.get('last_price')) else 0.0
+        seed_positions[code] = {'volume': vol, 'avg_price': avg}
+        y_positions_eod.append({
+            'code': code, 'volume': vol, 'avg_price': avg,
+            'current_price': lp, 'current_value': lp * vol,
+        })
+    if not seed_positions:
+        return None
+    return seed_cash, seed_positions, y_positions_eod
+
+
+def _run_seed_replay(trade_date: date, individual_config: dict,
+                     factor_classes: list) -> dict | None:
+    """单日回放：用实盘 T-1 真实持仓 + 现金做种子，只回放 T 日多退少补。
+
+    目的：让回测端 T 日的持仓/下单手数与实盘可比 —— 两边起点（资金+持仓）完全相同，
+    手数差只来自执行层（废单/部成/资金不足/min_lot），价格差只来自滑点。
+    无 T-1 种子（首个交易日 / 缺快照）时返回 None，调用方回退连续回测。
+    """
+    from datetime import timedelta
+    from core.backtest import _compute_factor_scores, _backtest_direct
+    from trading.persistence import _TRADE_DIR
+    from utils.stock.time import get_last_trading_day
+
+    prev_date = get_last_trading_day(trade_date - timedelta(days=1))
+    pos_path = _TRADE_DIR / f"positions_{prev_date.isoformat()}.parquet"
+    summary_path = _TRADE_DIR / "daily_summary.parquet"
+    if not pos_path.exists() or not summary_path.exists():
+        trading_logger.info(
+            f"[PostClose] 缺 T-1 种子(positions_{prev_date} / daily_summary)，回退连续回测")
+        return None
+
+    seed = _extract_live_seed(pd.read_parquet(pos_path), pd.read_parquet(summary_path), prev_date)
+    if seed is None:
+        trading_logger.info(f"[PostClose] T-1({prev_date}) 种子数据不完整，回退连续回测")
+        return None
+    seed_cash, seed_positions, y_positions_eod = seed
+
+    all_stocks = allow_buy_stock_code_list(target_date=trade_date)
+    weights = individual_config['weights']
+    temperatures = individual_config['temperatures']
+    buy_n = individual_config['buy_n']
+    sell_m = individual_config.get('sell_m', buy_n)
+
+    signal_dt = [datetime.combine(trade_date, datetime.min.time())]
+    scores_result = _compute_factor_scores(signal_dt, all_stocks, weights, factor_classes)
+    if scores_result is None:
+        return None
+    data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices = scores_result
+    if not valid_dates:
+        return None
+
+    # 只保留 NPZ 覆盖到的种子持仓（其余无法估值/交易）。
+    seed_in_npz = {c: v for c, v in seed_positions.items() if c in stock_indices}
+    dropped = sorted(set(seed_positions) - set(seed_in_npz))
+    if dropped:
+        trading_logger.warning(
+            f"[PostClose] {len(dropped)} 只种子持仓不在 NPZ，回放忽略: {dropped[:5]}")
+
+    bt_result = _backtest_direct(
+        data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices,
+        weights=weights, buy_n=buy_n, sell_m=sell_m, temperatures=temperatures,
+        init_cash=seed_cash, init_positions=seed_in_npz,
+    )
+    snaps = bt_result.get('daily_snapshots') or []
+    if not snaps:
+        return None
+    t_snap = snaps[-1]
+
+    # 合成 T-1 快照（实盘 T-1 收盘价值的种子持仓），供 _rebuild_backtest_per_stock_pnl
+    # 取 snaps[-2] 作 T 日 daily_pnl 基线，并据此重算 T 日 daily_return_pct
+    # （单日回放下 _backtest_direct 的 daily_return 基于 init_cash，未含种子持仓，需覆盖）。
+    y_total = seed_cash + sum(p['current_value'] for p in y_positions_eod)
+    y_snap = {
+        'date': prev_date.strftime('%Y-%m-%d'),
+        'signal_date': prev_date.strftime('%Y-%m-%d'),
+        'trade_date': prev_date.strftime('%Y-%m-%d'),
+        'total_asset': y_total, 'cash': seed_cash,
+        'market_value': y_total - seed_cash,
+        'positions_eod': y_positions_eod,
+        'daily_return_pct': 0.0, 'cumulative_return_pct': 0.0,
+    }
+    t_total = t_snap.get('total_asset', y_total)
+    t_snap['daily_return_pct'] = ((t_total - y_total) / y_total * 100) if y_total else 0.0
+    bt_result['daily_snapshots'] = [y_snap, t_snap]
+    trading_logger.info(
+        f"[PostClose] 单日回放完成 (种子: {prev_date} 现金¥{seed_cash:,.0f} + "
+        f"{len(seed_in_npz)}只持仓, 权益¥{y_total:,.0f}) · T日回测收益={t_snap['daily_return_pct']:+.2f}%"
+    )
+    return bt_result
+
+
 def _run_continuous_backtest(start_date: date, end_date: date,
                               individual_config: dict, factor_classes: list) -> dict | None:
     """连续多日回测 [start_date, end_date]，让回测演化形成对齐 T-1 的持仓。
@@ -126,22 +242,24 @@ def run_post_close(store) -> dict | None:
     else:
         trading_logger.info("[PostClose] 跳过K线更新 (--skip 模式)")
 
-    # 2. 多日连续回测：从实盘首调仓日 → T 日，让回测演化出 T-1 持仓
-    # 这样 T 日的回测换手是"多退少补"，跟实盘对齐口径
+    # 2. 回测端：优先「单日回放」——用实盘 T-1 真实持仓+现金做种子，只回放 T 日多退少补，
+    #    使持仓/下单手数与实盘可比（手数差归因执行层、价格差归因滑点）。
+    #    无 T-1 种子（首个交易日 / 缺快照）时回退到多日连续回测。
     recorder.mark("盘后回测")
-    bt_start = _resolve_backtest_start(trade_date)
-    if bt_start < trade_date:
-        trading_logger.info(f"[PostClose] 连续回测窗口: {bt_start} → {trade_date} "
-                            f"(模拟实盘 T-1 持仓基线)")
-    else:
-        trading_logger.info(f"[PostClose] 单日回测: {trade_date} (实盘尚无历史调仓)")
-    bt_result = _run_continuous_backtest(bt_start, trade_date,
-                                          individual_config, factor_classes)
+    bt_result = _run_seed_replay(trade_date, individual_config, factor_classes)
+    if bt_result is None:
+        bt_start = _resolve_backtest_start(trade_date)
+        if bt_start < trade_date:
+            trading_logger.info(f"[PostClose] 回退连续回测窗口: {bt_start} → {trade_date}")
+        else:
+            trading_logger.info(f"[PostClose] 回退单日回测: {trade_date} (实盘尚无历史调仓)")
+        bt_result = _run_continuous_backtest(bt_start, trade_date,
+                                              individual_config, factor_classes)
     if bt_result is None:
         trading_logger.warning("[PostClose] 回测失败")
         return None
     snaps = bt_result.get('daily_snapshots') or []
-    trading_logger.info(f"[PostClose] 回测完成: {len(snaps)}日, 总收益={bt_result.get('total_return', 0):.2f}%")
+    trading_logger.info(f"[PostClose] 回测完成: {len(snaps)}日快照")
 
     # 3. 构建对比报告
     recorder.mark("盘后对比")

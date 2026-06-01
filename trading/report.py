@@ -312,7 +312,7 @@ class PostCloseReport:
         bt_buy_details = {d['code']: d for d in bt_snap.get('executed_buy_details', []) or []}
         bt_sell_details = {d['code']: d for d in bt_snap.get('executed_sell_details', []) or []}
 
-        # 按股票汇总订单差异
+        # 按股票汇总订单差异（金额 + 股数两个口径；股数差直接反映「量缺口」）
         rows = []
         all_codes = set(live_buy) | set(bt_buy_details) | set(live_sell) | set(bt_sell_details)
         for code in sorted(all_codes):
@@ -320,6 +320,10 @@ class PostCloseReport:
             bb = bt_buy_details.get(code)
             ls = live_sell.get(code)
             bs = bt_sell_details.get(code)
+            live_buy_sh = int(lb['shares']) if lb else 0
+            bt_buy_sh = int(bb['shares']) if bb else 0
+            live_sell_sh = int(ls['shares']) if ls else 0
+            bt_sell_sh = int(bs['shares']) if bs else 0
             rows.append({
                 'code': code,
                 'name': _name(code, self.trade_date),
@@ -327,12 +331,21 @@ class PostCloseReport:
                 'bt_buy_amount': float(bb['shares'] * bb['price']) if bb else 0.0,
                 'live_sell_amount': ls['amount'] if ls else 0.0,
                 'bt_sell_amount': float(bs['shares'] * bs['price']) if bs else 0.0,
+                'live_buy_shares': live_buy_sh,
+                'bt_buy_shares': bt_buy_sh,
+                'live_sell_shares': live_sell_sh,
+                'bt_sell_shares': bt_sell_sh,
+                # 量缺口：>0 实盘买少了 / 卖多了；净缺口聚焦买入是否补满
+                'buy_shares_gap': bt_buy_sh - live_buy_sh,
+                'sell_shares_gap': bt_sell_sh - live_sell_sh,
             })
         return {'rows': rows,
                 'live_buy_total': sum(r['live_buy_amount'] for r in rows),
                 'bt_buy_total': sum(r['bt_buy_amount'] for r in rows),
                 'live_sell_total': sum(r['live_sell_amount'] for r in rows),
-                'bt_sell_total': sum(r['bt_sell_amount'] for r in rows)}
+                'bt_sell_total': sum(r['bt_sell_amount'] for r in rows),
+                'buy_shares_gap_total': sum(r['buy_shares_gap'] for r in rows),
+                'sell_shares_gap_total': sum(r['sell_shares_gap'] for r in rows)}
 
     def build_dim4_slippage(self) -> dict:
         """维度4：滑点 diff（市场冲击层）。实盘的 traded_price vs est_price，回测假定 0。"""
@@ -384,12 +397,20 @@ class PostCloseReport:
         for code in sorted(all_codes):
             l = live_pnl.get(code, {})
             b = bt_pnl.get(code, {})
+            l_present, b_present = code in live_pnl, code in bt_pnl
             l_pnl = l.get('daily_pnl')
             b_pnl = b.get('daily_pnl')
-            pnl_diff = (l_pnl - b_pnl) if (l_pnl is not None and b_pnl is not None) else None
             l_ret = l.get('daily_return_pct')
             b_ret = b.get('daily_return_pct')
-            ret_diff = (l_ret - b_ret) if (l_ret is not None and b_ret is not None) else None
+            # 一边完全没持有/没交易该票 → 它对那边当日盈亏贡献为 0(而非"未知")。
+            # 这样单边持有的票(如回测买进、实盘没买进)的差额能正确体现,逐行差额可加总到合计;
+            # 仅当某边「确实持有该票却算不出 P&L」时才记为未知(None)。
+            l_eff = l_pnl if l_present else 0.0
+            b_eff = b_pnl if b_present else 0.0
+            pnl_diff = (l_eff - b_eff) if (l_eff is not None and b_eff is not None) else None
+            l_ret_eff = l_ret if l_present else 0.0
+            b_ret_eff = b_ret if b_present else 0.0
+            ret_diff = (l_ret_eff - b_ret_eff) if (l_ret_eff is not None and b_ret_eff is not None) else None
             rows.append({
                 'code': code, 'name': _name(code, self.trade_date),
                 'live_volume': l.get('volume', 0), 'bt_volume': b.get('volume', 0),
@@ -397,9 +418,10 @@ class PostCloseReport:
                 'live_daily_pnl': l_pnl, 'bt_daily_pnl': b_pnl,
                 'live_daily_return_pct': l_ret, 'bt_daily_return_pct': b_ret,
                 'pnl_diff': pnl_diff, 'ret_diff': ret_diff,
+                '_l_eff': l_eff, '_b_eff': b_eff,  # 合计用(未持有计 0,持有却算不出计 None)
             })
-        live_valid = [r['live_daily_pnl'] for r in rows if r['live_daily_pnl'] is not None]
-        bt_valid = [r['bt_daily_pnl'] for r in rows if r['bt_daily_pnl'] is not None]
+        live_valid = [r['_l_eff'] for r in rows if r['_l_eff'] is not None]
+        bt_valid = [r['_b_eff'] for r in rows if r['_b_eff'] is not None]
         return {'rows': rows,
                 'live_total_pnl': sum(live_valid) if live_valid else None,
                 'bt_total_pnl': sum(bt_valid) if bt_valid else None}
@@ -441,8 +463,10 @@ class PostCloseReport:
         """
         per_stock = dim5.get('live_total_pnl')
         account = summary.get('live_daily_pnl')
+        # 只把「实盘确实持有(volume>0)却算不出 P&L」的票算作无法对账;
+        # 实盘根本没持有的票贡献为 0、可对账,不应计入。
         unrec = [r['code'] for r in dim5.get('rows', [])
-                 if r.get('live_daily_pnl') is None]
+                 if r.get('live_daily_pnl') is None and int(r.get('live_volume', 0) or 0) > 0]
         tolerance = self._reconcile_tolerance(summary)
         diff = None
         within = True
@@ -869,12 +893,18 @@ class PostCloseReport:
         def _orders_table(rows):
             html = ['<table><thead><tr><th>代码</th><th>名称</th>',
                     '<th>买入实盘</th><th>买入回测</th>',
+                    '<th>买股实盘</th><th>买股回测</th><th>买量缺口</th>',
                     '<th>卖出实盘</th><th>卖出回测</th></tr></thead><tbody>']
             for r in rows:
+                gap = r.get('buy_shares_gap', 0)
+                gap_cls = 'positive' if gap > 0 else ('negative' if gap < 0 else '')
                 html.append(
                     f"<tr><td>{r['code']}</td><td>{r['name']}</td>"
                     f"<td>{_fmt_money(r['live_buy_amount'])}</td>"
                     f"<td>{_fmt_money(r['bt_buy_amount'])}</td>"
+                    f"<td>{r.get('live_buy_shares', 0)}</td>"
+                    f"<td>{r.get('bt_buy_shares', 0)}</td>"
+                    f"<td class='{gap_cls}'>{gap:+d}</td>"
                     f"<td>{_fmt_money(r['live_sell_amount'])}</td>"
                     f"<td>{_fmt_money(r['bt_sell_amount'])}</td></tr>"
                 )
@@ -956,14 +986,14 @@ class PostCloseReport:
 
 <div class='section'>
   <h2>操作差距（多退少补：实盘 vs 回测）</h2>
-  <div>买入: 实盘 {_fmt_money(d3['live_buy_total'])} · 回测 {_fmt_money(d3['bt_buy_total'])}</div>
+  <div>买入: 实盘 {_fmt_money(d3['live_buy_total'])} · 回测 {_fmt_money(d3['bt_buy_total'])} · 买量缺口合计 {d3.get('buy_shares_gap_total', 0):+d} 股</div>
   <div>卖出: 实盘 {_fmt_money(d3['live_sell_total'])} · 回测 {_fmt_money(d3['bt_sell_total'])}</div>
   {_orders_table(d3['rows'])}
 </div>
 
 <div class='section'>
   <h2>滑点明细（成交价 vs 开盘价，仅 debug 用）</h2>
-  <div>平均滑点 {d4['avg_slippage']:+.3f}% · 总滑点成本 {_fmt_diff_money(d4['total_slippage_cost'])}</div>
+  <div>平均滑点 {d4['avg_slippage']:+.3f}% ({d4['avg_slippage']*100:+.1f} bp) · 总滑点成本 {_fmt_diff_money(d4['total_slippage_cost'])}</div>
   {_slippage_table(d4['rows'])}
 </div>
 

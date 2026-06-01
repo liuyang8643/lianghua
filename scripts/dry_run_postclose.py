@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from core.ga import get_profile_factor_classes, resolve_profile_name
-from trading.post_close import _run_single_day_backtest
+from trading.post_close import _run_seed_replay, _run_continuous_backtest, _resolve_backtest_start
 from trading.report import PostCloseReport
 
 
@@ -40,12 +40,10 @@ def main():
     args = parser.parse_args()
 
     target = datetime.strptime(args.target_date, '%Y-%m-%d').date()
-    src_dir = Path(args.src_dir) if args.src_dir else (
-        ROOT / "data" / f"live_trades_rebuilt_{args.target_date}"
-    )
+    # 默认直接用线上 live_trades 目录（含真实 plan/fills/positions）
+    src_dir = Path(args.src_dir) if args.src_dir else (ROOT / "data" / "live_trades")
     if not src_dir.exists():
-        print(f"❌ {src_dir} 不存在。请先跑:")
-        print(f"   python scripts/rebuild_live_trades_for_diff.py {args.target_date}")
+        print(f"❌ {src_dir} 不存在")
         sys.exit(1)
 
     print(f"=== 离线 Dry-Run Diff @ {target} ===")
@@ -59,14 +57,18 @@ def main():
     individual_config = cfg['individual_config']
     print(f"配置: profile={profile} buy_n={individual_config['buy_n']} factors={sorted(individual_config['weights'].keys())}")
 
-    # 1. 单日回测
-    print(f"\n[1/3] 单日回测 {target} ...")
-    bt_result = _run_single_day_backtest(target, individual_config, factor_classes)
+    # 1. 回测：优先单日回放（实盘 T-1 真实持仓+现金做种子），无种子则回退连续回测
+    print(f"\n[1/3] 回测 {target} ...")
+    bt_result = _run_seed_replay(target, individual_config, factor_classes)
     if bt_result is None:
-        print("❌ 单日回测失败（NPZ 中可能无当日数据）")
+        bt_start = _resolve_backtest_start(target)
+        print(f"   无 T-1 种子，回退连续回测 {bt_start} → {target}")
+        bt_result = _run_continuous_backtest(bt_start, target, individual_config, factor_classes)
+    if bt_result is None:
+        print("❌ 回测失败（NPZ 中可能无当日数据）")
         sys.exit(2)
-    bt_snap = (bt_result.get('daily_snapshots') or [{}])[0]
-    print(f"   回测: {len(bt_snap.get('raw_buy_n_list', []))} 候选 → "
+    bt_snap = (bt_result.get('daily_snapshots') or [{}])[-1]
+    print(f"   回测 T 日: {len(bt_snap.get('raw_buy_n_list', []))} 候选 → "
           f"{len(bt_snap.get('buy_n_list', []))} 可交易 → "
           f"{len(bt_snap.get('executed_buy_list', []))} 已执行")
 
@@ -110,11 +112,9 @@ def main():
     if s['live_daily_pnl'] is not None:
         print(f"💰 日P&L:  实盘 {s['live_daily_pnl']:+,.0f} ({s['live_daily_return_pct']:+.2f}%) "
               f"| 回测 {s['bt_daily_pnl']:+,.0f} ({s['bt_daily_return_pct']:+.2f}%)")
-    d1, d2 = data['dim1_candidates'], data['dim2_tradable']
-    print(f"🔍 维度1 候选股: 实盘 {d1['live_count']} | 回测 {d1['bt_count']} | 匹配率 {d1['match_rate']*100:.0f}%")
-    print(f"🔍 维度2 可交易: 实盘 {d2['live_count']} | 回测 {d2['bt_count']} | 匹配率 {d2['match_rate']*100:.0f}%")
     d3, d4, d5 = data['dim3_orders'], data['dim4_slippage'], data['dim5_pnl']
-    print(f"📦 维度3 订单:   实盘买入 ¥{d3['live_buy_total']:,.0f} | 回测买入 ¥{d3['bt_buy_total']:,.0f}")
+    print(f"📦 维度3 订单:   实盘买入 ¥{d3['live_buy_total']:,.0f} | 回测买入 ¥{d3['bt_buy_total']:,.0f} "
+          f"| 买量缺口 {d3.get('buy_shares_gap_total', 0):+d} 股")
     print(f"📉 维度4 滑点:   平均 {d4['avg_slippage']:+.3f}% | 总成本 ¥{d4['total_slippage_cost']:+,.0f} ({len(d4['rows'])} 笔)")
     print(f"💹 维度5 日P&L: 实盘合计 ¥{d5['live_total_pnl']:+,.0f} | 回测合计 ¥{d5['bt_total_pnl']:+,.0f} ({len(d5['rows'])} 只)")
     print("━" * 60)

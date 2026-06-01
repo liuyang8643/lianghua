@@ -1,0 +1,11 @@
+{
+  "ga_profile": "core",
+  "all_factor_names": ["EarningsYield"],
+  "individual_config": {
+    "weights": {"EarningsYield": 1.0},
+    "buy_n": 20,
+    "sell_m": 20,
+    "temperatures": {"EarningsYield": 1.0},
+    "rebalance": true
+  }
+}

@@ -9,7 +9,16 @@ AFTERNOON_START = time(13, 0)
 AFTERNOON_END = time(15, 0)
 
 
+# 交易日历读一次就放内存：parquet 内全是已完成的历史交易日，进程生命周期内不变
+# （scheduler 每日重启），无需每次裸读磁盘（原来每次 ~8ms，盘中 1s 轮询会反复读）。
+_TRADING_CALENDAR_STATE: tuple[frozenset[date], date | None, date | None] | None = None
+
+
 def _get_trading_calendar_state() -> tuple[frozenset[date], date | None, date | None]:
+  global _TRADING_CALENDAR_STATE
+  if _TRADING_CALENDAR_STATE is not None:
+    return _TRADING_CALENDAR_STATE
+
   import pyarrow.parquet as pq
   path = Path(__file__).resolve().parents[2] / "data" / "trading_calendar.parquet"
   if not path.exists():
@@ -17,7 +26,9 @@ def _get_trading_calendar_state() -> tuple[frozenset[date], date | None, date | 
   dates = sorted(pq.read_table(path).column('trade_date').to_pylist())
   if not dates:
     return frozenset(), None, None
-  return frozenset(dates), dates[0], dates[-1]
+  # 仅缓存成功读到的非空结果；缺文件/空时不缓存，留待文件生成后下次重读。
+  _TRADING_CALENDAR_STATE = (frozenset(dates), dates[0], dates[-1])
+  return _TRADING_CALENDAR_STATE
 
 
 def _is_weekday(target_date: date) -> bool:
@@ -72,7 +83,9 @@ def is_current_trading(base_time: datetime = None) -> bool:
       MORNING_START <= current_time < MORNING_END or
       AFTERNOON_START <= current_time < AFTERNOON_END
   )
-  return is_trading_day(input_time.date()) and trading_hours
+  # 先判交易小时/分钟（纯比较，零磁盘）；不在交易时段直接短路，
+  # 不再去查交易日历（is_trading_day → 读 parquet）。
+  return trading_hours and is_trading_day(input_time.date())
 
 def get_last_trading_day(base_date: date = None) -> date:
   """

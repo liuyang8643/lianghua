@@ -52,3 +52,8 @@ tests/
 .idea/
 .vscode/
 .DS_Store
+
+# ---- llm_ga ----
+llm_ga/_scratch/
+llm_ga/_e2e.log
+llm_ga/proposals/

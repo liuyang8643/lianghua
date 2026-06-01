@@ -1,4 +1,4 @@
-version: "2026-05-23"
+version: "2026-05-31"
 default_profile: core
 
 mode_configs:
@@ -39,6 +39,51 @@ profiles:
       TrueMarketCap, AmountBasedSmallCap,
       AmihudIlliquidity, VolumeCV,
       OvernightGap, High52Week,
+    ]
+    weight_range: [-1.0, 1.0, 0.1]
+    search_spaces: [position_count]
+    preload_start: 1993-01-01
+    preload_end: 2018-12-31
+
+  core_plus:
+    desc: 11因子 — 6核心(价量×规模×行为) + 5基本面(夏普>小市值0.664, 与核心及彼此截面rank相关<0.6, 均无T日泄露)
+    factor_classes: [
+      TrueMarketCap, AmountBasedSmallCap,
+      AmihudIlliquidity, VolumeCV,
+      OvernightGap, High52Week,
+      Factor_20260530_195339_g14_4,
+      BookToMarket,
+      Factor_20260530_195339_g34_4,
+      Factor_20260531_005210_g1_0,
+      Factor_20260530_195339_g14_3,
+    ]
+    weight_range: [-1.0, 1.0, 0.1]
+    search_spaces: [position_count]
+    preload_start: 1993-01-01
+    preload_end: 2018-12-31
+
+  core8:
+    desc: 8因子 — 6核心(价量×规模×行为) + 2基本面代表(g38_4全库最高夏普1.136 / g34_4家族最正交, 均无T日泄露)
+    factor_classes: [
+      TrueMarketCap, AmountBasedSmallCap,
+      AmihudIlliquidity, VolumeCV,
+      OvernightGap, High52Week,
+      Factor_20260531_005210_g38_4,
+      Factor_20260530_195339_g34_4,
+    ]
+    weight_range: [-1.0, 1.0, 0.1]
+    search_spaces: [position_count]
+    preload_start: 1993-01-01
+    preload_end: 2018-12-31
+
+  core10:
+    desc: 10因子 — 6核心(价量×规模×行为) + 价值三件套(BM/EP/CFY) + 1质量成长复合(g15_4)。基本面均已去size/去容错, 与核心截面rank相关≤0.21, 真实财务支撑。
+    factor_classes: [
+      TrueMarketCap, AmountBasedSmallCap,
+      AmihudIlliquidity, VolumeCV,
+      OvernightGap, High52Week,
+      BookToMarket, EarningsYield, CashFlowYield,
+      Factor_20260531_005210_g15_4,
     ]
     weight_range: [-1.0, 1.0, 0.1]
     search_spaces: [position_count]

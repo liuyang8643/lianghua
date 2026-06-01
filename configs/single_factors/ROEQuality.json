@@ -1,0 +1,11 @@
+{
+  "ga_profile": "core",
+  "all_factor_names": ["ROEQuality"],
+  "individual_config": {
+    "weights": {"ROEQuality": 1.0},
+    "buy_n": 20,
+    "sell_m": 20,
+    "temperatures": {"ROEQuality": 1.0},
+    "rebalance": true
+  }
+}

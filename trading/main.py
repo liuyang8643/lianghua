@@ -3,6 +3,7 @@ import argparse
 import json
 import sys
 import threading
+import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -11,7 +12,8 @@ from xtquant import xtdata
 from configs import TRADE_ACCOUNT
 from data.db import allow_buy_stock_code_list
 from core.runtime import load_runtime_npz
-from core.scoring import scores_to_ranks, batch_limit_check, build_legality_context, select_topn
+from core.scoring import scores_to_ranks, select_topn
+from core.legality import LegalityChecker
 from data.db.stock_name import get_stock_name_at_date
 from core.ga import get_profile_factor_classes, resolve_profile_name
 
@@ -184,6 +186,8 @@ if __name__ == '__main__':
     threading.Thread(target=create_lark_handler, args=[td], daemon=True).start()
 
     def before_trade(store):
+        prepare_t0 = time.time()
+        stage_t = prepare_t0
         trade_now = store._now()
         trade_date = trade_now.date()
         signal_date = trade_date
@@ -201,11 +205,20 @@ if __name__ == '__main__':
                 update_live_quick()
             except Exception as e:
                 trading_logger.warning(f"快速数据更新失败, 继续使用已有数据: {e}")
+            finally:
+                trading_logger.info(f"[盘前耗时] 快速数据更新: {time.time() - stage_t:.1f}s")
+                stage_t = time.time()
+        else:
+            trading_logger.info("[盘前耗时] 快速数据更新: 0.0s (--skip)")
 
         if store.whole_sub_id is None:
             store.whole_sub_id = xtdata.subscribe_whole_quote(['SH', 'SZ'])
+        trading_logger.info(f"[盘前耗时] 行情订阅: {time.time() - stage_t:.1f}s")
+        stage_t = time.time()
 
         asset = store.trader.query_asset()
+        trading_logger.info(f"[盘前耗时] QMT资产查询: {time.time() - stage_t:.1f}s")
+        stage_t = time.time()
         if asset is None:
             trading_logger.warning("资产查询失败，跳过本轮调仓")
             store.pending_rebalance = None
@@ -213,6 +226,8 @@ if __name__ == '__main__':
 
         all_stocks = allow_buy_stock_code_list(target_date=trade_date)
         trading_logger.info(f"候选股票池: {len(all_stocks)} 只")
+        trading_logger.info(f"[盘前耗时] 候选池加载: {time.time() - stage_t:.1f}s")
+        stage_t = time.time()
         # 因子计算（与回测一致）
         try:
             data, all_scores, score_date_idx, valid_stocks, stock_indices = _compute_live_scores(
@@ -240,6 +255,8 @@ if __name__ == '__main__':
                 trading_logger.error(f"因子计算失败: {e}")
                 store.pending_rebalance = None
                 return
+        trading_logger.info(f"[盘前耗时] runtime加载+因子计算: {time.time() - stage_t:.1f}s")
+        stage_t = time.time()
 
         valid_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
 
@@ -249,16 +266,12 @@ if __name__ == '__main__':
             weights, temperatures, buy_n,
         )
         trading_logger.info(f"选股完成 Top{buy_n}: {buy_n_stocks[:5]}...")
+        trading_logger.info(f"[盘前耗时] TopN选择: {time.time() - stage_t:.1f}s")
+        stage_t = time.time()
 
-        # 涨跌停检查上下文（与回测共用 build_legality_context）
-        legal_ctx = build_legality_context(data, stock_indices)
-        open_all = legal_ctx['open_all']
-        close_all = legal_ctx['close_all']
-        st_all = legal_ctx['st_all']
-        issue_price_all = legal_ctx['issue_price_all']
-        board_type = legal_ctx['board_type']
-        base_ratio = legal_ctx['base_ratio']
-        list_tidx = legal_ctx['list_tidx']
+        # 合法性闸门（与回测共用 LegalityChecker；实盘不传退市日，由 allow_buy 名单剔除）
+        checker = LegalityChecker(data, stock_indices)
+        open_all = data['open']
 
         # T 日开盘契约：signal_date == trade_date == score_date_idx → trade_idx=date_idx，与回测对齐。
         # 例外：is_manual + NPZ 缺 T 日行时，signal_date 已被回退到 T-1，
@@ -270,7 +283,6 @@ if __name__ == '__main__':
         # 获取当日价格
         day_open = open_all[trade_idx]
         # 获取持仓（手动触发时 QMT 可能尚未同步，等最多 5s）
-        import time
         positions = {}
         for attempt in range(6):
             raw = store.trader.query_positions()
@@ -282,7 +294,8 @@ if __name__ == '__main__':
             time.sleep(1)
         can_sell = sum(1 for p in positions.values() if p.can_use_volume > 0)
         trading_logger.info(f"持仓: {len(positions)} 只 (可卖{can_sell}), 总市值={sum(p.market_value for p in positions.values()):.0f}")
-        _last_valid_price = {}
+        trading_logger.info(f"[盘前耗时] QMT持仓查询: {time.time() - stage_t:.1f}s")
+        stage_t = time.time()
 
         prices = {}
         for code in set(positions.keys()) | set(buy_n_stocks):
@@ -290,11 +303,18 @@ if __name__ == '__main__':
             if si is None:
                 continue
             open_val = day_open[si]
-            if np.isnan(open_val) or open_val <= 0:
-                if code in _last_valid_price:
-                    prices[code] = _last_valid_price[code]
+            if not np.isnan(open_val) and open_val > 0:
+                prices[code] = float(open_val)
                 continue
-            prices[code] = _last_valid_price[code] = float(open_val)
+            # T 日停牌/无开盘价：回退到 NPZ 中该股最近一个有效开盘价。
+            # 与回测 _last_valid_price 跨日累积口径一致（实盘单次调用无法靠局部缓存累积，
+            # 必须直接扫 NPZ 历史），否则停牌持仓会被按 0 估值，污染 total_eq/base_target。
+            col = open_all[:trade_idx + 1, si]
+            valid = col[(~np.isnan(col)) & (col > 0)]
+            if valid.size:
+                prices[code] = float(valid[-1])
+        trading_logger.info(f"[盘前耗时] 开盘价映射: {time.time() - stage_t:.1f}s")
+        stage_t = time.time()
 
         # 多退少补 rebalance（与回测严格对齐）
         # 1. 用 volume(总持仓) 算市值，避免 T+0 买入后 can_use_volume=0 导致重复买入
@@ -304,12 +324,26 @@ if __name__ == '__main__':
         pos_vals = {c: p.volume * prices.get(c, 0) for c, p in positions.items()}
         total_eq = float(asset.cash) + sum(pos_vals.values())
         timing_mult = 1.0
-        base_target = total_eq * timing_mult / buy_n
+        # 市价单涨停价冻结预留：均匀满仓时最后一只也要冻结得起 → base_target = E/(buy_n+reserve_L)
+        # （与回测 _backtest_direct 的 market_order_freeze 口径一致）
+        from utils.stock.info import board_limit_ratio as _blr, limit_up_price as _lup
+        reserve_L = max((_blr(c) for c in buy_n_stocks), default=0.0)
+        base_target = total_eq * timing_mult / (buy_n + reserve_L)
         trading_logger.info(
             f"[多退少补] total_eq={total_eq:.0f} (cash={asset.cash:.0f} + "
             f"open市值={sum(pos_vals.values()):.0f}), base_target={base_target:.0f} "
-            f"(QMT.total_asset={asset.total_asset:.0f}, 差={total_eq-asset.total_asset:+.0f})"
+            f"(reserve_L={reserve_L:.2f}, QMT.total_asset={asset.total_asset:.0f}, 差={total_eq-asset.total_asset:+.0f})"
         )
+        # 市价买单资金冻结单价 = 前收×(1+板块涨跌幅)，供执行器按涨停价做预算/冻结，
+        # 避免按开盘价低估占用 → 末位标的反复「资金可用数不足」废单。
+        close_all = data['close']
+        prev_close_row = close_all[trade_idx - 1] if trade_idx >= 1 else day_open
+        limit_prices = {}
+        for code in prices:
+            si = stock_indices.get(code)
+            pc = float(prev_close_row[si]) if si is not None else 0.0
+            lp = _lup(code, pc) if (pc and not np.isnan(pc)) else 0.0
+            limit_prices[code] = lp if lp > 0 else prices[code]
         buy_n_set = set(buy_n_stocks)
 
         sell_orders = []   # [(code, shares)]  shares=-1 表示全清
@@ -348,21 +382,17 @@ if __name__ == '__main__':
         if sell_orders:
             sc = [c for c, _ in sell_orders]
             si_list = [stock_indices[c] for c in sc if c in stock_indices]
-            ok, _ = batch_limit_check(
-                sc, si_list, trade_idx, exec_date,
-                board_type, base_ratio, list_tidx,
-                open_all, close_all, st_all, issue_price_all, is_buy=False)
+            ok, _ = checker.check(si_list, trade_idx, exec_date, is_buy=False)
             sell_orders = [(c, s) for j, (c, s) in enumerate(sell_orders) if ok[j]]
 
         # 涨跌停过滤买入
         if buy_orders:
             bc = list(buy_orders.keys())
             bi_list = [stock_indices[c] for c in bc if c in stock_indices]
-            ok, _ = batch_limit_check(
-                bc, bi_list, trade_idx, exec_date,
-                board_type, base_ratio, list_tidx,
-                open_all, close_all, st_all, issue_price_all, is_buy=True)
+            ok, _ = checker.check(bi_list, trade_idx, exec_date, is_buy=True)
             buy_orders = {c: s for j, (c, s) in enumerate(buy_orders.items()) if ok[j]}
+        trading_logger.info(f"[盘前耗时] 多退少补+合法性: {time.time() - stage_t:.1f}s")
+        stage_t = time.time()
 
         # 准备 pending_rebalance
         sell_details = []
@@ -422,6 +452,7 @@ if __name__ == '__main__':
             'sell_details': sell_details,
             'buy_details': buy_details,
             'prices': prices,
+            'limit_prices': limit_prices,
             'stock_indices': stock_indices,
         }
 
@@ -445,6 +476,8 @@ if __name__ == '__main__':
             )
         else:
             live_trade_recorder.record_plan(plan_rows, trade_date=trade_date)
+        trading_logger.info(f"[盘前耗时] plan落地: {time.time() - stage_t:.1f}s")
+        stage_t = time.time()
 
         trading_logger.info(
             f"调仓预计算完成: sell={len(sell_orders)}, buy={len(buy_orders)}, "
@@ -467,6 +500,8 @@ if __name__ == '__main__':
             )
         except Exception as e:
             trading_logger.warning(f"飞书战报初始化失败: {e}")
+        trading_logger.info(f"[盘前耗时] 战报初始化: {time.time() - stage_t:.1f}s")
+        trading_logger.info(f"[盘前耗时] 预计算总耗时: {time.time() - prepare_t0:.1f}s")
 
     def execute_trade(store, execute_sell=True, execute_buy=True):
         pending = store.pending_rebalance

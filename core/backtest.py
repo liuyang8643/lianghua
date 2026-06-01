@@ -10,11 +10,13 @@ import numpy as np
 
 from core.ga import resolve_profile_name
 from core.runtime import load_runtime_npz
-from core.scoring import scores_to_ranks, batch_limit_check, build_legality_context, select_topn
+from core.scoring import scores_to_ranks, select_topn
+from core.legality import LegalityChecker
 from data.db.delist import get_delist_stock_info
 from testback.account import StockAccountMocker
 from testback.logger import testback_logger
 from testback.metrics import compute_hs300_cumulative_returns, compute_strategy_metrics, compute_per_year_metrics
+from utils.stock.info import min_buy_shares, board_limit_ratio, limit_up_price
 from utils.stock.time import get_trading_date_span
 
 _ALL_A_SHARE_PREFIXES = ('60', '00', '30', '688')
@@ -160,10 +162,14 @@ def _extend_verify_stock_pool_with_historical_codes(
 
 # ========== 核心回测 ==========
 
-def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_classes):
-  """加载 NPZ 并批量计算因子分数，返回 (data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices)。"""
-  max_lookback = max((c.hist_days for c in factor_classes), default=0) or None
-  data = load_runtime_npz(backtest_datetime_list, max_lookback=max_lookback)
+def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_classes, data=None):
+  """加载 NPZ 并批量计算因子分数，返回 (data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices)。
+
+  data 可传入预加载面板（GA 整轮复用同一份 NPZ，避免每个因子重复加载 580MB 文件）。
+  """
+  if data is None:
+    max_lookback = max((c.hist_days for c in factor_classes), default=0) or None
+    data = load_runtime_npz(backtest_datetime_list, max_lookback=max_lookback)
   if data is None:
     first_d = backtest_datetime_list[0].strftime('%Y%m%d')
     last_d = backtest_datetime_list[-1].strftime('%Y%m%d')
@@ -218,10 +224,36 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
                      weights, buy_n, sell_m, temperatures, holding_period=None,
                      verify_config=None,
                      position_multipliers=None, list_dates_map=None,
-                     lightweight=False):
-  """直接 numpy 回测，不创建 TopN 对象。lightweight=True 跳过明细组装，仅返回收益序列。"""
+                     lightweight=False, init_cash=700_000.0, init_positions=None,
+                     market_order_freeze=True):
+  """直接 numpy 回测，不创建 TopN 对象。lightweight=True 跳过明细组装，仅返回收益序列。
 
-  account = StockAccountMocker(cash=700_000.0)
+  init_cash / init_positions: 种子参数，用于「单日回放」对账（盘后用实盘 T-1 真实
+  现金+持仓做起点，只回放 T 日多退少补，使手数与实盘可比）。默认保持 70 万空仓，
+  不影响 GA / 单次研究回测。init_positions 形如 {code: {'volume', 'avg_price'}}。
+
+  market_order_freeze: 默认 True。模拟「市价买单按涨停价冻结资金」的真实约束：
+    1. 买入可用校验用涨停价(前收×(1+板块涨跌幅))而非开盘价，序贯下单、成交即释放；
+       末位标的现金不足以覆盖涨停价冻结就买不进，与实盘一致。
+    2. base_target 预留 reserve_L = max(板块涨跌幅) 份额，即 total_eq/(buy_n+reserve_L)，
+       让最后一只也冻结得起，实现尽量均匀的满仓。
+    置 False 可复现旧口径(开盘价校验、total_eq/buy_n)。
+  """
+
+  account = StockAccountMocker(cash=init_cash)
+  if init_positions:
+    seed_date = valid_dates[0].date() if valid_dates else None
+    for code, info in init_positions.items():
+      vol = int(info.get('volume', 0) or 0)
+      if vol <= 0:
+        continue
+      avg = float(info.get('avg_price', 0) or 0.0)
+      account.positions[code] = {
+        'code': code, 'volume': vol, 'cost': avg * vol, 'commission': 0.0,
+        'buy_date': seed_date, 'buy_signal_date': seed_date, 'buy_trade_date': seed_date,
+        'avg_price': avg, 'price_field': 'open',
+        'signal_dividend_type': 'back', 'execution_dividend_type': 'none',
+      }
   delist_stock_info = get_delist_stock_info()
 
   daily_snapshots: List[Dict] = []
@@ -231,14 +263,11 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
   n_stocks = len(valid_stocks)
   valid_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
 
-  legal_ctx = build_legality_context(data, stock_indices, list_dates_map)
-  open_all = legal_ctx['open_all']
-  close_all = legal_ctx['close_all']
-  st_all = legal_ctx['st_all']
-  issue_price_all = legal_ctx['issue_price_all']
-  board_type = legal_ctx['board_type']
-  base_ratio = legal_ctx['base_ratio']
-  list_tidx_arr = legal_ctx['list_tidx']
+  # 临退禁买：把退市股摘牌/暂停日传入合法性闸门（实盘不传，由 allow_buy 名单剔除）
+  delist_dates_map = {c: info.delist_date for c, info in delist_stock_info.items()}
+  checker = LegalityChecker(data, stock_indices, list_dates_map, delist_dates_map)
+  open_all = data['open']      # T 日开盘价（成交价）
+  close_all = data['close']    # T 日收盘价（仅用于估值/快照，不参与选股与合法性）
 
   force_codes = []
   if verify_config:
@@ -273,6 +302,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
   _last_valid_close_price: dict[str, float] = {}
   if lightweight:
     _lw_daily_returns = []
+    _lw_topn: List[List[str]] = []
     _lw_last_asset = account.init_cash
 
   for i, dt in enumerate(valid_dates):
@@ -302,6 +332,8 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
 
     day_open = open_all[trade_idx]
     day_close = close_all[trade_idx]
+    # 前收：市价买单资金冻结按涨停价 = 前收×(1+板块涨跌幅)
+    prev_close_row = close_all[trade_idx - 1] if trade_idx >= 1 else day_open
 
     current_position_codes = set(account.positions.keys())
     price_universe = current_position_codes | set(sell_m_stocks) | set(buy_n_stocks)
@@ -343,10 +375,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         if s in prices:
           valid_buy.append(s); valid_buy_idx.append(si)
       if valid_buy:
-        buy_ok, _ = batch_limit_check(
-          valid_buy, valid_buy_idx, trade_idx, signal_date,
-          board_type, base_ratio, list_tidx_arr,
-          open_all, close_all, st_all, issue_price_all, is_buy=True)
+        buy_ok, _ = checker.check(valid_buy_idx, trade_idx, signal_date, is_buy=True)
         for j, stock in enumerate(valid_buy):
           if not buy_ok[j]:
             continue
@@ -358,7 +387,9 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
       pos_vals = {c: p['volume'] * prices.get(c, 0) for c, p in account.positions.items()}
       total_eq = account.current_cash + sum(pos_vals.values())
       timing_mult = position_multipliers[i] if (position_multipliers is not None and not np.isnan(position_multipliers[i])) else 1.0
-      base_target = total_eq * timing_mult / buy_n
+      # 市价单涨停价冻结预留：均匀满仓时最后一只也要冻结得起 → base_target = E/(buy_n + reserve_L)
+      reserve_L = max((board_limit_ratio(c) for c in buy_n_stocks), default=0.0) if market_order_freeze else 0.0
+      base_target = total_eq * timing_mult / (buy_n + reserve_L)
 
       buy_n_set = set(buy_n_stocks)
       all_codes = list(buy_n_stocks) + [c for c in account.positions.keys() if c not in buy_n_set]
@@ -375,9 +406,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
 
       if sell_candidates:
         sc, _, si_list = zip(*sell_candidates)
-        ok, _ = batch_limit_check(list(sc), list(si_list), trade_idx, signal_date,
-          board_type, base_ratio, list_tidx_arr,
-          open_all, close_all, st_all, issue_price_all, is_buy=False)
+        ok, _ = checker.check(list(si_list), trade_idx, signal_date, is_buy=False)
         for j, (code, sv, _) in enumerate(sell_candidates):
           if ok[j]:
             tgt = base_target if code in buy_n_set else 0.0
@@ -392,30 +421,34 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
             })
 
       fee_rate = account.commission + account.transfer_fee + account.slippage
-      buy_candidates = []
+      # 序贯下单 + 涨停价资金校验：tradable_buy_stocks 已过合法性闸门、按 topN 顺序。
+      # 买入实际扣开盘价成本，但「能不能下这一笔」按涨停价冻结校验，成交即释放——
+      # 与实盘「市价单按涨停价冻结」一致：末位标的现金不够冻结就买不进，不再高估成交量。
       for code in tradable_buy_stocks:
-        if code not in prices: continue
+        if code not in prices:
+          continue
         cv = pos_vals.get(code, 0)
-        if cv < base_target * 0.99:
-          bv = int((base_target - cv) / prices[code] / 100) * 100
-          if bv > 0 and account.current_cash >= bv * prices[code] * (1 + fee_rate) \
-              and (si := stock_indices.get(code)) is not None:
-            buy_candidates.append((code, bv, si))
-
-      if buy_candidates:
-        bc, _, bi_list = zip(*buy_candidates)
-        ok, _ = batch_limit_check(list(bc), list(bi_list), trade_idx, signal_date,
-          board_type, base_ratio, list_tidx_arr,
-          open_all, close_all, st_all, issue_price_all, is_buy=True)
-        for j, (code, bv, _) in enumerate(buy_candidates):
-          if ok[j]:
-            account.buy_stock(code, bv, prices[code], trade_date, signal_date=signal_date)
-            executed_buy_records.append({
-              'code': code, 'signal_date': signal_date.isoformat(),
-              'trade_date': trade_date.isoformat(), 'price': prices[code],
-              'price_field': 'open', 'shares': bv,
-              'signal_dividend_type': 'back', 'execution_dividend_type': 'none',
-            })
+        if cv >= base_target * 0.99:
+          continue
+        bv = int((base_target - cv) / prices[code] / 100) * 100
+        # 科创/创业板市价单最小买入 200 股，不足一手则上调到最小手（否则 QMT 拒单）
+        min_lot = min_buy_shares(code)
+        if 0 < bv < min_lot:
+          bv = min_lot
+        if bv <= 0 or code not in stock_indices:
+          continue
+        if market_order_freeze:
+          unit = limit_up_price(code, prev_close_row[stock_indices[code]]) or prices[code]
+        else:
+          unit = prices[code]
+        if account.current_cash >= bv * unit * (1 + fee_rate):
+          account.buy_stock(code, bv, prices[code], trade_date, signal_date=signal_date)
+          executed_buy_records.append({
+            'code': code, 'signal_date': signal_date.isoformat(),
+            'trade_date': trade_date.isoformat(), 'price': prices[code],
+            'price_field': 'open', 'shares': bv,
+            'signal_dividend_type': 'back', 'execution_dividend_type': 'none',
+          })
 
     curr_positions = set(account.positions.keys())
     entered_stocks = [c for c in curr_positions if c not in prev_positions]
@@ -429,6 +462,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
       else:
         daily_ret = 0.0
       _lw_daily_returns.append(daily_ret)
+      _lw_topn.append(list(buy_n_stocks))
       _lw_last_asset = total_asset
     else:
       assets = account.calc_assets(trade_date, close_prices)
@@ -464,6 +498,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
       'total_return': total_return,
       'cleared_positions_count': len(account.cleared_positions),
       'daily_returns': _lw_daily_returns,
+      'daily_topn': _lw_topn,
       'daily_snapshots': [], 'cumulative_returns': [], 'trade_log': [],
       'positions': [], 'cleared_positions': [], 'delist_events': [],
       'stock_name_map': {}, 'holding_stats': {},
@@ -737,7 +772,8 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
     list_dates_map=list_dates_map,
   )
 
-  testback_logger.info(f"回测完成: 总收益={result['total_return']:.2f}%")
+  _ann = _compute_metrics_simple(result.get('daily_returns', []))['annualized']
+  testback_logger.info(f"回测完成: 年化={_ann:.2f}%")
 
   signal_date_strs = [d.strftime('%Y-%m-%d') for d in signal_dates]
   trade_date_strs = [d.strftime('%Y-%m-%d') for d in trade_dates]
@@ -797,7 +833,48 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
     html_path = generate_single_report(report_data, output_dir)
     testback_logger.info(f"可视化报告已保存至: {html_path}")
 
+  _save_single_record(report_data, output_dir, individual_config, metrics)
+
   testback_logger.remove_file_sink()
   return result
+
+
+def _save_single_record(report_data, output_dir, individual_config, metrics):
+  """落机器可读 record.json（每日日期/收益/topN 持仓 + 摘要），并在单因子时入 factor_runs。"""
+  daily_snapshots = report_data.get('daily_snapshots', [])
+  record = {
+    'weights': individual_config.get('weights', {}),
+    'buy_n': individual_config.get('buy_n'),
+    'stock_pool': individual_config.get('stock_pool'),
+    'period': report_data.get('period', {}),
+    'dates': report_data.get('signal_dates', []),
+    'daily_returns': report_data.get('daily_returns', []),
+    'topn': [s.get('raw_buy_n_list', []) for s in daily_snapshots],
+    'metrics': {
+      'sharpe': metrics.get('sharpe_ratio'),
+      'annualized': metrics.get('annualized'),
+      'max_dd': metrics.get('max_drawdown'),
+      'n_trades': metrics.get('round_trip_count', report_data.get('round_trip_count', 0)),
+    },
+  }
+  record_path = Path(output_dir) / 'record.json'
+  record_path.write_text(json.dumps(record, ensure_ascii=False), encoding='utf-8')
+  testback_logger.info(f"回测明细记录已保存至: {record_path}")
+
+  weights = individual_config.get('weights', {})
+  if len(weights) == 1:
+    from factor_db import records as _records
+    name = next(iter(weights))
+    period = report_data.get('period', {})
+    m = record['metrics']
+    _records.add_run(
+      name, bt_start=period.get('start', ''), bt_end=period.get('end', ''),
+      buy_n=individual_config.get('buy_n', 0),
+      stock_pool=str(individual_config.get('stock_pool') or ''),
+      dates=record['dates'], daily_returns=record['daily_returns'], topn=record['topn'],
+      sharpe=m['sharpe'], annualized=m['annualized'],
+      max_dd=m['max_dd'], n_trades=m['n_trades'], record_dir=str(Path(output_dir).resolve()),
+    )
+    testback_logger.info(f"已登记单因子回测到 factor_runs: {name}")
 
 

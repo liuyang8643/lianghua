@@ -144,6 +144,30 @@ def min_buy_shares(stock_code: str) -> int:
   return 100
 
 
+def board_limit_ratio(stock_code: str) -> float:
+  """该股所属板块的常规涨跌幅比例，用于「市价买单按涨停价冻结资金」的估算。
+
+  A股券商对市价买单申报时按涨停价冻结资金做可用校验，故下单预算 / 回测资金校验需用
+  涨停价 = 前收 × (1 + 本比例)。这里取板块常规上限（不含 ST 的 5%——用更大的板块
+  上限做保守冻结，避免低估资金占用导致废单）：
+    - 科创板 688 / 创业板 300,301：0.20
+    - 北交所 43/83/87/92：0.30
+    - 其余（主板 60/00 等）：0.10
+  """
+  if is_kcb_stock(stock_code) or is_cyb_stock(stock_code):
+    return 0.20
+  if is_bse_stock(stock_code):
+    return 0.30
+  return 0.10
+
+
+def limit_up_price(stock_code: str, prev_close: float) -> float:
+  """市价买单的资金冻结单价估算 = 前收 × (1 + 板块涨跌幅)。prev_close<=0 返回 0.0。"""
+  if not prev_close or prev_close <= 0:
+    return 0.0
+  return float(prev_close) * (1.0 + board_limit_ratio(stock_code))
+
+
 def _to_trade_date(trade_date: datetime | date) -> date:
   """将 datetime 或 date 转换为 date 对象"""
   return trade_date.date() if isinstance(trade_date, datetime) else trade_date

@@ -80,7 +80,12 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     key = _config_key(config)
     return state.get('fitness_cache', {}).get(key)
 
-  # 父代选择：从历史全局池挑选，打破当代近亲繁殖
+  # GA 多样性参数（缓解早熟收敛）
+  elite_frac = 0.10        # 真精英占比：直接保留的历史最优个体
+  tournament_k = 3         # 锦标赛规模：越大选择压力越高
+  immigrant_frac = 0.15    # 随机移民占比：每代注入的全新随机个体
+
+  # 父代选择：少量真精英 + 锦标赛选择（从历史全局池抽，打破当代近亲繁殖、降低选择压力）
   if ga_cache and len(ga_cache) >= population_size:
     unique_cfgs = {}
     for key, val in ga_cache.items():
@@ -88,25 +93,17 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
       fit = val.get('sharpe', -999)
       if cfg is not None and fit > -900:
         unique_cfgs[key] = (cfg, fit)
-    sorted_global = sorted(unique_cfgs.values(), key=lambda x: x[1], reverse=True)
-    total = len(sorted_global)
-    n_elite = min(20, total)
-    n_mid = population_size - n_elite
-    elite_cfgs = [cfg for cfg, _ in sorted_global[:n_elite]]
-    mid_start = 45
-    mid_end = max(mid_start + 1, total // 2)
-    if mid_start < total:
-      mid_pool = sorted_global[mid_start:mid_end]
-      mid_cfgs = [cfg for cfg, _ in random.sample(mid_pool, min(n_mid, len(mid_pool)))]
-    else:
-      mid_cfgs = []
-    while len(mid_cfgs) < n_mid:
-      remaining = [cfg for cfg, _ in sorted_global if cfg not in elite_cfgs and cfg not in mid_cfgs]
-      if remaining:
-        mid_cfgs.append(random.choice(remaining))
-      else:
-        break
-    parents = elite_cfgs + mid_cfgs
+    pool = sorted(unique_cfgs.values(), key=lambda x: x[1], reverse=True)
+    total = len(pool)
+    n_elite = min(max(2, int(round(elite_frac * population_size))), total)
+    elite_cfgs = [cfg for cfg, _ in pool[:n_elite]]
+    # 剩余父代用锦标赛选择：每次随机取 k 个，留适应度最高者，给次优个体繁殖机会
+    n_tournament = population_size - n_elite
+    selected = []
+    for _ in range(n_tournament):
+      aspirants = random.sample(pool, min(tournament_k, total))
+      selected.append(max(aspirants, key=lambda x: x[1])[0])
+    parents = elite_cfgs + selected
   else:
     population_with_fitness = [(ind, fit) for ind in state['population']
                                if (fit := get_fitness(ind)) is not None]
@@ -208,14 +205,19 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
                                    timing_window=timing_window,
                                    timing_index=timing_index, profile_name=profile_name)
 
+  # 随机移民：每代注入全新随机个体，维持探索、逃离局部盆地（不依赖现有父代）
+  n_immigrants = min(max(1, int(round(immigrant_frac * population_size))), population_size)
+  n_crossover_children = population_size - n_immigrants
+
   children = []
-  while len(children) < population_size:
+  while len(children) < n_crossover_children:
     if len(parents) == 1:
       child = mutate_config(parents[0])
     else:
       p1, p2 = random.sample(parents, 2)
       child = mutate_config(crossover_config(p1, p2))
     children.append(child)
+  children.extend(generate_initial_configs(n_immigrants, profile_name=profile_name))
   state['population'] = parents + children
 
   next_configs = parents + children
@@ -486,8 +488,9 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   val_valid_dates, val_date_indices = _build_date_subset(val_datetime_list, npz_dates, date_to_idx)
 
   test_start = date(2023, 1, 1)
-  # 测试集末日跟随 backtest_datetime_list（即 GA 预加载区间末日），避免硬编码过期
-  test_end = backtest_datetime_list[-1].date()
+  # 测试集末日 = runtime npz 实际数据末日（train/val/test 同切自一份全量 npz），避免硬编码过期；
+  # 不可用训练集末日（= 预加载区间末日，可能早于 test_start），否则 test_start>test_end。
+  test_end = py_dates[-1]
   test_datetime_list = [datetime.combine(d, datetime.min.time()) for d in get_trading_date_span(test_start, test_end)]
   test_valid_dates, test_date_indices = _build_date_subset(test_datetime_list, npz_dates, date_to_idx)
 

@@ -7,6 +7,8 @@
   daily_summary.parquet    累计日终摘要（追加）
   cash_flows.parquet       出入金记录（追加）
 """
+import os
+from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
 
@@ -17,8 +19,64 @@ from trading.logger import trading_logger
 
 _TRADE_DIR = Path(__file__).resolve().parents[1] / "data" / "live_trades"
 
+
+def _atomic_write_parquet(df: pd.DataFrame, path: Path):
+    """原子写 parquet:先写临时文件再 os.replace,避免写一半 / 并发写导致文件损坏。"""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    df.to_parquet(tmp, index=False)
+    os.replace(tmp, path)
+
+
+def _safe_read_parquet(path: Path):
+    """读 parquet;若文件损坏则隔离为 .corrupt 并返回 None(当作不存在),避免坏文件永久卡死追加。"""
+    try:
+        return pd.read_parquet(path)
+    except Exception as e:
+        corrupt = path.with_suffix(path.suffix + ".corrupt")
+        try:
+            os.replace(path, corrupt)
+        except Exception:
+            pass
+        trading_logger.error(
+            f"[LiveTrade] {path.name} 损坏,已隔离为 {corrupt.name} 并重新开始追加: {e}")
+        return None
+
+
+def _coarse_key(order_id, price, shares) -> str:
+    return f"{int(order_id)}|{round(float(price), 4)}|{int(shares)}"
+
+
+def _build_existing_fill_index(df_old: pd.DataFrame):
+    """从既有 fills 建去重索引:返回 (traded_id 集合, 粗键计数 Counter)。
+
+    粗键 = (order_id, price, shares);用计数(而非集合)是为了「按重数消费」——
+    既能识别从 events 重建出来、traded_id 为空的行,又不会把多笔等量同价成交误判为重复。
+    """
+    tids: set[str] = set()
+    coarse: Counter = Counter()
+    if df_old is None or df_old.empty:
+        return tids, coarse
+    has_tid = 'traded_id' in df_old.columns
+    for _, r in df_old.iterrows():
+        tid = str(r['traded_id']) if has_tid and pd.notna(r.get('traded_id')) and str(r['traded_id']) else ''
+        if tid:
+            tids.add(tid)
+        coarse[_coarse_key(r['order_id'], r['price'], r['shares'])] += 1
+    return tids, coarse
+
+
+def _consume_existing_fill(tid, order_id, price, shares, tids: set, coarse: Counter) -> bool:
+    """判断这笔成交是否已在既有 fills 中:traded_id 命中,或消费掉一个粗键存量。返回是否重复。"""
+    if tid and tid in tids:
+        return True
+    key = _coarse_key(order_id, price, shares)
+    if coarse.get(key, 0) > 0:
+        coarse[key] -= 1
+        return True
+    return False
+
 FILL_COLS = ['date', 'code', 'name', 'direction', 'price', 'shares', 'amount',
-             'fee_est', 'order_id', 'fill_time', 'est_price', 'slippage_pct']
+             'fee_est', 'order_id', 'traded_id', 'fill_time', 'est_price', 'slippage_pct']
 
 PLAN_COLS = ['date', 'code', 'name', 'direction', 'est_price', 'est_volume',
              'est_amount', 'factor_score', 'limit_status', 'reason', 'plan_seq']
@@ -28,7 +86,7 @@ PLAN_COLS = ['date', 'code', 'name', 'direction', 'est_price', 'est_volume',
 # fills_{T}.parquet 是 events 中 type='trade' 的派生 view（向后兼容 PostCloseReport / dim3 / dim5）。
 EVENT_COLS = [
     'date', 'ts', 'event_type', 'source',
-    'order_id', 'code', 'order_type', 'direction',
+    'order_id', 'traded_id', 'code', 'order_type', 'direction',
     'order_status', 'order_volume', 'traded_volume',
     'price', 'traded_price', 'amount',
     'status_msg', 'name',
@@ -39,11 +97,13 @@ EVT_ORDER = 'order'
 EVT_TRADE = 'trade'
 EVT_ORDER_ERROR = 'order_error'
 EVT_CANCEL_ERROR = 'cancel_error'
+EVT_EXECUTION_ACTION = 'execution_action'
 
 # 事件来源
 SRC_CALLBACK = 'watcher_callback'   # watcher 的 QMT 推送回调
 SRC_QMT_BACKFILL = 'qmt_backfill'   # post_close 调 query_stock_trades 补的
 SRC_MANUAL = 'manual'               # 手动脚本（一次性数据修复等）
+SRC_EXECUTOR = 'executor_monitor'    # executor monitor 的提交/撤单/熔断/资金检查等本地动作
 
 POSITION_COLS = [
     'date', 'code', 'name', 'volume', 'can_use_volume', 'yesterday_volume',
@@ -204,6 +264,7 @@ class LiveTradeRecorder:
             'date': target_date, 'ts': now,
             'event_type': event_type, 'source': source,
             'order_id': int(payload.get('order_id', 0) or 0),
+            'traded_id': str(payload.get('traded_id', '') or ''),
             'code': payload.get('code', '') or '',
             'order_type': int(payload['order_type']) if payload.get('order_type') is not None else None,
             'direction': payload.get('direction'),
@@ -240,6 +301,7 @@ class LiveTradeRecorder:
                 'amount': round(row['amount'], 2),
                 'fee_est': round(float(fee), 4),
                 'order_id': row['order_id'],
+                'traded_id': row['traded_id'],
                 'fill_time': now,
                 'est_price': round(float(est_price), 4) if est_price else None,
                 'slippage_pct': slippage_pct,
@@ -577,19 +639,19 @@ class LiveTradeRecorder:
 
         path = _TRADE_DIR / f"fills_{target.isoformat()}.parquet"
         df_old = pd.read_parquet(path) if path.exists() else pd.DataFrame(columns=FILL_COLS)
-        existing_ids: set[str] = set()
-        if not df_old.empty:
-            # order_id 不唯一（同一委托可拆多笔成交），用 (order_id, price, shares) 做 key
-            for _, r in df_old.iterrows():
-                existing_ids.add(f"{r['order_id']}|{r['price']}|{r['shares']}")
+        # 去重判定:既有行先建索引——traded_id 命中即重复;否则按 (order_id,price,shares)
+        # 粗键「按重数消费」(兼容从 events 重建、traded_id 为空的行,且不会把多笔等量同价
+        # 成交误判为重复)。修复:旧实现要求"无 tid 才查粗键",导致 QMT 带 tid 的回填撞不上
+        # 重建出的空 tid 行 → 整批重复追加、成交翻倍。
+        existing_tids, existing_coarse = _build_existing_fill_index(df_old)
 
         n_new = 0
         for t in trades:
             order_id = int(t.order_id)
             price = round(float(t.traded_price), 4)
             shares = int(t.traded_volume)
-            key = f"{order_id}|{price}|{shares}"
-            if key in existing_ids:
+            tid = str(getattr(t, 'traded_id', '') or '')
+            if _consume_existing_fill(tid, order_id, price, shares, existing_tids, existing_coarse):
                 continue
             amount = float(t.traded_amount) if t.traded_amount else price * shares
             direction = 'buy' if int(t.order_type) == xtconstant.STOCK_BUY else 'sell'
@@ -599,9 +661,10 @@ class LiveTradeRecorder:
                 order_type=int(t.order_type),
                 direction=direction,
                 traded_price=price, traded_volume=shares, amount=amount,
-                order_id=order_id, name='',
+                order_id=order_id, traded_id=tid, name='',
             )
-            existing_ids.add(key)
+            if tid:
+                existing_tids.add(tid)  # 防止同一次 QMT 返回里重复的同 tid 再次入账
             n_new += 1
 
         if n_new:
@@ -635,22 +698,29 @@ class LiveTradeRecorder:
         return pd.DataFrame(columns=FILL_COLS)
 
     def _append_fill(self, record: dict):
-        """追加一行到每日 parquet，按 (order_id, price, shares) 去重。
+        """追加一行到每日 parquet，按唯一成交号 traded_id 去重。
 
-        修：原来用 (order_id, code, price) 做 key——同一委托拆 2 笔成交 price 相同时会被吞掉。
-        改为 (order_id, price, shares)，覆盖更稳健（一笔成交 = 唯一三元组）。
+        历史教训：用 (order_id, price, shares) 做 key，会把「同一委托拆成多笔等量同价成交」
+        （如 800 股市价单成交为 4×200@同价）误判成重复而吞掉，导致少记 3/4 的量。
+        QMT `XtTrade.traded_id` 是每笔成交的唯一编号，是正确的去重键。
+        traded_id 缺失（旧数据 / 兜底）时退回 (order_id, price, shares) 粗键。
         """
         target = record.get('date') or date.today()
         path = _TRADE_DIR / f"fills_{target.isoformat()}.parquet"
-        df_new = pd.DataFrame([record])
-        if path.exists():
-            df_old = pd.read_parquet(path)
-            key = ['order_id', 'price', 'shares']
-            mask = ~df_old.set_index(key).index.isin(df_new.set_index(key).index)
-            df_all = pd.concat([df_old[mask], df_new], ignore_index=True)
+        df_new = pd.DataFrame([record], columns=FILL_COLS)
+        df_old = _safe_read_parquet(path) if path.exists() else None
+        if df_old is not None and not df_old.empty:
+            tid = str(record.get('traded_id', '') or '')
+            if tid and 'traded_id' in df_old.columns:
+                df_old = df_old[df_old['traded_id'].astype(str) != tid]
+            else:
+                key = ['order_id', 'price', 'shares']
+                mask = ~df_old.set_index(key).index.isin(df_new.set_index(key).index)
+                df_old = df_old[mask]
+            df_all = pd.concat([df_old, df_new], ignore_index=True)
         else:
             df_all = df_new
-        df_all.to_parquet(path, index=False)
+        _atomic_write_parquet(df_all, path)
 
     def _append_event(self, row: dict):
         """统一事件流追加。
@@ -661,8 +731,8 @@ class LiveTradeRecorder:
         target = row.get('date') or date.today()
         path = _TRADE_DIR / f"events_{target.isoformat()}.parquet"
         df_new = pd.DataFrame([row], columns=EVENT_COLS)
-        if path.exists():
-            df_old = pd.read_parquet(path)
+        df_old = _safe_read_parquet(path) if path.exists() else None
+        if df_old is not None and not df_old.empty:
             # 去重 key：同一笔事件的所有字段（ts 精确到微秒，自然唯一）
             key = ['ts', 'event_type', 'order_id', 'traded_volume', 'price']
             try:
@@ -672,7 +742,7 @@ class LiveTradeRecorder:
                 df_all = pd.concat([df_old, df_new], ignore_index=True)
         else:
             df_all = df_new
-        df_all.to_parquet(path, index=False)
+        _atomic_write_parquet(df_all, path)
 
 
 live_trade_recorder = LiveTradeRecorder()

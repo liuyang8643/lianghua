@@ -29,13 +29,19 @@ CREATE TABLE IF NOT EXISTS factors (
     bt_end       TEXT,
     stock_pool   TEXT,
     train_sharpe REAL,
-    total_return REAL,
+    annualized   REAL,
     max_dd       REAL,
     n_trades     INTEGER,
     params_count INTEGER NOT NULL,
-    status       TEXT    NOT NULL
+    status       TEXT    NOT NULL,
+    thesis       TEXT,
+    run_id       TEXT
 );
 """
+
+# 旧库迁移：缺失列时补齐（ALTER ADD COLUMN 不触发 append-only 触发器）。
+# 注：旧库可能残留 total_return 列（已弃用），保留不动，新写入只用 annualized。
+_MIGRATE_COLUMNS = {'thesis': 'TEXT', 'run_id': 'TEXT', 'annualized': 'REAL'}
 
 # append-only：底层触发器拦截任何 UPDATE / DELETE。
 _TRIGGERS = """
@@ -62,6 +68,10 @@ def init_db() -> None:
     """创建表与 append-only 触发器（幂等）。"""
     with _connect() as conn:
         conn.executescript(_SCHEMA)
+        existing = {r['name'] for r in conn.execute('PRAGMA table_info(factors)').fetchall()}
+        for col, col_type in _MIGRATE_COLUMNS.items():
+            if col not in existing:
+                conn.execute(f'ALTER TABLE factors ADD COLUMN {col} {col_type}')
         conn.executescript(_TRIGGERS)
 
 
@@ -83,9 +93,11 @@ def add_factor(
     bt_end: Optional[str] = None,
     stock_pool: Optional[str] = None,
     train_sharpe: Optional[float] = None,
-    total_return: Optional[float] = None,
+    annualized: Optional[float] = None,
     max_dd: Optional[float] = None,
     n_trades: Optional[int] = None,
+    thesis: Optional[str] = None,
+    run_id: Optional[str] = None,
     created_at: Optional[str] = None,
 ) -> int:
     """登记一个新因子，返回 factor_id。name 唯一，重复登记会抛 IntegrityError。
@@ -104,13 +116,15 @@ def add_factor(
             INSERT INTO factors (
                 name, file_path, code_sha256, parent_ids, op, generation,
                 created_at, bt_start, bt_end, stock_pool, train_sharpe,
-                total_return, max_dd, n_trades, params_count, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                annualized, max_dd, n_trades, params_count, status,
+                thesis, run_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 name, file_path, code_sha256, parent_ids, op, generation,
                 created_at, bt_start, bt_end, stock_pool, train_sharpe,
-                total_return, max_dd, n_trades, params_count, status,
+                annualized, max_dd, n_trades, params_count, status,
+                thesis, run_id,
             ),
         )
         return int(cur.lastrowid)

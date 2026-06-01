@@ -461,6 +461,17 @@ def _update_pershare_index():
 
 
 # ============================================================
+# 5b. 深历史财务指标 — akshare 同花顺（runtime 财务字段唯一来源）
+# ============================================================
+
+def _update_financial_deep():
+    """全市场深历史财务（同花顺 stock_financial_abstract_ths，回溯至 1990s）。
+    产物 data/financial/deep_indicators.parquet 是 build_runtime 财务字段的唯一来源。"""
+    from data.update_financial_deep import main as _deep_main
+    _deep_main()
+
+
+# ============================================================
 # 6. 发行价 — akshare
 # ============================================================
 
@@ -652,11 +663,13 @@ def update_offline_toNow():
         ("股票名称/ST", _update_stock_name),
         ("K线日线", _update_kline),
         ("资产负债表", _update_balance),
+        ("深历史财务", _update_financial_deep),
         ("发行价", _update_issue_price),
         ("大盘指数", _update_indices),
         ("退市列表", _update_delist),
         ("交易日历", _update_trading_calendar),
-        # 以下数据源暂无可用下载API（原从R2同步），跳过：
+        # 每股财务指标(xtdata PershareIndex)已弃用：runtime 财务字段改用「深历史财务」
+        # (deep_indicators.parquet, 同花顺深历史) 单一来源，见 build_runtime.build_financial_arrays。
         # ("每股财务指标", _update_pershare_index),
     ]
 

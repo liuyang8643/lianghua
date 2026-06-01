@@ -27,7 +27,7 @@ class TradingScheduler:
       after_trade: Callable = None,
       post_close: Callable = None,
       update_all: Callable = None,
-      check_interval: int = 30,
+      check_interval: int = 1,
       time_provider: Callable[[], datetime] = None,
       fast_forward: bool = False,
   ):

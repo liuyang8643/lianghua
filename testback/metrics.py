@@ -121,7 +121,6 @@ def compute_strategy_metrics(
   if not cumulative_returns_pct or not trade_dates:
     return {}
 
-  total_return = (final_asset - init_cash) / init_cash * 100
   ending_nav = final_asset / init_cash if init_cash else 0.0
 
   first_date = datetime.strptime(trade_dates[0], '%Y-%m-%d')
@@ -173,7 +172,6 @@ def compute_strategy_metrics(
   total_commission = sum(t.get('commission', 0) for t in trade_log if t.get('commission') is not None)
 
   return {
-    'total_return': round(total_return, 2),
     'annualized': round(annualized, 2),
     'max_drawdown': round(max_dd, 2),
     'max_drawdown_start': max_dd_start,

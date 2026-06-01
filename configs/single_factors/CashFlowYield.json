@@ -1,0 +1,11 @@
+{
+  "ga_profile": "core",
+  "all_factor_names": ["CashFlowYield"],
+  "individual_config": {
+    "weights": {"CashFlowYield": 1.0},
+    "buy_n": 20,
+    "sell_m": 20,
+    "temperatures": {"CashFlowYield": 1.0},
+    "rebalance": true
+  }
+}

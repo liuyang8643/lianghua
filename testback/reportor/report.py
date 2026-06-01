@@ -782,12 +782,9 @@ def _build_metric_cards(metrics: Dict, holding_stats: Dict) -> str:
         max_dd_period = f"{metrics['max_drawdown_start']} ~ {metrics['max_drawdown_end']}"
 
     cards = [
-        ('总收益率', _fmt_pct(metrics.get('total_return', 0)),
-         'pos' if metrics.get('total_return', 0) >= 0 else 'neg',
-         '回测结束时总资产相对初始资金的收益率。'),
         ('年化收益率', _fmt_pct(metrics.get('annualized', 0)),
          'pos' if metrics.get('annualized', 0) >= 0 else 'neg',
-         '按总收益率和持有时长折算的复利年化收益率。'),
+         '按净值和持有时长折算的复利年化收益率。'),
         ('最大回撤', _fmt_pct(metrics.get('max_drawdown', 0), sign=False),
          'neg',
          f'净值从阶段高点回落到阶段低点的最大跌幅。区间: {max_dd_period}' if max_dd_period else '净值从阶段高点回落到阶段低点的最大跌幅。'),
@@ -952,10 +949,8 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     execution_dividend_type = rebalance_rule.get('execution_dividend_type', signal_dividend_type)
     price_field = rebalance_rule.get('price_field', 'open')
 
-    total_return = (final_asset - init_cash) / init_cash * 100 if init_cash else 0.0
     report_json = json.dumps({
         'summary': {
-            'total_return_pct': round(total_return, 2),
             'annualized_return_pct': metrics.get('annualized', 0),
             'max_drawdown_pct': metrics.get('max_drawdown', 0),
             'sharpe_ratio': metrics.get('sharpe_ratio', 0),

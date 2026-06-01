@@ -186,79 +186,76 @@ def build_st_mask(
     return result
 
 
+# 报告期末 -> 生效日的滞后天数（防前视野泄露：报告期末后约 120 天财报才公开披露，
+# 年报 12-31 通常次年 4-30 才披露；与 build_deep_fin_runtime 口径一致）。
+_FIN_LAG_DAYS = 120
+
+
+def _ffill_axis0(mat: np.ndarray) -> np.ndarray:
+    """沿时间轴(行)向前填充：每个生效值持续到下一期覆盖；首个有效值之前保持 NaN。"""
+    n_dates = mat.shape[0]
+    mask = ~np.isnan(mat)
+    idx = np.where(mask, np.arange(n_dates)[:, None], 0)
+    np.maximum.accumulate(idx, axis=0, out=idx)
+    out = np.take_along_axis(mat, idx, axis=0)
+    out[np.cumsum(mask, axis=0) == 0] = np.nan
+    return out
+
+
 def build_financial_arrays(
     stock_codes: np.ndarray,
     trade_dates: np.ndarray,
 ) -> dict[str, np.ndarray]:
-    """从 pershare_index.parquet 构建财务指标数组。
+    """从 deep_indicators.parquet（同花顺深历史，唯一财务源）构建财务指标数组。
 
-    使用 m_anntime（披露日期）对齐交易日期。
+    PIT：报告期末 + _FIN_LAG_DAYS 天才生效（防前视野泄露），生效后向前填充至下一期覆盖。
+    单一数据源、无兜底/无合并——有数据用数据，无数据为 NaN。
     """
     n_dates = len(trade_dates)
     n_stocks = len(stock_codes)
-    fin_path = DATA_DIR / "financial" / "pershare_index.parquet"
 
-    fields = {
-        'bps': 's_fa_bps',
-        'eps': 's_fa_eps_basic',
-        'roe': 'du_return_on_equity',
-        'profit_yoy': 'du_profit_rate',
-        'revenue_yoy': 'inc_revenue_rate',
-        'operating_cf_ps': 's_fa_ocfps',
+    # 输出字段 -> deep_indicators 列名
+    colmap = {
+        'bps': 'bps',
+        'eps': 'eps',
+        'roe': 'roe',
+        'operating_cf_ps': 'ocfps',
+        'profit_yoy': 'profit_yoy',
+        'revenue_yoy': 'revenue_yoy',
+        'gross_margin': 'gross_margin',
     }
-    gm_candidates = ['sales_gross_profit', 'gross_profit_margin', 'gross_margin', 'grossprofitmargin']
+    results = {k: np.full((n_dates, n_stocks), np.nan, dtype=np.float64) for k in colmap}
 
-    results = {
-        key: np.full((n_dates, n_stocks), np.nan, dtype=np.float64)
-        for key in list(fields.keys()) + ['gross_margin']
-    }
-
-    if not fin_path.exists():
-        print("警告: pershare_index.parquet 不存在，财务指标全部为 NaN")
+    deep_path = DATA_DIR / "financial" / "deep_indicators.parquet"
+    if not deep_path.exists():
+        print("警告: deep_indicators.parquet 不存在，财务指标全部为 NaN")
         return results
 
-    trade_date_ts = trade_dates.astype('datetime64[ns]')
-    df_all = pd.read_parquet(fin_path)
+    df = pd.read_parquet(deep_path)
+    code_to_col = {str(c): i for i, c in enumerate(stock_codes)}
+    td = trade_dates.astype('datetime64[D]')
 
-    t0 = time.time()
-    last_log = t0
+    period_end = pd.to_datetime(df['report_period'].astype(int).astype(str), format='%Y%m%d')
+    eff_date = (period_end + pd.Timedelta(days=_FIN_LAG_DAYS)).values.astype('datetime64[D]')
+    eff_row = np.searchsorted(td, eff_date, side='left')
+    col = df['stock_code'].map(code_to_col).to_numpy()
 
-    for j, code in enumerate(stock_codes):
-        df_code = df_all[df_all['stock_code'] == code]
-        if df_code.empty:
+    valid = np.isfinite(col.astype(np.float64)) & (eff_row < n_dates)
+    order = np.argsort(df['report_period'].to_numpy()[valid], kind='stable')  # 升序，后期覆盖前期
+    eff_row_v = eff_row[valid][order]
+    col_v = col[valid][order].astype(np.intp)
+
+    for out_name, src_col in colmap.items():
+        if src_col not in df.columns:
             continue
+        vals = pd.to_numeric(df[src_col], errors='coerce').to_numpy()[valid][order]
+        mat = results[out_name]
+        place = np.isfinite(vals)
+        mat[eff_row_v[place], col_v[place]] = vals[place]
+        results[out_name] = _ffill_axis0(mat)
 
-        anntimes = df_code['m_anntime'].values.astype('datetime64[ns]')
-        if len(anntimes) == 0:
-            continue
-
-        indices = np.searchsorted(anntimes, trade_date_ts, side='right') - 1
-        valid = indices >= 0
-        if not valid.any():
-            continue
-
-        valid_indices = indices[valid]
-
-        for field, col_name in fields.items():
-            if col_name in df_code.columns:
-                col_vals = df_code[col_name].values
-                results[field][valid, j] = col_vals[valid_indices]
-
-        gm_col = next((c for c in gm_candidates if c in df_code.columns), None)
-        if gm_col is not None:
-            gm_vals = df_code[gm_col].values
-            results['gross_margin'][valid, j] = gm_vals[valid_indices]
-
-        now = time.time()
-        if now - last_log >= 5 or j == n_stocks - 1:
-            elapsed = now - t0
-            speed = (j + 1) / elapsed if elapsed > 0 else 0
-            eta = (n_stocks - j - 1) / speed if speed > 0 else 0
-            print(f"[{time.strftime('%H:%M:%S')}] 财务面板: {j+1}/{n_stocks} "
-                  f"(耗时 {elapsed:.0f}s, 速度 {speed:.0f}只/s, 预计剩余 {eta:.0f}s)")
-            last_log = now
-
-    print("财务面板完成")
+    cov = {k: int(np.isfinite(v).any(axis=0).sum()) for k, v in results.items()}
+    print(f"财务面板完成（deep_indicators, 报告期+{_FIN_LAG_DAYS}d PIT, 单一源）: 覆盖股票 {cov}")
     return results
 
 
