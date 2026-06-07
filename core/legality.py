@@ -63,16 +63,20 @@ class LegalityChecker:
     def __init__(self, data, stock_indices, list_dates_map=None, delist_dates_map=None):
         """
         Args:
-            data: load_runtime_npz 返回的 dict（含 open/close/high/low/st_mask/issue_price 等）
+            data: load_runtime_npz 返回的 dict（含 open/close/high/low/preClose/st_mask/issue_price 等）
             stock_indices: {code: col_idx}
             list_dates_map: {code: list_date} 可选；回测从 K 线首日推断
             delist_dates_map: {code: delist_date} 可选；回测从 db.delist 传入，用于临退禁买。
                               实盘不传（由 allow_buy 名单剔除退市股），delist_tidx 全 -1 不生效。
+
+        涨跌停判定一律用「原始 OHLC + 官方 preClose（除权除息参考价）」：preClose 本身已吸收
+        分红送转配股，除权日 open/preClose 天然不会假跳空——无需复权价、研究/对账口径完全一致。
         """
         self.open_all = data['open']
         self.close_all = data['close']
         self.high_all = data.get('high')
         self.low_all = data.get('low')
+        self.preclose_all = data.get('preClose')
         self.st_all = data.get('st_mask')
         self.issue_price_all = data.get('issue_price')
         (self.board_type, self.base_ratio,
@@ -143,7 +147,7 @@ class LegalityChecker:
         Returns:
             (mask, reasons): mask[i]=True 表示可成交；reasons 含停牌计数
 
-        数据使用：open[T] / close[T-1]（前收）/ st_mask[T]（盘前已知）/ 发行价。
+        数据使用：open[T] / preClose[T]（官方前收）/ st_mask[T]（盘前已知）/ 发行价。
         IPO 首日封板专项豁免借用 high/low/close[T]（仅拒绝成交、实盘 NaN 失效）。
 
         已知局限：重新上市/恢复上市/增发上市首日同属"不设涨跌幅"，runtime 暂无事件日期
@@ -159,9 +163,14 @@ class LegalityChecker:
         if not np.any(valid_open):
             return np.zeros(n, dtype=bool), {'suspended': n}
 
-        precloses = (self.close_all[trade_idx - 1, idx].astype(np.float64)
-                     if trade_idx > 0 else np.full(n, np.nan))
-        valid_preclose = (trade_idx > 0) & ~np.isnan(precloses) & (precloses > 0)
+        # 前收 = preClose[T]（除权除息参考价），与原始 open 同口径判涨跌停
+        # NaN preClose（非标事件如转配股）→ 该股当日不可交易
+        if self.preclose_all is not None:
+            precloses = self.preclose_all[trade_idx, idx].astype(np.float64)
+        else:
+            precloses = (self.close_all[trade_idx - 1, idx].astype(np.float64)
+                         if trade_idx > 0 else np.full(n, np.nan))
+        valid_preclose = ~np.isnan(precloses) & (precloses > 0)
 
         boards = self.board_type[idx]
         lti = self.list_tidx[idx]
@@ -216,10 +225,12 @@ class LegalityChecker:
             tradable = self._check_buy(idx, trade_idx, opens, precloses, ratios,
                                        valid_open, has_limit, is_ipo_first)
         else:
-            # 跌停禁卖（跌停价向上取整，偏严）
             down_limits = np.where(has_limit, _ceil_2(precloses * (1.0 - ratios)), np.nan)
             limit_down = valid_open & has_limit & (opens <= down_limits + _EPS)
             tradable = valid_open & ~limit_down
+
+        # preClose NaN（转配股等非标事件）→ 非豁免期股票无法判定涨跌停，当日跳过
+        tradable = tradable & (valid_preclose | exempt)
 
         suspended = int(np.sum(~valid_open))
         reasons = {'suspended': suspended} if suspended > 0 else {}

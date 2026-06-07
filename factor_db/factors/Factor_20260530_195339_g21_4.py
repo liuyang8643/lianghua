@@ -38,7 +38,7 @@ class Factor_20260530_195339_g21_4:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_coverage = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_coverage = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             ipo_premium = panel['open'] / panel['issue_price']
 
         # Cash dual confirmation gate
@@ -72,7 +72,7 @@ class Factor_20260530_195339_g21_4:
         z_diversion = _zscore(diversion)
 
         # IPO discount (z-score instead of parent's rank_norm)
-        z_ipo = _zscore(-np.log(np.maximum(ipo_premium, 0.01)))
+        z_ipo = _zscore(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
 
         score = (VALUE_W * z_value + QUALITY_W * z_quality + GROWTH_W * z_growth + CF_W * cf_sig + DIVER_W * z_diversion + IPO_W * z_ipo)

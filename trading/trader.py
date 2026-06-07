@@ -51,6 +51,7 @@ class Trader:
       order_remark=''
   ):
     """ 下单 """
+    trading_logger.info(f"[QMT] order_stock {stock_code} {'买' if order_type == xtconstant.STOCK_BUY else '卖'} {volume}股 ...")
     price_type = get_price_type(order_type, stock_code, price)
     order_id = self.client.order_stock(
       self.account,
@@ -70,16 +71,19 @@ class Trader:
 
   def cancel_order(self, order_id: int):
     """ 撤单 """
+    trading_logger.info(f"[QMT] cancel_order_stock {order_id} ...")
     res = self.client.cancel_order_stock(self.account, order_id)
     if res != 0:
       raise Exception(f'Cancel order({order_id}) failed: {res}')
 
   def query_order(self, order_id: int) -> Optional[XtOrder]:
     """查询委托"""
+    trading_logger.info(f"[QMT] query_stock_order id={order_id} ...")
     return self.client.query_stock_order(self.account, order_id)
 
   def query_asset(self) -> Optional[XtAsset]:
     """查询证券资产"""
+    trading_logger.info("[QMT] query_stock_asset ...")
     try:
       return self.client.query_stock_asset(self.account)
     except Exception as e:
@@ -88,6 +92,7 @@ class Trader:
 
   def query_positions(self) -> Optional[List[XtPosition]]:
     """查询持仓"""
+    trading_logger.info("[QMT] query_stock_positions ...")
     try:
       return self.client.query_stock_positions(self.account)
     except Exception as e:
@@ -116,6 +121,7 @@ class Trader:
 
   def query_buy_trades(self) -> List[XtTrade]:
     """查询当日成交"""
+    trading_logger.info("[QMT] query_stock_trades (仅买单) ...")
     all_trades = self.client.query_stock_trades(self.account)
     qmt_buy_trades = filter(
       lambda x: x.strategy_name == self.strategy_name and x.order_type == xtconstant.STOCK_BUY,
@@ -130,6 +136,7 @@ class Trader:
     post_close 兜底回填用：watcher.on_stock_order 回调有时漏触发，
     导致 fills_{T}.parquet 不完整；用此 API 与 fills 对账后补齐。
     """
+    trading_logger.info("[QMT] query_stock_trades (全部成交) ...")
     all_trades = self.client.query_stock_trades(self.account)
     return list(all_trades) if all_trades is not None else []
 
@@ -143,6 +150,7 @@ class Trader:
         BankTransferStream 列表。每条含 business_type / occur_amount / transfer_time 等。
         若未连通或 QMT 不支持，返回 []。
     """
+    trading_logger.info(f"[QMT] query_bank_transfer_stream {start_date}-{end_date} ...")
     try:
       stream = self.client.query_bank_transfer_stream(
         self.account, start_date, end_date

@@ -60,12 +60,20 @@ TERMINAL_STATUS = {
 }
 
 
+# QMT 资金不足废单码:on_stock_order 回调 / query_order().status_msg 里只给数字码
+# (形如 "-150906130|1|-150906130"),真正的中文「资金可用数不足」只在 on_order_error
+# 的 error_msg 里。执行器靠 query_order 拿不到中文,故必须同时识别这个数字码,
+# 否则资金不足废单会被误判成硬废单 → 计入熔断 → 卖单回款到账前就放弃该票。
+QMT_INSUFFICIENT_FUNDS_CODE = '150906130'
+
+
 def _is_insufficient_funds(msg: str) -> bool:
     """废单原因是否为「资金可用数不足」类——这类只需减仓重试,不算坏票。"""
     if not msg:
         return False
     m = str(msg)
-    return ('资金' in m) or ('不足' in m) or ('insufficient' in m.lower())
+    return (QMT_INSUFFICIENT_FUNDS_CODE in m or '资金' in m
+            or '不足' in m or 'insufficient' in m.lower())
 
 
 class BaseMonitor:
@@ -164,45 +172,51 @@ class SellMonitor(BaseMonitor):
                 return
             time.sleep(self.executor.MONITOR_POLL_SEC)
 
+    def _sellable_shares(self, code, want: int) -> int:
+        """按当前持仓可用股数对重挂量封顶(整百)。撤单异步,股份要等委托终态才回到
+        can_use_volume;用它封顶即可保证不会重挂超过可卖量 → 不再撞「股份可用数不足」。"""
+        try:
+            pos = self.trader.query_stock_position(code)
+        except Exception:
+            pos = None
+        avail = int(getattr(pos, 'can_use_volume', 0) or 0) if pos else 0
+        return (min(int(want), avail) // 100) * 100
+
     def _try_repost_sell(self, submitted, order):
-        code = submitted['code']
-        retry = self.retry_counts.get(code, 0)
-        if retry >= self.executor.SELL_RETRY_LIMIT:
+        code, oid = submitted['code'], submitted['order_id']
+        if self.retry_counts.get(code, 0) >= self.executor.SELL_RETRY_LIMIT:
             return
         remaining = self._remaining_from_order(order)
         if remaining < 100:
             return
-        self.retry_counts[code] = retry + 1
+        self.retry_counts[code] = self.retry_counts.get(code, 0) + 1
         try:
-            self.trader.cancel_order(submitted['order_id'])
-            self.record_action(
-                'sell_cancel_for_repost',
-                code=code, order_id=submitted['order_id'],
-                order_type=xtconstant.STOCK_SELL,
-                shares=remaining,
-                msg=f"retry={retry + 1}",
-            )
+            self.trader.cancel_order(oid)
+            self.record_action('sell_cancel_for_repost', code=code, order_id=oid,
+                               order_type=xtconstant.STOCK_SELL, shares=remaining,
+                               msg=f"retry={self.retry_counts[code]}")
         except Exception as e:
-            self.record_action(
-                'sell_cancel_failed',
-                code=code, order_id=submitted['order_id'],
-                order_type=xtconstant.STOCK_SELL,
-                shares=remaining,
-                msg=str(e),
-            )
+            self.record_action('sell_cancel_failed', code=code, order_id=oid,
+                               order_type=xtconstant.STOCK_SELL, shares=remaining, msg=str(e))
             return
-        time.sleep(0.2)
-        r = self.executor._submit_sell_order(code, remaining, self.signal_date, self.trade_date)
+        # 撤单异步:轮询等未成交股份释放回可用,再按可用量重挂(2026-06-02 09:30:14 复现)。
+        deadline = time.time() + self.executor.SELL_CANCEL_SETTLE_SEC
+        sellable = self._sellable_shares(code, remaining)
+        while sellable < 100 and time.time() < deadline:
+            time.sleep(self.executor.ORDER_POLL_SEC)
+            sellable = self._sellable_shares(code, remaining)
+        if sellable < 100:
+            self.record_action('sell_repost_skip', code=code, order_id=oid,
+                               order_type=xtconstant.STOCK_SELL, shares=remaining,
+                               msg='可用股数不足,放弃重挂')
+            return
+        r = self.executor._submit_sell_order(code, sellable, self.signal_date, self.trade_date)
         if r:
             r['submitted_at'] = time.time()
             self.submitted.append(r)
-            self.record_action(
-                'sell_repost',
-                code=code, order_id=r['order_id'],
-                order_type=xtconstant.STOCK_SELL,
-                shares=remaining,
-                msg=f"from={submitted['order_id']}",
-            )
+            self.record_action('sell_repost', code=code, order_id=r['order_id'],
+                               order_type=xtconstant.STOCK_SELL, shares=sellable,
+                               msg=f"from={oid}")
 
 
 class BuyMonitor(BaseMonitor):
@@ -284,7 +298,13 @@ class BuyMonitor(BaseMonitor):
     def _buy_loop(self):
         soft = time.time() + self.executor.BUY_TIMEOUT_SEC
         hard = time.time() + self.executor.BUY_TIMEOUT_HARD_SEC
+        last_log = time.time()
         while time.time() < hard:
+            if time.time() - last_log >= 30:
+                trading_logger.info(
+                    f"[BuyMonitor] 补单进行中: 已提交 {len(self.submitted)} 笔, "
+                    f"卖单回款在途={self._sells_pending()}")
+                last_log = time.time()
             progressed = False
             for code in self.buy_seq:
                 if time.time() >= hard:
@@ -333,8 +353,11 @@ class BuyMonitor(BaseMonitor):
                 return True
             # 废单(0 成交)
             msg = (getattr(o, 'status_msg', '') or '').strip() if o else ''
-            if _is_insufficient_funds(msg):
-                # 资金不足:钱不够不是坏票 → 减一手重试,减到买不起一手就跳下一只(不计熔断)
+            # 资金不足,或卖单回款仍在途(此刻钱不够只是暂时的) → 不是坏票:减一手重试,
+            # 减到买不起一手就跳下一只(不计熔断)。卖单回款在途的兜底是格式无关的:即使
+            # QMT 废单码变化、status_msg 拿不到中文,也能保证「等回款再补」的设计意图不被
+            # 早熔断打断(今天 09:30:06 就把 4 只票熔断、回款 09:30:22 才到 → 15w 没买进)。
+            if _is_insufficient_funds(msg) or self._sells_pending():
                 self.record_action('buy_underfunded', code=code,
                                    order_type=xtconstant.STOCK_BUY, shares=shares, msg=msg)
                 cap = shares - 100
@@ -411,11 +434,36 @@ class RebalanceExecutor:
     SELL_MONITOR_SEC = 120
     SELL_ORDER_TTL_SEC = 12
     SELL_RETRY_LIMIT = 1
+    SELL_CANCEL_SETTLE_SEC = 3.0  # 重挂前等原卖单撤单进入终态(股份释放回可用)的最长秒数
     MONITOR_POLL_SEC = 0.3      # 买/卖主循环每轮间隔
     ORDER_POLL_SEC = 0.1        # 单笔买单等回调的轮询间隔
+    # --skip 且真实时钟在闭市: order_stock 同步 API 可阻塞数分钟(非「废单慢」);
+    # 此时跳过真实委托,仅收口战报/盘后。盘中委托仍走正常轮询超时。
+    _TIMEOUT_FIELDS = (
+        'BUY_TIMEOUT_SEC', 'BUY_TIMEOUT_HARD_SEC', 'BUY_ORDER_WAIT_SEC',
+        'SETTLE_WAIT_SEC', 'SELL_MONITOR_SEC',
+    )
+    _OFF_HOURS_TIMEOUTS = {
+        'BUY_TIMEOUT_SEC': 30,
+        'BUY_TIMEOUT_HARD_SEC': 90,
+        'BUY_ORDER_WAIT_SEC': 0.5,
+        'SETTLE_WAIT_SEC': 10,
+        'SELL_MONITOR_SEC': 30,
+    }
 
     def __init__(self, trader):
         self.trader = trader
+
+    def _snapshot_timeouts(self) -> dict:
+        return {k: getattr(self, k) for k in self._TIMEOUT_FIELDS}
+
+    def _restore_timeouts(self, snap: dict):
+        for k, v in snap.items():
+            setattr(self, k, v)
+
+    def _apply_off_hours_timeouts(self):
+        for k, v in self._OFF_HOURS_TIMEOUTS.items():
+            setattr(self, k, v)
 
     @staticmethod
     def _available_buy_cash(asset) -> float:
@@ -579,13 +627,29 @@ class RebalanceExecutor:
         except Exception as e:
             trading_logger.warning(f"失败委托聚合卡片发送失败: {e}")
 
-    def execute(self, pending, *, execute_sell=True, execute_buy=True):
+    def execute(self, pending, *, execute_sell=True, execute_buy=True,
+                off_hours_fast: bool = False):
         """执行一次调仓:提交卖买委托、等待终态、汇总。
 
         Args:
             pending: before_trade 产出的 pending_rebalance 字典。
             execute_sell / execute_buy: 是否执行卖 / 买（分时段调仓时使用）。
+            off_hours_fast: 真实时钟在闭市且 --skip 演练时缩短轮询超时,避免卡 10min+。
         """
+        timeout_snap = self._snapshot_timeouts()
+        self._skip_real_orders = off_hours_fast
+        if off_hours_fast:
+            trading_logger.warning(
+                "[执行] 闭市 --skip: QMT order_stock 同步调用会长时间阻塞(实测>3min), "
+                "非「秒废单」; 跳过真实买卖, 仅战报定稿+盘后 diff")
+        try:
+            return self._execute_impl(
+                pending, execute_sell=execute_sell, execute_buy=execute_buy)
+        finally:
+            self._skip_real_orders = False
+            self._restore_timeouts(timeout_snap)
+
+    def _execute_impl(self, pending, *, execute_sell=True, execute_buy=True):
         signal_date = pending['signal_date']
         trade_date = pending['trade_date']
         sell_orders = pending.get('sell_orders', [])
@@ -598,6 +662,10 @@ class RebalanceExecutor:
             f"开始调仓: sell={len(sell_orders)} buy={len(buy_allocations)} "
             f"signal={signal_date.isoformat()} trade={trade_date.isoformat()}")
 
+        if getattr(self, '_skip_real_orders', False):
+            self._summarize([])
+            return []
+
         sell_submitted, buy_submitted = [], []
         try:
             avail = self._available_buy_cash(self.trader.query_asset())
@@ -607,8 +675,8 @@ class RebalanceExecutor:
                 trade_date=trade_date,
                 status_msg=f"rebalance_start: available_cash={avail:.2f}",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            trading_logger.warning(f"[Executor] rebalance_start 事件记录失败: {e}")
 
         monitors = {}
         if execute_sell and sell_orders:

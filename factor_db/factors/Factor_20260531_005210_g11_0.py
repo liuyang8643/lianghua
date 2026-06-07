@@ -47,7 +47,7 @@ class Factor_20260531_005210_g11_0:
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
             ipo_premium = panel['open'] / panel['issue_price']
-            growth_eff = panel['profit_yoy'] / np.maximum(np.abs(panel['revenue_yoy']), 1e-8)
+            growth_eff = panel['profit_yoy'] / np.where(np.isfinite(panel['revenue_yoy']) & (np.abs(panel['revenue_yoy']) > 1e-8), np.abs(panel['revenue_yoy']), np.nan)
 
         roe_s = np.sign(panel['roe']) * (np.abs(panel['roe']) ** (1.0 / 3.0))
         gm_s = np.sign(panel['gross_margin']) * (np.abs(panel['gross_margin']) ** (1.0 / 3.0))
@@ -80,7 +80,7 @@ class Factor_20260531_005210_g11_0:
 
         cash_quality = _zscore(z_cf * (1.0 + 0.5 * quality_asym))
 
-        log_ipo = -np.log(np.maximum(ipo_premium, 0.01))
+        log_ipo = np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan)
         z_ipo = _zscore(log_ipo * cash_gate)
 
         margin_cash_gap = z_gm - z_cf

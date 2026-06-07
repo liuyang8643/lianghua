@@ -44,7 +44,7 @@ class Factor_20260531_005210_g41_0:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             accrual_gap = (panel['operating_cf_ps'] - panel['eps']) / panel['open']
             ipo_ratio = panel['open'] / panel['issue_price']
 
@@ -86,7 +86,7 @@ class Factor_20260531_005210_g41_0:
         z_earn_qual = _zscore(earn_raw)
 
         qual_level = np.tanh((z_roe + z_gm) * LIFE_S)
-        life_raw = -np.log(np.maximum(ipo_ratio, 0.01))
+        life_raw = np.where(np.isfinite(ipo_ratio) & (ipo_ratio > 0.01), -np.log(ipo_ratio), np.nan)
         z_lifecycle = _rank_norm(life_raw * (0.7 + 0.3 * qual_level))
 
         r_v = _rank_norm(v_raw)

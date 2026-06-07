@@ -34,15 +34,18 @@ search_spaces:
 
 profiles:
   core:
-    desc: 6因子 — size×2 + liquidity×2 + behavioral×2
+    desc: 10因子 — 原6核心(价量×规模×行为) + 增长价值质量GA(ProfitGrowth/CashFlowYield/g17_4/g41_0,截面相关均<0.13)
     factor_classes: [
       TrueMarketCap, AmountBasedSmallCap,
       AmihudIlliquidity, VolumeCV,
       OvernightGap, High52Week,
+      ProfitGrowth, CashFlowYield,
+      Factor_20260531_005210_g17_4,
+      Factor_20260531_005210_g41_0,
     ]
     weight_range: [-1.0, 1.0, 0.1]
     search_spaces: [position_count]
-    preload_start: 1993-01-01
+    preload_start: 2010-01-01
     preload_end: 2018-12-31
 
   core_plus:
@@ -59,7 +62,7 @@ profiles:
     ]
     weight_range: [-1.0, 1.0, 0.1]
     search_spaces: [position_count]
-    preload_start: 1993-01-01
+    preload_start: 2010-01-01
     preload_end: 2018-12-31
 
   core8:
@@ -73,7 +76,7 @@ profiles:
     ]
     weight_range: [-1.0, 1.0, 0.1]
     search_spaces: [position_count]
-    preload_start: 1993-01-01
+    preload_start: 2010-01-01
     preload_end: 2018-12-31
 
   core10:
@@ -87,5 +90,88 @@ profiles:
     ]
     weight_range: [-1.0, 1.0, 0.1]
     search_spaces: [position_count]
-    preload_start: 1993-01-01
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  core5:
+    desc: 5因子 — 规模+动量+GA最佳+增长+价值，五维独立alpha(均值截面相关0.03)
+    factor_classes: [
+      TrueMarketCap, High52Week,
+      Factor_20260531_005210_g17_4,
+      ProfitGrowth, CashFlowYield,
+    ]
+    weight_range: [-1.0, 1.0, 0.1]
+    search_spaces: [position_count]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  core9:
+    desc: 9因子 — core5 + 相位套利/高多样性/质量/现金盈利背离，覆盖所有alpha维度
+    factor_classes: [
+      TrueMarketCap, High52Week,
+      Factor_20260531_005210_g17_4,
+      ProfitGrowth, CashFlowYield,
+      Factor_20260531_005210_g39_1,
+      Factor_20260531_005210_g16_1,
+      ROEQuality,
+      Factor_20260531_005210_g29_2,
+    ]
+    weight_range: [-1.0, 1.0, 0.1]
+    search_spaces: [position_count]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  core14:
+    desc: 14因子 — core9 + 可信度应计/确定性/效率/盈利收益/小盘，最全alpha模板库
+    factor_classes: [
+      TrueMarketCap, High52Week,
+      Factor_20260531_005210_g17_4,
+      ProfitGrowth, CashFlowYield,
+      Factor_20260531_005210_g39_1,
+      Factor_20260531_005210_g16_1,
+      ROEQuality,
+      Factor_20260531_005210_g29_2,
+      Factor_20260531_005210_g29_1,
+      Factor_20260531_005210_g37_2,
+      Factor_20260531_005210_g17_0,
+      EarningsYield, AmountBasedSmallCap,
+    ]
+    weight_range: [-1.0, 1.0, 0.1]
+    search_spaces: [position_count]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  ga_search:
+    desc: 12因子 — 价量技术(4) + 价值增长质量(4) + GA非线性(4)，全覆盖低冗余(均值截面相关0.05)，GA搜索专用
+    factor_classes: [
+      TrueMarketCap, High52Week, AmountBasedSmallCap, AmihudIlliquidity,
+      CashFlowYield, EarningsYield, ProfitGrowth, BookToMarketQuality,
+      Factor_20260531_005210_g17_4, Factor_20260531_005210_g41_0,
+      Factor_20260531_005210_g39_1, Factor_20260531_005210_g16_1,
+      VolumeCV, OvernightGap,
+    ]
+    weight_range: [-1.0, 1.0, 0.1]
+    search_spaces: [position_count, stock_pool]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  fin7:
+    desc: 13因子 — 6核心权重固定(来自20260526) + 7财务因子权重GA搜索(CashFlowYield/ProfitGrowth/BookToMarketQuality/BookToMarket/DeepValueComposite/EarningsYield/ROEQuality)
+    factor_classes: [
+      TrueMarketCap, AmountBasedSmallCap,
+      AmihudIlliquidity, VolumeCV,
+      OvernightGap, High52Week,
+      CashFlowYield, ProfitGrowth, BookToMarketQuality,
+      BookToMarket, DeepValueComposite, EarningsYield, ROEQuality,
+    ]
+    fixed_weights:
+      TrueMarketCap: 1.0
+      AmountBasedSmallCap: 0.7
+      AmihudIlliquidity: 0.6
+      VolumeCV: 0.4
+      OvernightGap: 0.5
+      High52Week: 0.0
+    weight_range: [-1.0, 1.0, 0.1]
+    search_spaces: [position_count]
+    preload_start: 2010-01-01
     preload_end: 2018-12-31

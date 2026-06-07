@@ -67,11 +67,11 @@ def _propose_job(job: dict, cfg: RunConfig) -> tuple[dict, object]:
 def run_generation(gen: int, cfg: RunConfig, dates, stocks, rng: random.Random,
                    elite_name: str | None, panel=None) -> list[dict]:
     n_random = max(0, cfg.n_parents - cfg.n_elite)
-    parents = selection.select_parents(n_random, cfg.param_cap, rng, elite_name)
+    parents = selection.select_parents(n_random, cfg.param_cap, rng, elite_name, cfg.core_factors)
     if not parents:
         print(f'[gen {gen}] 无可用父代，跳过')
         return []
-    inspirations = selection.top_factors(cfg.n_inspirations, cfg.param_cap)
+    inspirations = selection.top_factors(cfg.n_inspirations, cfg.param_cap, cfg.core_factors)
 
     print(f'[gen {gen}] 父代={[p["name"] for p in parents]} (elite={elite_name})')
     jobs = _build_jobs(gen, cfg, parents, inspirations, rng)
@@ -203,7 +203,7 @@ def evolve(cfg: RunConfig) -> list[dict]:
         raise FileNotFoundError('runtime npz 未覆盖回测区间，无法预加载面板')
     print(f'已预加载 NPZ 面板（复用于全程）: {len(panel["trade_dates"])}d x {len(panel["stock_codes"])}s')
 
-    elite_name = selection.best_factor_name(cfg.param_cap)
+    elite_name = selection.best_factor_name(cfg.param_cap, cfg.core_factors)
     all_results = []
     for gen in range(1, cfg.generations + 1):
         results = run_generation(gen, cfg, dates, stocks, rng, elite_name, panel=panel)

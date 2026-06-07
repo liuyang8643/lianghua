@@ -45,11 +45,33 @@ def _post_json_with_retry(url, max_attempts=3, **kwargs):
                 time.sleep(min(attempt * 2, 5))
                 continue
     raise RuntimeError(f"POST {url} 重试 {max_attempts} 次均失败: {last_exc}") from last_exc
-logger = logging.getLogger("update_all")
+
+
+class _UpdateAllLog:
+    """统一走 trading_logger，盘后 run_update_all 与独立运行均可见进度。"""
+
+    @staticmethod
+    def _emit(level: str, msg: str, *args):
+        from trading.logger import trading_logger
+        text = (msg % args) if args else msg
+        getattr(trading_logger, level)(text)
+
+    def info(self, msg: str, *args):
+        self._emit('info', msg, *args)
+
+    def warning(self, msg: str, *args):
+        self._emit('warning', msg, *args)
+
+
+logger = _UpdateAllLog()
 
 DATA_DIR = Path(__file__).resolve().parent
 TODAY = date.today()
 YESTERDAY = TODAY - timedelta(days=1)
+
+# 16:00 全量更新时，K 线删除并重拉「最近 N 个交易日」，用收盘后的完整 OHLC
+# 覆盖开盘抓到的盘中快照（开盘只拉当天，不做覆盖）。
+REPULL_TRADING_DAYS = 3
 
 
 # ============================================================
@@ -71,95 +93,14 @@ def _clean_parquet_by_date(path: Path, date_col: str, cutoff: date):
 
 
 # ============================================================
-# 1. K线日线 — mootdx + xtdata 兜底
+# 1. K线日线 — QMT 唯一源（不复权 k-line/ + 官方 preClose；复权由 build_runtime 自建）
 # ============================================================
 
 def _update_kline():
-    """更新全量K线到今日。已有股票移除昨日数据后增量追加。"""
-    from data.db.history import get_history_data
-    from data.db.stock_list import get_all_stock_code_list
-    from datetime import datetime
-
-    KLINE_DIR = DATA_DIR / "k-line"
-    KLINE_DIR.mkdir(parents=True, exist_ok=True)
-
-    codes = get_all_stock_code_list()
-    logger.info("[K线] 待处理 %d 只股票", len(codes))
-
-    existing = {f.stem for f in KLINE_DIR.glob("*.parquet")}
-    new_stocks = [c for c in codes if c not in existing]
-    update_stocks = [c for c in codes if c in existing]
-
-    logger.info("[K线] 新下载 %d 只, 增量更新 %d 只", len(new_stocks), len(update_stocks))
-
-    # 先处理已有股票：删除昨日数据，增量下载
-    cutoff_ms = int(pd.Timestamp(YESTERDAY).timestamp() * 1000)
-
-    updated = 0
-    t0 = time.time()
-    for i, code in enumerate(update_stocks, 1):
-        path = KLINE_DIR / f"{code}.parquet"
-        try:
-            df_time = pd.read_parquet(path, columns=['time'])
-            last_ts = int(df_time['time'].max())
-            removed = int((df_time['time'] >= cutoff_ms).sum())
-            last_date = pd.to_datetime(last_ts, unit='ms').date() if last_ts else date(1990, 1, 1)
-
-            need_dl = last_date < YESTERDAY or removed > 0
-            if not need_dl:
-                continue
-
-            # 需要下载时再读全量
-            df_old = pd.read_parquet(path)
-            df_old = df_old[df_old['time'] < cutoff_ms]
-
-            # 用 count=20 获取最近K线（足够覆盖 last_date ~ today 的增量）
-            result = get_history_data([code], count=max(20, (TODAY - last_date).days + 5),
-                                      base_time=datetime.now(), period="1d")
-            new_data = result.get(code)
-            if new_data is None:
-                df_old.to_parquet(path, index=False)
-                continue
-
-            df_new = pd.DataFrame(new_data)
-            df_new = df_new[df_new['time'] > last_ts]
-            if df_new.empty:
-                df_old.to_parquet(path, index=False)
-                continue
-
-            df_merged = pd.concat([df_old, df_new], ignore_index=True)
-            df_merged.sort_values('time', ascending=False, inplace=True)
-            df_merged.reset_index(drop=True, inplace=True)
-            df_merged.to_parquet(path, index=False)
-            updated += 1
-        except Exception as e:
-            logger.warning("[K线] %s 更新失败: %s", code, e)
-
-        if i % 500 == 0:
-            elapsed = time.time() - t0
-            speed = i / elapsed if elapsed > 0 else 0
-            logger.info("[K线] 增量进度: %d/%d (速度 %.0f只/s, ETA %.0fs)",
-                        i, len(update_stocks), speed, (len(update_stocks) - i) / speed if speed > 0 else 0)
-
-    logger.info("[K线] 增量更新: %d/%d 只", updated, len(update_stocks))
-
-    # 处理新股票 — 用 get_history_data(count=None) 下载全量
-    new_ok = 0
-    for i, code in enumerate(new_stocks, 1):
-        try:
-            result = get_history_data([code], count=None, base_time=datetime.now(), period="1d")
-            new_data = result.get(code)
-            if new_data is not None:
-                df_out = pd.DataFrame(new_data)
-                df_out.to_parquet(KLINE_DIR / f"{code}.parquet", index=False)
-                new_ok += 1
-        except Exception as e:
-            logger.warning("[K线] %s 新股下载失败: %s", code, e)
-
-        if i % 500 == 0:
-            logger.info("[K线] 新下载进度: %d/%d, 成功 %d", i, len(new_stocks), new_ok)
-
-    logger.info("[K线] 新下载: %d/%d 只", new_ok, len(new_stocks))
+    """mootdx 刷新：已有股票增量合并最近 REPULL_TRADING_DAYS 个交易日，新股全量补齐。"""
+    from data.kline_mootdx import update_recent
+    logger.info("[K线] mootdx 重拉最近 %d 个交易日 + 新股全量", REPULL_TRADING_DAYS)
+    update_recent(REPULL_TRADING_DAYS)
 
 
 # ============================================================
@@ -191,12 +132,14 @@ def _update_stock_name():
     from akshare.stock.stock_profile_cninfo import _get_file_content_ths
     from data.db.stock_list import get_all_stock_code_list
 
+    t_step = time.time()
     OUT_DIR = DATA_DIR / "stock_name"
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     name_path = OUT_DIR / "name_changes.parquet"
     st_path = OUT_DIR / "st_changes.parquet"
     codes = get_all_stock_code_list()
     bare_codes = sorted(set(c.split('.')[0] for c in codes))
+    logger.info("[股票名称] 开始: 全市场 %d 只 (ST + 更名历史 + 当前简称)", len(codes))
 
     js = py_mini_racer.MiniRacer()
     js.eval(_get_file_content_ths("cninfo.js"))
@@ -212,9 +155,11 @@ def _update_stock_name():
 
     # ===== ST 变更：全量一把拉（p_stock2117 支持不带 scode 返回全量） =====
     t0 = time.time()
+    logger.info("[股票名称] 拉取 ST 变更 (CNINFO 全量)...")
     r = requests.post(f"{CNINFO_BASE}/p_stock2117", headers=headers, timeout=30)
     all_records = r.json().get("records", [])
     rows_st = []
+    st_date_parse_fail = 0
     for rec in all_records:
         vary_str = rec.get("VARYDATE")
         event = rec.get("F006V", "")
@@ -225,9 +170,12 @@ def _update_stock_name():
         try:
             vary_date = datetime.strptime(vary_str, "%Y-%m-%d").date()
         except ValueError:
+            st_date_parse_fail += 1
             continue
         rows_st.append({"bare_code": sec_code, "date": vary_date, "event": event, "status": status})
 
+    if st_date_parse_fail:
+        logger.warning("[股票名称] ST变更日期解析失败: %d 条", st_date_parse_fail)
     df_st = pd.DataFrame(rows_st)
     df_st = df_st.sort_values(["bare_code", "date"]).reset_index(drop=True)
     df_st.to_parquet(st_path, index=False)
@@ -241,87 +189,87 @@ def _update_stock_name():
             name_existing = set(dn['bare_code'].unique())
 
     name_pending = [b for b in bare_codes if b not in name_existing]
+    t_name = time.time()
     if not name_pending:
-        logger.info("[股票名称] 名称变更已是最新 (%d 只)", len(name_existing))
-        return
+        logger.info("[股票名称] 更名历史已齐 %d 只，跳过 CNINFO 增量", len(name_existing))
+    else:
+        logger.info("[股票名称] 更名历史待拉 %d 只 (已有 %d)，约每 100 只打一条进度",
+                    len(name_pending), len(name_existing))
+        rows_name = []
+        name_date_parse_fail = 0
+        for i, bare in enumerate(name_pending, 1):
+            resp = _post_json_with_retry(f"{CNINFO_BASE}/p_stock2109",
+                                         params={"scode": bare}, headers=headers, timeout=15)
+            records = resp.get("records", [])
+            for rec in records:
+                start_str = rec.get("STARTDATE")
+                old_name = rec.get("F002V", "")
+                if not start_str or not old_name:
+                    continue
+                try:
+                    start_date = datetime.strptime(start_str, "%Y-%m-%d").date()
+                except ValueError:
+                    name_date_parse_fail += 1
+                    continue
+                rows_name.append({"bare_code": bare, "start_date": start_date, "old_name": old_name.strip()})
 
-    logger.info("[股票名称] 名称变更待获取: %d 只 (已有 %d)", len(name_pending), len(name_existing))
+            if i == 1 or i % 100 == 0 or i == len(name_pending):
+                logger.info("[股票名称] 更名历史 %d/%d (%.0fs)",
+                            i, len(name_pending), time.time() - t_name)
 
-    rows_name = []
-    for i, bare in enumerate(name_pending, 1):
-        resp = _post_json_with_retry(f"{CNINFO_BASE}/p_stock2109",
-                                     params={"scode": bare}, headers=headers, timeout=15)
-        records = resp.get("records", [])
-        for rec in records:
-            start_str = rec.get("STARTDATE")
-            old_name = rec.get("F002V", "")
-            if not start_str or not old_name:
-                continue
-            try:
-                start_date = datetime.strptime(start_str, "%Y-%m-%d").date()
-            except ValueError:
-                continue
-            rows_name.append({"bare_code": bare, "start_date": start_date, "old_name": old_name.strip()})
+        if name_date_parse_fail:
+            logger.warning("[股票名称] 更名历史日期解析失败: %d 条", name_date_parse_fail)
+        if rows_name:
+            df_new = pd.DataFrame(rows_name)
+            if name_path.exists() and 'bare_code' in pd.read_parquet(name_path).columns:
+                df_old = pd.read_parquet(name_path)
+                df_name = pd.concat([df_old, df_new], ignore_index=True)
+                df_name = df_name.drop_duplicates(subset=['bare_code', 'start_date'], keep='last')
+            else:
+                df_name = df_new
+            df_name.to_parquet(name_path, index=False)
+            logger.info("[股票名称] 名称变更 新增 %d 条, 共 %d 条", len(rows_name), len(df_name))
 
-        if i % 100 == 0:
-            elapsed = time.time() - t0
-            logger.info("[股票名称] 名称 %d/%d (%.0fs)", i, len(name_pending), elapsed)
-
-    if rows_name:
-        df_new = pd.DataFrame(rows_name)
-        if name_path.exists() and 'bare_code' in pd.read_parquet(name_path).columns:
-            df_old = pd.read_parquet(name_path)
-            df_name = pd.concat([df_old, df_new], ignore_index=True)
-            df_name = df_name.drop_duplicates(subset=['bare_code', 'start_date'], keep='last')
-        else:
-            df_name = df_new
-        df_name.to_parquet(name_path, index=False)
-        logger.info("[股票名称] 名称变更 新增 %d 条, 共 %d 条", len(rows_name), len(df_name))
-
-    # ===== 当前简称：用 xtdata 全量拉 InstrumentName，写 current_names.parquet =====
-    # 解决「从未更名股票」在 name_changes 中无记录导致名称缺失的问题
+    # 当前简称：每次 update_all 都必须刷新（与 name_changes 增量是否为空无关）
     _update_current_names(codes)
+    logger.info("[股票名称] 全部完成 (%.0fs)", time.time() - t_step)
 
 
 def _update_current_names(codes: list[str]):
-    """用 xtdata 全量拉每只股票的当前简称，写 data/stock_name/current_names.parquet。
+    """写 current_names.parquet — 全市场当前简称（update_all 唯一写入入口）。
 
-    解决方案：CNINFO p_stock2109 只覆盖更名历史（29.9% 股票），从未更名的
-    股票（创业板/科创板新股）在那里返回 0 条。xtdata 本地 instrument_detail
-    覆盖全市场，离线可用，无需网络。
+    读取侧只认此表 + name_changes（历史时点）；由 akshare 一次拉全量对齐 stock_list。
     """
-    from xtquant import xtdata
+    from data.db.stock_name import invalidate_name_data_cache
 
     t0 = time.time()
-    rows = []
-    miss = 0
+    bare_to_code: dict[str, str] = {}
     for code in codes:
-        try:
-            detail = xtdata.get_instrument_detail(code)
-            if not detail:
-                miss += 1
-                continue
-            name = (detail.get('InstrumentName', '') or '').strip()
-            if not name:
-                miss += 1
-                continue
-            rows.append({
-                'bare_code': code.split('.')[0],
-                'stock_code': code,
-                'name': name,
-            })
-        except Exception:
-            miss += 1
+        bare_to_code.setdefault(code.split('.')[0], code)
 
-    if not rows:
-        logger.warning("[当前简称] xtdata 全量拉取失败，跳过 current_names.parquet 更新")
-        return
+    logger.info("[当前简称] 拉取 akshare 全量 (%d 只待对齐)...", len(bare_to_code))
+    df_ak = ak.stock_info_a_code_name()
+    if df_ak is None or df_ak.empty:
+        raise RuntimeError("[当前简称] ak.stock_info_a_code_name() 返回空，中止更新")
+
+    name_map = dict(zip(
+        df_ak['code'].astype(str).str.zfill(6),
+        df_ak['name'].astype(str).str.strip(),
+    ))
+    rows = []
+    for bare, stock_code in bare_to_code.items():
+        key = bare.zfill(6) if len(bare) < 6 else bare
+        nm = name_map.get(key)
+        if nm:
+            rows.append({'bare_code': bare, 'stock_code': stock_code, 'name': nm})
 
     path = DATA_DIR / "stock_name" / "current_names.parquet"
     df = pd.DataFrame(rows).drop_duplicates(subset=['bare_code'], keep='last')
     df.to_parquet(path, index=False)
+    invalidate_name_data_cache()
+    miss = len(bare_to_code) - len(df)
     logger.info(
-        "[当前简称] %d 条已保存 (miss=%d, %.0fs) → %s",
+        "[当前简称] %d 条已保存 (缺 %d, %.0fs) → %s",
         len(df), miss, time.time() - t0, path.name,
     )
 
@@ -437,6 +385,7 @@ def _update_pershare_index():
     xtdata.download_financial_data(codes, '')
 
     all_rows = []
+    error_count=0
     for code in codes:
         try:
             data = xtdata.get_financial_data([code], table_list=['PershareIndex'])
@@ -446,8 +395,10 @@ def _update_pershare_index():
                     df = df.copy()
                     df['stock_code'] = code
                     all_rows.append(df)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"get_financial_data {code} 失败: {e}")
+            error_count+=1
+    logger.info(f"get_financial_data 失败{error_count} 成功{len(codes)-error_count}")
 
     if not all_rows:
         logger.warning("[每股指标] 未下载到数据")
@@ -634,25 +585,9 @@ def update_offline_toNow():
     logger.info("全量数据更新: %s → %s (删除昨日 %s 不完整数据)", YESTERDAY, TODAY, YESTERDAY)
     logger.info("=" * 60)
 
-    # Phase 1: 清理昨日不完整数据
-    logger.info("--- Phase 1: 清理昨日数据 ---")
-    kline_dir = DATA_DIR / "k-line"
-    if kline_dir.exists():
-        cutoff_ms = int(pd.Timestamp(YESTERDAY).timestamp() * 1000)
-        cleaned = 0
-        for f in kline_dir.glob("*.parquet"):
-            try:
-                df = pd.read_parquet(f)
-                before = len(df)
-                df_clean = df[df['time'] < cutoff_ms]
-                if len(df_clean) < before:
-                    df_clean.to_parquet(f, index=False)
-                    cleaned += 1
-            except Exception as e:
-                logger.warning("[K线清理] %s 失败: %s", f.name, e)
-        logger.info("K线数据清理: %d 只股票移除昨日数据", cleaned)
-
-    # 指数数据清理
+    # Phase 1: 清理指数最近不完整数据。
+    # K 线无需在此清理：_update_kline(QMT update_recent) 会按 time 合并覆盖最近 N 个交易日。
+    logger.info("--- Phase 1: 清理指数最近数据 ---")
     for f in DATA_DIR.glob("index_*_daily.parquet"):
         _clean_parquet_by_date(f, 'trade_date', YESTERDAY)
 

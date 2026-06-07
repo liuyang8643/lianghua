@@ -40,7 +40,7 @@ class Factor_20260531_005210_g14_4:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             ipo_prem = panel['open'] / panel['issue_price']
 
         z_cash = _zscore(cash_conf)
@@ -63,7 +63,7 @@ class Factor_20260531_005210_g14_4:
         tension_penalty = -np.tanh(z_tension * TENSION_S)
 
         z_ey = _zscore(ey)
-        r_log_price = _rank_norm(np.log(np.maximum(panel['open'], 0.01)))
+        r_log_price = _rank_norm(np.where(np.isfinite(panel['open']) & (panel['open'] > 0.01), np.log(panel['open']), np.nan))
 
         z_value = _zscore(z_ey * cash_roe_consensus + 0.03 * r_log_price)
 
@@ -82,10 +82,10 @@ class Factor_20260531_005210_g14_4:
         z_cf = _zscore(cf_yield)
         cf_sig = np.tanh(z_cf * CASH_S)
 
-        log_ipo = np.log(np.maximum(ipo_prem, 0.01))
+        log_ipo =np.where(np.isfinite(ipo_prem) & (ipo_prem > 0.01), np.log(ipo_prem), np.nan)
         z_ipo = _zscore(log_ipo)
         ipo_bell = np.exp(-0.5 * (z_ipo * IPO_S) ** 2)
-        r_share = _rank_norm(np.log(np.maximum(panel['total_share'], 1.0)))
+        r_share = _rank_norm(np.where(np.isfinite(panel['total_share']) & (panel['total_share'] > 1.0), np.log(panel['total_share']), np.nan))
         z_ipo_stable = _zscore(ipo_bell + 0.3 * r_share)
 
 

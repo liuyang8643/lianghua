@@ -41,7 +41,7 @@ class Factor_20260531_005210_g16_1:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             ipo_premium = panel['open'] / panel['issue_price']
 
         z_ey = _zscore(ey)
@@ -76,7 +76,7 @@ class Factor_20260531_005210_g16_1:
 
         rev_mom = _rank_norm(z_rev)
 
-        z_ipo = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        z_ipo = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
 
         z_interact = _zscore(value_anchor * z_gm * np.tanh(z_cf * CASH_S))

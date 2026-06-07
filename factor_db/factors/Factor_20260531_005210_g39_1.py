@@ -43,7 +43,7 @@ class Factor_20260531_005210_g39_1:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             ipo_premium = panel['open'] / panel['issue_price']
 
         roe_s = np.sign(panel['roe']) * (np.abs(panel['roe']) ** (1/3))
@@ -80,7 +80,7 @@ class Factor_20260531_005210_g39_1:
 
         z_efficiency = _zscore(roe_s * gm_s * np.tanh(z_cf * EFF_S) * cash_gate)
 
-        z_lifecycle = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)) * (0.5 + 0.5 * np.tanh(z_roe * ROE_S)))
+        z_lifecycle = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan) * (0.5 + 0.5 * np.tanh(z_roe * ROE_S)))
 
         score = (PHASE_W * z_phase + COHERENCE_W * z_coherence + CASH_REALITY_W * z_cash_reality + VALUE_TRIPLE_W * z_value + GROWTH_CASH_W * z_growth + EFFICIENCY_W * z_efficiency + LIFECYCLE_W * z_lifecycle)
 

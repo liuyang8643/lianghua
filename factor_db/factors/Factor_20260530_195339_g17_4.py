@@ -40,7 +40,7 @@ class Factor_20260530_195339_g17_4:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
 
         # Cash confirmation gate
         z_cash_conf = _zscore(cash_conf)
@@ -68,7 +68,7 @@ class Factor_20260530_195339_g17_4:
         z_value = _zscore(z_ey * roe_gate * cash_gate * consistency_gate)
 
         # Growth efficiency: profit growth per unit of revenue growth
-        rev_safe = np.maximum(np.abs(panel['revenue_yoy']), 1e-8)
+        rev_safe = np.where(np.isfinite(panel['revenue_yoy']) & (np.abs(panel['revenue_yoy']) > 1e-8), np.abs(panel['revenue_yoy']), np.nan)
         growth_eff_raw = panel['profit_yoy'] / rev_safe
         growth_eff = np.tanh(growth_eff_raw * GROWTH_EFF_S)
 

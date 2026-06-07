@@ -1,0 +1,13 @@
+{
+  "ga_profile": "core",
+  "all_factor_names": ["AccrualsYield"],
+  "search_space_version": "2026-05-23",
+  "individual_config": {
+    "weights": {"AccrualsYield": 1.0},
+    "buy_n": 20,
+    "sell_m": 20,
+    "temperatures": {"AccrualsYield": 1.0},
+    "timing_enabled": false,
+    "rebalance": true
+  }
+}

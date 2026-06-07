@@ -44,7 +44,7 @@ class Factor_20260530_195339_g8_4:
         z_cf = _zscore(cf_yield)
         cf_sig = np.tanh(z_cf * 2.0)
 
-        z_ipo = _zscore(-np.log(np.maximum(ipo_premium, 0.01)))
+        z_ipo = _zscore(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
         score = (VALUE_W * z_value + QUALITY_W * z_quality + GROWTH_W * z_growth_confirmed + CF_W * cf_sig + IPO_W * z_ipo)
 

@@ -38,7 +38,7 @@ class Factor_20260531_005210_g4_3:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_cover = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_cover = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             accruals = cf_yield - ey
             ipo_premium = panel['open'] / panel['issue_price']
 
@@ -69,7 +69,7 @@ class Factor_20260531_005210_g4_3:
         acr_penalty = np.tanh(np.maximum(accruals, 0.0) * ACCRUAL_ASYM)
         z_accrual = _zscore(z_cf - acr_penalty)
 
-        log_ipo = -np.log(np.maximum(ipo_premium, 0.01))
+        log_ipo = np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan)
         z_ipo = _zscore(log_ipo * quality_gate)
 
 

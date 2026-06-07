@@ -1,6 +1,6 @@
 """LLM-GA 运行配置。
 
-fitness 只看夏普、只用训练周期（默认 1993-2018，可经 CLI 覆盖）。
+fitness 只看夏普、只用训练周期（默认 2010-至今，可经 CLI 覆盖）。
 """
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -11,9 +11,9 @@ FACTORS_DIR = REPO_ROOT / 'factor_db' / 'factors'
 PROPOSALS_DIR = REPO_ROOT / 'llm_ga' / 'proposals'
 SCRATCH_DIR = REPO_ROOT / 'llm_ga' / '_scratch'
 
-# 训练周期（fitness 来源）
-TRAIN_START = '19930101'
-TRAIN_END = '20181231'
+# 训练周期（fitness / factor_db 榜单默认区间）
+TRAIN_START = '20100101'
+TRAIN_END = datetime.now().strftime('%Y%m%d')
 
 # T 日仅允许 open；以下字段为前视野泄露，新因子禁止使用（guard 强制）。
 FORBIDDEN_FIELDS = ('close', 'high', 'low', 'volume', 'amount')
@@ -54,3 +54,51 @@ class RunConfig:
     llm_verify: bool = True  # 是否启用 claude -p 的 LLM verify-agent 硬否决闸门
     run_id: str = field(default_factory=lambda: datetime.now().strftime('%Y%m%d_%H%M%S'))
     extra_env: dict = field(default_factory=dict)
+    core_factors: list[str] | None = None  # 限定候选父代池；None=全库
+
+
+# ── 预设：限定因子池的 GA 配置 ──
+
+_CORE5 = [
+    'TrueMarketCap',
+    'High52Week',
+    'Factor_20260531_005210_g17_4',
+    'ProfitGrowth',
+    'CashFlowYield',
+]
+
+_CORE9 = _CORE5 + [
+    'Factor_20260531_005210_g39_1',
+    'Factor_20260531_005210_g16_1',
+    'ROEQuality',
+    'Factor_20260531_005210_g29_2',
+]
+
+_CORE14 = _CORE9 + [
+    'Factor_20260531_005210_g29_1',
+    'Factor_20260531_005210_g37_2',
+    'Factor_20260531_005210_g17_0',
+    'EarningsYield',
+    'AmountBasedSmallCap',
+]
+
+
+def preset_core5(**kwargs) -> RunConfig:
+    """精简版：5因子，覆盖规模/动量/价值/增长/GA最佳。"""
+    return RunConfig(
+        n_parents=3, n_offspring=3, n_elite=1, population=6,
+        n_inspirations=2, core_factors=list(_CORE5), **kwargs)
+
+
+def preset_core9(**kwargs) -> RunConfig:
+    """标准版：9因子，补齐质量/相位套利/高多样性锚。"""
+    return RunConfig(
+        n_parents=4, n_offspring=4, n_elite=1, population=8,
+        n_inspirations=3, core_factors=list(_CORE9), **kwargs)
+
+
+def preset_core14(**kwargs) -> RunConfig:
+    """完整版：14因子，最全alpha模板库。"""
+    return RunConfig(
+        n_parents=6, n_offspring=6, n_elite=2, population=12,
+        n_inspirations=4, core_factors=list(_CORE14), **kwargs)

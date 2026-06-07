@@ -39,10 +39,10 @@ class Factor_20260531_005210_g13_1:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_cov = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_cov = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             accruals = cf_yield - ey
             growth_div = panel['profit_yoy'] - panel['revenue_yoy']
-            ipo_premium = panel['open'] / np.maximum(panel['issue_price'], 1e-8)
+            ipo_premium = panel['open'] / np.where(np.isfinite(panel['issue_price']) & (panel['issue_price'] > 1e-8), panel['issue_price'], np.nan)
 
         z_cf = _zscore(cf_yield)
         z_cov = _zscore(cash_cov)
@@ -75,10 +75,10 @@ class Factor_20260531_005210_g13_1:
         both_pos = (0.5 + 0.5 * np.tanh(z_profit * GROWTH_DIV_S)) * (0.5 + 0.5 * np.tanh(z_rev * GROWTH_DIV_S))
         z_growth_quality = _zscore(z_div * both_pos * cash_gate)
 
-        z_eff = _zscore(panel['profit_yoy'] / np.maximum(np.abs(panel['revenue_yoy']), 1e-8))
+        z_eff = _zscore(panel['profit_yoy'] / np.where(np.isfinite(panel['revenue_yoy']) & (np.abs(panel['revenue_yoy']) > 1e-8), np.abs(panel['revenue_yoy']), np.nan))
         z_efficiency = _zscore(z_eff * gm_gate)
 
-        z_ipo = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        z_ipo = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
 
         score = (VALUE_W * z_value + PROFIT_SPIRAL_W * z_spiral + GROWTH_QUALITY_W * z_growth_quality + ACCRUAL_CONF_W * z_accrual_conf + EFFICIENCY_W * z_efficiency + IPO_W * z_ipo)

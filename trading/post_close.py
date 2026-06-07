@@ -6,7 +6,6 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from data.db.stock_list import allow_buy_stock_code_list
@@ -19,13 +18,14 @@ from utils.recorder import recorder
 # 15:00 盘后K线更新
 # ================================================================
 
-def _post_close_update_kline():
-    from data.update_live import _download_kline_all, _patch_npz_incremental
+def _post_close_update_kline(trade_date: date | None = None):
+    """15:00 收盘 K 线 → 只写 parquet，不落盘 NPZ（16:00 update_all 再全量写）。"""
+    from data.update_live import _download_kline_all
     t0 = time.time()
-    kline_data = _download_kline_all()
-    trading_logger.info(f"[PostClose] K线下载完成 ({len(kline_data)}只, {time.time()-t0:.0f}s)")
-    _patch_npz_incremental(kline_data)
-    trading_logger.info(f"[PostClose] NPZ增量修补完成 ({time.time()-t0:.0f}s)")
+    kline_data = _download_kline_all(anchor_date=trade_date)
+    trading_logger.info(
+        f"[PostClose] K线→parquet ({len(kline_data)}只, {time.time()-t0:.0f}s, 锚定={trade_date})"
+    )
     return kline_data
 
 
@@ -88,16 +88,14 @@ def _extract_live_seed(pos_df, summary_df, prev_date: date):
     return seed_cash, seed_positions, y_positions_eod
 
 
-def _run_seed_replay(trade_date: date, individual_config: dict,
-                     factor_classes: list) -> dict | None:
-    """单日回放：用实盘 T-1 真实持仓 + 现金做种子，只回放 T 日多退少补。
+def _load_seed(trade_date: date):
+    """读取 T-1 实盘种子（现金 + 持仓 + 收盘估值）。
 
-    目的：让回测端 T 日的持仓/下单手数与实盘可比 —— 两边起点（资金+持仓）完全相同，
-    手数差只来自执行层（废单/部成/资金不足/min_lot），价格差只来自滑点。
-    无 T-1 种子（首个交易日 / 缺快照）时返回 None，调用方回退连续回测。
+    Returns (prev_date, seed_cash, seed_positions, y_positions_eod) 或 None。
+    数据源：positions_{T-1}.parquet + daily_summary[T-1].cash —— 盘前/盘后共用同一种子，
+    保证「开盘 diff」与「收盘 diff」基于完全相同的回测起点。
     """
     from datetime import timedelta
-    from core.backtest import _compute_factor_scores, _backtest_direct
     from trading.persistence import _TRADE_DIR
     from utils.stock.time import get_last_trading_day
 
@@ -105,36 +103,36 @@ def _run_seed_replay(trade_date: date, individual_config: dict,
     pos_path = _TRADE_DIR / f"positions_{prev_date.isoformat()}.parquet"
     summary_path = _TRADE_DIR / "daily_summary.parquet"
     if not pos_path.exists() or not summary_path.exists():
-        trading_logger.info(
-            f"[PostClose] 缺 T-1 种子(positions_{prev_date} / daily_summary)，回退连续回测")
         return None
-
-    seed = _extract_live_seed(pd.read_parquet(pos_path), pd.read_parquet(summary_path), prev_date)
+    seed = _extract_live_seed(pd.read_parquet(pos_path),
+                              pd.read_parquet(summary_path), prev_date)
     if seed is None:
-        trading_logger.info(f"[PostClose] T-1({prev_date}) 种子数据不完整，回退连续回测")
         return None
     seed_cash, seed_positions, y_positions_eod = seed
+    return prev_date, seed_cash, seed_positions, y_positions_eod
 
-    all_stocks = allow_buy_stock_code_list(target_date=trade_date)
+
+def _seed_replay_core(*, prev_date: date, seed_cash: float, seed_positions: dict,
+                      y_positions_eod: list, data, all_scores, valid_dates, date_indices,
+                      valid_stocks, stock_indices, individual_config: dict) -> dict | None:
+    """用 T-1 种子 + 已算好的因子分数跑单日回放，并合成 [y_snap, t_snap]。
+
+    盘前（before_trade，复用实时分数）与盘后（run_post_close，重算分数）共用此核心，
+    使「开盘 diff」与「收盘 diff」的回测口径完全一致。
+    """
+    from core.backtest import _backtest_direct
+
     weights = individual_config['weights']
     temperatures = individual_config['temperatures']
     buy_n = individual_config['buy_n']
     sell_m = individual_config.get('sell_m', buy_n)
-
-    signal_dt = [datetime.combine(trade_date, datetime.min.time())]
-    scores_result = _compute_factor_scores(signal_dt, all_stocks, weights, factor_classes)
-    if scores_result is None:
-        return None
-    data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices = scores_result
-    if not valid_dates:
-        return None
 
     # 只保留 NPZ 覆盖到的种子持仓（其余无法估值/交易）。
     seed_in_npz = {c: v for c, v in seed_positions.items() if c in stock_indices}
     dropped = sorted(set(seed_positions) - set(seed_in_npz))
     if dropped:
         trading_logger.warning(
-            f"[PostClose] {len(dropped)} 只种子持仓不在 NPZ，回放忽略: {dropped[:5]}")
+            f"[SeedReplay] {len(dropped)} 只种子持仓不在 NPZ，回放忽略: {dropped[:5]}")
 
     bt_result = _backtest_direct(
         data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices,
@@ -162,10 +160,80 @@ def _run_seed_replay(trade_date: date, individual_config: dict,
     t_total = t_snap.get('total_asset', y_total)
     t_snap['daily_return_pct'] = ((t_total - y_total) / y_total * 100) if y_total else 0.0
     bt_result['daily_snapshots'] = [y_snap, t_snap]
+    return bt_result
+
+
+def _run_seed_replay(trade_date: date, individual_config: dict,
+                     factor_classes: list) -> dict | None:
+    """盘后单日回放：用实盘 T-1 真实持仓 + 现金做种子，只回放 T 日多退少补。
+
+    目的：让回测端 T 日的持仓/下单手数与实盘可比 —— 两边起点（资金+持仓）完全相同，
+    手数差只来自执行层（废单/部成/资金不足/min_lot），价格差只来自滑点。
+    无 T-1 种子（首个交易日 / 缺快照）时返回 None，调用方回退连续回测。
+    """
+    from core.backtest import _compute_factor_scores
+
+    loaded = _load_seed(trade_date)
+    if loaded is None:
+        trading_logger.info("[PostClose] 缺 T-1 种子(positions / daily_summary)，回退连续回测")
+        return None
+    prev_date, seed_cash, seed_positions, y_positions_eod = loaded
+
+    all_stocks = allow_buy_stock_code_list(target_date=trade_date)
+    weights = individual_config['weights']
+
+    signal_dt = [datetime.combine(trade_date, datetime.min.time())]
+    scores_result = _compute_factor_scores(signal_dt, all_stocks, weights, factor_classes)
+    if scores_result is None:
+        return None
+    data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices = scores_result
+    if not valid_dates:
+        return None
+
+    bt_result = _seed_replay_core(
+        prev_date=prev_date, seed_cash=seed_cash, seed_positions=seed_positions,
+        y_positions_eod=y_positions_eod, data=data, all_scores=all_scores,
+        valid_dates=valid_dates, date_indices=date_indices,
+        valid_stocks=valid_stocks, stock_indices=stock_indices,
+        individual_config=individual_config)
+    if bt_result is None:
+        return None
+    t_snap = bt_result['daily_snapshots'][-1]
+    y_total = bt_result['daily_snapshots'][0]['total_asset']
     trading_logger.info(
         f"[PostClose] 单日回放完成 (种子: {prev_date} 现金¥{seed_cash:,.0f} + "
-        f"{len(seed_in_npz)}只持仓, 权益¥{y_total:,.0f}) · T日回测收益={t_snap['daily_return_pct']:+.2f}%"
+        f"{len(seed_positions)}只持仓, 权益¥{y_total:,.0f}) · T日回测收益={t_snap['daily_return_pct']:+.2f}%"
     )
+    return bt_result
+
+
+def run_seed_replay_for_open(trade_date: date, individual_config: dict, *,
+                             data, all_scores, date_idx: int,
+                             valid_stocks, stock_indices) -> dict | None:
+    """盘前/盘中：复用 before_trade 已算好的因子分数，跑 T-1 种子单日回放。
+
+    供战报做「回测 vs 实盘」实时对账。回测端继承 T-1 实盘现金+持仓，与盘后口径一致；
+    因子分数直接复用（不重算），几乎不增加盘前耗时。无 T-1 种子时返回 None（首日/缺快照）。
+    """
+    loaded = _load_seed(trade_date)
+    if loaded is None:
+        trading_logger.info("[SeedReplay@open] 缺 T-1 种子，跳过盘中回测对账")
+        return None
+    prev_date, seed_cash, seed_positions, y_positions_eod = loaded
+
+    valid_dates = [datetime.combine(trade_date, datetime.min.time())]
+    bt_result = _seed_replay_core(
+        prev_date=prev_date, seed_cash=seed_cash, seed_positions=seed_positions,
+        y_positions_eod=y_positions_eod, data=data, all_scores=all_scores,
+        valid_dates=valid_dates, date_indices=[date_idx],
+        valid_stocks=valid_stocks, stock_indices=stock_indices,
+        individual_config=individual_config)
+    if bt_result is None:
+        return None
+    t_snap = bt_result['daily_snapshots'][-1]
+    trading_logger.info(
+        f"[SeedReplay@open] 完成 (种子 {prev_date} 现金¥{seed_cash:,.0f} + "
+        f"{len(seed_positions)}只持仓) · T日回测收益={t_snap['daily_return_pct']:+.2f}%")
     return bt_result
 
 
@@ -235,10 +303,10 @@ def run_post_close(store) -> dict | None:
         trading_logger.error("[PostClose] 缺少 config/factor_classes, 跳过")
         return None
 
-    # 1. 拉收盘K线 & 增量修补NPZ
+    # 1. 拉收盘 K 线 → parquet only（NPZ 等 16:00 update_all）
     recorder.mark("盘后K线更新")
     if not getattr(store, '_skip_update', False):
-        _post_close_update_kline()
+        _post_close_update_kline(trade_date)
     else:
         trading_logger.info("[PostClose] 跳过K线更新 (--skip 模式)")
 
@@ -277,28 +345,39 @@ def run_post_close(store) -> dict | None:
         if not prev_rows.empty:
             prev_asset = float(prev_rows['total_asset'].iloc[-1])
 
+    _skip = getattr(store, '_skip_update', False)
+
     # 资产仅查一次，feed_asset / write_daily_summary 共用，避免 QMT 时刻漂移
     live_asset = None
     asset_snapshot = None
-    try:
-        asset_snapshot = store.trader.query_asset()
-        if asset_snapshot:
-            live_asset = float(asset_snapshot.total_asset)
-    except Exception as e:
-        trading_logger.warning(f"[PostClose] 资产查询失败: {e}")
+    if _skip:
+        trading_logger.info("[PostClose] --skip 模式跳过 QMT 资产查询")
+    else:
+        try:
+            asset_snapshot = store.trader.query_asset()
+            if asset_snapshot:
+                live_asset = float(asset_snapshot.total_asset)
+        except Exception as e:
+            trading_logger.warning(f"[PostClose] 资产查询失败: {e}")
 
     # 3.1.1 同步 QMT 银证流水到 cash_flows（自动识别日内入金/出金）
-    try:
-        live_trade_recorder.sync_bank_transfers_from_qmt(store.trader, trade_date=trade_date)
-    except Exception as e:
-        trading_logger.warning(f"[PostClose] 银证流水同步失败: {e}")
+    if _skip:
+        trading_logger.info("[PostClose] --skip 模式跳过 银证流水同步")
+    else:
+        try:
+            live_trade_recorder.sync_bank_transfers_from_qmt(store.trader, trade_date=trade_date)
+        except Exception as e:
+            trading_logger.warning(f"[PostClose] 银证流水同步失败: {e}")
 
     # 3.1.2 兜底从 QMT 回填当日成交，弥补 watcher.on_stock_order 漏接
     # 这一步必须在 snapshot_positions 之前，否则 daily_pnl 公式会基于不完整 fills 算错。
-    try:
-        live_trade_recorder.backfill_fills_from_qmt(store.trader, trade_date=trade_date)
-    except Exception as e:
-        trading_logger.warning(f"[PostClose] QMT 成交回填失败: {e}")
+    if _skip:
+        trading_logger.info("[PostClose] --skip 模式跳过 QMT 成交回填")
+    else:
+        try:
+            live_trade_recorder.backfill_fills_from_qmt(store.trader, trade_date=trade_date)
+        except Exception as e:
+            trading_logger.warning(f"[PostClose] QMT 成交回填失败: {e}")
 
     report.feed_asset(
         live_asset, prev_asset,
@@ -309,11 +388,15 @@ def run_post_close(store) -> dict | None:
     report.feed_fills_df(live_fills)
 
     # 3.3 QMT 持仓快照（含 daily_pnl 计算 + 落地 positions_{T}.parquet）
-    try:
-        positions = store.trader.query_positions()
-    except Exception as e:
-        trading_logger.warning(f"[PostClose] 持仓查询失败: {e}")
-        positions = []
+    positions = []
+    if _skip:
+        trading_logger.info("[PostClose] --skip 模式跳过 QMT 持仓查询")
+    else:
+        try:
+            positions = store.trader.query_positions()
+        except Exception as e:
+            trading_logger.warning(f"[PostClose] 持仓查询失败: {e}")
+            positions = []
     if positions:
         live_trade_recorder.snapshot_positions(positions, fills_df=live_fills, trade_date=trade_date)
         pos_path = _TRADE_DIR / f"positions_{trade_date.isoformat()}.parquet"
@@ -330,29 +413,42 @@ def run_post_close(store) -> dict | None:
     # 3.5 回测结果
     report.feed_backtest(bt_result)
 
-    # 4. 飞书报告 + HTML
+    # 4. HTML 报告（飞书卡片统一由 day_board 发送）
     html_dir = Path(__file__).resolve().parents[1] / "data" / "live_trades" / "reports"
     html_path = html_dir / f"diff_{trade_date.isoformat()}.html"
     report.to_html(html_path)
     report_data = report.send(html_path=html_path)
 
     # 5. 持久化日终摘要（复用上面已查到的 asset_snapshot，保证与 report 中的账户 P&L 完全一致）
+    #    daily_pnl 以报告的「个股盈亏总和」口径为准（免疫未记账出入金），与飞书/HTML 一致；
+    #    个股口径不可信（有漏记成交）时 per_stock_pnl=None，write_daily_summary 回退账户口径。
     if asset_snapshot:
+        per_stock_pnl = None
+        if report_data:
+            _s = report_data.get('summary', {})
+            if _s.get('live_pnl_source') == 'per_stock':
+                per_stock_pnl = _s.get('live_daily_pnl')
         try:
             live_trade_recorder.write_daily_summary(
                 total_asset=float(asset_snapshot.total_asset),
                 cash=float(asset_snapshot.cash),
                 market_value=float(asset_snapshot.market_value),
                 trade_date=trade_date,
+                per_stock_pnl=per_stock_pnl,
             )
         except Exception as e:
             trading_logger.warning(f"[PostClose] 日终摘要失败: {e}")
     else:
         trading_logger.warning("[PostClose] 资产快照缺失，跳过日终摘要")
 
-    # 6. 锁定战报卡片（盘后最终状态，不再被新事件污染）
+    # 6. 更新战报卡片 P&L 数据并锁定
     try:
         from trading.day_board import day_board
+        if report_data:
+            s = report_data.get('summary', {})
+            day_board.feed_close_data(
+                live_pnl=s.get('live_daily_pnl'),
+                live_return=s.get('live_daily_return_pct'))
         day_board.finalize()
     except Exception as e:
         trading_logger.warning(f"[PostClose] 战报 finalize 失败: {e}")
@@ -400,7 +496,8 @@ def run_update_all(store):
         _update_stock_list, _update_stock_name, _update_kline,
         _update_balance, _update_issue_price,
         _update_indices, _update_delist, _update_trading_calendar,
-        _build_runtime, DATA_DIR, TODAY, YESTERDAY,
+        _build_runtime,
+        DATA_DIR, TODAY, YESTERDAY,
     )
 
     t0 = time.time()
@@ -409,21 +506,9 @@ def run_update_all(store):
     trading_logger.info("=" * 50)
     recorder.mark("全量更新")
 
-    # Phase 1: 清理昨日数据
-    trading_logger.info("--- Phase 1: 清理昨日数据 ---")
-    kline_dir = DATA_DIR / "k-line"
-    if kline_dir.exists():
-        cutoff_ms = int(pd.Timestamp(YESTERDAY).timestamp() * 1000)
-        for f in kline_dir.glob("*.parquet"):
-            try:
-                df = pd.read_parquet(f)
-                before = len(df)
-                df_clean = df[df['time'] < cutoff_ms]
-                if len(df_clean) < before:
-                    df_clean.to_parquet(f, index=False)
-            except Exception:
-                pass
-
+    # Phase 1: 清理最近 N 个交易日的指数不完整数据。
+    # K 线无需在此清理：QMT _update_kline(update_recent) 会按 time 合并覆盖最近 N 个交易日。
+    trading_logger.info("--- Phase 1: 清理指数最近数据 ---")
     for f in DATA_DIR.glob("index_*_daily.parquet"):
         try:
             df = pd.read_parquet(f)

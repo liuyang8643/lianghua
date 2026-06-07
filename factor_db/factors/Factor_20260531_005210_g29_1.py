@@ -42,9 +42,9 @@ class Factor_20260531_005210_g29_1:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             accruals = cf_yield - ey
-            growth_eff = panel['profit_yoy'] / np.maximum(np.abs(panel['revenue_yoy']), 1e-8)
+            growth_eff = panel['profit_yoy'] / np.where(np.isfinite(panel['revenue_yoy']) & (np.abs(panel['revenue_yoy']) > 1e-8), np.abs(panel['revenue_yoy']), np.nan)
 
         roe_s = np.sign(panel['roe']) * (np.abs(panel['roe']) ** (1/3))
         gm_s = np.sign(panel['gross_margin']) * (np.abs(panel['gross_margin']) ** (1/3))
@@ -67,9 +67,9 @@ class Factor_20260531_005210_g29_1:
 
         # 价值端: 应计修正 EY × 三元可信度门 × 凸性放大器
         accrual_mod = 0.5 + 0.5 * np.tanh(z_accruals * ACCRUAL_S)
-        convex_amp = np.sqrt(np.maximum(z_ey ** 2 + z_cf ** 2, 1e-12))
+        convex_amp = np.sqrt(np.where(np.isfinite(z_ey ** 2 + z_cf ** 2) & (z_ey ** 2 + z_cf ** 2 > 1e-12), z_ey ** 2 + z_cf ** 2, np.nan))
         value_raw = z_ey * accrual_mod * cred_gate * np.tanh(convex_amp * CONVEX_S)
-        z_value = _zscore(value_raw + 0.03 * _rank_norm(np.log(np.maximum(panel['open'], 0.01))))
+        z_value = _zscore(value_raw + 0.03 * _rank_norm(np.where(np.isfinite(panel['open']) & (panel['open'] > 0.01), np.log(panel['open']), np.nan)))
 
         # 质量端: 信任桥接 = 现金质量 × 盈利质量 × 共识配对
         earn_quality = z_roe + z_gm
@@ -81,7 +81,7 @@ class Factor_20260531_005210_g29_1:
         t_cash = np.tanh(z_cash)
         consensus_pairwise = (t_roe * t_gm + t_roe * t_cash + t_gm * t_cash) / 3.0
         quality_raw = np.tanh(trust_raw * TRUST_S) * consensus_pairwise * cash_gate * roe_gate
-        z_quality = _zscore(_zscore(quality_raw) + 0.03 * _rank_norm(np.log(np.maximum(panel['open'] * panel['total_share'], 1.0))))
+        z_quality = _zscore(_zscore(quality_raw) + 0.03 * _rank_norm(np.where(np.isfinite(panel['open'] * panel['total_share']) & (panel['open'] * panel['total_share'] > 1.0), np.log(panel['open'] * panel['total_share']), np.nan)))
 
         # 增长端: 双引擎（有机+财务）× 增长效率门
         g_gate = 0.5 + 0.5 * np.tanh(growth_eff * GROWTH_S)

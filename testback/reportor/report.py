@@ -13,7 +13,7 @@ WBR 回测可视化报告生成器
 9. 每日收益率分布
 """
 
-from datetime import datetime, date as date_type, timedelta
+from datetime import datetime
 from html import escape as html_escape
 from pathlib import Path
 import re
@@ -22,10 +22,6 @@ from typing import Any, Dict, List
 import numpy as np
 
 from testback.logger import testback_logger
-from testback.metrics import (
-    compute_hs300_cumulative_returns,
-    compute_strategy_metrics,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -178,10 +174,7 @@ def _get_trade_date(record: Dict[str, Any]) -> str:
 
 
 def _format_execution_basis(record: Dict[str, Any]) -> str:
-    price_field = record.get('price_field') or 'close'
-    signal_dividend_type = record.get('signal_dividend_type') or 'back'
-    execution_dividend_type = record.get('execution_dividend_type') or signal_dividend_type
-    return f'{price_field} | {signal_dividend_type}->{execution_dividend_type}'
+    return record.get('price_field') or 'open'
 
 
 # ---------------------------------------------------------------------------
@@ -746,9 +739,6 @@ def _make_monthly_table(monthly_stats: List[Dict]) -> Dict[str, Any]:
     return _make_table(headers, rows, 'monthly-table', '暂无月度数据', row_height=44, max_height=420)
 
 
-# ---------------------------------------------------------------------------
-# Plotly 图表生成
-# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
@@ -918,19 +908,11 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     daily_returns_pct = _resolve_daily_returns_pct(report_data, cumulative_returns, trade_dates)
     monthly_stats = calc_monthly_stats(trade_dates, cumulative_returns, daily_returns_pct)
     strategy_nav = _cumulative_returns_to_nav(cumulative_returns)
-    hs300_returns = report_data.get('hs300_returns')
-    if not hs300_returns or len(hs300_returns) != len(trade_dates):
-        hs300_returns = compute_hs300_cumulative_returns(trade_dates)
+    hs300_returns = report_data.get('hs300_returns') or []
     hs300_nav = _cumulative_returns_to_nav(hs300_returns) if hs300_returns else []
 
     generated_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    metrics = compute_strategy_metrics(
-        cumulative_returns_pct=cumulative_returns,
-        trade_dates=trade_dates,
-        init_cash=init_cash,
-        final_asset=final_asset,
-        trade_log=trade_log,
-    )
+    metrics = dict(report_data.get('metrics', {}))
     metrics.update({
         'executed_buy_count': report_data.get('executed_buy_count', metrics.get('buy_trades', 0)),
         'executed_sell_count': report_data.get('executed_sell_count', metrics.get('sell_trades', 0)),
@@ -945,8 +927,6 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
 
     signal_timing = rebalance_rule.get('signal_timing', 'T-1')
     trade_timing = rebalance_rule.get('trade_timing', 'T open')
-    signal_dividend_type = rebalance_rule.get('signal_dividend_type', 'back')
-    execution_dividend_type = rebalance_rule.get('execution_dividend_type', signal_dividend_type)
     price_field = rebalance_rule.get('price_field', 'open')
 
     report_json = json.dumps({
@@ -1036,7 +1016,7 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
 <title>回测报告 - {html_escape(period_str)}</title><link rel="icon" href="data:,"><link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css"><script src="https://unpkg.com/@popperjs/core@2/dist/umd/popper.min.js"></script><script src="https://unpkg.com/tippy.js@6/dist/tippy-bundle.umd.min.js"></script><script src="https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js"></script><style>{styles}</style></head>
 <body><div class="container">
 <div class="report-header"><div class="report-title">回测报告</div><div class="report-subtitle">WBR 量化交易系统 · T-1 信号 / T 日开盘执行 详细报告</div><div class="report-meta"><span>信号周期: {html_escape(signal_period_str)}</span><span>执行周期: {html_escape(trade_period_str or period_str)}</span><span>调仓日数: {trade_days}</span><span>初始资金: {_fmt_money(init_cash)}</span><span>最终资产: {_fmt_money(final_asset)}</span><span>生成时间: {html_escape(generated_time)}</span></div></div>
-<div class="config-box"><strong>因子权重:</strong> {weights_html}<br><strong>温度参数:</strong> {temps_html}<br><strong>调仓配置:</strong> buy_n={buy_n}, sell_m={sell_m}<br><strong>调仓规则:</strong> 信号={html_escape(signal_timing)} &nbsp;|&nbsp; 执行={html_escape(trade_timing)} &nbsp;|&nbsp; 价格字段={html_escape(price_field)}<br><strong>复权口径:</strong> 信号={html_escape(signal_dividend_type)} &nbsp;→&nbsp; 执行={html_escape(execution_dividend_type)} &nbsp;|&nbsp;<strong>实际买入次数:</strong> {metrics.get('executed_buy_count', 0)} &nbsp;|&nbsp;<strong>实际卖出次数:</strong> {metrics.get('executed_sell_count', 0)} &nbsp;|&nbsp;<strong>完整 round-trip 数:</strong> {metrics.get('round_trip_count', 0)}</div>
+<div class="config-box"><strong>因子权重:</strong> {weights_html}<br><strong>温度参数:</strong> {temps_html}<br><strong>调仓配置:</strong> buy_n={buy_n}, sell_m={sell_m}<br><strong>调仓规则:</strong> 信号={html_escape(signal_timing)} &nbsp;|&nbsp; 执行={html_escape(trade_timing)} &nbsp;|&nbsp; 价格字段={html_escape(price_field)}<br><strong>实际买入次数:</strong> {metrics.get('executed_buy_count', 0)} &nbsp;|&nbsp;<strong>实际卖出次数:</strong> {metrics.get('executed_sell_count', 0)} &nbsp;|&nbsp;<strong>完整 round-trip 数:</strong> {metrics.get('round_trip_count', 0)}</div>
 {verify_notice_html}
 <div class="card"><div class="card-title">核心指标</div><div class="metrics-grid">{metric_cards}</div></div>
 <div class="card"><div class="card-title">分年度指标</div>{_build_per_year_table(per_year_metrics)}</div>

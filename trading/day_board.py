@@ -18,7 +18,10 @@ from typing import Optional
 
 from xtquant import xtconstant
 
+from data.db.stock_name import get_stock_name_at_date
 from trading.helper import get_order_status_label, get_order_type_label
+from trading.lark.format import (fmt_pct, fmt_diff_money, fmt_shares,
+                                  diff_md, diff_shares_md)
 from trading.lark.sender import lark_sender, LarkMsgLevel, make_v2_card, make_v2_table, md_div
 from trading.logger import trading_logger
 
@@ -61,12 +64,26 @@ def _direction_md(order_type: int) -> str:
     return get_order_type_label(order_type)
 
 
-def _fmt_money(v: float | None) -> str:
-    if v is None:
-        return '-'
-    if abs(v) >= 1e4:
-        return f"¥{v/1e4:.1f}w"
-    return f"¥{v:,.0f}"
+
+def extract_bt_reference(bt_result: dict) -> dict:
+    """从 seed-replay bt_result 抽取 T 日「回测操作 + 回测持仓」参考，供战报实时对账。
+
+    回测端继承 T-1 实盘状态（现金+持仓），结果固定不变；实盘端随成交回调累计逼近回测。
+    返回 {'buy': {code: {shares, amount}}, 'sell': {...}, 'positions': {code: shares}}。
+    """
+    snaps = (bt_result or {}).get('daily_snapshots') or []
+    t_snap = snaps[-1] if snaps else {}
+    bt_buy = {}
+    for d in t_snap.get('executed_buy_details', []) or []:
+        bt_buy[d['code']] = {'shares': int(d['shares']),
+                             'amount': float(d['shares']) * float(d['price'])}
+    bt_sell = {}
+    for d in t_snap.get('executed_sell_details', []) or []:
+        bt_sell[d['code']] = {'shares': int(d['shares']),
+                              'amount': float(d['shares']) * float(d['price'])}
+    bt_pos = {p['code']: int(p['volume'])
+              for p in t_snap.get('positions_eod', []) or []}
+    return {'buy': bt_buy, 'sell': bt_sell, 'positions': bt_pos}
 
 
 class TradingDayBoard:
@@ -84,14 +101,20 @@ class TradingDayBoard:
         with self._lock:
             self._message_id: Optional[str] = None
             self._trade_date: Optional[date] = None
-            self._plan: dict[str, dict] = {}        # code -> {direction, name, est_volume, est_price, est_amount, reason, plan_seq}
-            self._orders: dict[int, dict] = {}      # order_id -> 订单最新状态
-            self._trades: list[dict] = []            # 成交记录列表
-            self._errors: list[dict] = []            # 订单错误
+            self._plan: dict[str, dict] = {}
+            self._orders: dict[int, dict] = {}
+            self._trades: list[dict] = []
+            self._errors: list[dict] = []
             self._equity: Optional[float] = None
             self._position_count: int = 0
             self._base_target: Optional[float] = None
             self._buy_n: Optional[int] = None
+            self._bt_ref: Optional[dict] = None
+            self._y_positions: dict[str, int] = {}
+            self._name_cache: dict[str, str] = {}
+            self._bt_return: Optional[float] = None       # 回测预期日收益
+            self._live_pnl: Optional[float] = None         # 实盘日盈亏（盘后填入）
+            self._live_return: Optional[float] = None      # 实盘日收益率（盘后填入）
             self._dirty: bool = False
             self._finalized: bool = False
             if self._timer:
@@ -102,11 +125,19 @@ class TradingDayBoard:
     # ─── 公开 API ─────────────────────────────────────
     def start_session(self, *, trade_date: date, plan_rows: list[dict],
                       equity: float | None = None, position_count: int = 0,
-                      base_target: float | None = None, buy_n: int | None = None):
-        """09:25 before_trade 调用：开启当日战报。"""
+                      base_target: float | None = None, buy_n: int | None = None,
+                      bt_ref: dict | None = None, bt_daily_return: float | None = None,
+                      y_positions: dict | None = None):
+        """09:25 before_trade 调用：开启当日战报。
+
+        bt_ref / y_positions：盘前 seed-replay（继承 T-1 实盘状态）的回测参考 + T-1 实盘持仓，
+        用于「回测 vs 实盘」实时对账（T 日操作 + T 日持仓）。缺失时退回纯订单进度战报。
+        """
         with self._lock:
             self.reset_state()
             self._trade_date = trade_date
+            self._bt_ref = bt_ref
+            self._y_positions = dict(y_positions or {})
             for row in plan_rows:
                 self._plan[row['code']] = {
                     'direction': row.get('direction', 'buy'),
@@ -122,6 +153,10 @@ class TradingDayBoard:
             self._position_count = position_count
             self._base_target = base_target
             self._buy_n = buy_n
+            self._bt_return = bt_daily_return
+            self._live_pnl = None
+            self._live_return = None
+            self._preload_names()
         # 立即发卡（debounce 0 触发，第一次必须建立 message_id）
         self._push_now()
 
@@ -170,12 +205,7 @@ class TradingDayBoard:
                 return
             name = self._plan.get(code, {}).get('name', '') if code else ''
         if not name and code:
-            try:
-                from data.db import get_stock_detail
-                detail = get_stock_detail(code)
-                name = (detail.get('InstrumentName', '') if detail else '').strip()
-            except Exception:
-                pass
+            name = get_stock_name_at_date(code, self._trade_date) or ''
         with self._lock:
             if self._finalized:
                 return
@@ -185,6 +215,14 @@ class TradingDayBoard:
                 'msg': getattr(err, 'error_msg', '') or '',
                 'at': datetime.now(),
             })
+        self._mark_dirty()
+
+    def feed_close_data(self, *, live_pnl: float | None = None,
+                         live_return: float | None = None):
+        """盘后填入实盘日收益数据，立即触发卡片更新。"""
+        with self._lock:
+            self._live_pnl = live_pnl
+            self._live_return = live_return
         self._mark_dirty()
 
     def finalize(self):
@@ -198,6 +236,28 @@ class TradingDayBoard:
                 except Exception: pass
                 self._timer = None
         self._push_now()
+
+    def _preload_names(self):
+        """对比表/订单表：盘前一次性从本地 parquet 预热简称缓存（无网络）。"""
+        codes: set[str] = set(self._plan) | set(self._y_positions)
+        if self._bt_ref:
+            codes |= set(self._bt_ref.get('buy', {}))
+            codes |= set(self._bt_ref.get('sell', {}))
+            codes |= set(self._bt_ref.get('positions', {}))
+        for code in codes:
+            if code not in self._name_cache:
+                self._name_cache[code] = get_stock_name_at_date(code, self._trade_date) or ''
+
+    def _plan_visible(self, code: str, plan: dict) -> bool:
+        """订单进度：仅展示有实盘下单意图的项；跳过的 topN 买入若回测也未交易则隐藏。"""
+        if plan.get('direction') == 'sell':
+            return int(plan.get('est_volume', 0) or 0) > 0
+        if plan.get('limit_status', 'ok') == 'ok':
+            return True
+        if not self._bt_ref:
+            return False
+        bt = self._bt_ref
+        return code in bt.get('buy', {}) or code in bt.get('sell', {})
 
     # ─── 内部 ─────────────────────────────────────
     def _mark_dirty(self):
@@ -251,6 +311,8 @@ class TradingDayBoard:
         rows = []
         plan_seen = set()
         for code, plan in self._plan.items():
+            if not self._plan_visible(code, plan):
+                continue
             direction = plan['direction']
             order_type = xtconstant.STOCK_BUY if direction == 'buy' else xtconstant.STOCK_SELL
             key = (code, order_type)
@@ -277,29 +339,37 @@ class TradingDayBoard:
                 else:
                     sell_done_amt += r['traded_amount']
 
+        # 目标(计划)金额:plan 中各方向 est_amount 之和(买=少补目标,卖=换出目标)
+        plan_buy_amt = sum(p['est_amount'] for p in self._plan.values()
+                           if p['direction'] == 'buy')
+        plan_sell_amt = sum(p['est_amount'] for p in self._plan.values()
+                            if p['direction'] == 'sell')
+
         return {
             'rows': rows,
             'buckets': bucket_count,
             'buy_done_amt': buy_done_amt,
             'sell_done_amt': sell_done_amt,
+            'plan_buy_amt': plan_buy_amt,
+            'plan_sell_amt': plan_sell_amt,
         }
 
     def _build_row(self, code: str, plan: dict | None, order_type: int,
                     orders: list[dict]) -> dict:
         """单只股票（同方向）的聚合行。"""
-        name = (plan or {}).get('name', '') or code
+        name = self._name_of(code)
         est_vol = (plan or {}).get('est_volume', 0)
         est_price = (plan or {}).get('est_price', 0.0)
         est_amount = (plan or {}).get('est_amount', 0.0)
         reason = (plan or {}).get('reason', '')
 
         if not orders:
-            # 计划中但未下单（如计划被合法性过滤掉）
+            # 计划中但未下单：直接用 plan 里的具体原因
             limit = (plan or {}).get('limit_status', 'ok')
             if limit != 'ok':
                 bucket = 'failed'
-                label = '过滤'
-                status_msg = reason or limit
+                label = reason or '未下单'
+                status_msg = ''
             else:
                 bucket = 'pending'
                 label = '待下单'
@@ -341,121 +411,229 @@ class TradingDayBoard:
             'status_msg': latest.get('status_msg', ''),
         }
 
+    def _name_of(self, code: str) -> str:
+        """对比表/订单表：plan 缓存 → get_stock_name_at_date；无简称则显示 code。"""
+        if code in self._name_cache:
+            cached = self._name_cache[code]
+            if cached:
+                return cached
+        p = self._plan.get(code)
+        if p and p.get('name'):
+            self._name_cache[code] = p['name']
+            return p['name']
+        nm = get_stock_name_at_date(code, self._trade_date) or ''
+        self._name_cache[code] = nm
+        return nm or code
+
+    def _compute_comparison(self) -> dict | None:
+        """回测 vs 实盘：T 日操作（净买卖额）+ T 日持仓（股数）对比。
+
+        - 回测端：盘前 seed-replay（继承 T-1 实盘现金+持仓），固定不变。
+        - 实盘端：实时成交累计（self._trades），随订单进度逼近回测；
+          实盘 T 日持仓 = T-1 持仓 + 今日买入 − 今日卖出。
+        无 bt_ref（首日/缺 T-1 快照）时返回 None。
+        """
+        if not self._bt_ref:
+            return None
+        bt_buy = self._bt_ref.get('buy', {})
+        bt_sell = self._bt_ref.get('sell', {})
+        bt_pos = self._bt_ref.get('positions', {})
+
+        # 实盘成交累计（按 code）
+        live_buy_amt: dict[str, float] = {}
+        live_buy_sh: dict[str, int] = {}
+        live_sell_amt: dict[str, float] = {}
+        live_sell_sh: dict[str, int] = {}
+        for t in self._trades:
+            code = t['code']
+            if t['order_type'] == xtconstant.STOCK_BUY:
+                live_buy_amt[code] = live_buy_amt.get(code, 0.0) + t['amount']
+                live_buy_sh[code] = live_buy_sh.get(code, 0) + t['volume']
+            else:
+                live_sell_amt[code] = live_sell_amt.get(code, 0.0) + t['amount']
+                live_sell_sh[code] = live_sell_sh.get(code, 0) + t['volume']
+
+        # ── T 日操作对比（净买入额/手数 = 买 − 卖）──
+        op_codes = set(bt_buy) | set(bt_sell) | set(live_buy_amt) | set(live_sell_amt)
+        op_rows = []
+        for code in op_codes:
+            bt_net = (bt_buy.get(code, {}).get('amount', 0.0)
+                      - bt_sell.get(code, {}).get('amount', 0.0))
+            live_net = live_buy_amt.get(code, 0.0) - live_sell_amt.get(code, 0.0)
+            bt_net_sh = bt_buy.get(code, {}).get('shares', 0) - bt_sell.get(code, {}).get('shares', 0)
+            live_net_sh = live_buy_sh.get(code, 0) - live_sell_sh.get(code, 0)
+            if bt_net == 0 and live_net == 0 and bt_net_sh == 0 and live_net_sh == 0:
+                continue
+            op_rows.append({'code': code,
+                            'bt_net': bt_net, 'live_net': live_net, 'diff': live_net - bt_net,
+                            'bt_net_sh': bt_net_sh, 'live_net_sh': live_net_sh,
+                            'sh_diff': live_net_sh - bt_net_sh})
+        op_rows.sort(key=lambda r: abs(r['diff']), reverse=True)
+        op_totals = {'bt': sum(r['bt_net'] for r in op_rows),
+                     'live': sum(r['live_net'] for r in op_rows)}
+
+        # ── T 日持仓对比（股数）──
+        pos_codes = set(bt_pos) | set(self._y_positions) | set(live_buy_sh) | set(live_sell_sh)
+        pos_rows = []
+        for code in pos_codes:
+            live_sh = (self._y_positions.get(code, 0)
+                       + live_buy_sh.get(code, 0) - live_sell_sh.get(code, 0))
+            bt_sh = bt_pos.get(code, 0)
+            if live_sh == 0 and bt_sh == 0:
+                continue
+            pos_rows.append({'code': code, 'bt_shares': bt_sh, 'live_shares': live_sh,
+                             'diff': live_sh - bt_sh})
+        pos_rows.sort(key=lambda r: (r['diff'] == 0, -abs(r['diff'])))
+        pos_totals = {'bt': sum(r['bt_shares'] for r in pos_rows),
+                      'live': sum(r['live_shares'] for r in pos_rows),
+                      'aligned': sum(1 for r in pos_rows if r['diff'] == 0),
+                      'total': len(pos_rows)}
+
+        return {'op_rows': op_rows, 'op_totals': op_totals,
+                'pos_rows': pos_rows, 'pos_totals': pos_totals}
+
+    # ─── 单表卡片渲染：5 列统一表 ──────────────────────
+
+    @staticmethod
+    def _sh_diff_text(bt_sh: int, live_sh: int) -> str:
+        """diff差异 列：手数差的人类可读描述。"""
+        d = live_sh - bt_sh
+        if d == 0:
+            return '<font color="grey">—</font>'
+        if bt_sh >= 0:  # 目标净买（或不动）
+            word = '多买' if d > 0 else '少买'
+        else:           # 目标净卖
+            word = '少卖' if d > 0 else '多卖'
+        color = 'red' if d > 0 else 'green'
+        return f'<font color="{color}">实盘{word}{abs(d)}股</font>'
+
     def _build_card(self) -> dict:
         agg = self._aggregate()
-        rows = agg['rows']
-        buckets = agg['buckets']
+        cmp = self._compute_comparison()
 
-        # 排序：失败 → 部分 → 待成 → 已成；同 bucket 内按方向（卖出在前，与多退少补流程一致）
-        bucket_order = {'failed': 0, 'partial': 1, 'pending': 2, 'done': 3}
-        rows.sort(key=lambda r: (
-            bucket_order.get(r['bucket'], 9),
-            0 if r['order_type'] == xtconstant.STOCK_SELL else 1,
-            r['name'],
-        ))
+        # ── 合并数据源 → 每只股票一行 ──
+        pos_map = {}  # code → {bt_shares, live_shares, diff}
+        ops_map = {}  # code → {bt_net, live_net, bt_net_sh, live_net_sh, sh_diff}
+        if cmp:
+            for r in cmp['pos_rows']:
+                pos_map[r['code']] = r
+            for r in cmp['op_rows']:
+                ops_map[r['code']] = r
+        log_map: dict[str, list] = {}
+        for r in agg['rows']:
+            log_map.setdefault(r['code'], []).append(r)
 
-        # header
-        n_total = len(rows)
-        n_done = buckets['done']
-        n_partial = buckets['partial']
-        n_failed = buckets['failed']
-        n_pending = buckets['pending']
+        all_codes = set(pos_map) | set(ops_map) | set(log_map) | set(self._plan) | set(self._y_positions)
 
-        if self._finalized:
-            if n_failed > 0:
-                tpl = LarkMsgLevel.Danger
-                status_text = f'已完成 · {n_done}成 / {n_failed}失败'
-            elif n_partial > 0:
-                tpl = LarkMsgLevel.Warning
-                status_text = f'已完成 · {n_done}成 / {n_partial}部分'
+        table = []
+        for code in sorted(all_codes):
+            p = pos_map.get(code, {})
+            o = ops_map.get(code, {})
+            logs = log_map.get(code, [])
+
+            name = self._name_of(code)
+
+            # 列1: 持仓手数 — 目标 vs 实盘
+            bt_sh = p.get('bt_shares', 0)
+            live_sh = p.get('live_shares', 0)
+            if bt_sh or live_sh:
+                if bt_sh == live_sh:
+                    pos_cell = f'<font color="grey">目标{fmt_shares(live_sh)} vs 实盘{fmt_shares(live_sh)}</font>'
+                else:
+                    pos_cell = f'目标{fmt_shares(bt_sh)} vs 实盘{fmt_shares(live_sh)}'
             else:
-                tpl = LarkMsgLevel.Success
-                status_text = f'已完成 · 全部成交 ({n_done}/{n_total})'
-        else:
-            if n_failed > 0:
-                tpl = LarkMsgLevel.Danger
-            elif n_partial > 0 or n_pending > 0:
-                tpl = LarkMsgLevel.Info
+                pos_cell = '-'
+
+            # 列2: 操作 — 目标净买卖 vs 实盘净买卖（手数）
+            bt_net_sh = o.get('bt_net_sh', 0)
+            live_net_sh = o.get('live_net_sh', 0)
+            if bt_net_sh or live_net_sh:
+                ops_cell = f'目标{bt_net_sh:+d} vs 实盘{live_net_sh:+d}'
             else:
-                tpl = LarkMsgLevel.Success
-            status_text = f'进行中 · ✅ {n_done} / ⚠ {n_partial} / ❌ {n_failed} / ⏳ {n_pending}'
+                ops_cell = '-'
 
-        title = f'📋 调仓战报 @ {self._trade_date.isoformat()}'
-        subtitle = status_text
+            # 列3: diff差异
+            diff_cell = self._sh_diff_text(bt_net_sh, live_net_sh) if (bt_net_sh or live_net_sh) else '-'
 
-        # 概览
-        summary_parts = []
-        if self._equity is not None:
-            summary_parts.append(f"**权益** ¥{self._equity:,.0f}")
-        if self._position_count:
-            summary_parts.append(f"**持仓** {self._position_count} 只")
-        if self._buy_n:
-            summary_parts.append(f"**目标仓** {self._buy_n} 只")
-        if self._base_target:
-            summary_parts.append(f"**单仓** ¥{self._base_target:,.0f}")
-        summary_parts.append(
-            f"**成交** 买 {_fmt_money(agg['buy_done_amt'])} · 卖 {_fmt_money(agg['sell_done_amt'])}"
-        )
-        summary_md = '  ·  '.join(summary_parts)
+            # 列4: 实盘日志
+            log_parts = []
+            if logs:
+                for l in logs:
+                    if l['bucket'] == 'pending' and bt_sh == live_sh and bt_sh > 0:
+                        s = '<font color="green">✅ 已达标</font>'
+                    else:
+                        s = _bucket_md(l['bucket'], l['status_label'])
+                        if l.get('status_msg'):
+                            s += f' <font color="red">{l["status_msg"]}</font>'
+                    log_parts.append(s)
+            elif code in self._plan:
+                plan = self._plan[code]
+                if plan.get('limit_status') != 'ok':
+                    log_parts.append(f'<font color="red">{plan.get("reason","未下单")}</font>')
+                elif bt_sh == live_sh and bt_sh > 0:
+                    log_parts.append('<font color="green">✅ 已达标</font>')
+                else:
+                    log_parts.append('<font color="grey">⏳ 待下单</font>')
+            else:
+                log_parts.append('-')
+            log_cell = '\n'.join(log_parts) if log_parts else '-'
 
-        # 表格行
-        table_rows = []
-        for r in rows:
-            traded_str = (
-                f"{r['traded_price']:.2f} × {r['traded_volume']:,}"
-                if r['traded_volume'] else '-'
-            )
-            table_rows.append({
-                'name': r['name'],
-                'dir': _direction_md(r['order_type']),
-                'plan': f"{r['est_price']:.2f} × {r['est_volume']:,}" if r['est_volume'] else '-',
-                'traded': traded_str,
-                'amount': _fmt_money(r['traded_amount']) if r['traded_amount'] else (
-                    '-' if not r['est_amount'] else f'<font color="grey">{_fmt_money(r["est_amount"])}</font>'),
-                'status': _bucket_md(r['bucket'], r['status_label']),
-                'msg': r['status_msg'] or '',
+            table.append({'name': name, 'pos': pos_cell, 'ops': ops_cell,
+                          'diff': diff_cell, 'log': log_cell})
+
+        # 合计行
+        if cmp:
+            pt = cmp['pos_totals']
+            ot = cmp['op_totals']
+            total_bt_sh = sum(r.get('bt_net_sh', 0) for r in ops_map.values())
+            total_live_sh = sum(r.get('live_net_sh', 0) for r in ops_map.values())
+            table.append({
+                'name': '— 合计 —',
+                'pos': f'目标{fmt_shares(pt["bt"])} vs 实盘{fmt_shares(pt["live"])}',
+                'ops': f'目标{total_bt_sh:+d} vs 实盘{total_live_sh:+d}',
+                'diff': self._sh_diff_text(total_bt_sh, total_live_sh),
+                'log': f'<font color="grey">对齐 {pt["aligned"]}/{pt["total"]} 只</font>',
             })
 
-        # 错误日志（仅 errors）
-        elements = [md_div(summary_md)]
-        if table_rows:
-            elements.append({'tag': 'hr'})
-            elements.append(md_div(
-                f"**📋 订单进度** · 共 {n_total} 单 · 排序：失败 → 部分 → 待成 → 已成"))
-            elements.append(make_v2_table(
-                columns=[
-                    {'name': 'name', 'display_name': '名称', 'horizontal_align': 'left'},
-                    {'name': 'dir', 'display_name': '方向', 'horizontal_align': 'center'},
-                    {'name': 'plan', 'display_name': '计划价×量', 'horizontal_align': 'right'},
-                    {'name': 'traded', 'display_name': '成交价×量', 'horizontal_align': 'right'},
-                    {'name': 'amount', 'display_name': '金额', 'horizontal_align': 'right'},
-                    {'name': 'status', 'display_name': '状态', 'horizontal_align': 'left'},
-                    {'name': 'msg', 'display_name': '备注', 'horizontal_align': 'left'},
-                ],
-                rows=table_rows,
-                element_id='orders_progress',
-                page_size=20,
-            ))
-        if self._errors:
-            elements.append({'tag': 'hr'})
-            err_md_lines = [f'**🚨 订单错误 {len(self._errors)} 条**']
-            for e in self._errors[-10:]:  # 最近 10 条
-                tm = e['at'].strftime('%H:%M:%S')
-                code = e.get('code') or '-'
-                name = e.get('name') or ''
-                label = f"{code} {name}".strip()
-                err_md_lines.append(f'<font color="red">[{tm}] {label}: {e["msg"]}</font>')
-            elements.append(md_div('\n\n'.join(err_md_lines)))
+        elements = [make_v2_table(
+            columns=[
+                {'name': 'name', 'display_name': '股票', 'horizontal_align': 'left'},
+                {'name': 'pos', 'display_name': '持仓手数(目标vs实盘)', 'horizontal_align': 'right'},
+                {'name': 'ops', 'display_name': '操作(目标vs实盘)', 'horizontal_align': 'right'},
+                {'name': 'diff', 'display_name': 'diff差异', 'horizontal_align': 'right'},
+                {'name': 'log', 'display_name': '实盘日志', 'horizontal_align': 'left'},
+            ],
+            rows=table, element_id='daily_tbl', page_size=20)]
 
+        # footer
         elements.append({'tag': 'hr'})
-        footer = f'<font color="grey">更新时间 {datetime.now().strftime("%H:%M:%S")}'
+        footer = f'<font color="grey">更新 {datetime.now().strftime("%H:%M:%S")}'
         if self._finalized:
             footer += ' · 已锁定'
         footer += '</font>'
         elements.append(md_div(footer))
 
-        return make_v2_card(title=title, level=tpl, subtitle=subtitle,
-                            elements=elements)
+        # header: 日收益在副标题（盘前显示回测目标，盘后更新实盘）
+        parts = []
+        if self._live_pnl is not None:
+            parts.append(f"实盘盈亏 {fmt_diff_money(self._live_pnl)}")
+            if self._live_return is not None:
+                parts.append(f"实盘 {fmt_pct(self._live_return, sign=True)}")
+        if self._bt_return is not None:
+            parts.append(f"回测 {fmt_pct(self._bt_return, sign=True)}")
+        if not parts:
+            parts.append('交易中...')
+
+        if self._finalized:
+            live_ret = self._live_return
+            tpl = LarkMsgLevel.Success if (live_ret or 0) >= 0 else LarkMsgLevel.Danger
+        else:
+            tpl = LarkMsgLevel.Info
+        sub = ' · '.join(parts)
+
+        return make_v2_card(
+            title=f"实盘日报 @ {self._trade_date.isoformat()}",
+            level=tpl, subtitle=sub, elements=elements)
 
 
 # 全局单例

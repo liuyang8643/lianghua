@@ -23,7 +23,6 @@ dependencies = [
     "tqdm>=4.67.1",
     "xtquant~=250516.1.1",
     "plotly~=6.5.0",
-    "mootdx>=0.11.7",
 ]
 
 [build-system]
@@ -44,9 +43,8 @@ dev = [
 
 [tool.pytest.ini_options]
 markers = [
-    "network: tests that require network access (e.g., AkShare, CNINFO, mootdx)",
-
+    "network: tests that require network access (e.g., AkShare, CNINFO)",
     "cninfo: tests that require CNINFO API access (stock names, ST status)",
-    "mootdx: tests that require mootdx/通达信 data source (K-line history)",
+    "qmt: tests that require local QMT/xtdata (K-line history)",
 ]
 

@@ -73,7 +73,7 @@ class Factor_20260531_005210_g1_0:
         accrual_raw = z_ey - z_cf
         z_accrual = _zscore(accrual_raw)
         accrual_score = -np.tanh(z_accrual * ACC_S)
-        z_ipo = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        z_ipo = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
         acc_ipo = accrual_score + z_ipo
         z_acc_ipo = _zscore(acc_ipo)
 

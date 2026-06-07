@@ -40,7 +40,7 @@ class Factor_20260531_005210_g28_2:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conv = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_conv = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             pricing_power = panel['profit_yoy'] - panel['revenue_yoy']
 
         gm_s = np.sign(panel['gross_margin']) * np.abs(panel['gross_margin']) ** (1/3)
@@ -70,7 +70,7 @@ class Factor_20260531_005210_g28_2:
         z_interact = _zscore(z_quality * z_ey)
 
         ipo_premium = panel['open'] / panel['issue_price']
-        lifecycle = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        lifecycle = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
 
         score = (VALUE_W * z_value + PRICING_POWER_W * pricing_sig + CASH_QUALITY_W * cash_quality + GROWTH_W * z_growth + INTERACT_W * z_interact + LIFECYCLE_W * lifecycle + CF_YIELD_W * z_cf)

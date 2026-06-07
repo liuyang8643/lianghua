@@ -5,12 +5,13 @@
     'runtime_{start}_{end}.npz',
     stock_codes=np.array(..., dtype='U12'),
     trade_dates=np.array(..., dtype='datetime64[D]'),
-    open=ndarray(n_dates, n_stocks),
+    open=ndarray(n_dates, n_stocks),       # 不复权真实价
     high=ndarray(n_dates, n_stocks),
     low=ndarray(n_dates, n_stocks),
     close=ndarray(n_dates, n_stocks),
     volume=ndarray(n_dates, n_stocks),
     amount=ndarray(n_dates, n_stocks),
+    preClose=ndarray(n_dates, n_stocks),   # 官方前收盘价(除权除息参考价)，涨跌停/收益基准
     issue_price=ndarray(n_stocks,),        # 每股发行价（元），从 akshare 新浪财经获取
     stock_names=ndarray(n_stocks,),        # 股票最新简称，U16，从 CNINFO 缓存获取
     st_mask=ndarray(bool, n_dates, n_stocks),
@@ -39,87 +40,45 @@ import pandas as pd
 
 DATA_DIR = Path(__file__).resolve().parent
 OUT_DIR = DATA_DIR / "runtime"
-KLINE_DIR = DATA_DIR / "k-line"
+KLINE_DIR = DATA_DIR / "k-line"             # mootdx 不复权（唯一原始价源 / 交易日历 / 股票全集）
+
+# 原始字段（含官方 preClose）
+RAW_FIELDS = ['open', 'high', 'low', 'close', 'volume', 'amount', 'preClose']
+
+
+def _align_into(arr_cols: list[np.ndarray], df: pd.DataFrame, src_fields: list[str],
+                trade_date_list: np.ndarray, j: int):
+    """把单只 parquet（时间倒序）的 src_fields 列按交易日对齐写入 arr_cols 的第 j 列。"""
+    kline_dates = df['time'].to_numpy(np.int64).astype('datetime64[ms]').astype('datetime64[D]')
+    sort_idx = np.argsort(kline_dates)
+    kline_dates = kline_dates[sort_idx]
+    indices = np.searchsorted(kline_dates, trade_date_list, side='left')
+    indices = np.clip(indices, 0, len(kline_dates) - 1)
+    match = kline_dates[indices] == trade_date_list
+    idx = indices[match]
+    for arr, f in zip(arr_cols, src_fields):
+        arr[match, j] = df[f].to_numpy(float)[sort_idx][idx]
 
 
 def load_kline_panel(
     stock_codes: np.ndarray,
     trade_dates: np.ndarray,
 ) -> dict[str, np.ndarray]:
-    """读取所有 k-line parquet 文件，构建 OHLCV 面板。
+    """构建 OHLCV 面板：原始价来自 k-line/。
 
-    每只股票一个 parquet 文件（{code}.parquet），
-    通过二分查找将 trade_dates 对齐到 k-line 的 time 列。
+    零容错：stock_codes 来自 k-line/ 全集；缺文件/缺列直接报错。
     """
     n_dates = len(trade_dates)
     n_stocks = len(stock_codes)
-
-    arrays = {
-        'open': np.full((n_dates, n_stocks), np.nan, dtype=np.float64),
-        'high': np.full((n_dates, n_stocks), np.nan, dtype=np.float64),
-        'low': np.full((n_dates, n_stocks), np.nan, dtype=np.float64),
-        'close': np.full((n_dates, n_stocks), np.nan, dtype=np.float64),
-        'volume': np.full((n_dates, n_stocks), np.nan, dtype=np.float64),
-        'amount': np.full((n_dates, n_stocks), np.nan, dtype=np.float64),
-    }
-
-    # trade_dates 转为 date 列表方便比较
+    arrays = {f: np.full((n_dates, n_stocks), np.nan, dtype=np.float64)
+              for f in RAW_FIELDS}
     trade_date_list = trade_dates.astype('datetime64[D]')
 
     t0 = time.time()
     last_log = t0
-    loaded = 0
-    missing = 0
-
     for j, code in enumerate(stock_codes):
-        parquet_path = KLINE_DIR / f"{code}.parquet"
-        if not parquet_path.exists():
-            missing += 1
-            continue
-
-        df = pd.read_parquet(parquet_path)
-        if df.empty:
-            missing += 1
-            continue
-
-        # k-line time 是 ms 时间戳，转为 numpy 日期（去除时分秒只留日期）
-        time_ms = df['time'].values.astype(np.int64)
-        kline_dates = time_ms.astype('datetime64[ms]').astype('datetime64[D]')
-
-        # mootdx 返回降序（最新在前），sort 为升序后对齐
-        sort_idx = np.argsort(kline_dates)
-        kline_dates = kline_dates[sort_idx]
-        open_arr = df['open'].values[sort_idx]
-        high_arr = df['high'].values[sort_idx]
-        low_arr = df['low'].values[sort_idx]
-        close_arr = df['close'].values[sort_idx]
-        vol_arr = df['volume'].values[sort_idx]
-        amt_arr = df['amount'].values[sort_idx]
-
-        # 二分查找对齐: trade_dates ∈ kline_dates
-        indices = np.searchsorted(kline_dates, trade_date_list, side='left')
-        valid = (indices >= 0) & (indices < len(kline_dates))
-        if not valid.any():
-            loaded += 1
-            continue
-        indices = np.clip(indices, 0, len(kline_dates) - 1)
-        match = valid & (kline_dates[indices] == trade_date_list)
-
-        if not match.any():
-            loaded += 1
-            continue
-
-        idx = indices[match]
-        date_mask = match
-
-        arrays['open'][date_mask, j] = open_arr[idx]
-        arrays['high'][date_mask, j] = high_arr[idx]
-        arrays['low'][date_mask, j] = low_arr[idx]
-        arrays['close'][date_mask, j] = close_arr[idx]
-        arrays['volume'][date_mask, j] = vol_arr[idx]
-        arrays['amount'][date_mask, j] = amt_arr[idx]
-
-        loaded += 1
+        raw = pd.read_parquet(KLINE_DIR / f"{code}.parquet").sort_values('time').reset_index(drop=True)
+        _align_into([arrays[f] for f in RAW_FIELDS], raw, RAW_FIELDS, trade_date_list, j)
 
         now = time.time()
         if now - last_log >= 5 or j == n_stocks - 1:
@@ -130,7 +89,7 @@ def load_kline_panel(
                   f"(耗时 {elapsed:.0f}s, 速度 {speed:.0f}只/s, 预计剩余 {eta:.0f}s)")
             last_log = now
 
-    print(f"K线面板完成: 加载 {loaded} 只, 缺失 {missing} 只")
+    print(f"K线面板完成: {n_stocks} 只（不复权 k-line/）")
     return arrays
 
 
@@ -319,18 +278,20 @@ def build_stock_names(stock_codes: np.ndarray) -> np.ndarray:
     today = date.today()
     names = []
     t0 = time.time()
+    fail_count = 0
     for j, code in enumerate(stock_codes):
         try:
             name = get_stock_name_at_date(str(code), today)
-        except Exception:
+        except Exception as e:
             name = None
+            fail_count += 1
         names.append(name or '')
         if (j + 1) % 1000 == 0:
             print(f"[{time.strftime('%H:%M:%S')}] 股票名称: {j+1}/{len(stock_codes)} "
                   f"(耗时 {time.time()-t0:.0f}s)")
     result = np.array(names, dtype='U16')
     nonempty = (result != '').sum()
-    print(f"股票名称: {nonempty}/{len(result)} 非空 ({nonempty/len(result)*100:.1f}%)")
+    print(f"股票名称: {nonempty}/{len(result)} 非空 ({nonempty/len(result)*100:.1f}%), 查询失败 {fail_count}")
     return result
 
 
@@ -463,6 +424,7 @@ def build_runtime(
         close=kline_arrays['close'],
         volume=kline_arrays['volume'],
         amount=kline_arrays['amount'],
+        preClose=kline_arrays['preClose'],
         issue_price=issue_price,
         stock_names=stock_names,
         st_mask=st_mask,

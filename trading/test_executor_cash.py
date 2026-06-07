@@ -175,6 +175,134 @@ def test_fill_one_stock_underfunded_reject_does_not_block():
     assert len(bm.submitted) > 0             # 确实减仓试过
 
 
+def test_is_insufficient_funds_recognizes_qmt_numeric_code():
+    """回归 2026-06-02:query_order().status_msg 只给数字码 -150906130|1|-150906130,
+    不含中文「资金可用数不足」。必须靠数字码识别,否则资金废单被误判为硬废单。"""
+    from trading.executor import _is_insufficient_funds
+    assert _is_insufficient_funds('-150906130|1|-150906130') is True   # QMT 买入资金不足码
+    assert _is_insufficient_funds('资金可用数不足,尚需3440') is True
+    assert _is_insufficient_funds('insufficient buying power') is True
+    assert _is_insufficient_funds('无对手方价格,废单') is False         # 真·硬废单
+    assert _is_insufficient_funds('') is False
+
+
+def test_fill_one_stock_numeric_code_reject_does_not_block():
+    """资金不足废单只给数字码(无中文)时,也不能计熔断。"""
+    trader = _FakeTrader(cash=1e7)
+    trader.on_order = lambda code, shares, oid: SimpleNamespace(
+        order_status=xtconstant.ORDER_JUNK, traded_volume=0,
+        order_volume=shares, traded_price=0.0, status_msg='-150906130|1|-150906130')
+    ex = RebalanceExecutor(trader)
+    code = '688466.SH'  # 科创 min_lot=200
+    bm = _make_buy_monitor(ex, {code: 600}, {code: 10.0}, limit_prices={code: 11.0})
+    bm._fill_one_stock(code)
+    assert code not in bm.blocked_codes
+    assert bm.fail_counts[code] == 0
+
+
+def test_fill_one_stock_no_block_while_sells_pending():
+    """卖单回款在途时,买单废单(哪怕拿不到任何 msg)都不计熔断——格式无关的兜底。
+
+    复刻 2026-06-02:开盘现金不够、4 只买单被废,但卖单回款 09:30:22 才到。
+    旧逻辑在 09:30:06 就把它们熔断;新逻辑应保持不熔断,等回款再补。
+    """
+    trader = _FakeTrader(cash=1e7)
+    # 模拟拿不到 status_msg 的硬废单(空 msg)——若无 sells-pending 兜底就会熔断
+    trader.on_order = lambda code, shares, oid: SimpleNamespace(
+        order_status=xtconstant.ORDER_JUNK, traded_volume=0,
+        order_volume=shares, traded_price=0.0, status_msg='')
+    ex = RebalanceExecutor(trader)
+    code = '300876.SZ'  # 创业 min_lot=200
+    bm = _make_buy_monitor(ex, {code: 600}, {code: 10.0}, limit_prices={code: 11.0})
+    # 注入一个「未完成」的卖单 monitor,表示回款仍在途
+    sm = SellMonitor(ex, [('600000.SH', 100)], date.today(), date.today())
+    bm.sell_monitor = sm
+    assert bm._sells_pending() is True
+    bm._fill_one_stock(code)
+    assert code not in bm.blocked_codes   # 回款在途不熔断
+    assert bm.fail_counts[code] == 0
+
+    # 卖单收尾后,同样的空 msg 硬废单恢复计熔断
+    sm.finished = True
+    bm2 = _make_buy_monitor(ex, {code: 600}, {code: 10.0}, limit_prices={code: 11.0})
+    bm2.sell_monitor = sm
+    bm2._fill_one_stock(code)
+    assert code in bm2.blocked_codes
+    assert bm2.fail_counts[code] == ex.BUY_REJECT_LIMIT
+
+
+# ── 卖单撤单重挂(等股份释放 + 可用量封顶) ──────────────────
+
+class _FakeSellTrader:
+    """卖单重挂场景:order 全成;cancel 把原委托置 CANCELED 并(可选)释放未成交股份回可用。"""
+
+    def __init__(self, release_on_cancel=True):
+        self.orders: dict[int, SimpleNamespace] = {}
+        self.can_use: dict[str, int] = {}
+        self._next = 5000
+        self.sell_submits = []
+        self.release_on_cancel = release_on_cancel
+
+    def query_order(self, oid):
+        return self.orders.get(oid)
+
+    def query_stock_position(self, code):
+        return SimpleNamespace(stock_code=code, can_use_volume=self.can_use.get(code, 0))
+
+    def cancel_order(self, oid):
+        o = self.orders.get(oid)
+        if not o:
+            return
+        o.order_status = xtconstant.ORDER_CANCELED
+        if self.release_on_cancel:
+            self.can_use[o.stock_code] = self.can_use.get(o.stock_code, 0) + (
+                o.order_volume - o.traded_volume)
+
+    def order(self, order_type, code, shares, price, order_remark=''):
+        oid = self._next
+        self._next += 1
+        self.sell_submits.append((code, shares, oid))
+        self.orders[oid] = SimpleNamespace(
+            stock_code=code, order_status=xtconstant.ORDER_SUCCEEDED,
+            order_volume=shares, traded_volume=shares, status_msg='')
+        self.can_use[code] = max(0, self.can_use.get(code, 0) - shares)
+        return oid
+
+
+def _stuck_sell_monitor(ex, code, volume):
+    sm = SellMonitor(ex, [(code, volume)], date.today(), date.today())
+    sm.record_action = lambda *a, **k: None
+    ex.trader.orders[5000] = SimpleNamespace(
+        stock_code=code, order_status=xtconstant.ORDER_REPORTED,
+        order_volume=volume, traded_volume=0, status_msg='')
+    ex.trader.can_use[code] = 0  # 在途卖单股份被冻结
+    sub = {'code': code, 'order_id': 5000, 'shares': volume, 'submitted_at': 0}
+    sm.submitted.append(sub)
+    return sm, sub
+
+
+def test_sell_repost_waits_for_release_then_reposts_available():
+    """复刻 2026-06-02:撤单后股份释放,按当前可用量重挂(不再撞「股份可用数不足」)。"""
+    ex = RebalanceExecutor(_FakeSellTrader(release_on_cancel=True))
+    ex.SELL_CANCEL_SETTLE_SEC = 0.5
+    code = '603168.SH'
+    sm, sub = _stuck_sell_monitor(ex, code, 5900)
+    sm._try_repost_sell(sub, ex.trader.orders[5000])
+    assert len(ex.trader.sell_submits) == 1
+    rcode, rshares, _ = ex.trader.sell_submits[0]
+    assert rcode == code and rshares == 5900
+
+
+def test_sell_repost_skips_when_shares_not_released():
+    """撤单后股份始终没释放回可用 → 放弃重挂,不盲目用旧量下单产生废单。"""
+    ex = RebalanceExecutor(_FakeSellTrader(release_on_cancel=False))
+    ex.SELL_CANCEL_SETTLE_SEC = 0.3
+    code = '688026.SH'
+    sm, sub = _stuck_sell_monitor(ex, code, 2400)
+    sm._try_repost_sell(sub, ex.trader.orders[5000])
+    assert ex.trader.sell_submits == []
+
+
 def test_fill_one_stock_skips_when_cash_below_one_lot():
     """现金不足以按涨停价买一手 → 不下单,直接跳过(不产生废单)。"""
     # 现金只有 1500,涨停价 11 → 一手(100股)需 ~1100,但科创最小 200 手 → 需 ~2200 > 1500
@@ -183,3 +311,14 @@ def test_fill_one_stock_skips_when_cash_below_one_lot():
     bm = _make_buy_monitor(ex, {code: 2000}, {code: 10.0}, limit_prices={code: 11.0})
     assert bm._fill_one_stock(code) is False
     assert len(bm.submitted) == 0  # 没下单,没废单
+
+
+def test_off_hours_fast_restores_default_timeouts():
+    ex = RebalanceExecutor(_FakeTrader())
+    before = ex._snapshot_timeouts()
+    ex._apply_off_hours_timeouts()
+    assert ex.BUY_TIMEOUT_HARD_SEC == 90
+    assert ex.SELL_MONITOR_SEC == 30
+    ex._restore_timeouts(before)
+    assert ex.BUY_TIMEOUT_HARD_SEC == 600
+    assert ex.SELL_MONITOR_SEC == 120

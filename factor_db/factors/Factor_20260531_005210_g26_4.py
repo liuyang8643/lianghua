@@ -39,8 +39,8 @@ class Factor_20260531_005210_g26_4:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
-            ipo_premium = panel['open'] / np.maximum(panel['issue_price'], 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
+            ipo_premium = panel['open'] / np.where(np.isfinite(panel['issue_price']) & (panel['issue_price'] > 1e-8), panel['issue_price'], np.nan)
 
         roe_s = np.sign(panel['roe']) * (np.abs(panel['roe']) ** (1/3))
         gm_s = np.sign(panel['gross_margin']) * (np.abs(panel['gross_margin']) ** (1/3))
@@ -80,7 +80,7 @@ class Factor_20260531_005210_g26_4:
         asym_residual = np.where(residual_cash < 0, residual_cash * (1.0 + RESIDUAL_ASYM), residual_cash * 0.5)
         z_residual = _zscore(np.tanh(-asym_residual * CASH_GATE_S))
 
-        z_ipo = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        z_ipo = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
         score = (WEIGHT_RESONANCE * z_resonance + WEIGHT_QUALITY * z_quality + WEIGHT_TRUST * z_trust + WEIGHT_GROWTH * z_growth + WEIGHT_RESIDUAL * z_residual + WEIGHT_IPO * z_ipo)
 

@@ -45,7 +45,7 @@ class Factor_20260531_005210_g10_1:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             ipo_premium = panel['open'] / panel['issue_price']
 
         roe_t = np.sign(panel['roe']) * (np.abs(panel['roe']) ** (1.0 / 3.0))
@@ -87,7 +87,7 @@ class Factor_20260531_005210_g10_1:
         fragility_signal = -np.tanh(_zscore(accrual_raw + tension_raw) * FRAGILITY_S)
 
         # IPO: issue price premium rank
-        ipo_signal = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        ipo_signal = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
         score = (QUALITY_W * z_quality + VALUE_W * z_value + RESONANCE_W * z_resonance + GROWTH_W * z_growth + EFFICIENCY_W * efficiency_signal + FRAGILITY_W * fragility_signal + IPO_W * ipo_signal)
 

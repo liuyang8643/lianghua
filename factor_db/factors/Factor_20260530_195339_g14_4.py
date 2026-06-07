@@ -36,7 +36,7 @@ class Factor_20260530_195339_g14_4:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
 
         z_cash_conf = _zscore(cash_conf)
         cash_gate = 0.5 + 0.5 * np.tanh(z_cash_conf * CASH_CONF_S)

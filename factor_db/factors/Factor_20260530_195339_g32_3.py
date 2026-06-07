@@ -38,7 +38,7 @@ class Factor_20260530_195339_g32_3:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            coverage = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            coverage = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
 
         # Cube-root transforms for outlier robustness
         roe_s = np.sign(panel['roe']) * (np.abs(panel['roe']) ** (1/3))

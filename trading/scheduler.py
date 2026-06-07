@@ -1,7 +1,7 @@
 import time as sys_time
 import concurrent.futures
 from datetime import datetime, time
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 from trading.logger import trading_logger
 from utils.recorder import recorder
@@ -23,7 +23,6 @@ class TradingScheduler:
       trader: Trader,
       before_trade: Callable = None,
       execute_trade: Callable = None,
-      while_trade: List[Callable] = None,
       after_trade: Callable = None,
       post_close: Callable = None,
       update_all: Callable = None,
@@ -37,10 +36,12 @@ class TradingScheduler:
     self.executed = False
     self.post_close_done = False
     self.update_all_done = False
+    # 当前状态标志所归属的日期。用于检测跨日运行（进程未被 watchdog/人工重启）
+    # 时主动重置当日状态，避免上一交易日残留的 True 标志让新交易日跳过调仓。
+    self._state_day = None
 
     self.before_trade = before_trade
     self.execute_trade = execute_trade
-    self.while_trade = while_trade
     self.after_trade = after_trade
     self.post_close = post_close
     self.update_all = update_all
@@ -53,6 +54,37 @@ class TradingScheduler:
 
   def _now(self) -> datetime:
     return self.time_provider()
+
+  def _reset_daily_state(self):
+    """重置「当日」调度状态，使新交易日能重新走 预计算→执行→盘后→全量更新。
+
+    动机：scheduler 主循环常驻、跨日不退出。若进程未被 watchdog/人工在 16:00 后
+    重启，上一交易日跑完后 prepared/executed/post_close_done/update_all_done 全为
+    True，会让新交易日的 line `if not self.prepared` / `not self.executed` 条件不
+    成立而静默跳过调仓（仅 self.trading 被 15:00 重置为 False，导致只误发一张
+    「盘中交易开始」卡片却零成交）。这里在跨日时把这些标志清零。
+    """
+    self.trading = False
+    self.prepared = False
+    self.executed = False
+    self.post_close_done = False
+    self.update_all_done = False
+
+  def _check_day_rollover(self, now: datetime) -> bool:
+    """检测是否跨入新的一天；若跨日则重置当日状态。返回是否发生了重置。
+
+    首次调用仅记录当前日期、不重置（避免影响「启动时已错过窗口」等既有逻辑）。
+    """
+    today = now.date()
+    if self._state_day is None:
+      self._state_day = today
+      return False
+    if today == self._state_day:
+      return False
+    trading_logger.info(f"检测到跨日 {self._state_day} → {today}，重置当日调度状态")
+    self._reset_daily_state()
+    self._state_day = today
+    return True
 
   def _in_prepare_window(self, current_time: datetime) -> bool:
     return PREPARE_REBALANCE_START <= current_time.time() < EXECUTE_REBALANCE_END
@@ -88,10 +120,27 @@ class TradingScheduler:
       self.post_close_done = True
 
   def start_check_trading(self):
+    import os as _os
     executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
     current_check_interval = self.check_interval
+
+    def _safe_result(future):
+        try:
+            return future.result()
+        except KeyboardInterrupt:
+            trading_logger.info("收到 Ctrl+C 中断，正在退出...")
+            if executor is not None:
+                executor.shutdown(wait=False)
+            _os._exit(1)
     while True:
       now = self._now()
+      # ---- 跨日重置：进程常驻跨日时，清掉上一交易日残留的状态标志 ----
+      if self._check_day_rollover(now):
+        if executor is not None:
+          executor.shutdown(wait=False)
+          executor = None
+        current_check_interval = self.check_interval
+
       # ---- 09:25 准备 ----
       if not self.prepared:
         if is_trading_day(now.date()) and self._in_prepare_window(now):
@@ -100,7 +149,7 @@ class TradingScheduler:
           executor = concurrent.futures.ThreadPoolExecutor()
           if self.before_trade:
             future = executor.submit(self.before_trade, self)
-            future.result()
+            _safe_result(future)
             trading_logger.debug("开盘预计算完成")
           self.prepared = True
           self._advance_time(EXECUTE_REBALANCE_START)
@@ -117,7 +166,7 @@ class TradingScheduler:
         trading_logger.debug("今日开盘调仓执行开始")
         if self.execute_trade and executor is not None:
           future = executor.submit(self.execute_trade, self)
-          future.result()
+          _safe_result(future)
           trading_logger.debug("开盘调仓执行完成")
         self.executed = True
         self._advance_time(POST_CLOSE_START)
@@ -132,8 +181,6 @@ class TradingScheduler:
             content="09:30 盘中交易已开始，订单/成交回调进入飞书通知。")
           trading_logger.debug("今日交易开始")
           self.trading = True
-        if self.while_trade and executor is not None:
-          futures = [executor.submit(func, self) for func in self.while_trade]
 
       # ---- 15:00 交易结束 + 盘后对比 ----
       elif self.trading and time(15, 0) <= now.time():
@@ -144,7 +191,7 @@ class TradingScheduler:
         trading_logger.debug("今日交易结束")
         if self.after_trade and executor is not None:
           future = executor.submit(self.after_trade, self)
-          future.result()
+          _safe_result(future)
           trading_logger.debug("盘后处理完成")
 
         rc = recorder.flush()
@@ -182,7 +229,7 @@ class TradingScheduler:
         if executor is None:
           executor = concurrent.futures.ThreadPoolExecutor()
         future = executor.submit(self.post_close, self)
-        future.result()
+        _safe_result(future)
         trading_logger.debug("盘后对比分析完成")
         self.post_close_done = True
         self._advance_time(UPDATE_ALL_START)
@@ -193,7 +240,7 @@ class TradingScheduler:
         if executor is None:
           executor = concurrent.futures.ThreadPoolExecutor()
         future = executor.submit(self.update_all, self)
-        future.result()
+        _safe_result(future)
         trading_logger.debug("全量数据更新完成")
         self.update_all_done = True
 
@@ -205,4 +252,10 @@ class TradingScheduler:
           trading_logger.info("快进模拟完成，退出")
           return
 
-      sys_time.sleep(0 if self.fast_forward else current_check_interval)
+      try:
+        sys_time.sleep(0 if self.fast_forward else current_check_interval)
+      except KeyboardInterrupt:
+        trading_logger.info("收到 Ctrl+C 中断，正在退出...")
+        if executor is not None:
+          executor.shutdown(wait=False)
+        _os._exit(1)

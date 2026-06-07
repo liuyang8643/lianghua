@@ -57,7 +57,7 @@ class Factor_20260530_195339_g10_0:
 
         cf_sig = _rank_norm(np.tanh(r_cf * 2.0))
 
-        r_ipo = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        r_ipo = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
         score = (VALUE_W * r_value + QUALITY_W * r_quality_adj + GROWTH_W * r_growth + CF_W * cf_sig + IPO_W * r_ipo)
 

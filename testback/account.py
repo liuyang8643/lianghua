@@ -12,8 +12,6 @@ class MockStockPosition(TypedDict):
   buy_trade_date: sys_date
   avg_price: float
   price_field: str
-  signal_dividend_type: str
-  execution_dividend_type: str
 
 
 class MockStockClearedPosition(TypedDict):
@@ -25,8 +23,6 @@ class MockStockClearedPosition(TypedDict):
   clear_price: float
   clear_reason: Optional[str]
   price_field: str
-  signal_dividend_type: str
-  execution_dividend_type: str
   pos: MockStockPosition
 
 
@@ -44,8 +40,6 @@ class TradeRecord(TypedDict):
   cost: Optional[float]
   income: Optional[float]
   reason: Optional[str]
-  signal_dividend_type: str
-  execution_dividend_type: str
 
 
 class StockAccountMocker:
@@ -89,8 +83,6 @@ class StockAccountMocker:
       buy_date: sys_date,
       signal_date: sys_date | None = None,
       price_field: str = 'open',
-      signal_dividend_type: str = 'back',
-      execution_dividend_type: str = 'back',
       reason: str | None = None,
   ):
     """ 买入股票 """
@@ -101,8 +93,6 @@ class StockAccountMocker:
     total_fee = commission + transfer_fee + slippage
     total_cost = cost + total_fee
     if total_cost > self.current_cash:
-      # testback_logger = __import__('testback.logger', fromlist=['testback_logger']).testback_logger
-      # testback_logger.warning(f'Cash not enough, skip buy: {code}, cost: {total_cost:.2f}, cash: {self.current_cash:.2f}')
       return False
 
     signal_date = signal_date or buy_date
@@ -126,8 +116,6 @@ class StockAccountMocker:
         'buy_trade_date': buy_date,
         'avg_price': price,
         'price_field': price_field,
-        'signal_dividend_type': signal_dividend_type,
-        'execution_dividend_type': execution_dividend_type,
       }
 
     self.trade_log.append({
@@ -144,8 +132,6 @@ class StockAccountMocker:
       'cost': cost,
       'income': None,
       'reason': reason,
-      'signal_dividend_type': signal_dividend_type,
-      'execution_dividend_type': execution_dividend_type,
     })
     return True
 
@@ -158,8 +144,6 @@ class StockAccountMocker:
       clear_reason: str = None,
       signal_date: sys_date | None = None,
       price_field: str = 'open',
-      signal_dividend_type: str = 'back',
-      execution_dividend_type: str = 'back',
   ):
     """ 卖出股票 """
     if code not in self.positions:
@@ -197,8 +181,6 @@ class StockAccountMocker:
       'cost': cost_basis,
       'income': realized_income,
       'reason': clear_reason,
-      'signal_dividend_type': signal_dividend_type,
-      'execution_dividend_type': execution_dividend_type,
     })
 
     pos['commission'] += total_fee
@@ -221,8 +203,6 @@ class StockAccountMocker:
         pos=cleared_pos,
         clear_reason=clear_reason,
         price_field=price_field,
-        signal_dividend_type=signal_dividend_type,
-        execution_dividend_type=execution_dividend_type,
       ))
     else:
       pos['avg_price'] = pos['cost'] / pos['volume']
@@ -235,8 +215,6 @@ class StockAccountMocker:
       clear_reason: str = None,
       signal_date: sys_date | None = None,
       price_field: str = 'open',
-      signal_dividend_type: str = 'back',
-      execution_dividend_type: str = 'back',
   ):
     """ 清仓股票 """
     if code not in self.positions:
@@ -249,8 +227,6 @@ class StockAccountMocker:
       clear_reason,
       signal_date=signal_date,
       price_field=price_field,
-      signal_dividend_type=signal_dividend_type,
-      execution_dividend_type=execution_dividend_type,
     )
 
   def write_off_stock(
@@ -260,8 +236,6 @@ class StockAccountMocker:
       write_off_reason: str = '退市归零',
       signal_date: sys_date | None = None,
       price_field: str = 'delist_zero',
-      signal_dividend_type: str = 'back',
-      execution_dividend_type: str = 'back',
   ):
     """将持仓按零价值核销（如退市）。"""
     if code not in self.positions:
@@ -287,8 +261,6 @@ class StockAccountMocker:
       'cost': cost_basis,
       'income': realized_income,
       'reason': write_off_reason,
-      'signal_dividend_type': signal_dividend_type,
-      'execution_dividend_type': execution_dividend_type,
     })
 
     del self.positions[code]
@@ -302,8 +274,6 @@ class StockAccountMocker:
       pos=original_pos,
       clear_reason=write_off_reason,
       price_field=price_field,
-      signal_dividend_type=signal_dividend_type,
-      execution_dividend_type=execution_dividend_type,
     ))
 
   def calc_position_values(self, prices: dict = None):
@@ -317,8 +287,6 @@ class StockAccountMocker:
           'commission': pos['commission'], 'buy_date': pos['buy_date'],
           'buy_signal_date': pos['buy_signal_date'], 'buy_trade_date': pos['buy_trade_date'],
           'avg_price': pos['avg_price'], 'price_field': pos['price_field'],
-          'signal_dividend_type': pos['signal_dividend_type'],
-          'execution_dividend_type': pos['execution_dividend_type'],
           'current_price': price, 'current_value': price * pos['volume'],
         })
     return res
@@ -327,8 +295,8 @@ class StockAccountMocker:
     """ 获取指定股票持仓 """
     return self.positions.get(code)
 
-  def calc_assets(self, cur_time, prices: dict = None):
-    """计算资产。cur_time 仅用作语义占位，账户净值由外部 daily_snapshots 维护。"""
+  def calc_assets(self, prices: dict = None):
+    """计算当前资产。"""
     market_value = sum(pos['current_value'] for pos in self.calc_position_values(prices))
     return {
       'cash': self.current_cash,

@@ -70,8 +70,14 @@ def _load():
         if raw.get('weight_range'):
             mn, mx, step = raw['weight_range']
             vals = [0.0 if abs(x) < 1e-9 else round(float(x), 2) for x in np.arange(mn, mx + step / 2, step)]
-            profile['weight_search_spaces'] = {n: vals for n in factor_names}
-            profile['fixed_weights'] = None
+            yaml_fixed = raw.get('fixed_weights')
+            if yaml_fixed:
+                profile['fixed_weights'] = {n: float(yaml_fixed[n]) for n in yaml_fixed if n in factor_names}
+                searchable = [n for n in factor_names if n not in yaml_fixed]
+                profile['weight_search_spaces'] = {n: vals for n in searchable} if searchable else None
+            else:
+                profile['weight_search_spaces'] = {n: vals for n in factor_names}
+                profile['fixed_weights'] = None
         GA_PROFILES[name] = profile
 
 

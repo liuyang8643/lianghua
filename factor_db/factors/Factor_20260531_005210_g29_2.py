@@ -36,8 +36,8 @@ class Factor_20260531_005210_g29_2:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_to_earn = cf_yield / np.maximum(np.abs(ey), 1e-8)
-            growth_stability = panel['profit_yoy'] / np.maximum(np.abs(panel['revenue_yoy']), 1e-8)
+            cash_to_earn = cf_yield / np.where(np.isfinite(ey) & (np.abs(ey) > 1e-8), np.abs(ey), np.nan)
+            growth_stability = panel['profit_yoy'] / np.where(np.isfinite(panel['revenue_yoy']) & (np.abs(panel['revenue_yoy']) > 1e-8), np.abs(panel['revenue_yoy']), np.nan)
 
         gm_s = np.sign(panel['gross_margin']) * (np.abs(panel['gross_margin']) ** (1/3))
         z_gm = _zscore(gm_s)

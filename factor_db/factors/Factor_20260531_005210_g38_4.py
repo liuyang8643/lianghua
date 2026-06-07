@@ -38,7 +38,7 @@ class Factor_20260531_005210_g38_4:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             ipo_ratio = panel['open'] / panel['issue_price']
 
         roe_s = np.sign(panel['roe']) * (np.abs(panel['roe']) ** (1/3))
@@ -68,7 +68,7 @@ class Factor_20260531_005210_g38_4:
         cap_eff_s = np.sign(cap_eff_raw) * (np.abs(cap_eff_raw) ** (1/3))
         z_cap_eff = _zscore(cap_eff_s)
 
-        z_lifecycle = _rank_norm(-np.log(np.maximum(ipo_ratio, 0.01)))
+        z_lifecycle = _rank_norm(np.where(np.isfinite(ipo_ratio) & (ipo_ratio > 0.01), -np.log(ipo_ratio), np.nan))
 
 
         score = (VALUE_W * z_value + QUALITY_W * z_quality + GROWTH_W * z_growth + EARN_QUAL_W * z_earn_qual + CAP_EFF_W * z_cap_eff + LIFECYCLE_W * z_lifecycle)

@@ -40,10 +40,10 @@ class Factor_20260531_005210_g8_1:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             accruals = cf_yield - ey
-            growth_eff = panel['profit_yoy'] / np.maximum(np.abs(panel['revenue_yoy']), 1e-8)
-            ipo_premium = panel['open'] / np.maximum(panel['issue_price'], 1e-8)
+            growth_eff = panel['profit_yoy'] / np.where(np.isfinite(panel['revenue_yoy']) & (np.abs(panel['revenue_yoy']) > 1e-8), np.abs(panel['revenue_yoy']), np.nan)
+            ipo_premium = panel['open'] / np.where(np.isfinite(panel['issue_price']) & (panel['issue_price'] > 1e-8), panel['issue_price'], np.nan)
 
         # Cash quality: yield + coverage fused
         z_cf = _zscore(cf_yield)
@@ -90,7 +90,7 @@ class Factor_20260531_005210_g8_1:
         cash_sig = np.tanh(z_cash_quality * CASH_S)
 
         # IPO maturity: favor stocks closer to issue price
-        z_ipo = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        z_ipo = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
         score = (VALUE_W * z_value + TRUST_W * z_trust + GROWTH_DUAL_W * z_growth_dual + ACCRUAL_SPIRAL_W * z_spiral + EFF_DIV_W * z_div + CASH_SIG_W * cash_sig + IPO_W * z_ipo)
 

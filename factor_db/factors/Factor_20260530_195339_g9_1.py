@@ -44,7 +44,7 @@ class Factor_20260530_195339_g9_1:
             _rank_norm(panel['revenue_yoy']) + _rank_norm(panel['profit_yoy'])
         )
 
-        r_ipo = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        r_ipo = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
         score = (VALUE_W * r_value + QUALITY_W * r_quality + GROWTH_W * r_growth + CF_W * r_cf + IPO_W * r_ipo)
 

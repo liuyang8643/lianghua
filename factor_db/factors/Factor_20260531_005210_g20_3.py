@@ -41,7 +41,7 @@ class Factor_20260531_005210_g20_3:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             ipo_premium = panel['open'] / panel['issue_price']
             accruals = cf_yield - ey
 
@@ -78,7 +78,7 @@ class Factor_20260531_005210_g20_3:
         asym_accrual = np.where(z_accruals < 0, z_accruals * 2.0, z_accruals * 0.5)
         z_accrual = _zscore(np.tanh(asym_accrual * ACCRUAL_S))
 
-        z_ipo = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        z_ipo = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
 
         score = (CONSENSUS_W * z_consensus + VALUE_W * z_value + CROSS_W * z_cross + GROWTH_W * z_growth + ACCRUAL_W * z_accrual + IPO_W * z_ipo)

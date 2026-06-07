@@ -41,10 +41,10 @@ class Factor_20260531_005210_g35_0:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             accrual_gap = (panel['operating_cf_ps'] - panel['eps']) / panel['open']
-            op_leverage = panel['gross_margin'] / np.maximum(np.abs(ey), 1e-6)
-            ipo_premium = panel['open'] / np.maximum(panel['issue_price'], 1e-8)
+            op_leverage = panel['gross_margin'] / np.where(np.isfinite(ey) & (np.abs(ey) > 1e-6), np.abs(ey), np.nan)
+            ipo_premium = panel['open'] / np.where(np.isfinite(panel['issue_price']) & (panel['issue_price'] > 1e-8), panel['issue_price'], np.nan)
 
         roe_s = np.sign(panel['roe']) * (np.abs(panel['roe']) ** (1.0 / 3.0))
         gm_s = np.sign(panel['gross_margin']) * (np.abs(panel['gross_margin']) ** (1.0 / 3.0))
@@ -62,7 +62,7 @@ class Factor_20260531_005210_g35_0:
         cash_gate = 0.5 + 0.5 * np.tanh(z_cash * CASH_S)
         quality_gate = 0.5 + 0.5 * np.tanh((z_roe + z_gm) * QUALITY_S)
 
-        dual_energy = np.sqrt(np.maximum(z_ey ** 2 + z_cf ** 2, 1e-12))
+        dual_energy = np.sqrt(np.where(np.isfinite(z_ey ** 2 + z_cf ** 2) & (z_ey ** 2 + z_cf ** 2 > 1e-12), z_ey ** 2 + z_cf ** 2, np.nan))
         dual_alignment = z_ey * z_cf / (1.0 + np.abs(z_ey - z_cf))
         resonance = _zscore(dual_alignment * dual_energy * cash_gate * RESONANCE_S)
 
@@ -82,7 +82,7 @@ class Factor_20260531_005210_g35_0:
 
         leverage_score = np.tanh(z_leverage * LEVERAGE_S)
 
-        z_ipo = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        z_ipo = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
 
         score = (RESONANCE_W * resonance + QUALITY_W * bridge + CASH_W * cash_score + GROWTH_W * z_growth + ACCRUAL_W * accrual_score + LEVERAGE_W * leverage_score + IPO_W * z_ipo)

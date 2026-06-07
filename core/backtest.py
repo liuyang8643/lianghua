@@ -238,6 +238,8 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
     2. base_target 预留 reserve_L = max(板块涨跌幅) 份额，即 total_eq/(buy_n+reserve_L)，
        让最后一只也冻结得起，实现尽量均匀的满仓。
     置 False 可复现旧口径(开盘价校验、total_eq/buy_n)。
+
+  成交价与估值全用原始真实价（不复权）。preClose 已吸收除权除息调整，收益计算无误。
   """
 
   account = StockAccountMocker(cash=init_cash)
@@ -252,7 +254,6 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         'code': code, 'volume': vol, 'cost': avg * vol, 'commission': 0.0,
         'buy_date': seed_date, 'buy_signal_date': seed_date, 'buy_trade_date': seed_date,
         'avg_price': avg, 'price_field': 'open',
-        'signal_dividend_type': 'back', 'execution_dividend_type': 'none',
       }
   delist_stock_info = get_delist_stock_info()
 
@@ -265,6 +266,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
 
   # 临退禁买：把退市股摘牌/暂停日传入合法性闸门（实盘不传，由 allow_buy 名单剔除）
   delist_dates_map = {c: info.delist_date for c, info in delist_stock_info.items()}
+  # 合法性一律用原始 OHLC + 官方 preClose
   checker = LegalityChecker(data, stock_indices, list_dates_map, delist_dates_map)
   open_all = data['open']      # T 日开盘价（成交价）
   close_all = data['close']    # T 日收盘价（仅用于估值/快照，不参与选股与合法性）
@@ -287,7 +289,6 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
       account.write_off_stock(
         code=stock, write_off_date=trade_date, write_off_reason='退市归零',
         signal_date=signal_date, price_field='delist_zero',
-        signal_dividend_type='back', execution_dividend_type='none',
       )
       delist_events.append({
         'code': stock, 'delist_date': delist_info.delist_date,
@@ -438,7 +439,12 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         if bv <= 0 or code not in stock_indices:
           continue
         if market_order_freeze:
-          unit = limit_up_price(code, prev_close_row[stock_indices[code]]) or prices[code]
+          pc = prev_close_row[stock_indices[code]]
+          op = prices[code]
+          # 除权日：前收与开盘价不同口径(跳空超板块涨跌幅) → 用开盘价作冻结基准，避免虚高涨停价误判资金不足。
+          if pc and pc > 0 and op > 0 and abs(op - pc) / pc > board_limit_ratio(code):
+            pc = op
+          unit = limit_up_price(code, pc) or op
         else:
           unit = prices[code]
         if account.current_cash >= bv * unit * (1 + fee_rate):
@@ -447,7 +453,6 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
             'code': code, 'signal_date': signal_date.isoformat(),
             'trade_date': trade_date.isoformat(), 'price': prices[code],
             'price_field': 'open', 'shares': bv,
-            'signal_dividend_type': 'back', 'execution_dividend_type': 'none',
           })
 
     curr_positions = set(account.positions.keys())
@@ -465,7 +470,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
       _lw_topn.append(list(buy_n_stocks))
       _lw_last_asset = total_asset
     else:
-      assets = account.calc_assets(trade_date, close_prices)
+      assets = account.calc_assets(close_prices)
       prev_total_asset = daily_snapshots[-1]['total_asset'] if daily_snapshots else account.init_cash
       daily_ret = (assets['total_asset'] - prev_total_asset) / prev_total_asset * 100 if prev_total_asset else 0.0
       # positions_eod: 当日收盘后持仓快照，用于多日回测的 T 日 daily_pnl 重建
@@ -474,7 +479,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         'date': trade_date.strftime('%Y-%m-%d'),
         'signal_date': signal_date.strftime('%Y-%m-%d'),
         'trade_date': trade_date.strftime('%Y-%m-%d'),
-        'signal_dividend_type': 'back', 'execution_dividend_type': 'none', 'price_field': 'open',
+        'price_field': 'open',
         'cash': assets['cash'], 'market_value': assets['market_value'],
         'total_asset': assets['total_asset'], 'daily_return_pct': daily_ret, 'cumulative_return_pct': 0.0,
         'sell_m_list': sell_m_stocks,
@@ -509,7 +514,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
 
   final_signal_date = valid_dates[-1].date()
   final_trade_date = final_signal_date
-  final_assets = account.calc_assets(final_trade_date, close_prices)
+  final_assets = account.calc_assets(close_prices)
   total_return = (final_assets['total_asset'] - account.init_cash) / account.init_cash * 100
 
   cumulative_returns = []
@@ -552,8 +557,6 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
       'income_pct': income_pct,
       'clear_reason': cleared.get('clear_reason'),
       'price_field': cleared.get('price_field'),
-      'signal_dividend_type': cleared.get('signal_dividend_type'),
-      'execution_dividend_type': cleared.get('execution_dividend_type'),
     })
 
   trade_log = account.get_trade_log()
@@ -772,9 +775,6 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
     list_dates_map=list_dates_map,
   )
 
-  _ann = _compute_metrics_simple(result.get('daily_returns', []))['annualized']
-  testback_logger.info(f"回测完成: 年化={_ann:.2f}%")
-
   signal_date_strs = [d.strftime('%Y-%m-%d') for d in signal_dates]
   trade_date_strs = [d.strftime('%Y-%m-%d') for d in trade_dates]
 
@@ -786,6 +786,12 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
   )
   hs300_returns = compute_hs300_cumulative_returns(trade_date_strs)
   per_year_metrics = compute_per_year_metrics(result.get('cumulative_returns', []), trade_date_strs)
+
+  testback_logger.info(
+    f"回测: 年化={metrics['annualized']:.2f}% 夏普={metrics['sharpe_ratio']:.2f} "
+    f"最大回撤={metrics['max_drawdown']:.2f}% 卡玛={metrics['calmar_ratio']:.2f} "
+    f"胜率={metrics['win_rate']:.1f}% 总成交={metrics['total_trades']}"
+  )
 
   report_data = {
     'individual_config': individual_config,
@@ -818,8 +824,7 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
       'stock_pool_size': len(single_stock_pool),
     },
     'rebalance_rule': {
-      'signal_timing': 'T-1', 'trade_timing': 'T open',
-      'signal_dividend_type': 'back', 'execution_dividend_type': 'none', 'price_field': 'open',
+      'signal_timing': 'T-1', 'trade_timing': 'T open', 'price_field': 'open',
     },
     'period': {
       'signal_start': signal_date_strs[0], 'signal_end': signal_date_strs[-1],

@@ -12,7 +12,7 @@ def _shift(arr):
 
 class OvernightGap:
   """隔夜跳空 — 过去N日平均隔夜收益(open/prev_close-1)，负跳空=散户恐慌=买入机会"""
-  hist_days = 20
+  hist_days = 1
 
   def calc_batch(self, panel: dict) -> np.ndarray:
     open_p = panel["open"]       # 已知：开盘价

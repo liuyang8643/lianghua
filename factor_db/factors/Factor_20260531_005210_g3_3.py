@@ -40,7 +40,7 @@ class Factor_20260531_005210_g3_3:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
 
         roe_s = np.sign(panel['roe']) * (np.abs(panel['roe']) ** (1/3))
         gm_s = np.sign(panel['gross_margin']) * (np.abs(panel['gross_margin']) ** (1/3))
@@ -69,7 +69,7 @@ class Factor_20260531_005210_g3_3:
         quality_resonance = np.tanh(z_roe_cf_res * RES_S)
 
         # Growth delivery
-        rev_safe = np.maximum(np.abs(panel['revenue_yoy']), 1e-8)
+        rev_safe = np.where(np.isfinite(panel['revenue_yoy']) & (np.abs(panel['revenue_yoy']) > 1e-8), np.abs(panel['revenue_yoy']), np.nan)
         growth_eff = np.tanh(panel['profit_yoy'] / rev_safe * GROWTH_S)
         gm_sig = np.tanh(z_gm * 1.0)
         growth_delivery = growth_eff * gm_sig * (0.5 + 0.5 * z_profit)

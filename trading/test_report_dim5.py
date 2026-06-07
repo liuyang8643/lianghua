@@ -4,8 +4,10 @@
 """
 from datetime import date
 
+import numpy as np
 import pandas as pd
 
+import trading.report as report_mod
 from trading.report import PostCloseReport
 
 
@@ -59,3 +61,77 @@ def test_reconcile_ignores_not_held_stocks():
     data = rpt.build()
     # 实盘没持有 BBB → 不应被列为"无法计算 P&L"
     assert 'BBB' not in (data['reconcile'].get('unreconcilable_codes') or [])
+
+
+# ════════════════════════════════════════════════════════════
+# 总盈亏以「个股盈亏总和」为准（免疫未记账出入金）+ 残差告警
+# ════════════════════════════════════════════════════════════
+
+def _rpt_with_live_aaa(daily_pnl, total_asset, prev_asset=1_000_000.0):
+    """实盘只持有 AAA(给定 daily_pnl)，回测空仓，账户资产可调。"""
+    rpt = PostCloseReport(date(2026, 6, 1))
+    rpt.feed_positions_df(pd.DataFrame([
+        {'code': 'AAA', 'name': 'A', 'volume': 100, 'market_value': 1000.0,
+         'daily_pnl': daily_pnl, 'daily_return_pct': 8.0},
+    ]))
+    rpt.feed_backtest(_bt_with_positions([]))
+    rpt.feed_asset(total_asset=total_asset, prev_asset=prev_asset, net_cash_flow=0.0)
+    return rpt
+
+
+def test_summary_uses_per_stock_total_as_authoritative_pnl():
+    # 账户层日变化 = 50,800（含未记账的 5w 入金），个股口径 = 800
+    rpt = _rpt_with_live_aaa(daily_pnl=800.0, total_asset=1_050_800.0)
+    s = rpt.build()['summary']
+
+    assert s['live_pnl_source'] == 'per_stock'
+    assert abs(s['live_daily_pnl'] - 800.0) < 1e-6          # 今日盈亏 = 个股口径
+    assert abs(s['live_account_pnl'] - 50_800.0) < 1e-6     # 账户口径单独保留
+    # 收益率按个股口径 / prev_asset
+    assert abs(s['live_daily_return_pct'] - 800.0 / 1_000_000.0 * 100) < 1e-9
+
+
+def test_reconcile_residual_is_per_stock_minus_account():
+    rpt = _rpt_with_live_aaa(daily_pnl=800.0, total_asset=1_050_800.0)
+    rec = rpt.build()['reconcile']
+    # 残差 = Σ个股 - 账户；不能因 summary 切到个股口径而自比为 0
+    assert not rec['within_tolerance']
+    assert abs(rec['diff'] - (800.0 - 50_800.0)) < 1e-6
+    assert abs(rec['per_stock_pnl_sum'] - 800.0) < 1e-6
+    assert abs(rec['account_pnl'] - 50_800.0) < 1e-6
+
+
+def test_summary_falls_back_to_account_when_unreconcilable():
+    # 持有 AAA 却算不出 daily_pnl(NaN) → 个股总和不可信 → 回退账户口径
+    rpt = _rpt_with_live_aaa(daily_pnl=np.nan, total_asset=1_000_500.0)
+    data = rpt.build()
+    s = data['summary']
+    assert s['live_pnl_source'] == 'account'
+    assert abs(s['live_daily_pnl'] - 500.0) < 1e-6
+    assert 'AAA' in (data['reconcile'].get('unreconcilable_codes') or [])
+
+
+def test_reconcile_alert_fires_on_suspected_deposit(monkeypatch):
+    calls = []
+    monkeypatch.setattr(report_mod.lark_sender, 'send_notification_card',
+                        lambda **k: calls.append(k))
+    rpt = _rpt_with_live_aaa(daily_pnl=800.0, total_asset=1_050_800.0)
+    data = rpt.build()
+    rpt._maybe_alert_reconcile(data)
+
+    assert len(calls) == 1
+    content = calls[0]['content']
+    # 账户 50,800 - 个股 800 = +50,000 疑似净入金
+    assert '入金' in content
+    assert '50,000' in content
+
+
+def test_reconcile_alert_silent_when_within_tolerance(monkeypatch):
+    calls = []
+    monkeypatch.setattr(report_mod.lark_sender, 'send_notification_card',
+                        lambda **k: calls.append(k))
+    # 账户层 = 个股层 = 800，账平 → 不告警
+    rpt = _rpt_with_live_aaa(daily_pnl=800.0, total_asset=1_000_800.0)
+    data = rpt.build()
+    rpt._maybe_alert_reconcile(data)
+    assert calls == []

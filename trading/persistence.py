@@ -8,6 +8,8 @@
   cash_flows.parquet       出入金记录（追加）
 """
 import os
+import threading
+import uuid
 from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
@@ -19,12 +21,28 @@ from trading.logger import trading_logger
 
 _TRADE_DIR = Path(__file__).resolve().parents[1] / "data" / "live_trades"
 
+# 进程内序列化所有「读全量→concat→原子替换」的 parquet 追加。
+# 09:30 时 SellMonitor 线程池 / BuyMonitor 线程 / watcher 回调线程会并发 record_event,
+# 若不加锁会出现「读到旧版 + 丢更新」以及多线程共写同一 tmp → footer 损坏。
+_WRITE_LOCK = threading.RLock()
+
 
 def _atomic_write_parquet(df: pd.DataFrame, path: Path):
-    """原子写 parquet:先写临时文件再 os.replace,避免写一半 / 并发写导致文件损坏。"""
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    df.to_parquet(tmp, index=False)
-    os.replace(tmp, path)
+    """原子写 parquet:先写唯一临时文件再 os.replace,避免写一半 / 并发写导致文件损坏。
+
+    tmp 名带 pid+uuid:即便多线程/多进程同时写同一目标文件,各自写各自的 tmp,
+    不会互相写花;os.replace 本身原子,最终落地的一定是某个完整文件。
+    """
+    tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}")
+    try:
+        df.to_parquet(tmp, index=False)
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
 
 def _safe_read_parquet(path: Path):
@@ -35,8 +53,8 @@ def _safe_read_parquet(path: Path):
         corrupt = path.with_suffix(path.suffix + ".corrupt")
         try:
             os.replace(path, corrupt)
-        except Exception:
-            pass
+        except Exception as e2:
+            trading_logger.warning(f"[LiveTrade] 损坏文件重命名失败 {path.name}: {e2}")
         trading_logger.error(
             f"[LiveTrade] {path.name} 损坏,已隔离为 {corrupt.name} 并重新开始追加: {e}")
         return None
@@ -129,6 +147,25 @@ def _load_cash_flows() -> pd.DataFrame:
     return pd.DataFrame(columns=['date', 'amount', 'type', 'note'])
 
 
+def _parse_qmt_date(v) -> date | None:
+    """解析 QMT 流水里的日期字段（'YYYYMMDD' / 'YYYY-MM-DD' / date / datetime）。"""
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    s = str(v).strip()
+    if not s:
+        return None
+    for fmt in ('%Y%m%d', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 class LiveTradeRecorder:
     def __init__(self):
         _TRADE_DIR.mkdir(parents=True, exist_ok=True)
@@ -142,14 +179,21 @@ class LiveTradeRecorder:
         return float(v) if v and v > 0 else None
 
     def record_cash_flow(self, amount: float, flow_type: str = 'deposit',
-                         note: str = ''):
-        """记录出入金: amount>0=入金, amount<0=出金。"""
-        row = {'date': date.today(), 'amount': amount, 'type': flow_type,
-               'note': note}
+                         note: str = '', trade_date: date | None = None):
+        """记录出入金: amount>0=入金, amount<0=出金。
+
+        Args:
+            trade_date: 流水归属日，默认今天。补登历史日请显式传入。
+        """
+        target = trade_date or date.today()
+        row = {'date': target, 'amount': amount, 'type': flow_type, 'note': note}
         path = _TRADE_DIR / "cash_flows.parquet"
-        df = pd.concat([_load_cash_flows(), pd.DataFrame([row])], ignore_index=True)
+        df_old = _load_cash_flows()
+        df_new = pd.DataFrame([row])
+        df = df_new if df_old.empty else pd.concat([df_old, df_new], ignore_index=True)
         df.to_parquet(path, index=False)
-        trading_logger.info(f"[LiveTrade] 出入金: {flow_type} ¥{amount:+,.0f} {note}")
+        trading_logger.info(
+            f"[LiveTrade] 出入金 {target}: {flow_type} ¥{amount:+,.0f} {note}")
 
     def get_today_cash_flows(self, trade_date: date | None = None) -> float:
         """返回指定交易日净入金（入金-出金）。默认 date.today()。"""
@@ -160,8 +204,9 @@ class LiveTradeRecorder:
         today_rows = df[df['date'] == target]
         return float(today_rows['amount'].sum()) if len(today_rows) > 0 else 0.0
 
-    def sync_bank_transfers_from_qmt(self, trader, trade_date: date | None = None) -> int:
-        """从 QMT 同步指定日银证流水到 cash_flows.parquet（去重）。
+    def sync_bank_transfers_from_qmt(self, trader, trade_date: date | None = None,
+                                     lookback_days: int = 5) -> int:
+        """从 QMT 同步银证流水到 cash_flows.parquet（回看窗口 + 去重）。
 
         xtquant `BankTransferStream` 字段：
           - success: bool          是否成功（False = 占位 / 查询为空，跳过）
@@ -170,28 +215,47 @@ class LiveTradeRecorder:
           - transfer_no: str       流水号（唯一标识，去重 key）
           - date / time / bank_name / remark / ...
 
+        为什么要回看窗口：入金可能发生在 T 日 15:00 盘后同步之后（当天查不到），
+        若只查单日，次日盘后只会查次日，这笔流水将永久漏记。改为查
+        [trade_date - lookback_days, trade_date]，并**按流水自身日期记账**，
+        使迟到流水能在后续任一盘后被补登到其真实日期。
+
+        去重双保险：
+          1. transfer_no（note 内嵌）—— 主键；
+          2. 无 transfer_no 时用 (日期, 金额) 兜底，避免回看窗口重复入库。
+
         Args:
             trader: trading.trader.Trader 实例
-            trade_date: 目标日，默认 date.today()
+            trade_date: 目标日（窗口右端），默认 date.today()
+            lookback_days: 回看天数，默认 5（覆盖周末 + 迟到流水）
 
         Returns: 新增条数（已存在的会去重跳过）。
         """
+        from datetime import timedelta
         target = trade_date or date.today()
-        date_str = target.strftime('%Y%m%d')
-        streams = trader.query_bank_transfers(date_str, date_str)
+        start = target - timedelta(days=max(0, lookback_days))
+        streams = trader.query_bank_transfers(start.strftime('%Y%m%d'),
+                                              target.strftime('%Y%m%d'))
         if not streams:
             return 0
 
-        # 已有记录（QMT 同步出来的）去重 key: (date, transfer_no)
         df_old = _load_cash_flows()
-        existing_nos: set[str] = set()
-        if not df_old.empty and 'note' in df_old.columns:
+        existing_nos: set[str] = set()          # 去重1: transfer_no
+        existing_fallback: set[tuple] = set()   # 去重2: (date_iso, amount) for qmt_sync
+        if not df_old.empty:
             for _, r in df_old.iterrows():
                 note = str(r.get('note', '') or '')
                 if 'transfer_no=' in note:
                     no = note.split('transfer_no=')[1].split(' ')[0]
                     if no:
                         existing_nos.add(no)
+                if str(r.get('type', '')) == 'qmt_sync':
+                    d = r.get('date')
+                    d_iso = d.isoformat() if hasattr(d, 'isoformat') else str(d)
+                    try:
+                        existing_fallback.add((d_iso, round(float(r.get('amount', 0)), 2)))
+                    except (TypeError, ValueError):
+                        pass
 
         new_rows = []
         valid_streams = 0
@@ -212,8 +276,13 @@ class LiveTradeRecorder:
             else:
                 signed = amount  # 默认按正
 
+            # 按流水自身日期记账（不是运行日），迟到流水才能回填到正确日期
+            transfer_date = _parse_qmt_date(getattr(s, 'date', None)) or target
             no = str(getattr(s, 'transfer_no', '') or '')
+            fb_key = (transfer_date.isoformat(), round(signed, 2))
             if no and no in existing_nos:
+                continue
+            if not no and fb_key in existing_fallback:
                 continue
 
             tm = str(getattr(s, 'time', '') or '')
@@ -222,22 +291,29 @@ class LiveTradeRecorder:
             note = f"QMT流水 transfer_no={no} dir={direction} t={tm} bank={bank} remark={remark}"
 
             new_rows.append({
-                'date': target, 'amount': signed,
+                'date': transfer_date, 'amount': signed,
                 'type': 'qmt_sync', 'note': note,
             })
+            # 同批次内去重，避免一次查询返回重复流水
+            if no:
+                existing_nos.add(no)
+            existing_fallback.add(fb_key)
 
         if new_rows:
             path = _TRADE_DIR / "cash_flows.parquet"
-            df = pd.concat([df_old, pd.DataFrame(new_rows)], ignore_index=True)
+            df_new = pd.DataFrame(new_rows)
+            df = df_new if df_old.empty else pd.concat([df_old, df_new], ignore_index=True)
             df.to_parquet(path, index=False)
             trading_logger.info(
                 f"[LiveTrade] QMT 银证流水同步: 新增 {len(new_rows)} 条 "
-                f"(QMT 共返 {len(streams)} 条, 有效 {valid_streams} 条)"
+                f"(窗口 {start.isoformat()}~{target.isoformat()}, "
+                f"QMT 共返 {len(streams)} 条, 有效 {valid_streams} 条)"
             )
         else:
             trading_logger.info(
                 f"[LiveTrade] QMT 银证流水无新增 "
-                f"(QMT 共返 {len(streams)} 条, 有效 {valid_streams} 条)"
+                f"(窗口 {start.isoformat()}~{target.isoformat()}, "
+                f"QMT 共返 {len(streams)} 条, 有效 {valid_streams} 条)"
             )
         return len(new_rows)
 
@@ -563,12 +639,16 @@ class LiveTradeRecorder:
             )
 
     def write_daily_summary(self, total_asset: float, cash: float,
-                            market_value: float, trade_date: date | None = None):
+                            market_value: float, trade_date: date | None = None,
+                            per_stock_pnl: float | None = None):
         """写日终摘要。
 
         Args:
             total_asset / cash / market_value: 来自 query_asset() 的当日终值
             trade_date: 默认 date.today()；--skip 模拟模式下应传入模拟日期
+            per_stock_pnl: 个股日 P&L 总和（报告口径）。给定时 daily_pnl 以它为准
+                （免疫未记账的银证出入金）；为 None 时回退账户口径
+                (total_asset - prev_asset - net_cash_flow)。账户口径始终另存 account_pnl。
         """
         target = trade_date or date.today()
         buys = sum(1 for r in self._today_fills if r['direction'] == 'buy')
@@ -584,17 +664,20 @@ class LiveTradeRecorder:
             if not prev_rows.empty:
                 prev_asset = float(prev_rows['total_asset'].iloc[-1])
 
-        daily_ret = 0.0
-        daily_pnl = 0.0
+        # 账户口径（含未剔除出入金风险）
+        account_pnl = 0.0
         if prev_asset and prev_asset > 0:
-            daily_pnl = total_asset - prev_asset - net_cf
-            daily_ret = daily_pnl / prev_asset * 100
+            account_pnl = total_asset - prev_asset - net_cf
+        # daily_pnl 以个股口径为准（免疫未记账出入金），缺失回退账户口径
+        daily_pnl = per_stock_pnl if per_stock_pnl is not None else account_pnl
+        daily_ret = (daily_pnl / prev_asset * 100) if (prev_asset and prev_asset > 0) else 0.0
 
         row = {
             'date': target, 'total_asset': round(total_asset, 2),
             'cash': round(cash, 2), 'market_value': round(market_value, 2),
             'daily_return_pct': round(daily_ret, 4),
             'daily_pnl': round(daily_pnl, 2),
+            'account_pnl': round(account_pnl, 2),
             'net_cash_flow': round(net_cf, 2),
             'total_fees': round(fees, 2), 'buy_count': buys, 'sell_count': sells,
         }
@@ -708,19 +791,20 @@ class LiveTradeRecorder:
         target = record.get('date') or date.today()
         path = _TRADE_DIR / f"fills_{target.isoformat()}.parquet"
         df_new = pd.DataFrame([record], columns=FILL_COLS)
-        df_old = _safe_read_parquet(path) if path.exists() else None
-        if df_old is not None and not df_old.empty:
-            tid = str(record.get('traded_id', '') or '')
-            if tid and 'traded_id' in df_old.columns:
-                df_old = df_old[df_old['traded_id'].astype(str) != tid]
+        with _WRITE_LOCK:
+            df_old = _safe_read_parquet(path) if path.exists() else None
+            if df_old is not None and not df_old.empty:
+                tid = str(record.get('traded_id', '') or '')
+                if tid and 'traded_id' in df_old.columns:
+                    df_old = df_old[df_old['traded_id'].astype(str) != tid]
+                else:
+                    key = ['order_id', 'price', 'shares']
+                    mask = ~df_old.set_index(key).index.isin(df_new.set_index(key).index)
+                    df_old = df_old[mask]
+                df_all = pd.concat([df_old, df_new], ignore_index=True)
             else:
-                key = ['order_id', 'price', 'shares']
-                mask = ~df_old.set_index(key).index.isin(df_new.set_index(key).index)
-                df_old = df_old[mask]
-            df_all = pd.concat([df_old, df_new], ignore_index=True)
-        else:
-            df_all = df_new
-        _atomic_write_parquet(df_all, path)
+                df_all = df_new
+            _atomic_write_parquet(df_all, path)
 
     def _append_event(self, row: dict):
         """统一事件流追加。
@@ -731,18 +815,21 @@ class LiveTradeRecorder:
         target = row.get('date') or date.today()
         path = _TRADE_DIR / f"events_{target.isoformat()}.parquet"
         df_new = pd.DataFrame([row], columns=EVENT_COLS)
-        df_old = _safe_read_parquet(path) if path.exists() else None
-        if df_old is not None and not df_old.empty:
-            # 去重 key：同一笔事件的所有字段（ts 精确到微秒，自然唯一）
-            key = ['ts', 'event_type', 'order_id', 'traded_volume', 'price']
-            try:
-                mask = ~df_old.set_index(key).index.isin(df_new.set_index(key).index)
-                df_all = pd.concat([df_old[mask], df_new], ignore_index=True)
-            except KeyError:
-                df_all = pd.concat([df_old, df_new], ignore_index=True)
-        else:
-            df_all = df_new
-        _atomic_write_parquet(df_all, path)
+        with _WRITE_LOCK:
+            df_old = _safe_read_parquet(path) if path.exists() else None
+            if df_old is not None and not df_old.empty:
+                # 去重 key：同一笔事件的所有字段（ts 精确到微秒，自然唯一）
+                key = ['ts', 'event_type', 'order_id', 'traded_volume', 'price']
+                try:
+                    mask = ~df_old.set_index(key).index.isin(df_new.set_index(key).index)
+                    df_all = pd.concat([df_old[mask], df_new], ignore_index=True)
+                except KeyError as e:
+                    trading_logger.warning(
+                        f"[LiveTrade] {path.name} 去重key缺失({e}), 回退直接拼接 (旧{len(df_old)}行+新{len(df_new)}行)")
+                    df_all = pd.concat([df_old, df_new], ignore_index=True)
+            else:
+                df_all = df_new
+            _atomic_write_parquet(df_all, path)
 
 
 live_trade_recorder = LiveTradeRecorder()

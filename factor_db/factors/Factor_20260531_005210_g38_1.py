@@ -42,8 +42,8 @@ class Factor_20260531_005210_g38_1:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_conf = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
-            ipo_premium = panel['open'] / np.maximum(panel['issue_price'], 1e-8)
+            cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
+            ipo_premium = panel['open'] / np.where(np.isfinite(panel['issue_price']) & (panel['issue_price'] > 1e-8), panel['issue_price'], np.nan)
 
         roe_s = np.sign(panel['roe']) * (np.abs(panel['roe']) ** (1/3))
         gm_s = np.sign(panel['gross_margin']) * (np.abs(panel['gross_margin']) ** (1/3))
@@ -81,7 +81,7 @@ class Factor_20260531_005210_g38_1:
         purity_raw = -np.tanh(accrual_div * PURITY_S) * cash_gate
         z_purity = _zscore(purity_raw)
 
-        z_lifecycle = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        z_lifecycle = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
         z_fade = _zscore(np.tanh(z_lifecycle * FADE_S))
 
 

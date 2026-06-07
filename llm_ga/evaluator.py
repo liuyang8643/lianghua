@@ -32,8 +32,22 @@ def _parse_date(s: str) -> date:
     return date(int(s[:4]), int(s[4:6]), int(s[6:8]))
 
 
+def _load_valid_issue_price_stocks() -> set:
+    """加载 issue_price 有效的股票代码集合（用于统一股票池过滤）。"""
+    from pathlib import Path
+    import pandas as pd
+    ip_path = Path(__file__).resolve().parent.parent / 'data' / 'issue_price' / 'issue_price.parquet'
+    if not ip_path.exists():
+        return set()
+    df = pd.read_parquet(ip_path)
+    return {str(c) for c in df['stock_code']}
+
+
 def build_universe(start: str, end: str, pool_prefixes=None):
-    """构建回测日期序列与股票池（一次性，可在多个体评测间复用）。"""
+    """构建回测日期序列与股票池（一次性，可在多个体评测间复用）。
+
+    自动过滤 issue_price 缺失的股票，确保所有因子在同构股票池上竞争。
+    """
     dts = [
         datetime.combine(d, datetime.min.time())
         for d in get_trading_date_span(_parse_date(start), _parse_date(end))
@@ -41,6 +55,9 @@ def build_universe(start: str, end: str, pool_prefixes=None):
     stocks = list(allow_buy_stock_code_list())
     if pool_prefixes:
         stocks = [s for s in stocks if s.startswith(tuple(pool_prefixes))]
+    ip_stocks = _load_valid_issue_price_stocks()
+    if ip_stocks:
+        stocks = [s for s in stocks if s[:6] in ip_stocks]
     return dts, stocks
 
 

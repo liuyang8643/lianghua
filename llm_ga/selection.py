@@ -18,18 +18,22 @@ def _read_code(rel_path: str) -> str:
     return (REPO_ROOT / rel_path).read_text(encoding='utf-8')
 
 
-def _candidate_pool(param_cap: int) -> list[dict]:
+def _candidate_pool(param_cap: int, core_factors: list[str] | None = None) -> list[dict]:
     pool = []
     for f in db.list_factors():
         if f['status'] not in ('passed', 'seed', 'active'):
+            continue
+        if core_factors is not None and f['name'] not in core_factors:
             continue
         try:
             code = _read_code(f['file_path'])
         except OSError:
             continue
-        ok, _, _ = guard.check(code, param_cap)
-        if not ok:
-            continue
+        # 人工种子因子（active/seed）已人工审查，无需过自动 guard；GA 产出（passed）需过闸
+        if f['status'] == 'passed':
+            ok, _, _ = guard.check(code, param_cap)
+            if not ok:
+                continue
         f = dict(f)
         f['code'] = code
         pool.append(f)
@@ -65,27 +69,27 @@ def _diversity_map(names: list[str]) -> dict[str, float]:
     return out
 
 
-def top_factors(n: int, param_cap: int) -> list[dict]:
+def top_factors(n: int, param_cap: int, core_factors: list[str] | None = None) -> list[dict]:
     """全库（能过 guard 的）按夏普降序取前 n 个（含 code），用作变异的"灵感因子"。"""
-    pool = _candidate_pool(param_cap)
+    pool = _candidate_pool(param_cap, core_factors)
     scored = [(f, _sharpe_of(f)) for f in pool]
     scored = [(f, s) for f, s in scored if s is not None]
     scored.sort(key=lambda x: x[1], reverse=True)
     return [f for f, _ in scored[:n]]
 
 
-def best_factor_name(param_cap: int) -> str | None:
+def best_factor_name(param_cap: int, core_factors: list[str] | None = None) -> str | None:
     """全库（能过 guard 的）按夏普最优的因子名，用作初始 elite。"""
-    pool = _candidate_pool(param_cap)
+    pool = _candidate_pool(param_cap, core_factors)
     scored = [(f['name'], _sharpe_of(f)) for f in pool]
     scored = [(n, s) for n, s in scored if s is not None]
     return max(scored, key=lambda x: x[1])[0] if scored else None
 
 
-def top_half_by_nsga(param_cap: int) -> list[dict]:
+def top_half_by_nsga(param_cap: int, core_factors: list[str] | None = None) -> list[dict]:
     """全库能过 guard 的因子，先按指纹做行为去重（克隆只留夏普最高代表），再按
     NSGA(夏普↑+多样性↑) 非支配排序取前 50%。去重避免 top50% 被同质克隆占满。"""
-    pool = _candidate_pool(param_cap)
+    pool = _candidate_pool(param_cap, core_factors)
     sharpes = {f['name']: _sharpe_of(f) for f in pool}
     scored = [f for f in pool if sharpes[f['name']] is not None]
     if not scored:
@@ -101,18 +105,19 @@ def top_half_by_nsga(param_cap: int) -> list[dict]:
 
 
 def select_parents(n_random: int, param_cap: int, rng: random.Random,
-                   elite_name: str | None = None) -> list[dict]:
+                   elite_name: str | None = None,
+                   core_factors: list[str] | None = None) -> list[dict]:
     """选父代：n_elite 个上一轮最优(elite_name) + n_random 个从全库 top50% 随机挑。
 
     父代均来自现有库（已回测、已入库），不需要再过 LLM / 再回测。冷启动（无评分）退化为随机。
     """
-    pool = _candidate_pool(param_cap)
+    pool = _candidate_pool(param_cap, core_factors)
     if not pool:
         return []
     by_name = {f['name']: f for f in pool}
     elite = by_name.get(elite_name)
 
-    top_half = top_half_by_nsga(param_cap)
+    top_half = top_half_by_nsga(param_cap, core_factors)
     if not any(_sharpe_of(f) is not None for f in pool):  # 冷启动
         top_half = pool
     cand = [f for f in top_half if f['name'] != elite_name]

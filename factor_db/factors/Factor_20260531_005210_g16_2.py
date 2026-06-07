@@ -41,7 +41,7 @@ class Factor_20260531_005210_g16_2:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_coverage = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_coverage = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             ipo_premium = panel['open'] / panel['issue_price']
 
         roe_s = np.sign(panel['roe']) * np.abs(panel['roe']) ** (1/3)
@@ -74,7 +74,7 @@ class Factor_20260531_005210_g16_2:
 
         margin_sig = np.tanh(z_gm * GM_S)
 
-        lifecycle = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        lifecycle = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
 
         score = (CHAIN_VALUE_W * chain_value + CASH_QUALITY_W * cash_sig + EARN_QUALITY_W * earn_sig + GROWTH_COHERENCE_W * growth_coherence + ACCRUAL_W * accrual + MARGIN_LEVEL_W * margin_sig + LIFECYCLE_W * lifecycle)

@@ -3,7 +3,7 @@
 逐条对应 CLAUDE.md 红线：
 1. T 日价格红线：禁止引用 close/high/low/volume/amount（前视野泄露）。新因子只能用 open[T] + 财务/滞后量。
 2. 矩阵计算红线：calc_batch 必须纯向量化，禁止任何 for/while 逐股票 / 逐日循环。
-3. 自包含 / 数据源红线：除 numpy 外禁止 import 任何库（含 akshare/requests/mootdx/xtdata 等联网库），
+3. 自包含 / 数据源红线：除 numpy 外禁止 import 任何库（含 akshare/requests/xtdata 等联网库），
    禁止 open()/np.load 等读取外部文件。
 4. 参数预算 cap：模块级 UPPER_CASE 常量个数不得超过 param_cap，抑制过度参数化导致的过拟合。
 

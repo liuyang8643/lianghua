@@ -17,9 +17,11 @@ def _sample_space_key(key: str, profile_name: str | None = None):
 
 def sample_weights(profile_name: str | None = None) -> dict:
     spaces = get_profile_weight_search_spaces(profile_name)
+    fixed = get_profile_fixed_weights(profile_name)
     if spaces:
-        return {k: random.choice(v) for k, v in spaces.items()}
-    return get_profile_fixed_weights(profile_name)
+        sampled = {k: random.choice(v) for k, v in spaces.items()}
+        return {**fixed, **sampled} if fixed else sampled
+    return fixed
 
 
 def sample_position_count(profile_name: str | None = None):
@@ -131,11 +133,17 @@ def repair_config(config: dict, profile_name: str | None = None) -> bool:
     old_weights = config.get('weights', {})
     if weight_spaces:
         new_weights = {}
+        if fixed_weights:
+            for k, v in fixed_weights.items():
+                new_weights[k] = v
+                if old_weights.get(k) != v:
+                    changed = True
         for k, vals in weight_spaces.items():
             new_weights[k] = old_weights[k] if k in old_weights and old_weights[k] in vals else random.choice(vals)
             if new_weights[k] != old_weights.get(k):
                 changed = True
-        if set(old_weights) != set(weight_spaces):
+        expected = set(weight_spaces) | (set(fixed_weights) if fixed_weights else set())
+        if set(old_weights) != expected:
             changed = True
         config['weights'] = new_weights
     elif fixed_weights and old_weights != fixed_weights:

@@ -40,7 +40,7 @@ class Factor_20260531_005210_g20_0:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_coverage = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_coverage = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             ipo_premium = panel['open'] / panel['issue_price']
 
         roe_cb = np.sign(panel['roe']) * (np.abs(panel['roe']) ** (1 / 3))
@@ -77,7 +77,7 @@ class Factor_20260531_005210_g20_0:
         z_rev_conf = _zscore(rev_conf_raw)
 
         # IPO premium with ROE quality gate
-        ipo_raw = -np.log(np.maximum(ipo_premium, 0.01))
+        ipo_raw = np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan)
         z_ipo = _rank_norm(ipo_raw * (0.5 + 0.5 * np.tanh(z_roe * IPO_S)))
 
         score = (QUAL_RESONANCE_W * z_qual_resonance + TENSION_W * z_tension + GROWTH_CASH_W * z_growth_cash + EFF_BRIDGE_W * z_eff + REV_CONF_W * z_rev_conf + IPO_W * z_ipo)

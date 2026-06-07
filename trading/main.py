@@ -14,26 +14,13 @@ from data.db import allow_buy_stock_code_list
 from core.runtime import load_runtime_npz
 from core.scoring import scores_to_ranks, select_topn
 from core.legality import LegalityChecker
-from data.db.stock_name import get_stock_name_at_date
 from core.ga import get_profile_factor_classes, resolve_profile_name
-
-def _get_name(code, signal_date):
-    name = get_stock_name_at_date(code, signal_date)
-    if name:
-        return name
-    # 兜底：CNINFO parquet 缺 bare_code 列时直接从 xtdata 查
-    try:
-        from xtquant import xtdata
-        detail = xtdata.get_instrument_detail(code)
-        if detail:
-            name = detail.get('InstrumentName', '').strip()
-    except Exception:
-        pass
-    return name or ''
+from data.db.stock_name import get_stock_name_at_date
 
 
 def _build_plan_rows(*, trade_date, buy_n_stocks, buy_details, sell_details,
-                     prices, final_score, valid_stocks, signal_date):
+                     prices, final_score, valid_stocks, signal_date,
+                     buy_skip_reasons: dict | None = None):
     """组装 plan_{T}.parquet 行 — 全量 topN + 实际下单意图。
     
     语义：
@@ -51,11 +38,12 @@ def _build_plan_rows(*, trade_date, buy_n_stocks, buy_details, sell_details,
             status = 'ok'; reason = 'topN换入'
             est_vol = int(d['shares']); est_amt = float(d['est_amount'])
         else:
-            status = 'skipped'; reason = 'topN未下单(已达标/资金不足/合法性)'
+            status = 'skipped'
+            reason = (buy_skip_reasons or {}).get(code) or '未纳入少补计划'
             est_vol = 0; est_amt = 0.0
         rows.append({
             'date': trade_date, 'code': code,
-            'name': _get_name(code, signal_date),
+            'name': get_stock_name_at_date(code, signal_date) or '',
             'direction': 'buy', 'est_price': float(prices.get(code, 0.0)),
             'est_volume': est_vol, 'est_amount': est_amt,
             'factor_score': score_by_code.get(code),
@@ -96,12 +84,20 @@ def _print_and_confirm_manual_plan(pending: dict) -> bool:
     return is_manual_confirmation_approved(user_input)
 
 
-def _compute_live_scores(signal_datetime, all_stocks, weights, factor_classes):
+def _compute_live_scores(signal_datetime, all_stocks, weights, factor_classes,
+                         kline_overlay: dict | None = None):
     """实盘因子计算，与回测 _compute_factor_scores 逻辑一致。"""
     max_lookback = max((c.hist_days for c in factor_classes), default=0) or None
     data = load_runtime_npz([signal_datetime], max_lookback=max_lookback)
     if data is None:
         raise FileNotFoundError(f"未找到覆盖 {signal_datetime} 的 runtime npz 文件")
+
+    if kline_overlay:
+        from data.update_live import apply_kline_overlay
+        data, n_cells, new_days = apply_kline_overlay(data, kline_overlay)
+        trading_logger.info(
+            f"[NPZ内存] 覆盖 {n_cells} 格, 新增 {len(new_days)} 个交易日 (未落盘, 等 16:00 update_all)"
+        )
 
     npz_stocks = [str(s) for s in data['stock_codes']]
     stock_indices = {c: i for i, c in enumerate(npz_stocks)}
@@ -134,6 +130,47 @@ def _compute_live_scores(signal_datetime, all_stocks, weights, factor_classes):
     return data, all_scores, date_idx, valid_stocks, stock_indices
 
 
+def _load_prev_eod_baseline(trade_date):
+    """T-1 收盘基线：昨日持仓股数 + 昨日现金，用于把「今日目标」锚定到昨日收盘状态。
+
+    动机：base_target 必须与「当天运行几次」无关——否则重复运行会用实时持仓/资金重算目标，
+    叠加「低买被开盘价高估权益」的正反馈，导致重跑不断追价 churn（见 603810 case）。
+    数据源与回测 seed-replay 同口径：positions_{T-1}.parquet + daily_summary[T-1].cash。
+
+    Returns: (prev_cash, {code: yesterday_shares}) 或 (None, None)（缺快照时回退实时）。
+    """
+    from datetime import timedelta
+    from utils.stock.time import get_last_trading_day
+    from trading.persistence import _TRADE_DIR
+
+    prev = get_last_trading_day(trade_date - timedelta(days=1))
+    pos_path = _TRADE_DIR / f"positions_{prev.isoformat()}.parquet"
+    summary_path = _TRADE_DIR / "daily_summary.parquet"
+    if not pos_path.exists() or not summary_path.exists():
+        return None, None
+    try:
+        import pandas as pd
+        sdf = pd.read_parquet(summary_path)
+        prev_rows = sdf[sdf['date'] == prev]
+        if prev_rows.empty or 'cash' not in prev_rows.columns:
+            return None, None
+        prev_cash = float(prev_rows['cash'].iloc[-1])
+        pdf = pd.read_parquet(pos_path)
+        y_shares = {r['code']: int(r['volume'])
+                    for _, r in pdf.iterrows() if int(r['volume']) > 0}
+        return (prev_cash, y_shares) if y_shares else (None, None)
+    except Exception as e:
+        trading_logger.warning(f"读取 T-1 基线失败，回退实时口径: {e}")
+        return None, None
+
+
+def _target_equity(prev_cash, y_shares, prices, live_fallback_eq):
+    """今日目标权益：优先 T-1 现金 + 昨持仓×今开盘价（与运行次数无关）；缺基线时回退实时。"""
+    if prev_cash is not None and y_shares:
+        return prev_cash + sum(sh * prices.get(c, 0.0) for c, sh in y_shares.items())
+    return live_fallback_eq
+
+
 class MutableTime:
     """可变的模拟时钟。暴露 __call__ 用作 time_provider，set() 用于快进。"""
     def __init__(self, dt: datetime):
@@ -147,25 +184,12 @@ class MutableTime:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--individual-config', type=str, required=True, help='Individual_config JSON文件路径')
-    parser.add_argument('--skip', type=str, help='跳过数据更新，按指定系统时间(YYYYMMDDHHMM)模拟实盘流程(快进模式)')
+    parser.add_argument('--skip', type=str, help='回放/模拟模式。YYYYMMDD(8位)=逐日读parquet发飞书日报; YYYYMMDDHHMM(12位)=快进scheduler模拟')
     parser.add_argument('--confirm', action='store_true',
                         help='单次手动模式：忽略时间窗口，立即跑一遍完整选股+买卖，且买卖前需手工 yes 确认。不加此参数则进入 scheduler 自动模式')
-    parser.add_argument('--update-all', action='store_true', help='执行全量数据更新（删除昨日不完整数据→全量下载→构建runtime NPZ）后退出')
+    parser.add_argument('--update', action='store_true', help='全量数据更新（K线+财务+股本+指数+退市→构建runtime NPZ）后退出')
     parser.add_argument('--dry-run', action='store_true', help='只计算选股计划，跳过实际买卖下单')
     args = parser.parse_args()
-
-    if args.update_all:
-        run_update_all(None)
-        sys.exit(0)
-
-    skip_update = args.skip is not None
-    dry_run = args.dry_run
-    is_manual = args.confirm
-    if skip_update:
-        skip_dt = datetime.strptime(args.skip, '%Y%m%d%H%M')
-        trading_logger.info(f"跳过数据更新, 模拟时间: {skip_dt}")
-    else:
-        skip_dt = None
 
     with open(args.individual_config, 'r', encoding='utf-8') as f:
         config_data = json.load(f)
@@ -176,9 +200,28 @@ if __name__ == '__main__':
     temperatures = individual_config['temperatures']
     buy_n = individual_config['buy_n']
     sell_m = individual_config.get('sell_m', buy_n)
-
     trading_logger.info(f"加载Individual_config: {args.individual_config}")
     trading_logger.info(f"配置参数: buy_n={buy_n}, sell_m={sell_m}, factors={sorted(weights.keys())}")
+
+    if args.skip and len(args.skip) == 8:
+        from datetime import datetime as _dt
+        from trading.replay import replay_reports
+        start = _dt.strptime(args.skip, '%Y%m%d').date()
+        replay_reports(start, individual_config=individual_config, factor_classes=factor_classes)
+        sys.exit(0)
+
+    if args.update:
+        run_update_all(None)
+        sys.exit(0)
+
+    skip_update = args.skip is not None and len(args.skip) == 12
+    dry_run = args.dry_run
+    is_manual = args.confirm
+    if skip_update:
+        skip_dt = datetime.strptime(args.skip, '%Y%m%d%H%M')
+        trading_logger.info(f"跳过数据更新, 模拟时间: {skip_dt}")
+    else:
+        skip_dt = None
 
     td = Trader(TRADE_ACCOUNT)
     rebalance_executor = RebalanceExecutor(td)
@@ -198,31 +241,37 @@ if __name__ == '__main__':
         )
         recorder.mark("开始选股")
 
-        # 快速数据更新（--skip 模式下跳过）
-        if not skip_update:
-            from data.update_live import update_live_quick
-            try:
-                update_live_quick()
-            except Exception as e:
-                trading_logger.warning(f"快速数据更新失败, 继续使用已有数据: {e}")
-            finally:
-                trading_logger.info(f"[盘前耗时] 快速数据更新: {time.time() - stage_t:.1f}s")
-                stage_t = time.time()
-        else:
-            trading_logger.info("[盘前耗时] 快速数据更新: 0.0s (--skip)")
+        # 快速 K 线：只写 parquet；NPZ 仅内存 overlay
+        kline_overlay = None
+        from data.update_live import update_live_quick
+        anchor = skip_dt.date() if skip_update else None
+        try:
+            kline_overlay = update_live_quick(patch_npz=False, anchor_date=anchor)
+        except Exception as e:
+            trading_logger.warning(f"快速数据更新失败, 继续使用已有数据: {e}")
+        finally:
+            tag = "(skip模拟)" if skip_update else ""
+            trading_logger.info(f"[盘前耗时] 快速数据更新{tag}: {time.time() - stage_t:.1f}s")
+            stage_t = time.time()
+        store._kline_overlay = kline_overlay
 
-        if store.whole_sub_id is None:
+        if store.whole_sub_id is None and not skip_update:
             store.whole_sub_id = xtdata.subscribe_whole_quote(['SH', 'SZ'])
         trading_logger.info(f"[盘前耗时] 行情订阅: {time.time() - stage_t:.1f}s")
         stage_t = time.time()
 
-        asset = store.trader.query_asset()
-        trading_logger.info(f"[盘前耗时] QMT资产查询: {time.time() - stage_t:.1f}s")
-        stage_t = time.time()
-        if asset is None:
-            trading_logger.warning("资产查询失败，跳过本轮调仓")
-            store.pending_rebalance = None
-            return
+        if skip_update:
+            trading_logger.info("[盘前] --skip 模式跳过 QMT 资产查询，使用昨日 parquet 基线")
+            prev_cash_qmt = None
+        else:
+            asset = store.trader.query_asset()
+            trading_logger.info(f"[盘前耗时] QMT资产查询: {time.time() - stage_t:.1f}s")
+            stage_t = time.time()
+            if asset is None:
+                trading_logger.warning("资产查询失败，跳过本轮调仓")
+                store.pending_rebalance = None
+                return
+            prev_cash_qmt = float(asset.cash)
 
         all_stocks = allow_buy_stock_code_list(target_date=trade_date)
         trading_logger.info(f"候选股票池: {len(all_stocks)} 只")
@@ -231,7 +280,8 @@ if __name__ == '__main__':
         # 因子计算（与回测一致）
         try:
             data, all_scores, score_date_idx, valid_stocks, stock_indices = _compute_live_scores(
-                signal_datetime, all_stocks, weights, factor_classes)
+                signal_datetime, all_stocks, weights, factor_classes,
+                kline_overlay=getattr(store, '_kline_overlay', None))
         except Exception as e:
             if is_manual:
                 from datetime import timedelta
@@ -246,11 +296,13 @@ if __name__ == '__main__':
                     f"NPZ 缺 {trade_date.isoformat()} 行(--skip 跳过了 update_live_quick)，"
                     f"signal/价格/合法性全部回退到 {fallback.isoformat()}；"
                     f"plan 中的 est_price 是 T-1 开盘价，与今日真实开盘价会 diff。"
+                    f" 原始异常: {e}"
                 )
                 signal_date = fallback
                 signal_datetime = datetime.combine(signal_date, datetime.min.time())
                 data, all_scores, score_date_idx, valid_stocks, stock_indices = _compute_live_scores(
-                    signal_datetime, all_stocks, weights, factor_classes)
+                    signal_datetime, all_stocks, weights, factor_classes,
+                    kline_overlay=getattr(store, '_kline_overlay', None))
             else:
                 trading_logger.error(f"因子计算失败: {e}")
                 store.pending_rebalance = None
@@ -282,23 +334,34 @@ if __name__ == '__main__':
 
         # 获取当日价格
         day_open = open_all[trade_idx]
-        # 获取持仓（手动触发时 QMT 可能尚未同步，等最多 5s）
-        positions = {}
-        for attempt in range(6):
-            raw = store.trader.query_positions()
-            if raw:
-                positions = {p.stock_code: p for p in raw if p.volume > 0}
-                break
-            if attempt == 0:
-                trading_logger.warning("QMT 持仓为空，等待同步...")
-            time.sleep(1)
+
+        # T-1 收盘基线（昨持仓+昨现金）：把今日目标锚定到昨日收盘，重复运行不漂移
+        prev_cash, y_shares = _load_prev_eod_baseline(trade_date)
+
+        # 获取持仓
+        if skip_update:
+            trading_logger.info("[盘前] --skip 模式跳过 QMT 持仓查询，使用昨日 parquet 持仓")
+            positions = {}
+        else:
+            positions = {}
+            for attempt in range(6):
+                raw = store.trader.query_positions()
+                if raw:
+                    positions = {p.stock_code: p for p in raw if p.volume > 0}
+                    break
+                if attempt == 0:
+                    trading_logger.warning("QMT 持仓为空，等待同步...")
+                time.sleep(1)
         can_sell = sum(1 for p in positions.values() if p.can_use_volume > 0)
         trading_logger.info(f"持仓: {len(positions)} 只 (可卖{can_sell}), 总市值={sum(p.market_value for p in positions.values()):.0f}")
         trading_logger.info(f"[盘前耗时] QMT持仓查询: {time.time() - stage_t:.1f}s")
         stage_t = time.time()
 
         prices = {}
-        for code in set(positions.keys()) | set(buy_n_stocks):
+        price_codes = set(positions.keys()) | set(buy_n_stocks)
+        if y_shares:
+            price_codes |= set(y_shares.keys())  # 昨持仓也要估值（含今日已清空的）
+        for code in price_codes:
             si = stock_indices.get(code)
             if si is None:
                 continue
@@ -321,18 +384,24 @@ if __name__ == '__main__':
         # 2. total_eq 用 open[T] 重算（不用 QMT.total_asset），跟回测口径一致；
         #    否则 QMT 的 last_price/close[T-1] 与 open[T] 之间跳空会让 base_target 偏移，
         #    导致回测/实盘 base_target 不一致 → 阈值穿越触发不一致的少补。
+        # cv（多退少补的当前缺口）仍用「当前持仓×开盘价」——这样重跑只补齐到目标、收敛不重复。
         pos_vals = {c: p.volume * prices.get(c, 0) for c, p in positions.items()}
-        total_eq = float(asset.cash) + sum(pos_vals.values())
+        _cash = float(asset.cash) if not skip_update else (prev_cash or prev_cash_qmt or 0)
+        live_eq = _cash + sum(pos_vals.values())
+        # total_eq（决定 base_target/目标）锚定 T-1 收盘基线，与当天运行次数无关；缺基线时回退实时。
+        total_eq = _target_equity(prev_cash, y_shares, prices, live_eq)
+        eq_note = (f"T-1基线 cash={prev_cash:.0f}+昨持仓@开盘"
+                   if (prev_cash is not None and y_shares) else "实时(缺T-1快照,非幂等)")
         timing_mult = 1.0
         # 市价单涨停价冻结预留：均匀满仓时最后一只也要冻结得起 → base_target = E/(buy_n+reserve_L)
         # （与回测 _backtest_direct 的 market_order_freeze 口径一致）
         from utils.stock.info import board_limit_ratio as _blr, limit_up_price as _lup
         reserve_L = max((_blr(c) for c in buy_n_stocks), default=0.0)
         base_target = total_eq * timing_mult / (buy_n + reserve_L)
+        _log_extra = f", QMT.total_asset={asset.total_asset:.0f}" if not skip_update else ""
         trading_logger.info(
-            f"[多退少补] total_eq={total_eq:.0f} (cash={asset.cash:.0f} + "
-            f"open市值={sum(pos_vals.values()):.0f}), base_target={base_target:.0f} "
-            f"(reserve_L={reserve_L:.2f}, QMT.total_asset={asset.total_asset:.0f}, 差={total_eq-asset.total_asset:+.0f})"
+            f"[多退少补] total_eq={total_eq:.0f} ({eq_note}), base_target={base_target:.0f} "
+            f"(reserve_L={reserve_L:.2f}, 实时权益={live_eq:.0f}{_log_extra})"
         )
         # 市价买单资金冻结单价 = 前收×(1+板块涨跌幅)，供执行器按涨停价做预算/冻结，
         # 避免按开盘价低估占用 → 末位标的反复「资金可用数不足」废单。
@@ -386,6 +455,7 @@ if __name__ == '__main__':
             sell_orders = [(c, s) for j, (c, s) in enumerate(sell_orders) if ok[j]]
 
         # 涨跌停过滤买入
+        buy_orders_pre_legality = dict(buy_orders)
         if buy_orders:
             bc = list(buy_orders.keys())
             bi_list = [stock_indices[c] for c in bc if c in stock_indices]
@@ -402,7 +472,7 @@ if __name__ == '__main__':
             reason = '换出' if shares < 0 else f'多退({shares}股)'
             sell_details.append({
                 'code': code,
-                'name': _get_name(code, signal_date),
+                'name': get_stock_name_at_date(code, signal_date) or '',
                 'board': '',
                 'volume': vol,
                 'est_price': prices.get(code, 0),
@@ -414,7 +484,7 @@ if __name__ == '__main__':
         for code, shares in buy_orders.items():
             buy_details.append({
                 'code': code,
-                'name': _get_name(code, signal_date),
+                'name': get_stock_name_at_date(code, signal_date) or '',
                 'board': '',
                 'shares': shares,
                 'est_price': prices.get(code, 0),
@@ -460,11 +530,28 @@ if __name__ == '__main__':
         # 关键约束：plan 是「真实下单意图」记录，不允许被后续 dry-run / 二次跑覆盖
         # - dry-run 不下单 → 不写 plan
         # - 当日 plan 已存在 → 不覆盖（保护 9:30 真实记录不被 13:30/15:00 sim 覆盖）
+        buy_skip_reasons = {}
+        for code in buy_n_stocks:
+            if code in buy_orders:
+                continue
+            px = float(prices.get(code, 0) or 0)
+            if px <= 0:
+                buy_skip_reasons[code] = '缺开盘价'
+                continue
+            cv = float(pos_vals.get(code, 0) or 0)
+            if cv >= base_target * 0.99:
+                buy_skip_reasons[code] = '已达标'
+            elif code in buy_orders_pre_legality:
+                buy_skip_reasons[code] = '合法性过滤'
+            else:
+                buy_skip_reasons[code] = '未触发少补'
+
         plan_rows = _build_plan_rows(
             trade_date=trade_date,
             buy_n_stocks=buy_n_stocks, buy_details=buy_details,
             sell_details=sell_details, prices=prices, final_score=final_score,
             valid_stocks=valid_stocks, signal_date=signal_date,
+            buy_skip_reasons=buy_skip_reasons,
         )
         plan_path = live_trade_recorder.plan_path(trade_date)
         if dry_run:
@@ -485,6 +572,27 @@ if __name__ == '__main__':
         )
         recorder.mark("完成调仓预计算")
 
+        # 回测对账种子：复用上面已算好的因子分数跑 T-1 种子单日回放（继承前一日实盘状态），
+        # 供战报「回测 vs 实盘」实时对账（T日操作 + T日持仓）。与盘后 diff 同口径。
+        bt_ref = None
+        bt_daily_return = None
+        try:
+            from .post_close import run_seed_replay_for_open
+            from .day_board import extract_bt_reference
+            bt_result = run_seed_replay_for_open(
+                trade_date, individual_config,
+                data=data, all_scores=all_scores, date_idx=score_date_idx,
+                valid_stocks=valid_stocks, stock_indices=stock_indices)
+            if bt_result is not None:
+                bt_ref = extract_bt_reference(bt_result)
+                snaps = bt_result.get('daily_snapshots') or []
+                if snaps:
+                    bt_daily_return = snaps[-1].get('daily_return_pct')
+        except Exception as e:
+            trading_logger.warning(f"盘中回测对账种子构建失败: {e}")
+        trading_logger.info(f"[盘前耗时] 回测对账种子: {time.time() - stage_t:.1f}s")
+        stage_t = time.time()
+
         # 飞书：开启「调仓战报」聚合卡片
         # 取代之前的「开盘准备完成」独立卡片 + 零散订单/成交回调卡片，
         # 全天只发一张可更新卡片，订单/成交回调实时刷新（debounce 300ms）。
@@ -497,6 +605,9 @@ if __name__ == '__main__':
                 position_count=len(positions),
                 base_target=base_target,
                 buy_n=buy_n,
+                bt_ref=bt_ref,
+                bt_daily_return=bt_daily_return,
+                y_positions=y_shares or {},
             )
         except Exception as e:
             trading_logger.warning(f"飞书战报初始化失败: {e}")
@@ -515,7 +626,17 @@ if __name__ == '__main__':
             store.pending_rebalance = None
             return
 
-        rebalance_executor.execute(pending, execute_sell=execute_sell, execute_buy=execute_buy)
+        from datetime import datetime as _dt
+        from utils.stock.time import is_current_trading as _is_trading
+        wall_now = _dt.now()
+        off_hours_fast = bool(getattr(store, '_skip_update', False)) and not _is_trading(wall_now)
+        if off_hours_fast:
+            trading_logger.info(
+                f"[执行] --skip 闭市演练: 真实时钟 {wall_now:%H:%M:%S} 非交易时段, "
+                "跳过 order_stock(闭市会同步阻塞数分钟), 直接战报定稿+盘后报告")
+        rebalance_executor.execute(
+            pending, execute_sell=execute_sell, execute_buy=execute_buy,
+            off_hours_fast=off_hours_fast)
         store.pending_rebalance = None
 
     def after_trade(store):
@@ -541,7 +662,6 @@ if __name__ == '__main__':
         td,
         before_trade=before_trade,
         execute_trade=execute_trade,
-        while_trade=[],
         after_trade=after_trade,
         post_close=post_close,
         update_all=update_all,

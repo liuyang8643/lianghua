@@ -46,7 +46,7 @@ class Factor_20260531_005210_g11_3:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_cov = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_cov = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             accruals = cf_yield - ey
             ipo_premium = panel['open'] / panel['issue_price']
 
@@ -94,7 +94,7 @@ class Factor_20260531_005210_g11_3:
         z_accrual = _zscore(accrual_score * trust_cov)
 
         # IPO discount: cheap relative to issue price, gated by credibility
-        log_ipo = -np.log(np.maximum(ipo_premium, 0.01))
+        log_ipo = np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan)
         z_ipo = _zscore(log_ipo * trust_triple)
 
         score = (VALUE_W * z_value + QUALITY_W * z_quality + RESONANCE_W * z_resonance + GROWTH_W * z_growth + COHERENCE_W * z_coherence + ACCRUAL_W * z_accrual + IPO_W * z_ipo)

@@ -1,8 +1,7 @@
 """Claude Code（headless CLI）封装 —— 受限工具，只在 scratch 目录新增因子文件。
 
-复用本地 claude code 配置（~/.claude/settings.json，已指向 deepseek）。Python claude-agent-sdk
-与本项目 mootdx 的 httpx 版本不可共存，故直接调用本地 `claude` CLI 的 -p（headless）模式，
-等价于 SDK 形式且零依赖冲突。
+复用本地 claude code 配置（~/.claude/settings.json，已指向 deepseek）。直接调用本地 `claude`
+CLI 的 -p（headless）模式（等价于 SDK 形式且零依赖冲突），避免 Python claude-agent-sdk 的依赖冲突。
 
 权限边界：cwd 设为本代次专属 scratch 目录，allowedTools 仅 Write/Read，permission-mode
 acceptEdits（自动接受写入）。模型只能在 scratch 下新增文件；不可 Bash/联网/改动仓库其它文件。

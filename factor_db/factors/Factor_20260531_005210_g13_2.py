@@ -40,10 +40,10 @@ class Factor_20260531_005210_g13_2:
         with np.errstate(divide='ignore', invalid='ignore'):
             ey = panel['eps'] / panel['open']
             cf_yield = panel['operating_cf_ps'] / panel['open']
-            cash_cover = panel['operating_cf_ps'] / np.maximum(np.abs(panel['eps']), 1e-8)
+            cash_cover = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             accruals = (panel['operating_cf_ps'] - panel['eps']) / panel['open']
-            op_leverage = panel['gross_margin'] / np.maximum(np.abs(ey), 1e-6)
-            ipo_premium = panel['open'] / np.maximum(panel['issue_price'], 1e-8)
+            op_leverage = panel['gross_margin'] / np.where(np.isfinite(ey) & (np.abs(ey) > 1e-6), np.abs(ey), np.nan)
+            ipo_premium = panel['open'] / np.where(np.isfinite(panel['issue_price']) & (panel['issue_price'] > 1e-8), panel['issue_price'], np.nan)
 
         # Layer 1: Cash foundation — yield + coverage fused
         z_cf_yield = _zscore(cf_yield)
@@ -90,7 +90,7 @@ class Factor_20260531_005210_g13_2:
         # Direct cash signal
         cf_sig = np.tanh(z_cf_yield * CF_S)
 
-        z_ipo = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        z_ipo = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
         score = (VALUE_W * z_value + CASCADE_W * z_cascade + GROWTH_W * z_growth + CF_W * cf_sig + CONV_W * z_conv + ACC_W * accrual_penalty + LEV_W * lev_sig + IPO_W * z_ipo)
 

@@ -12,11 +12,10 @@
   "individual_config": {
     "weights": {
       "AmountBasedSmallCap": 0.7,
-      "High52Week": 0.1,
       "VolumeCV": 0.4,
       "AmihudIlliquidity": 0.6,
       "TrueMarketCap": 1.0,
-      "OvernightGap": 0.5
+      "OvernightGap": 1
     },
     "buy_n": 20,
     "sell_m": 20,

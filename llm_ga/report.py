@@ -297,7 +297,7 @@ table.matrix th.mh{background:#f6f8fa;white-space:nowrap;position:static}
 
 def generate(oos_start=None, oos_end=None, open_browser=True) -> Path:
     factors = db.list_factors()
-    # 展示指标固定取训练区间（backfill 落库的 1993-2018）最新回测，避免被其它区间的
+    # 展示指标固定取训练区间（backfill 落库的 2010-至今）最新回测，避免被其它区间的
     # 单因子回测记录（如某次 2024 单测）抢成「最新」，保证榜单是当前正确结果
     runs_summary = {f['name']: records.get_run(f['name'], TRAIN_START, TRAIN_END) for f in factors}
     factors = _merge_run_metrics(factors, runs_summary)

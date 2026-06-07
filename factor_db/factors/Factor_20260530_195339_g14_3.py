@@ -59,7 +59,7 @@ class Factor_20260530_195339_g14_3:
 
         z_interact = _zscore(z_quality * _rank_norm(ey))
 
-        z_ipo = _rank_norm(-np.log(np.maximum(ipo_premium, 0.01)))
+        z_ipo = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
 
         score = (VALUE_W * z_value + QUALITY_W * z_quality + GROWTH_W * z_growth + CF_W * cf_sig + MARGIN_W * margin_exp + INTERACT_W * z_interact + IPO_W * z_ipo)
 

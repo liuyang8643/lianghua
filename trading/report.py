@@ -17,46 +17,15 @@ from typing import Optional
 import pandas as pd
 
 from data.db.stock_name import get_stock_name_at_date
-from trading.lark.sender import lark_sender
+from trading.lark.format import fmt_money, fmt_pct, fmt_diff_money
+from trading.lark.sender import lark_sender, LarkMsgLevel
 from trading.logger import trading_logger
 
 _TRADE_DIR = Path(__file__).resolve().parents[1] / "data" / "live_trades"
 
 
-# ============================================================
-# 格式化工具
-# ============================================================
-
 def _name(code: str, signal_date: date) -> str:
     return get_stock_name_at_date(code, signal_date) or ''
-
-
-def _fmt_money(v: float | None) -> str:
-    if v is None or pd.isna(v):
-        return '-'
-    if abs(v) >= 1e8:
-        return f"¥{v/1e8:.2f}亿"
-    if abs(v) >= 1e4:
-        return f"¥{v/1e4:.1f}w"
-    return f"¥{v:,.0f}"
-
-
-def _fmt_pct(v: float | None, sign: bool = False) -> str:
-    if v is None or pd.isna(v):
-        return '-'
-    return f"{v:+.2f}%" if sign else f"{v:.2f}%"
-
-
-def _fmt_diff_money(v: float | None) -> str:
-    if v is None or pd.isna(v):
-        return '-'
-    if abs(v) >= 1e4:
-        return f"{v/1e4:+.1f}w"
-    return f"{v:+,.0f}"
-
-
-def _safe_div(a, b):
-    return a / b if b else None
 
 
 # ============================================================
@@ -462,7 +431,10 @@ class PostCloseReport:
              'within_tolerance': bool}
         """
         per_stock = dim5.get('live_total_pnl')
-        account = summary.get('live_daily_pnl')
+        # 用账户层日变化（asset - prev - net_cash_flow）做对账基准。
+        # 注意 summary['live_daily_pnl'] 现已切换为「个股口径」，不能再拿它对账，
+        # 否则会自己跟自己比恒为 0；这里必须取独立的 live_account_pnl。
+        account = summary.get('live_account_pnl')
         # 只把「实盘确实持有(volume>0)却算不出 P&L」的票算作无法对账;
         # 实盘根本没持有的票贡献为 0、可对账,不应计入。
         unrec = [r['code'] for r in dim5.get('rows', [])
@@ -489,17 +461,36 @@ class PostCloseReport:
             'within_tolerance': within,
         }
 
-    def build_summary(self) -> dict:
-        """整体汇总（账户层）。"""
+    def build_summary(self, dim5: dict | None = None) -> dict:
+        """整体汇总（账户层）。
+
+        「今日盈亏」口径：优先取**个股日 P&L 总和**（dim5.live_total_pnl）。
+        个股口径 = Σ[(T市值-Y市值)+卖出-买入-费用]，天然免疫未记账的银证出入金，
+        故作为权威总盈亏。仅当存在「持有却算不出 P&L」的持仓（疑似漏记成交）时，
+        个股总和不可信，回退账户层 (asset - prev_asset - net_cash_flow)。
+        账户层数值仍保留在 live_account_pnl，供 reconcile 对账与异常告警使用。
+        """
         bt_snap = self._bt_snap()
         bt_total_asset = bt_snap.get('total_asset', 0.0) if bt_snap else 0.0
         bt_daily_ret = bt_snap.get('daily_return_pct', 0.0) if bt_snap else 0.0
 
-        # 实盘账户层日收益
-        live_daily_pnl = None
-        live_daily_ret = None
+        # 账户层日变化（含未剔除的出入金风险）
+        live_account_pnl = None
         if self._prev_asset and self._asset and self._prev_asset > 0:
-            live_daily_pnl = self._asset - self._prev_asset - self._net_cash_flow
+            live_account_pnl = self._asset - self._prev_asset - self._net_cash_flow
+
+        # 个股口径：仅当所有持仓都能算出 P&L（无 unreconcilable）时才采信
+        per_stock_pnl = None
+        if dim5 is not None:
+            unrec = [r for r in dim5.get('rows', [])
+                     if r.get('live_daily_pnl') is None and int(r.get('live_volume', 0) or 0) > 0]
+            if not unrec:
+                per_stock_pnl = dim5.get('live_total_pnl')
+
+        live_daily_pnl = per_stock_pnl if per_stock_pnl is not None else live_account_pnl
+        live_pnl_source = 'per_stock' if per_stock_pnl is not None else 'account'
+        live_daily_ret = None
+        if live_daily_pnl is not None and self._prev_asset and self._prev_asset > 0:
             live_daily_ret = live_daily_pnl / self._prev_asset * 100
 
         bt_daily_pnl = None
@@ -510,6 +501,8 @@ class PostCloseReport:
             'live_total_asset': self._asset,
             'bt_total_asset': bt_total_asset,
             'live_daily_pnl': live_daily_pnl,
+            'live_account_pnl': live_account_pnl,
+            'live_pnl_source': live_pnl_source,
             'bt_daily_pnl': bt_daily_pnl,
             'live_daily_return_pct': live_daily_ret,
             'bt_daily_return_pct': bt_daily_ret,
@@ -532,7 +525,7 @@ class PostCloseReport:
         如出现差异即 bug，由单元测试覆盖，不在日常报告里耗注意力。
         """
         dim5 = self.build_dim5_pnl()
-        summary = self.build_summary()
+        summary = self.build_summary(dim5)
         return {
             'date': self.trade_date.isoformat(),
             'dim3_orders': self.build_dim3_orders(),
@@ -542,294 +535,14 @@ class PostCloseReport:
             'reconcile': self.reconcile_pnl(dim5, summary),
         }
 
-    # ── 飞书卡片 (JSON Schema 2.0 + 原生 table 组件) ───────────────
-    #  设计原则：
-    #    1. 所有股票只显示名称，不显示代码
-    #    2. 所有 diff 列遵循「实盘 | 回测 | 差」三列对账格式
-    #    3. 用飞书 v2 schema 的原生 `table` 组件（不是 code-block hack）
-    #    4. 不做 Top N 截断，page_size=10 自带分页
-
-    def _diff_md(self, v: float | None) -> str:
-        """正红负绿（中国股票配色），用于 diff 列。"""
-        if v is None or pd.isna(v):
-            return '-'
-        s = _fmt_diff_money(v)
-        if v > 0:
-            return f'<font color="red">{s}</font>'
-        if v < 0:
-            return f'<font color="green">{s}</font>'
-        return s
-
-    def _diff_pct_md(self, v: float | None) -> str:
-        if v is None or pd.isna(v):
-            return '-'
-        s = _fmt_pct(v, sign=True)
-        if v > 0:
-            return f'<font color="red">{s}</font>'
-        if v < 0:
-            return f'<font color="green">{s}</font>'
-        return s
-
-    def _card_header(self, data: dict) -> dict:
-        """卡片头：一眼看到「实盘 vs 回测」的核心差距。
-        颜色判定按 P&L 差额相对账户总值的占比：
-          < 0.1%  绿  几乎对齐
-          < 0.5%  黄  有偏差
-          >=0.5%  红  显著差异
-        """
-        s = data['summary']
-        live_pnl = s['live_daily_pnl'] or 0
-        bt_pnl = s['bt_daily_pnl'] or 0
-        diff = live_pnl - bt_pnl
-        base = (s.get('prev_asset') or 1_000_000)  # 用 prev_asset 做基数避免除零
-        pct = abs(diff) / base
-        if pct < 0.001:
-            template = 'green'
-        elif pct < 0.005:
-            template = 'orange'
-        else:
-            template = 'red'
-
-        # 副标题：直接说"实盘比回测多挣/少挣 ¥X"
-        sign_word = '多挣' if diff > 0 else ('少挣' if diff < 0 else '持平')
-        return {
-            'title': {'tag': 'plain_text',
-                      'content': f"盘后对账 {self.trade_date.isoformat()}"},
-            'subtitle': {'tag': 'plain_text',
-                         'content': f"实盘比回测{sign_word} {_fmt_diff_money(abs(diff))} "
-                                    f"({_fmt_pct(abs(diff)/base*100, sign=False)})"},
-            'template': template,
-        }
-
-    def _v2_table(self, *, title: str, columns: list[dict], rows: list[dict],
-                  element_id: str, page_size: int = 10,
-                  freeze_first_column: bool = True) -> list[dict]:
-        """生成 [title_div, table] 两个 v2 组件。"""
-        return [
-            {'tag': 'div', 'text': {'tag': 'lark_md', 'content': title}},
-            {
-                'tag': 'table',
-                'element_id': element_id,
-                'page_size': page_size,
-                'row_height': 'low',
-                'freeze_first_column': freeze_first_column,
-                'header_style': {'text_align': 'center', 'bold': True,
-                                 'background_style': 'grey', 'text_color': 'grey'},
-                'columns': columns,
-                'rows': rows,
-            },
-        ]
-
-    def _v2_summary_table(self, data: dict) -> list[dict]:
-        """收益对比：3 行（日 P&L / 日收益率 / 总资产），实盘 / 回测 / 差。"""
-        s = data['summary']
-
-        def _ad(a, b):
-            return (a - b) if (a is not None and b is not None) else None
-
-        rows = [
-            {'indicator': '今日盈亏',
-             'live': _fmt_diff_money(s['live_daily_pnl']),
-             'bt': _fmt_diff_money(s['bt_daily_pnl']),
-             'diff': self._diff_md(_ad(s['live_daily_pnl'], s['bt_daily_pnl']))},
-            {'indicator': '今日收益率',
-             'live': _fmt_pct(s['live_daily_return_pct'], sign=True),
-             'bt': _fmt_pct(s['bt_daily_return_pct'], sign=True),
-             'diff': self._diff_pct_md(_ad(s['live_daily_return_pct'], s['bt_daily_return_pct']))},
-            {'indicator': '总资产',
-             'live': _fmt_money(s['live_total_asset']),
-             'bt': _fmt_money(s['bt_total_asset']),
-             'diff': self._diff_md(_ad(s['live_total_asset'], s['bt_total_asset']))},
-        ]
-        columns = [
-            {'name': 'indicator', 'display_name': '', 'data_type': 'lark_md',
-             'horizontal_align': 'left'},
-            {'name': 'live', 'display_name': '实盘', 'data_type': 'lark_md',
-             'horizontal_align': 'right'},
-            {'name': 'bt', 'display_name': '回测', 'data_type': 'lark_md',
-             'horizontal_align': 'right'},
-            {'name': 'diff', 'display_name': '差额', 'data_type': 'lark_md',
-             'horizontal_align': 'right'},
-        ]
-        return self._v2_table(title='**📈 收益对比**', columns=columns, rows=rows,
-                              element_id='summary_tbl', page_size=10,
-                              freeze_first_column=False)
-
-    def _v2_dim3_table(self, data: dict) -> list[dict]:
-        """操作差距：每只股票的「净买入」金额，实盘 vs 回测对比。
-        净买入 = 买入金额 - 卖出金额。正=买入(少补)，负=卖出(多退)。
-        全量展示，按 |实盘净买 - 回测净买| 降序，合计行放最后。
-        """
-        d3 = data['dim3_orders']
-
-        def _net(r, side: str) -> float:
-            return r[f'{side}_buy_amount'] - r[f'{side}_sell_amount']
-
-        all_rows = sorted(
-            [r for r in d3['rows']
-             if r['live_buy_amount'] or r['bt_buy_amount']
-             or r['live_sell_amount'] or r['bt_sell_amount']],
-            key=lambda r: abs(_net(r, 'live') - _net(r, 'bt')),
-            reverse=True,
-        )
-
-        table_rows = []
-        for r in all_rows:
-            live_net = _net(r, 'live')
-            bt_net = _net(r, 'bt')
-            table_rows.append({
-                'name': self._name_of(r['code']),
-                'live': self._diff_md(live_net),
-                'bt': self._diff_md(bt_net),
-                'diff': self._diff_md(live_net - bt_net),
-            })
-        live_total_net = d3['live_buy_total'] - d3['live_sell_total']
-        bt_total_net = d3['bt_buy_total'] - d3['bt_sell_total']
-        table_rows.append({
-            'name': '— 合计 —',
-            'live': self._diff_md(live_total_net),
-            'bt': self._diff_md(bt_total_net),
-            'diff': self._diff_md(live_total_net - bt_total_net),
-        })
-
-        columns = [
-            {'name': 'name', 'display_name': '股票', 'data_type': 'lark_md',
-             'horizontal_align': 'left'},
-            {'name': 'live', 'display_name': '实盘净买', 'data_type': 'lark_md',
-             'horizontal_align': 'right'},
-            {'name': 'bt', 'display_name': '回测净买', 'data_type': 'lark_md',
-             'horizontal_align': 'right'},
-            {'name': 'diff', 'display_name': '差额', 'data_type': 'lark_md',
-             'horizontal_align': 'right'},
-        ]
-        return self._v2_table(
-            title=(f"**🔀 操作差距** · {len(all_rows)} 只股票 "
-                   f"·  +少补 / −多退"),
-            columns=columns, rows=table_rows,
-            element_id='dim3_tbl', page_size=20)
-
-    def _v2_dim5_table(self, data: dict) -> list[dict]:
-        """逐股盈亏对比：每只股票的今日盈亏，实盘 vs 回测。
-        全量展示，按 |差额| 降序，合计行放最后。
-        """
-        rows = data['dim5_pnl']['rows']
-        live_total = data['dim5_pnl']['live_total_pnl']
-        bt_total = data['dim5_pnl']['bt_total_pnl']
-
-        if not rows:
-            return [{'tag': 'div', 'text': {'tag': 'lark_md',
-                                            'content': '**💹 逐股盈亏对比** · 今日无持仓'}}]
-
-        rows_sorted = sorted(
-            rows,
-            key=lambda r: (r['pnl_diff'] is None,
-                           -abs(r['pnl_diff']) if r['pnl_diff'] is not None else 0),
-        )
-
-        table_rows = []
-        for r in rows_sorted:
-            nm = self._name_of(r['code'])
-            table_rows.append({
-                'name': nm,
-                'live_pnl': self._diff_md(r['live_daily_pnl']),
-                'bt_pnl': self._diff_md(r['bt_daily_pnl']),
-                'diff': self._diff_md(r['pnl_diff']),
-                'live_ret': self._diff_pct_md(r['live_daily_return_pct']),
-                'bt_ret': self._diff_pct_md(r['bt_daily_return_pct']),
-            })
-        total_diff = (live_total - bt_total) if (live_total is not None and bt_total is not None) else None
-        table_rows.append({
-            'name': '— 合计 —',
-            'live_pnl': self._diff_md(live_total),
-            'bt_pnl': self._diff_md(bt_total),
-            'diff': self._diff_md(total_diff),
-            'live_ret': '-', 'bt_ret': '-',
-        })
-
-        columns = [
-            {'name': 'name', 'display_name': '股票', 'data_type': 'lark_md',
-             'horizontal_align': 'left'},
-            {'name': 'live_pnl', 'display_name': '实盘盈亏', 'data_type': 'lark_md',
-             'horizontal_align': 'right'},
-            {'name': 'bt_pnl', 'display_name': '回测盈亏', 'data_type': 'lark_md',
-             'horizontal_align': 'right'},
-            {'name': 'diff', 'display_name': '差额', 'data_type': 'lark_md',
-             'horizontal_align': 'right'},
-            {'name': 'live_ret', 'display_name': '实盘涨幅', 'data_type': 'lark_md',
-             'horizontal_align': 'right'},
-            {'name': 'bt_ret', 'display_name': '回测涨幅', 'data_type': 'lark_md',
-             'horizontal_align': 'right'},
-        ]
-        return self._v2_table(
-            title=f"**💹 逐股盈亏对比** · {len(rows)} 只持仓",
-            columns=columns, rows=table_rows,
-            element_id='dim5_tbl', page_size=20)
-
-    def _v2_footer(self, data: dict, html_path: Optional[Path]) -> dict:
-        """卡片底部：账务自检 + HTML 附件路径。
-        
-        候选股层 / 合法性层不校验：实盘和回测共用同一个 select_topn / batch_limit_check
-        函数，差异只可能是 bug（用单元测试覆盖），不在日常报告里展示。
-        """
-        parts = []
-
-        # 1. 账务自检（逐股盈亏总和 应 ≈ 账户日变化）
-        rec = data.get('reconcile') or {}
-        if rec.get('per_stock_pnl_sum') is not None and rec.get('account_pnl') is not None:
-            within = rec.get('within_tolerance')
-            tol = rec.get('tolerance', 1)
-            diff = rec['diff']
-            if within:
-                parts.append(
-                    f"<font color=\"grey\">✓ 账务自检通过（逐股盈亏总和 - 账户日变化 = "
-                    f"{_fmt_diff_money(diff)}，在容差 ±¥{tol:.0f} 内）</font>"
-                )
-            else:
-                parts.append(
-                    f"<font color=\"red\">✗ 账务自检异常：逐股盈亏总和 - 账户日变化 = "
-                    f"{_fmt_diff_money(diff)}（超容差 ±¥{tol:.0f}）</font>"
-                )
-
-        # 2. HTML 附件
-        if html_path:
-            parts.append(f"<font color=\"grey\">完整明细见附件：{html_path.name}</font>")
-        else:
-            parts.append('<font color="grey">完整明细见 HTML 附件</font>')
-
-        return {'tag': 'div', 'text': {'tag': 'lark_md', 'content': '\n\n'.join(parts)}}
-
     def send(self, html_path: Optional[Path] = None, attach_html: bool = True):
-        """发送飞书 v2 卡片 + 上传 HTML 附件。
+        """上传 HTML 附件 + 对账异常告警。返回 report data 供调用方取 P&L。
 
-        卡片结构（精简版）：
-          ┌─ 标题：实盘比回测多挣/少挣 ¥X
-          ├─ 📈 收益对比（盈亏 / 涨幅 / 总资产 三行）
-          ├─ 🔀 操作差距（每只股票的买卖差，按差额降序）
-          ├─ 💹 逐股盈亏对比（每只股票的盈亏差，按差额降序）
-          └─ ⚠ 候选股 / 合法性偏差提示 + ✓ 账务自检 + HTML 附件链接
+        不再发独立飞书日报卡片（统一由 day_board 单卡全天更新）。
         """
         data = self.build()
-        elements = []
-        elements.extend(self._v2_summary_table(data))
-        elements.append({'tag': 'hr'})
-        elements.extend(self._v2_dim3_table(data))
-        elements.append({'tag': 'hr'})
-        elements.extend(self._v2_dim5_table(data))
-        elements.append({'tag': 'hr'})
-        elements.append(self._v2_footer(data, html_path))
 
-        card = {
-            'schema': '2.0',
-            'config': {'update_multi': True},
-            'header': self._card_header(data),
-            'body': {'elements': elements},
-        }
-        try:
-            lark_sender.send_card(card)
-        except Exception as e:
-            trading_logger.warning(f"[PostClose] 飞书卡片失败: {e}")
-
-        # HTML 附件上传
+        # HTML 附件上传（不再发独立飞书卡片，日报统一由 day_board 发）
         if attach_html and html_path and html_path.exists():
             try:
                 lark_sender.send_file(str(html_path),
@@ -837,15 +550,70 @@ class PostCloseReport:
             except Exception as e:
                 trading_logger.warning(f"[PostClose] 飞书 HTML 附件失败: {e}")
 
+        # 对账异常 → 单独推送告警卡片（残差/疑似出入金，待人工确认）
+        self._maybe_alert_reconcile(data)
+
         s = data['summary']
         live = s.get('live_daily_pnl') or 0
         bt = s.get('bt_daily_pnl') or 0
         trading_logger.info(
             f"[PostClose] {self.trade_date.isoformat()} · "
-            f"实盘盈亏 {_fmt_diff_money(live)} · 回测盈亏 {_fmt_diff_money(bt)} · "
-            f"差 {_fmt_diff_money(live - bt)}"
+            f"实盘盈亏 {fmt_diff_money(live)} · 回测盈亏 {fmt_diff_money(bt)} · "
+            f"差 {fmt_diff_money(live - bt)}"
         )
         return data
+
+    def _maybe_alert_reconcile(self, data: dict):
+        """账户日盈亏 ≠ 个股盈亏总和（超容差）时，飞书推送残差告警，待人工确认是否出入金。
+
+        残差 diff = Σ个股 - 账户；疑似未记账净出入金 = 账户 - Σ个股 = -diff
+        （>0 入金 / <0 出金）。报告「今日盈亏」已以个股口径为准，此处只做提示。
+        """
+        rec = (data or {}).get('reconcile') or {}
+        if rec.get('within_tolerance', True):
+            return
+        diff = rec.get('diff')
+        per_stock = rec.get('per_stock_pnl_sum')
+        account = rec.get('account_pnl')
+        if diff is None or per_stock is None or account is None:
+            return
+        unrec = rec.get('unreconcilable_codes') or []
+        tol = rec.get('tolerance', 0.0)
+
+        if unrec:
+            sub = "盈亏对账异常 · 疑似漏记成交"
+            content = (
+                f"账户日盈亏 **{fmt_diff_money(account)}** 与个股盈亏总和 "
+                f"**{fmt_diff_money(per_stock)}** 不一致，残差 **{fmt_diff_money(diff)}** "
+                f"(容差 ±¥{tol:.0f})。\n"
+                f"⚠️ 有 {len(unrec)} 只持仓无法计算盈亏（疑似漏记成交）："
+                f"{', '.join(self._name_of(c) for c in unrec[:10])}。\n"
+                f"残差可能来自漏记成交而非出入金，请先人工核查成交记录。"
+            )
+        else:
+            suspected = account - per_stock  # 疑似未记账净出入金
+            direction = '入金' if suspected >= 0 else '出金'
+            sub = "盈亏对账异常 · 疑似未记录出入金"
+            content = (
+                f"账户日盈亏 **{fmt_diff_money(account)}**（按总资产变化推算），"
+                f"个股盈亏总和 **{fmt_diff_money(per_stock)}**，"
+                f"残差 **{fmt_diff_money(diff)}** (容差 ±¥{tol:.0f})。\n"
+                f"💰 疑似当日存在未记录的净{direction} ≈ **¥{abs(suspected):,.0f}**。\n"
+                f"报告「今日盈亏」已采用个股口径（{fmt_diff_money(per_stock)}）为准。\n"
+                f"请确认当日是否有银证转账；若确有出入金，可手动补记账以消除该提示。"
+            )
+        try:
+            lark_sender.send_notification_card(
+                content=content, level=LarkMsgLevel.Warning,
+                title=f"⚠️ 盈亏对账异常 @ {self.trade_date.isoformat()}",
+                sub_title=sub,
+            )
+            trading_logger.info(
+                f"[PostClose] 已推送对账异常告警: 残差 {fmt_diff_money(diff)} "
+                f"(账户 {fmt_diff_money(account)} vs 个股 {fmt_diff_money(per_stock)})"
+            )
+        except Exception as e:
+            trading_logger.warning(f"[PostClose] 对账异常通知失败: {e}")
 
     # ── HTML 报告 ───────────────────────────────────────────
 
@@ -870,9 +638,9 @@ class PostCloseReport:
         return (
             f"<div class='summary' style='border-left: 4px solid {color};'>"
             f"<div class='label'>🔍 账务对账校验 — <strong style='color:{color}'>{status}</strong></div>"
-            f"<div>∑(个股日 P&L) = {_fmt_diff_money(rec['per_stock_pnl_sum'])}, "
-            f"账户日 P&L = {_fmt_diff_money(rec['account_pnl'])}, "
-            f"差 = <strong style='color:{color}'>{_fmt_diff_money(diff)}</strong> "
+            f"<div>∑(个股日 P&L) = {fmt_diff_money(rec['per_stock_pnl_sum'])}, "
+            f"账户日 P&L = {fmt_diff_money(rec['account_pnl'])}, "
+            f"差 = <strong style='color:{color}'>{fmt_diff_money(diff)}</strong> "
             f"(容差 ±¥{rec.get('tolerance', 1):.0f})</div>"
             f"{unrec_html}"
             f"</div>"
@@ -900,13 +668,13 @@ class PostCloseReport:
                 gap_cls = 'positive' if gap > 0 else ('negative' if gap < 0 else '')
                 html.append(
                     f"<tr><td>{r['code']}</td><td>{r['name']}</td>"
-                    f"<td>{_fmt_money(r['live_buy_amount'])}</td>"
-                    f"<td>{_fmt_money(r['bt_buy_amount'])}</td>"
+                    f"<td>{fmt_money(r['live_buy_amount'])}</td>"
+                    f"<td>{fmt_money(r['bt_buy_amount'])}</td>"
                     f"<td>{r.get('live_buy_shares', 0)}</td>"
                     f"<td>{r.get('bt_buy_shares', 0)}</td>"
                     f"<td class='{gap_cls}'>{gap:+d}</td>"
-                    f"<td>{_fmt_money(r['live_sell_amount'])}</td>"
-                    f"<td>{_fmt_money(r['bt_sell_amount'])}</td></tr>"
+                    f"<td>{fmt_money(r['live_sell_amount'])}</td>"
+                    f"<td>{fmt_money(r['bt_sell_amount'])}</td></tr>"
                 )
             html.append('</tbody></table>')
             return '\n'.join(html)
@@ -920,7 +688,7 @@ class PostCloseReport:
                     f"<tr><td>{r['code']} {r['name']}</td><td>{r['direction']}</td>"
                     f"<td>{r['est_price']:.3f}</td><td>{r['traded_price']:.3f}</td>"
                     f"<td class='{cls}'>{r['slippage_pct']:+.3f}%</td>"
-                    f"<td class='{cls}'>{_fmt_diff_money(r['slippage_cost'])}</td></tr>"
+                    f"<td class='{cls}'>{fmt_diff_money(r['slippage_cost'])}</td></tr>"
                 )
             html.append('</tbody></table>')
             return '\n'.join(html)
@@ -936,14 +704,14 @@ class PostCloseReport:
                 html.append(
                     f"<tr><td>{r['code']}</td><td>{r['name']}</td>"
                     f"<td>{r['live_volume']}</td><td>{r['bt_volume']}</td>"
-                    f"<td>{_fmt_money(r['live_mv'])}</td>"
-                    f"<td>{_fmt_money(r['bt_mv'])}</td>"
-                    f"<td>{_fmt_diff_money(r['live_daily_pnl'])}</td>"
-                    f"<td>{_fmt_diff_money(r['bt_daily_pnl'])}</td>"
-                    f"<td class='{pd_cls}'>{_fmt_diff_money(r['pnl_diff'])}</td>"
-                    f"<td>{_fmt_pct(r['live_daily_return_pct'], sign=True)}</td>"
-                    f"<td>{_fmt_pct(r['bt_daily_return_pct'], sign=True)}</td>"
-                    f"<td class='{pd_cls}'>{_fmt_pct(r['ret_diff'], sign=True)}</td>"
+                    f"<td>{fmt_money(r['live_mv'])}</td>"
+                    f"<td>{fmt_money(r['bt_mv'])}</td>"
+                    f"<td>{fmt_diff_money(r['live_daily_pnl'])}</td>"
+                    f"<td>{fmt_diff_money(r['bt_daily_pnl'])}</td>"
+                    f"<td class='{pd_cls}'>{fmt_diff_money(r['pnl_diff'])}</td>"
+                    f"<td>{fmt_pct(r['live_daily_return_pct'], sign=True)}</td>"
+                    f"<td>{fmt_pct(r['bt_daily_return_pct'], sign=True)}</td>"
+                    f"<td class='{pd_cls}'>{fmt_pct(r['ret_diff'], sign=True)}</td>"
                     f"</tr>"
                 )
             html.append('</tbody></table>')
@@ -977,29 +745,29 @@ class PostCloseReport:
 <h1>盘后 Diff 报告 — {data['date']}</h1>
 
 <div class='summary'>
-  <div class='metric'><div class='label'>实盘总资产</div><div class='value'>{_fmt_money(s['live_total_asset'])}</div></div>
-  <div class='metric'><div class='label'>回测总资产</div><div class='value'>{_fmt_money(s['bt_total_asset'])}</div></div>
-  <div class='metric'><div class='label'>实盘日 P&L</div><div class='value'>{_fmt_diff_money(s['live_daily_pnl'])} ({_fmt_pct(s['live_daily_return_pct'], sign=True)})</div></div>
-  <div class='metric'><div class='label'>回测日 P&L</div><div class='value'>{_fmt_diff_money(s['bt_daily_pnl'])} ({_fmt_pct(s['bt_daily_return_pct'], sign=True)})</div></div>
+  <div class='metric'><div class='label'>实盘总资产</div><div class='value'>{fmt_money(s['live_total_asset'])}</div></div>
+  <div class='metric'><div class='label'>回测总资产</div><div class='value'>{fmt_money(s['bt_total_asset'])}</div></div>
+  <div class='metric'><div class='label'>实盘日 P&L</div><div class='value'>{fmt_diff_money(s['live_daily_pnl'])} ({fmt_pct(s['live_daily_return_pct'], sign=True)})</div></div>
+  <div class='metric'><div class='label'>回测日 P&L</div><div class='value'>{fmt_diff_money(s['bt_daily_pnl'])} ({fmt_pct(s['bt_daily_return_pct'], sign=True)})</div></div>
 </div>
 {self._reconcile_html(data.get('reconcile') or {})}
 
 <div class='section'>
   <h2>操作差距（多退少补：实盘 vs 回测）</h2>
-  <div>买入: 实盘 {_fmt_money(d3['live_buy_total'])} · 回测 {_fmt_money(d3['bt_buy_total'])} · 买量缺口合计 {d3.get('buy_shares_gap_total', 0):+d} 股</div>
-  <div>卖出: 实盘 {_fmt_money(d3['live_sell_total'])} · 回测 {_fmt_money(d3['bt_sell_total'])}</div>
+  <div>买入: 实盘 {fmt_money(d3['live_buy_total'])} · 回测 {fmt_money(d3['bt_buy_total'])} · 买量缺口合计 {d3.get('buy_shares_gap_total', 0):+d} 股</div>
+  <div>卖出: 实盘 {fmt_money(d3['live_sell_total'])} · 回测 {fmt_money(d3['bt_sell_total'])}</div>
   {_orders_table(d3['rows'])}
 </div>
 
 <div class='section'>
   <h2>滑点明细（成交价 vs 开盘价，仅 debug 用）</h2>
-  <div>平均滑点 {d4['avg_slippage']:+.3f}% ({d4['avg_slippage']*100:+.1f} bp) · 总滑点成本 {_fmt_diff_money(d4['total_slippage_cost'])}</div>
+  <div>平均滑点 {d4['avg_slippage']:+.3f}% ({d4['avg_slippage']*100:+.1f} bp) · 总滑点成本 {fmt_diff_money(d4['total_slippage_cost'])}</div>
   {_slippage_table(d4['rows'])}
 </div>
 
 <div class='section'>
   <h2>逐股盈亏对比</h2>
-  <div>实盘合计 {_fmt_diff_money(d5['live_total_pnl'])} · 回测合计 {_fmt_diff_money(d5['bt_total_pnl'])}</div>
+  <div>实盘合计 {fmt_diff_money(d5['live_total_pnl'])} · 回测合计 {fmt_diff_money(d5['bt_total_pnl'])}</div>
   {_pnl_table(d5['rows'])}
 </div>
 
