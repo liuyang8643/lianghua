@@ -27,7 +27,7 @@ def load_runtime_npz(dates: List[datetime], max_lookback: Optional[int] = None) 
     if not _RUNTIME_DIR.exists():
         return None
 
-    min_date = np.datetime64(min(dt.date() for dt in dates))
+    min_date = np.datetime64(min(dt.date() for dt in dates)) - np.timedelta64(7, 'D')
     max_date = np.datetime64(max(dt.date() for dt in dates)) + np.timedelta64(7, 'D')
 
     trim_start = None

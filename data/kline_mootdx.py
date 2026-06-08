@@ -35,7 +35,7 @@ START_DEFAULT = '19901219'
 
 PAGE_SIZE = 800            # 单次 API 最大返回条数
 MAX_HISTORY_BARS = 10000   # 全量拉取上限（覆盖 1990-至今约 8500 交易日）
-RECENT_BARS = 400          # 增量拉取条数（最近 ~1.5 年，增量用）
+RECENT_BARS = 400          # 增量拉取条数上限
 
 
 def _log(msg: str):
@@ -303,20 +303,14 @@ def update_recent(days: int, *, anchor_date: date | None = None, collect: bool =
         _log(f"  增量合并最近 {len(upd_codes)} 只...")
         t0 = time.time()
         written = empty = 0
-        xdxr_cache: dict[str, pd.DataFrame | None] = {}
-        for code in upd_codes:
-            try:
-                xdxr_cache[code] = mdx.xdxr(symbol=code[:6])
-            except Exception:
-                xdxr_cache[code] = None
 
         for i, code in enumerate(upd_codes):
             try:
-                bars = mdx.bars(symbol=code[:6], frequency=9, start=0, offset=RECENT_BARS, fq=0)
+                bars = mdx.bars(symbol=code[:6], frequency=9, start=0, offset=min(days * 5, RECENT_BARS), fq=0)
             except Exception:
                 empty += 1
                 continue
-            raw = _mootdx_bars_to_df(bars, xdxr_df=xdxr_cache.get(code))
+            raw = _mootdx_bars_to_df(bars, xdxr_df=None)
             if raw is None:
                 empty += 1
                 continue

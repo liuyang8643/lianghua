@@ -78,7 +78,7 @@ class Trader:
 
   def query_order(self, order_id: int) -> Optional[XtOrder]:
     """查询委托"""
-    trading_logger.info(f"[QMT] query_stock_order id={order_id} ...")
+    trading_logger.debug(f"[QMT] query_stock_order id={order_id} ...")
     return self.client.query_stock_order(self.account, order_id)
 
   def query_asset(self) -> Optional[XtAsset]:

@@ -11,10 +11,10 @@
    - `pending['prices']`: 盘前开盘估算价。
    - `pending['limit_prices']`: 每只涨停价(前收×(1+板块涨跌幅)),买单按它估资金冻结。
 
-2. 卖、买并发(两个线程)
-   - SellMonitor:并发提交所有卖单 → 监控成交,超时撤余重挂一次。卖出回款由券商自动进
-     「QMT 可用资金」。
-   - BuyMonitor:串行单循环补单(见下),通过 sell_monitor.finished 感知回款是否还在途。
+2. 卖、买串行三阶段
+   - Phase 1:串行提交全部卖单,不监控,让回款尽早开始到账
+   - Phase 2:买入补单循环,逐只查 QMT 可用资金;卖单未全终态时延长补单窗口等回款
+   - Phase 3:卖单收尾监控,超时撤余重挂。卖出回款由券商自动进「QMT 可用资金」。
 
 3. 买单:串行、一只一只、只认 QMT 可用资金
    - 多轮扫 topN;每只:`shares = floor(min(剩余, QMT可用/涨停价)/手)×手`。
@@ -39,7 +39,7 @@
 6. 收尾:`_wait_terminal` 等终态沉淀 → `_summarize` 汇总。
 """
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 from xtquant import xtconstant
 
@@ -136,24 +136,19 @@ class SellMonitor(BaseMonitor):
 
     def _submit_initial_sells(self):
         submitted = []
-        with ThreadPoolExecutor(max_workers=min(16, len(self.sell_orders))) as pool:
-            futures = [
-                pool.submit(self.executor._submit_sell_order, code, shares,
-                            self.signal_date, self.trade_date)
-                for code, shares in self.sell_orders
-            ]
-            for future in as_completed(futures):
-                r = future.result()
-                if r:
-                    r['submitted_at'] = time.time()
-                    submitted.append(r)
-                    self.record_action(
-                        'sell_submit',
-                        code=r['code'],
-                        order_id=r['order_id'],
-                        order_type=xtconstant.STOCK_SELL,
-                        shares=r['shares'],
-                    )
+        for code, shares in self.sell_orders:
+            r = self.executor._submit_sell_order(code, shares,
+                                                  self.signal_date, self.trade_date)
+            if r:
+                r['submitted_at'] = time.time()
+                submitted.append(r)
+                self.record_action(
+                    'sell_submit',
+                    code=r['code'],
+                    order_id=r['order_id'],
+                    order_type=xtconstant.STOCK_SELL,
+                    shares=r['shares'],
+                )
         return submitted
 
     def _monitor_sells(self):
@@ -294,6 +289,18 @@ class BuyMonitor(BaseMonitor):
                 return False
         return True
 
+    def _can_afford_any(self, cash: float) -> bool:
+        """可用现金是否买得起任意剩余标的最小1手。"""
+        for code in self.buy_seq:
+            if code in self.blocked_codes:
+                continue
+            ml = min_buy_shares(code)
+            if self._remaining(code) < ml:
+                continue
+            if int(cash / self._unit_cost(code) / ml) * ml >= ml:
+                return True
+        return False
+
     # ── 主循环 ─────────────────────────────────────────────
     def _buy_loop(self):
         soft = time.time() + self.executor.BUY_TIMEOUT_SEC
@@ -319,8 +326,15 @@ class BuyMonitor(BaseMonitor):
                 return
             if not progressed:
                 # 本轮零进展:卖单已全终态(没新回款)则收尾,否则等回款再轮
-                if time.time() >= soft and not self._sells_pending():
-                    return
+                if not self._sells_pending():
+                    if time.time() >= soft:
+                        return
+                    # 资金不足以买入任何剩余标的的最小1手,不等了
+                    cash = self._available_cash()
+                    if not self._can_afford_any(cash):
+                        trading_logger.warning(
+                            f"[BuyMonitor] 可用资金 {cash:.2f} 不足以买入任何剩余标的,提前结束")
+                        return
                 time.sleep(self.executor.MONITOR_POLL_SEC)
 
     def _fill_one_stock(self, code) -> bool:
@@ -335,15 +349,15 @@ class BuyMonitor(BaseMonitor):
                 return False
             cap = min(cap, rem)
             cash = self._available_cash()
-            afford = int(cash / self._unit_cost(code) / 100) * 100
-            shares = (min(cap, afford) // 100) * 100
+            afford = int(cash / self._unit_cost(code) / min_lot) * min_lot
+            shares = (min(cap, afford) // min_lot) * min_lot
             if shares < min_lot:
                 return False  # 现金买不起这只一手 → 交给下一只 / 下一轮
             r = self._submit_buy(code, shares)
             if not r:
                 if self._register_reject(code, 'submit returned None'):
                     return False
-                cap = shares - 100  # 减一手重试
+                cap = shares - min_lot  # 减一手重试
                 continue
             outcome, o = self._await_order(r['order_id'])
             if outcome == 'filled':
@@ -360,16 +374,17 @@ class BuyMonitor(BaseMonitor):
             if _is_insufficient_funds(msg) or self._sells_pending():
                 self.record_action('buy_underfunded', code=code,
                                    order_type=xtconstant.STOCK_BUY, shares=shares, msg=msg)
-                cap = shares - 100
+                cap = shares - min_lot
                 continue
             if self._register_reject(code, msg):
                 return False
-            cap = shares - 100  # 非资金类硬废单:计熔断并减一手重试
+            cap = shares - min_lot  # 非资金类硬废单:计熔断并减一手重试
         return False
 
     def _submit_buy(self, code, shares):
-        shares = int(shares // 100 * 100)
-        if shares < min_buy_shares(code):
+        ml = min_buy_shares(code)
+        shares = int(shares // ml * ml)
+        if shares < ml:
             return None
         r = self.executor._submit_buy_order(code, shares, self.signal_date, self.trade_date)
         if not r:
@@ -678,30 +693,28 @@ class RebalanceExecutor:
         except Exception as e:
             trading_logger.warning(f"[Executor] rebalance_start 事件记录失败: {e}")
 
-        monitors = {}
+        sell_monitor = None
         if execute_sell and sell_orders:
-            monitors['sell'] = SellMonitor(self, sell_orders, signal_date, trade_date)
+            sell_monitor = SellMonitor(self, sell_orders, signal_date, trade_date)
+        buy_monitor = None
         if execute_buy and buy_allocations:
-            monitors['buy'] = BuyMonitor(
+            buy_monitor = BuyMonitor(
                 self, buy_allocations, buy_n_stocks, prices,
                 signal_date, trade_date, limit_prices=limit_prices)
-        # 并发卖买时让买单 monitor 能感知卖单回款是否仍在途,据此延长补单窗口
-        if 'sell' in monitors and 'buy' in monitors:
-            monitors['buy'].sell_monitor = monitors['sell']
 
-        if len(monitors) == 2:
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                future_to_name = {pool.submit(m.run): name for name, m in monitors.items()}
-                for future in as_completed(future_to_name):
-                    name = future_to_name[future]
-                    if name == 'sell':
-                        sell_submitted = future.result()
-                    else:
-                        buy_submitted = future.result()
-        elif 'sell' in monitors:
-            sell_submitted = monitors['sell'].run()
-        elif 'buy' in monitors:
-            buy_submitted = monitors['buy'].run()
+        # 三阶段串行：提交卖单 → 买入（边买边等回款）→ 卖单收尾
+        # Phase 1: 串行提交全部卖单（不监控），让回款尽早开始到账
+        if sell_monitor:
+            sell_submitted = sell_monitor._submit_initial_sells()
+        # Phase 2: 买入（逐只查 QMT 可用资金，sell_monitor 未终态时延长补单窗口等回款）
+        if buy_monitor:
+            if sell_monitor:
+                buy_monitor.sell_monitor = sell_monitor
+            buy_submitted = buy_monitor.run()
+        # Phase 3: 卖单收尾监控（撤余重挂未成交的）
+        if sell_monitor:
+            sell_monitor._monitor_sells()
+            sell_monitor.finished = True
 
         submitted = sell_submitted + buy_submitted
         self._wait_terminal(submitted)
