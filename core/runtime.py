@@ -37,17 +37,26 @@ def load_runtime_npz(dates: List[datetime], max_lookback: Optional[int] = None) 
     npz_files = sorted(_RUNTIME_DIR.glob("runtime_*.npz"))
     parts = []
     for npz_path in npz_files:
-        data = dict(np.load(npz_path, allow_pickle=False))
-        d0, d1 = data['trade_dates'][0], data['trade_dates'][-1]
-        if d0 <= max_date and d1 >= min_date:
+        with np.load(npz_path, allow_pickle=False) as npz:
+            td = npz['trade_dates']
+            d0, d1 = td[0], td[-1]
+            if not (d0 <= max_date and d1 >= min_date):
+                continue
             if trim_start is not None:
-                td = data['trade_dates']
                 si = max(0, int(np.searchsorted(td, trim_start)))
                 ei = min(len(td), int(np.searchsorted(td, max_date)) + 5)
-                data['trade_dates'] = td[si:ei]
-                for f in _2D_FIELDS:
-                    if f in data:
-                        data[f] = data[f][si:ei]
+            else:
+                si, ei = 0, len(td)
+            data = {
+                'trade_dates': td[si:ei],
+                'stock_codes': npz['stock_codes'],
+            }
+            for f in _2D_FIELDS:
+                if f in npz:
+                    data[f] = npz[f][si:ei]
+            for f in _1D_FIELDS:
+                if f in npz:
+                    data[f] = npz[f]
             parts.append(data)
             core_logger.info(f"  {npz_path.name}: {len(data['trade_dates'])}d x {len(data['stock_codes'])}s")
 
@@ -105,20 +114,17 @@ def load_runtime_npz(dates: List[datetime], max_lookback: Optional[int] = None) 
             arr = np.full((len(all_dates), n_stocks), fill, dtype=dtype)
             for pi, p in enumerate(parts):
                 p_stocks = [str(s) for s in p['stock_codes']]
-                col_idx = np.array([stock_to_idx.get(s, -1) for s in p_stocks])
-                valid = col_idx >= 0
-                if not valid.any():
-                    continue
+                col_idx = np.array([stock_to_idx[s] for s in p_stocks])
                 for di in range(len(offsets_list[pi])):
-                    arr[offsets_list[pi][di], col_idx[valid]] = p[field][di, valid]
+                    arr[offsets_list[pi][di], col_idx] = p[field][di]
             merged[field] = arr
         if 'issue_price' in parts[0]:
             arr = np.full(n_stocks, np.nan, dtype=np.float64)
             for pi, p in enumerate(parts):
                 p_stocks = [str(s) for s in p['stock_codes']]
                 for j, s in enumerate(p_stocks):
-                    t = stock_to_idx.get(s, -1)
-                    if t >= 0 and np.isnan(arr[t]) and not np.isnan(p['issue_price'][j]):
+                    t = stock_to_idx[s]
+                    if np.isnan(arr[t]) and not np.isnan(p['issue_price'][j]):
                         arr[t] = p['issue_price'][j]
             merged['issue_price'] = arr
         if 'stock_names' in parts[0]:
@@ -126,8 +132,8 @@ def load_runtime_npz(dates: List[datetime], max_lookback: Optional[int] = None) 
             for pi, p in enumerate(parts):
                 p_stocks = [str(s) for s in p['stock_codes']]
                 for j, s in enumerate(p_stocks):
-                    t = stock_to_idx.get(s, -1)
-                    if t >= 0 and p['stock_names'][j]:
+                    t = stock_to_idx[s]
+                    if p['stock_names'][j]:
                         arr[t] = p['stock_names'][j]
             merged['stock_names'] = arr
 

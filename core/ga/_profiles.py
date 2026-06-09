@@ -1,4 +1,10 @@
-"""GA profile 加载与查询"""
+"""GA profile 加载与查询
+
+所有 GA 可搜索参数定义在 INTRINSIC_PARAMS，新增参数只需：
+  1. 在 INTRINSIC_PARAMS 加一条
+  2. 在 YAML search_spaces 加同名字段 + 值列表
+  3. 如需在回测中使用，在 backtest.py 读取 config.get('key')
+"""
 from copy import deepcopy
 from itertools import combinations
 from pathlib import Path
@@ -14,6 +20,31 @@ _loaded = False
 DEFAULT_GA_PROFILE = ''
 SEARCH_SPACE_VERSION = ''
 GA_PROFILES: dict[str, dict] = {}
+
+# ============================================================
+# 统一参数注册表 — 所有 GA 可搜索的配置维度
+# ============================================================
+# type: 'int' | 'float' | 'categorical' | 'stock_pool' | 'weights'
+# config_key: 在 individual_config dict 中的键名
+# display: 日志缩写
+# default: 当不在 profile search_spaces 中时的值
+# crossover: True=参与交叉, False=不参与(如 position_count, stock_pool 等)
+# config_key_for_mutate: 变异时从搜索空间重新采样的键(可不同于 config_key)
+INTRINSIC_PARAMS: list[dict] = [
+    {'key': 'position_count',  'config_key': 'buy_n',          'type': 'int',     'display': 'pos',     'default': 20},
+    {'key': 'stock_pool',      'config_key': 'stock_pool',     'type': 'stock_pool','display': 'pool',  'default': ('60','00','30','688')},
+    {'key': 'holding_period',  'config_key': 'holding_period', 'type': 'int',     'display': 'hp',      'default': 1},
+    {'key': 'timing_base',     'config_key': 'timing_base',    'type': 'float',   'display': 't_base',  'default': None},
+    {'key': 'timing_leverage', 'config_key': 'timing_leverage','type': 'float',   'display': 't_lev',   'default': None},
+    {'key': 'timing_direction','config_key': 'timing_direction','type': 'int',    'display': 't_dir',   'default': None},
+    {'key': 'timing_window',   'config_key': 'timing_window',  'type': 'int',     'display': 't_win',   'default': None},
+    {'key': 'timing_index',    'config_key': 'timing_index',   'type': 'categorical','display': 't_idx','default': None},
+    {'key': 'amount_filter_pct',   'config_key': 'amount_filter_pct',    'type': 'int', 'display': 'amt%', 'default': 0},
+    {'key': 'market_cap_filter_pct','config_key': 'market_cap_filter_pct','type': 'int', 'display': 'mcap%','default': 0},
+]
+
+def get_intrinsic_params() -> list[dict]:
+    return deepcopy(INTRINSIC_PARAMS)
 
 
 def set_yaml_path(path: Path):

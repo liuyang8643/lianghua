@@ -15,7 +15,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from factor_db import db, records, similarity
-from llm_ga.config import REPO_ROOT, TRAIN_START, TRAIN_END
+from llm_ga.config import REPO_ROOT
 
 _OUT = REPO_ROOT / 'factor_db' / 'report.html'
 
@@ -297,9 +297,8 @@ table.matrix th.mh{background:#f6f8fa;white-space:nowrap;position:static}
 
 def generate(oos_start=None, oos_end=None, open_browser=True) -> Path:
     factors = db.list_factors()
-    # 展示指标固定取训练区间（backfill 落库的 2010-至今）最新回测，避免被其它区间的
-    # 单因子回测记录（如某次 2024 单测）抢成「最新」，保证榜单是当前正确结果
-    runs_summary = {f['name']: records.get_run(f['name'], TRAIN_START, TRAIN_END) for f in factors}
+    # 展示指标取每个因子最新一次回测（backfill 落库），保证榜单是当前结果
+    runs_summary = records.latest_runs_by_factor()
     factors = _merge_run_metrics(factors, runs_summary)
     oos = None
     if oos_start and oos_end:

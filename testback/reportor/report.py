@@ -864,6 +864,20 @@ def _build_metric_cards(metrics: Dict, holding_stats: Dict) -> str:
 # 主报告生成
 # ---------------------------------------------------------------------------
 
+def _build_live_sim_card(live_sim):
+    if not live_sim:
+        return ''
+    labels = ['base', '09:32', '09:33', '09:34', '09:35']
+    rows = ''
+    for l in labels:
+        m = live_sim.get(l, {})
+        base_s = live_sim.get('base', {}).get('sharpe', 0)
+        decay = m.get('sharpe', 0) - base_s
+        rows += f'<tr><td>{l}</td><td>{m.get("sharpe", 0):.3f}</td><td>{m.get("annualized", 0):.1f}%</td><td>{m.get("max_drawdown", 0):.1f}%</td><td class="{"neg" if decay < 0 else "pos"}">{decay:+.3f}</td></tr>'
+    return f'''<div class="card"><div class="card-title">实盘模拟 (2025-12-10 ~ 2026-06-08)</div>
+<table class="live-sim-table"><thead><tr><th>买入价</th><th>夏普</th><th>年化</th><th>最大回撤</th><th>vs base</th></tr></thead><tbody>{rows}</tbody></table></div>'''
+
+
 def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     """新版单次回测报告：ECharts + TanStack Table。"""
     import json
@@ -899,6 +913,7 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     period = report_data.get('period', {}) or {}
     rebalance_rule = report_data.get('rebalance_rule', {}) or {}
     final_asset = report_data.get('final_asset', init_cash)
+    live_sim = report_data.get('live_simulation')
 
     signal_period_str = f"{period.get('signal_start', '')} ~ {period.get('signal_end', '')}" if period else ''
     trade_period_str = f"{period.get('trade_start', '')} ~ {period.get('trade_end', '')}" if period else ''
@@ -980,6 +995,7 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
             'distribution': _build_histogram_payload(daily_returns_pct),
             'winloss': _build_winloss_payload(trade_log),
         },
+        'live_simulation': report_data.get('live_simulation'),
     }, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
 
     metric_cards = _build_metric_cards(metrics, holding_stats)
@@ -1021,6 +1037,7 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
 <div class="card"><div class="card-title">核心指标</div><div class="metrics-grid">{metric_cards}</div></div>
 <div class="card"><div class="card-title">分年度指标</div>{_build_per_year_table(per_year_metrics)}</div>
 <div class="card"><div class="card-title">净值曲线</div><div id="equity-chart" class="chart-lg"></div></div>
+{_build_live_sim_card(live_sim)}
 <div class="charts-2col"><div class="card"><div class="card-title">每日收益率分布</div><div id="distribution-chart" class="chart"></div></div><div class="card"><div class="card-title">盈亏分布</div><div id="winloss-chart" class="chart"></div></div></div>
 <div class="card"><div class="card-title">月度收益</div><div id="monthly-host"></div></div>
 <h2>交易记录明细</h2><div class="card"><div id="trade-host"></div></div>

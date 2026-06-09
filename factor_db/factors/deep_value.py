@@ -22,10 +22,24 @@ def _load() -> dict:
 
 
 def _aligned(panel: dict, field: str) -> np.ndarray:
+    """从 deep_fin_pit 取出与 panel 交易日期对齐的财务数据。
+
+    财务 PIT 数据按季度更新，panel 可能包含最新交易日（如 overlay），
+    此时用缓存内最后一期数据前向覆盖，不做任何容错/丢弃。
+    """
     c = _load()
     pdates = np.array([np.datetime64(dt) for dt in panel['trade_dates']], dtype='datetime64[D]')
     start = int(np.searchsorted(c['dates'], pdates[0]))
-    return c[field][start:start + len(pdates)]
+    n_panel = len(pdates)
+    n_cache = c[field].shape[0]
+    if start + n_panel <= n_cache:
+        return c[field][start:start + n_panel].copy()
+    # panel 尾部超出缓存（如 overlay 新交易日），用最后一期财务数据前向填充
+    n_exist = max(0, n_cache - start)
+    out = np.empty((n_panel, c[field].shape[1]), dtype=c[field].dtype)
+    out[:n_exist] = c[field][start:]
+    out[n_exist:] = c[field][-1]
+    return out
 
 
 def _base_valid(panel: dict) -> np.ndarray:

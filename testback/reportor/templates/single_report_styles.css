@@ -304,3 +304,9 @@ h2{
   overflow:auto;
   white-space:normal;
 }
+.live-sim-table{width:100%;border-collapse:collapse;margin-top:12px;}
+.live-sim-table th,.live-sim-table td{padding:8px 12px;text-align:right;border-bottom:1px solid var(--border);}
+.live-sim-table th{font-size:12px;color:var(--muted);font-weight:600;}
+.live-sim-table td:first-child,.live-sim-table th:first-child{text-align:left;font-weight:500;}
+.live-sim-table .pos{color:var(--pos);}
+.live-sim-table .neg{color:var(--neg);}

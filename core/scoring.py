@@ -19,6 +19,7 @@ def select_topn(
     temperatures: dict[str, float],
     top_n: int,
     force_codes: Optional[list[str]] = None,
+    filter_mask: Optional[np.ndarray] = None,
 ) -> tuple[list[str], np.ndarray]:
     """加权打分 + 截面排序 + 取前 N。回测和实盘必须共用此函数。
 
@@ -31,6 +32,7 @@ def select_topn(
         temperatures: {factor_name: temperature}
         top_n: 取前 N 只
         force_codes: 强制纳入的 codes（保留位次，前置）；None 表示不启用
+        filter_mask: (n_valid_stocks,) bool 数组，True=保留；None 表示不过滤
 
     Returns:
         (topn_stocks, final_score_arr)
@@ -39,14 +41,17 @@ def select_topn(
     """
     final_score = np.zeros(len(valid_stocks))
     for name, ranks_mat in all_scores.items():
-        w = weights.get(name, 0.0)
+        w = weights[name]
         if w == 0:
             continue
         ranks = ranks_mat[score_idx][valid_cols]
-        temp = temperatures.get(name, 1.0)
+        temp = temperatures[name]
         if temp != 1.0:
             np.power(ranks, 1.0 / temp, out=ranks)
         final_score += ranks * w
+
+    if filter_mask is not None:
+        final_score[~filter_mask] = -np.inf
 
     top_idx = np.argsort(-final_score)
     topn = [valid_stocks[i] for i in top_idx[:top_n]]

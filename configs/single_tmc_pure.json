@@ -3,8 +3,8 @@
   "all_factor_names": ["TrueMarketCap"],
   "individual_config": {
     "weights": {"TrueMarketCap": 1.0},
-    "buy_n": 25,
-    "sell_m": 25,
+    "buy_n": 3,
+    "sell_m": 3,
     "temperatures": {"TrueMarketCap": 1.0},
     "rebalance": true
   }

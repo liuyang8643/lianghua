@@ -1,5 +1,6 @@
 from ._profiles import (
     DEFAULT_GA_PROFILE, set_yaml_path,
+    get_intrinsic_params,
     get_profile, resolve_profile_name, get_mode_configs,
     get_profile_factor_classes, get_profile_factor_names,
     get_profile_fixed_weights, get_profile_fixed_temperatures,
@@ -11,6 +12,7 @@ from ._sampling import (
     sample_holding_period,
     sample_timing_base, sample_timing_leverage, sample_timing_direction,
     sample_timing_window, sample_timing_index,
+    sample_amount_filter_pct, sample_market_cap_filter_pct,
     sample_factor_choice,
     build_individual_config, repair_config, generate_initial_configs,
 )

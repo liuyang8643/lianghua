@@ -12,8 +12,8 @@ from core.backtest import (
     _backtest_direct,
     _compute_factor_scores,
     _compute_list_dates,
-    _compute_metrics_simple,
 )
+from core.metrics import compute_core_metrics
 from core.runtime import load_runtime_npz
 from data.db import allow_buy_stock_code_list
 from utils.stock.time import get_trading_date_span
@@ -147,7 +147,7 @@ def evaluate_detailed(factor_cls, name: str, dates, all_stocks, buy_n: int = 20,
         weights=weights, buy_n=buy_n, sell_m=buy_n, temperatures=temperatures,
         list_dates_map=list_dates_map, lightweight=True,
     )
-    m = _compute_metrics_simple(bt['daily_returns'])
+    m = compute_core_metrics(bt['daily_returns'])
 
     sig, sig_shape = None, None
     if want_sig:

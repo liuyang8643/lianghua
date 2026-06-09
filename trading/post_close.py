@@ -112,6 +112,36 @@ def _load_seed(trade_date: date):
     return prev_date, seed_cash, seed_positions, y_positions_eod
 
 
+def _load_latest_seed(trade_date: date):
+    """找 T 日之前**最近一个可用**的实盘持仓快照做种子（T-1 缺失时的兜底）。
+
+    正常应取 T-1（_load_seed）；当 T-1 快照缺失（链路断裂）时，退而取更早一天的真实
+    持仓+现金，配合多日连续回测从该真实资金基线演化到 T 日，使「目标持仓」与实盘的
+    资金体量对齐（避免从默认 70 万空仓起步导致每只系统性偏小）。
+
+    Returns (seed_date, seed_cash, seed_positions) 或 None。
+    """
+    from trading.persistence import _TRADE_DIR
+    summary_path = _TRADE_DIR / "daily_summary.parquet"
+    if not summary_path.exists():
+        return None
+    summary_df = pd.read_parquet(summary_path)
+    cand = []
+    for p in _TRADE_DIR.glob("positions_*.parquet"):
+        try:
+            d = date.fromisoformat(p.stem.split('positions_')[1])
+        except (ValueError, IndexError):
+            continue
+        if d < trade_date:
+            cand.append((d, p))
+    for seed_date, p in sorted(cand, reverse=True):  # 由近及远
+        seed = _extract_live_seed(pd.read_parquet(p), summary_df, seed_date)
+        if seed is not None:
+            seed_cash, seed_positions, _ = seed
+            return seed_date, seed_cash, seed_positions
+    return None
+
+
 def _seed_replay_core(*, prev_date: date, seed_cash: float, seed_positions: dict,
                       y_positions_eod: list, data, all_scores, valid_dates, date_indices,
                       valid_stocks, stock_indices, individual_config: dict) -> dict | None:
@@ -164,7 +194,7 @@ def _seed_replay_core(*, prev_date: date, seed_cash: float, seed_positions: dict
 
 
 def _run_seed_replay(trade_date: date, individual_config: dict,
-                     factor_classes: list) -> dict | None:
+                     factor_classes: list, kline_data: dict | None = None) -> dict | None:
     """盘后单日回放：用实盘 T-1 真实持仓 + 现金做种子，只回放 T 日多退少补。
 
     目的：让回测端 T 日的持仓/下单手数与实盘可比 —— 两边起点（资金+持仓）完全相同，
@@ -183,7 +213,8 @@ def _run_seed_replay(trade_date: date, individual_config: dict,
     weights = individual_config['weights']
 
     signal_dt = [datetime.combine(trade_date, datetime.min.time())]
-    scores_result = _compute_factor_scores(signal_dt, all_stocks, weights, factor_classes)
+    scores_result = _compute_factor_scores(signal_dt, all_stocks, weights, factor_classes,
+                                            kline_data=kline_data)
     if scores_result is None:
         return None
     data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices = scores_result
@@ -238,9 +269,15 @@ def run_seed_replay_for_open(trade_date: date, individual_config: dict, *,
 
 
 def _run_continuous_backtest(start_date: date, end_date: date,
-                              individual_config: dict, factor_classes: list) -> dict | None:
+                              individual_config: dict, factor_classes: list,
+                              kline_data: dict | None = None,
+                              init_cash: float = 700_000.0,
+                              init_positions: dict | None = None) -> dict | None:
     """连续多日回测 [start_date, end_date]，让回测演化形成对齐 T-1 的持仓。
-    
+
+    init_cash / init_positions: 实盘真实资金基线种子（T-1 缺失时取更早一天的真实持仓+
+    现金），使回测资金体量与实盘对齐，目标持仓股数不再系统性偏小。默认 70 万空仓。
+
     返回 dict 与 _backtest_direct 一致；其中 daily_snapshots[-1] 为 T 日 snapshot。
     PostCloseReport._bt_snap() 默认取 [-1]，_rebuild_backtest_per_stock_pnl
     用 [-1] vs [-2] 算 T 日 daily_pnl。
@@ -261,7 +298,8 @@ def _run_continuous_backtest(start_date: date, end_date: date,
     sell_m = individual_config.get('sell_m', buy_n)
 
     scores_result = _compute_factor_scores(
-        signal_datetimes, all_stocks, weights, factor_classes)
+        signal_datetimes, all_stocks, weights, factor_classes,
+        kline_data=kline_data)
     if scores_result is None:
         return None
 
@@ -269,10 +307,12 @@ def _run_continuous_backtest(start_date: date, end_date: date,
     if not valid_dates:
         return None
 
+    seed_in_npz = ({c: v for c, v in init_positions.items() if c in stock_indices}
+                   if init_positions else None)
     return _backtest_direct(
         data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices,
         weights=weights, buy_n=buy_n, sell_m=sell_m, temperatures=temperatures,
-        lightweight=False,
+        lightweight=False, init_cash=init_cash, init_positions=seed_in_npz,
     )
 
 
@@ -303,26 +343,45 @@ def run_post_close(store) -> dict | None:
         trading_logger.error("[PostClose] 缺少 config/factor_classes, 跳过")
         return None
 
+    _skip = getattr(store, '_skip_update', False)
+
     # 1. 拉收盘 K 线 → parquet only（NPZ 等 16:00 update_all）
     recorder.mark("盘后K线更新")
-    if not getattr(store, '_skip_update', False):
-        _post_close_update_kline(trade_date)
-    else:
-        trading_logger.info("[PostClose] 跳过K线更新 (--skip 模式)")
+    kline_data = None
+    if not _skip:
+        try:
+            kline_data = _post_close_update_kline(trade_date)
+        except Exception:
+            trading_logger.exception("[PostClose] K线更新失败，继续使用已有 NPZ 回测")
 
     # 2. 回测端：优先「单日回放」——用实盘 T-1 真实持仓+现金做种子，只回放 T 日多退少补，
     #    使持仓/下单手数与实盘可比（手数差归因执行层、价格差归因滑点）。
     #    无 T-1 种子（首个交易日 / 缺快照）时回退到多日连续回测。
     recorder.mark("盘后回测")
-    bt_result = _run_seed_replay(trade_date, individual_config, factor_classes)
+    bt_result = _run_seed_replay(trade_date, individual_config, factor_classes, kline_data=kline_data)
     if bt_result is None:
-        bt_start = _resolve_backtest_start(trade_date)
-        if bt_start < trade_date:
-            trading_logger.info(f"[PostClose] 回退连续回测窗口: {bt_start} → {trade_date}")
+        # T-1 种子缺失：优先用「最近一个可用实盘快照」做真实资金种子，从该日演化到 T，
+        # 使目标持仓与实盘资金体量对齐；无任何历史快照时才从默认空仓起步。
+        from utils.stock.time import get_trading_date_span
+        seed = _load_latest_seed(trade_date)
+        if seed is not None:
+            seed_date, seed_cash, seed_positions = seed
+            span = get_trading_date_span(seed_date, trade_date)
+            bt_start = span[1] if len(span) >= 2 else trade_date
+            trading_logger.info(
+                f"[PostClose] 缺 T-1 种子，改用最近实盘快照 {seed_date} "
+                f"(现金¥{seed_cash:,.0f}+{len(seed_positions)}只) 连续演化 {bt_start} → {trade_date}")
+            bt_result = _run_continuous_backtest(
+                bt_start, trade_date, individual_config, factor_classes,
+                kline_data=kline_data, init_cash=seed_cash, init_positions=seed_positions)
         else:
-            trading_logger.info(f"[PostClose] 回退单日回测: {trade_date} (实盘尚无历史调仓)")
-        bt_result = _run_continuous_backtest(bt_start, trade_date,
-                                              individual_config, factor_classes)
+            bt_start = _resolve_backtest_start(trade_date)
+            if bt_start < trade_date:
+                trading_logger.info(f"[PostClose] 回退连续回测窗口: {bt_start} → {trade_date}")
+            else:
+                trading_logger.info(f"[PostClose] 回退单日回测: {trade_date} (实盘尚无历史调仓)")
+            bt_result = _run_continuous_backtest(bt_start, trade_date,
+                                                  individual_config, factor_classes, kline_data=kline_data)
     if bt_result is None:
         trading_logger.warning("[PostClose] 回测失败")
         return None
@@ -344,8 +403,6 @@ def run_post_close(store) -> dict | None:
         prev_rows = prev[prev['date'] < trade_date]
         if not prev_rows.empty:
             prev_asset = float(prev_rows['total_asset'].iloc[-1])
-
-    _skip = getattr(store, '_skip_update', False)
 
     # 资产仅查一次，feed_asset / write_daily_summary 共用，避免 QMT 时刻漂移
     live_asset = None
@@ -399,9 +456,12 @@ def run_post_close(store) -> dict | None:
             positions = []
     if positions:
         live_trade_recorder.snapshot_positions(positions, fills_df=live_fills, trade_date=trade_date)
-        pos_path = _TRADE_DIR / f"positions_{trade_date.isoformat()}.parquet"
-        if pos_path.exists():
-            report.feed_positions_df(pd.read_parquet(pos_path))
+    # positions_{T}.parquet 为权威实盘持仓源：实盘由上面 snapshot 落地，
+    # sim/replay 直接读盘上已有快照（不查 QMT，避免非交易时段卡死）。
+    pos_path = _TRADE_DIR / f"positions_{trade_date.isoformat()}.parquet"
+    live_positions_df = pd.read_parquet(pos_path) if pos_path.exists() else None
+    if live_positions_df is not None:
+        report.feed_positions_df(live_positions_df)
 
     # 3.4 实盘 plan
     plan_path = _TRADE_DIR / f"plan_{trade_date.isoformat()}.parquet"
@@ -443,7 +503,18 @@ def run_post_close(store) -> dict | None:
 
     # 6. 更新战报卡片 P&L 数据并锁定
     try:
-        from trading.day_board import day_board
+        from trading.day_board import day_board, extract_bt_reference
+        # 6.1 用盘后回测结果回灌「目标」对账参考：盘前若缺 T-1 种子（sim / 首日），
+        #     start_session 时 bt_ref 可能为空，导致目标/操作/diff 三列全为「-」。
+        snaps = bt_result.get('daily_snapshots') or []
+        day_board.feed_bt_reference(
+            extract_bt_reference(bt_result),
+            bt_daily_return=snaps[-1].get('daily_return_pct') if snaps else None)
+        # 6.2 用 parquet 灌入实盘 成交/持仓（不走 QMT），填齐战报「实盘」侧：
+        #     成交 → fills_{T}.parquet；持仓 → positions_{T}.parquet。
+        day_board.feed_live_fills(live_fills)
+        if live_positions_df is not None:
+            day_board.feed_live_positions(live_positions_df)
         if report_data:
             s = report_data.get('summary', {})
             day_board.feed_close_data(
@@ -486,7 +557,7 @@ def _retry_with_backoff(func, max_retries=3, base_delay=2.0):
 # ================================================================
 
 def run_update_all(store):
-    """16:00 全量数据更新（带重试），更新完发送飞书通知。"""
+    """16:00 全量数据更新（带重试+断点续跑），更新完发送飞书通知。"""
     if getattr(store, '_skip_update', False):
         trading_logger.info("[UpdateAll] 跳过全量更新 (--skip 模式)")
         return True
@@ -506,21 +577,97 @@ def run_update_all(store):
     trading_logger.info("=" * 50)
     recorder.mark("全量更新")
 
+    # 断点续跑：每步完成后写标记，重启跳过已完成步骤
+    CKPT_DIR = DATA_DIR / "runtime" / ".update_checkpoints"
+    CKPT_DIR.mkdir(parents=True, exist_ok=True)
+    today_str = TODAY.isoformat()
+    # 清理非今日的旧日标记；今日的 step 标记保留用于断点续跑
+    for old in CKPT_DIR.glob("*.done"):
+        if old.stem != today_str:
+            old.unlink(missing_ok=True)
+            for s in CKPT_DIR.glob("step_*"):
+                s.unlink(missing_ok=True)
+
+    def _step_done(name: str) -> bool:
+        return (CKPT_DIR / f"step_{name.replace('/', '_')}").exists()
+
+    def _mark_step(name: str):
+        (CKPT_DIR / f"step_{name.replace('/', '_')}").touch()
+        (CKPT_DIR / f"{today_str}.done").touch()
+
+    # 首次启用时（无标记），从产出文件时间戳自动推断已完成的步骤
+    def _was_updated_today(glob_pattern: str) -> bool:
+        for p in DATA_DIR.glob(glob_pattern):
+            from datetime import datetime as _dt
+            mtime = _dt.fromtimestamp(p.stat().st_mtime).date()
+            if mtime == TODAY:
+                return True
+        return False
+
+    if not (CKPT_DIR / f"{today_str}.done").exists():
+        auto_steps = [
+            ("股票列表", lambda: _was_updated_today("stock_list/stock_list.parquet")),
+            ("股票名称/ST", lambda: _was_updated_today("stock_name/current_names.parquet")),
+            ("K线日线", lambda: _was_updated_today("k-line/000001.SZ.parquet")),
+            ("资产负债表", lambda: _was_updated_today("financial/balance.parquet")),
+            ("发行价", lambda: _was_updated_today("issue_price/issue_price.parquet")),
+            ("大盘指数", lambda: _was_updated_today("index_*_daily.parquet")),
+        ]
+        for auto_name, check in auto_steps:
+            try:
+                if check():
+                    _mark_step(auto_name)
+                    trading_logger.info(f"[Checkpoint] 自动补标记: {auto_name} (产出文件今日已更新)")
+            except Exception:
+                pass
+
     # Phase 1: 清理最近 N 个交易日的指数不完整数据。
     # K 线无需在此清理：QMT _update_kline(update_recent) 会按 time 合并覆盖最近 N 个交易日。
-    trading_logger.info("--- Phase 1: 清理指数最近数据 ---")
-    for f in DATA_DIR.glob("index_*_daily.parquet"):
-        try:
-            df = pd.read_parquet(f)
-            dates = pd.to_datetime(df['trade_date'])
-            mask = dates.dt.date < YESTERDAY
-            if mask.sum() < len(df):
-                df[mask].reset_index(drop=True).to_parquet(f, index=False)
-        except Exception as e:
-            trading_logger.warning(f"[指数清理] {f.name} 失败: {e}")
+    if not _step_done("phase1_clean"):
+        trading_logger.info("--- Phase 1: 清理指数最近数据 ---")
+        for f in DATA_DIR.glob("index_*_daily.parquet"):
+            try:
+                df = pd.read_parquet(f)
+                dates = pd.to_datetime(df['trade_date'])
+                mask = dates.dt.date < YESTERDAY
+                if mask.sum() < len(df):
+                    df[mask].reset_index(drop=True).to_parquet(f, index=False)
+            except Exception as e:
+                trading_logger.warning(f"[指数清理] {f.name} 失败: {e}")
+        _mark_step("phase1_clean")
 
-    # Phase 2: 逐步下载（每个步骤独立重试）
+    # Phase 2: 逐步下载（每个步骤独立重试+超时保护）
     trading_logger.info("--- Phase 2: 下载更新 ---")
+    import concurrent.futures as _futures
+    STEP_TIMEOUTS = {
+        "股票名称/ST": 900,   # CNINFO 全量拉取 ~800s
+        "K线日线": 300,        # mootdx 5207 只 ~150s
+    }
+    _DEFAULT_TIMEOUT = 180
+
+    def _run_with_timeout(name: str, func) -> tuple[bool, str | None]:
+        """在独立线程中运行 func，超时自动返回失败，不掉死主流程。"""
+        deadline = STEP_TIMEOUTS.get(name, _DEFAULT_TIMEOUT)
+        with _futures.ThreadPoolExecutor(max_workers=1) as _pool:
+            fut = _pool.submit(_retry_with_backoff, func)
+            try:
+                return fut.result(timeout=deadline)
+            except _futures.TimeoutError:
+                msg = f"[UpdateAll] {name} 超时({deadline}s)，跳过"
+                trading_logger.warning(msg)
+                try:
+                    lark_sender.send_notification_card(
+                        level=LarkMsgLevel.Warning,
+                        title=f"⏰ 更新超时: {name}",
+                        sub_title=f"超过 {deadline}s，已跳过",
+                        content=f"{name} 超时未完成，已跳过。其他步骤继续执行。",
+                    )
+                except Exception:
+                    pass
+                return False, f"timeout after {deadline}s"
+            except Exception as e:
+                return False, str(e)
+
     steps = [
         ("股票列表", _update_stock_list),
         ("股票名称/ST", _update_stock_name),
@@ -533,14 +680,23 @@ def run_update_all(store):
     ]
 
     for name, func in steps:
+        if _step_done(name):
+            trading_logger.info(f">>> {name} <<< [跳过: 已完成]")
+            continue
         t1 = time.time()
         trading_logger.info(f">>> {name} <<<")
-        _, ok = _retry_with_backoff(func)
+        _, ok = _run_with_timeout(name, func)
+        if ok:
+            _mark_step(name)
         trading_logger.info(f"<<< {name} {'OK' if ok else 'FAIL'} ({time.time()-t1:.0f}s) >>>")
 
-    # Phase 3: 构建 Runtime
+    # Phase 3: 构建 Runtime（不做断点续跑——runtime 必须基于当日前面的全部数据重新构建）
     trading_logger.info("--- Phase 3: 构建 Runtime ---")
     _, ok = _retry_with_backoff(_build_runtime)
+
+    # 全部完成，清理标记
+    for m in CKPT_DIR.glob("step_*"):
+        m.unlink(missing_ok=True)
 
     elapsed = time.time() - t0
     npz_files = sorted((DATA_DIR / "runtime").glob("runtime_*.npz"))

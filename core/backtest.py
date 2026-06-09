@@ -2,13 +2,17 @@
 
 import json
 import sys
+import warnings
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
 import numpy as np
 
+warnings.filterwarnings('ignore', category=RuntimeWarning)
+
 from core.ga import resolve_profile_name
+from core.metrics import compute_core_metrics
 from core.runtime import load_runtime_npz
 from core.scoring import scores_to_ranks, select_topn
 from core.legality import LegalityChecker
@@ -43,8 +47,8 @@ def _get_stock_name_map(traded_codes: set[str], stock_names=None, stock_codes=No
 
 
 def _calc_holding_stats(current_positions: List[Dict], cleared_positions: List[Dict]) -> Dict:
-  current_days = [p.get('holding_days', 0) for p in current_positions]
-  cleared_days = [p.get('holding_days', 0) for p in cleared_positions]
+  current_days = [p['holding_days'] for p in current_positions]
+  cleared_days = [p['holding_days'] for p in cleared_positions]
   all_days = current_days + cleared_days
 
   def _avg(values: List[int]) -> float:
@@ -162,10 +166,12 @@ def _extend_verify_stock_pool_with_historical_codes(
 
 # ========== 核心回测 ==========
 
-def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_classes, data=None):
+def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_classes,
+                           data=None, kline_data=None):
   """加载 NPZ 并批量计算因子分数，返回 (data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices)。
 
   data 可传入预加载面板（GA 整轮复用同一份 NPZ，避免每个因子重复加载 580MB 文件）。
+  kline_data 用于内存 overlay 今日 K 线（实盘/盘后共用，不落盘 NPZ）。
   """
   if data is None:
     max_lookback = max((c.hist_days for c in factor_classes), default=0) or None
@@ -174,6 +180,10 @@ def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_c
     first_d = backtest_datetime_list[0].strftime('%Y%m%d')
     last_d = backtest_datetime_list[-1].strftime('%Y%m%d')
     raise FileNotFoundError(f"未找到覆盖 {first_d}~{last_d} 的 runtime npz 文件")
+
+  if kline_data:
+    from data.update_live import apply_kline_overlay
+    data, _, _ = apply_kline_overlay(data, kline_data)
 
   npz_stocks = [str(s) for s in data['stock_codes']]
   stock_indices = {c: i for i, c in enumerate(npz_stocks)}
@@ -205,7 +215,9 @@ def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_c
   for f_cls in factor_classes:
     f = f_cls()
     name = f.__class__.__name__
-    if weights is not None and weights.get(name, 0.0) == 0:
+    if weights is not None and name not in weights:
+      continue
+    if weights is not None and weights[name] == 0:
       continue
     factor_meta.append((name, f))
 
@@ -385,7 +397,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
     prev_positions = set(account.positions.keys())
 
     if is_rebalance_day and (account.positions or buy_n_stocks):
-      pos_vals = {c: p['volume'] * prices.get(c, 0) for c, p in account.positions.items()}
+      pos_vals = {c: p['volume'] * prices[c] for c, p in account.positions.items()}
       total_eq = account.current_cash + sum(pos_vals.values())
       timing_mult = position_multipliers[i] if (position_multipliers is not None and not np.isnan(position_multipliers[i])) else 1.0
       # 市价单涨停价冻结预留：均匀满仓时最后一只也要冻结得起 → base_target = E/(buy_n + reserve_L)
@@ -460,7 +472,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
     exited_stocks = [c for c in prev_positions if c not in curr_positions]
 
     if lightweight:
-      mkt_val = sum(close_prices.get(c, 0.0) * p['volume'] for c, p in account.positions.items())
+      mkt_val = sum(close_prices[c] * p['volume'] for c, p in account.positions.items())
       total_asset = account.current_cash + mkt_val
       if _lw_last_asset > 0:
         daily_ret = (total_asset - _lw_last_asset) / _lw_last_asset * 100
@@ -496,7 +508,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
       })
 
   if lightweight:
-    mkt_val = sum(close_prices.get(c, 0.0) * p['volume'] for c, p in account.positions.items())
+    mkt_val = sum(close_prices[c] * p['volume'] for c, p in account.positions.items())
     total_asset = account.current_cash + mkt_val
     total_return = (total_asset - account.init_cash) / account.init_cash * 100
     return {
@@ -525,59 +537,59 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
     for i, snap in enumerate(daily_snapshots):
       snap['cumulative_return_pct'] = cumulative_returns[i]
 
-  daily_returns = [snap.get('daily_return_pct', 0.0) for snap in daily_snapshots]
+  daily_returns = [snap['daily_return_pct'] for snap in daily_snapshots]
 
   positions = account.calc_position_values(close_prices)
   for position in positions:
     position['holding_days'] = _count_holding_trading_days(
-      position.get('buy_trade_date') or position.get('buy_date'), final_trade_date)
+      position['buy_trade_date'] or position['buy_date'], final_trade_date)
 
   cleared_positions = []
   for cleared in account.cleared_positions:
-    buy_trade_date = cleared['pos'].get('buy_trade_date') or cleared['pos'].get('buy_date')
-    clear_trade_date = cleared.get('clear_trade_date') or cleared.get('clear_date')
+    buy_trade_date = cleared['pos']['buy_trade_date'] or cleared['pos']['buy_date']
+    clear_trade_date = cleared['clear_trade_date'] or cleared['clear_date']
     holding_days = _count_holding_trading_days(buy_trade_date, clear_trade_date)
-    cost = cleared['pos'].get('cost', 0)
-    income = cleared.get('income', 0)
+    cost = cleared['pos']['cost']
+    income = cleared['income']
     income_pct = (income / cost * 100) if cost else 0.0
     cleared_positions.append({
       'code': cleared['code'],
-      'buy_date': cleared['pos'].get('buy_date'),
-      'buy_signal_date': cleared['pos'].get('buy_signal_date'),
+      'buy_date': cleared['pos']['buy_date'],
+      'buy_signal_date': cleared['pos']['buy_signal_date'],
       'buy_trade_date': buy_trade_date,
-      'clear_date': cleared.get('clear_date'),
-      'clear_signal_date': cleared.get('clear_signal_date'),
+      'clear_date': cleared['clear_date'],
+      'clear_signal_date': cleared['clear_signal_date'],
       'clear_trade_date': clear_trade_date,
       'holding_days': holding_days,
-      'volume': cleared['pos'].get('volume', 0),
-      'avg_price': cleared['pos'].get('avg_price', 0),
+      'volume': cleared['pos']['volume'],
+      'avg_price': cleared['pos']['avg_price'],
       'cost': cost,
-      'clear_price': cleared.get('clear_price', 0),
+      'clear_price': cleared['clear_price'],
       'income': income,
       'income_pct': income_pct,
-      'clear_reason': cleared.get('clear_reason'),
-      'price_field': cleared.get('price_field'),
+      'clear_reason': cleared['clear_reason'],
+      'price_field': cleared['price_field'],
     })
 
   trade_log = account.get_trade_log()
-  executed_buy_count = len([t for t in trade_log if t.get('action') == 'buy'])
-  executed_sell_count = len([t for t in trade_log if t.get('action') == 'sell'])
+  executed_buy_count = len([t for t in trade_log if t['action'] == 'buy'])
+  executed_sell_count = len([t for t in trade_log if t['action'] == 'sell'])
 
   all_stock_codes = set()
   for trade in trade_log:
-    if trade.get('code'):
+    if trade['code']:
       all_stock_codes.add(trade['code'])
   for snapshot in daily_snapshots:
-    all_stock_codes.update(snapshot.get('buy_n_list', []))
-    all_stock_codes.update(snapshot.get('executed_buy_list', []))
+    all_stock_codes.update(snapshot['buy_n_list'])
+    all_stock_codes.update(snapshot['executed_buy_list'])
   for position in positions:
-    if position.get('code'):
+    if position['code']:
       all_stock_codes.add(position['code'])
   for cleared in cleared_positions:
-    if cleared.get('code'):
+    if cleared['code']:
       all_stock_codes.add(cleared['code'])
 
-  stock_name_map = _get_stock_name_map(all_stock_codes, data.get('stock_names'), data.get('stock_codes'))
+  stock_name_map = _get_stock_name_map(all_stock_codes, data['stock_names'], data['stock_codes'])
   holding_stats = _calc_holding_stats(positions, cleared_positions)
 
   return {
@@ -615,7 +627,7 @@ def _compute_list_dates(stock_codes_arr, open_arr, trade_dates_arr) -> dict:
 
 
 def _compute_timing_multipliers(config, valid_dates, index_data=None):
-    timing_enabled = config.get('timing_enabled', True)
+    timing_enabled = config.get('timing_enabled', False)
     timing_base = config.get('timing_base')
     if not (timing_enabled and timing_base is not None):
         return None
@@ -641,26 +653,121 @@ def _load_all_index_data(valid_dates):
     return index_data
 
 
-def _compute_metrics_simple(daily_returns: list) -> dict:
-  daily = np.array(daily_returns, dtype=float)
-  daily = daily[np.isfinite(daily)]
-  n = len(daily)
-  if n < 2:
-    return {'annualized': 0.0, 'max_drawdown': 0.0, 'sharpe': 0.0}
 
-  mean_ret = float(np.mean(daily))
-  std_ret = float(np.std(daily, ddof=1))
-  sharpe = float(mean_ret / std_ret * np.sqrt(252.0)) if std_ret > 0 else 0.0
+def _build_minute_lookup():
+    """data/minute/*.parquet → {code: {date_int: {"09:32": open, ...}}}"""
+    import pandas as pd
+    minute_dir = Path(__file__).resolve().parent.parent / 'data' / 'minute'
+    if not minute_dir.is_dir():
+        return {}
+    PRICE_MINUTES = ['09:32', '09:33', '09:34', '09:35']
+    lookup = {}
+    for f in minute_dir.glob('*.parquet'):
+        if f.stem == 'slippage_stats':
+            continue
+        df = pd.read_parquet(f)
+        code = f.stem
+        cm = {}
+        for _, row in df.iterrows():
+            d_int = int(row['time'].strftime('%Y%m%d'))
+            m = row['time'].strftime('%H:%M')
+            if m in PRICE_MINUTES:
+                cm.setdefault(d_int, {})[m] = float(row['open'])
+        if cm:
+            lookup[code] = cm
+    return lookup
 
-  cum_ret = np.cumprod(1.0 + daily / 100.0)
-  years = n / 252.0
-  annualized = float((cum_ret[-1] ** (1.0 / years) - 1) * 100) if years > 0 and cum_ret[-1] > 0 else 0.0
 
-  peaks = np.maximum.accumulate(cum_ret)
-  drawdowns = cum_ret / peaks - 1.0
-  max_dd = float(np.min(drawdowns) * 100)
+def run_live_simulation(data, all_scores, stock_codes, all_valid_stocks,
+                         individuals, list_dates_map, logger, max_hist=240):
+    """实盘模拟：每个个体用5种买入价回测 2025-12-10~2026-06-08。
 
-  return {'annualized': annualized, 'max_drawdown': max_dd, 'sharpe': sharpe}
+    data/all_scores: 全量数据，内部自动切片到实盘时段(+max_hist缓冲)
+    Returns: [{'config': ..., 'prices': {'base': {sharpe,ann,dd}, '09:32': {...}, ...}}, ...]
+    """
+    LIVE_START = date(2025, 12, 10)
+    LIVE_END = date(2026, 6, 8)
+    PRICE_MINUTES = ['09:32', '09:33', '09:34', '09:35']
+
+    lookup = _build_minute_lookup()
+    n_lookup = len(lookup)
+
+    # 从全量数据中定位实盘时段
+    full_trade_dates = data['trade_dates']
+    full_py = [d.astype('datetime64[D]').item() for d in full_trade_dates]
+    n_full = len(full_py)
+
+    # 找实盘行范围 + 历史缓冲
+    abs_live_rows = [i for i, d in enumerate(full_py) if LIVE_START <= d <= LIVE_END]
+    if not abs_live_rows:
+        logger.warning(f'实盘模拟: 数据未覆盖 {LIVE_START}~{LIVE_END}，跳过')
+        return []
+    abs_start = max(0, abs_live_rows[0] - max_hist)
+    abs_end = min(n_full, abs_live_rows[-1] + 1)
+    abs_slice = slice(abs_start, abs_end)
+
+    # 切片
+    def _slice(arr):
+        return arr[abs_slice] if arr.ndim >= 2 else (arr[abs_slice] if arr.shape[0] == n_full else arr)
+
+    live_data = {k: _slice(v) if k not in ('stock_codes', 'issue_price') else v for k, v in data.items()}
+    live_data['stock_codes'] = stock_codes
+    live_scores = {k: _slice(v) for k, v in all_scores.items()}
+
+    trade_dates = live_data['trade_dates']
+    py_dates = [d.astype('datetime64[D]').item() for d in trade_dates]
+    d2r = {}
+    live_date_indices = []
+    for i, d in enumerate(py_dates):
+        if LIVE_START <= d <= LIVE_END:
+            d2r[d.strftime('%Y%m%d')] = i
+            live_date_indices.append(i)
+
+    live_valid_dates = [datetime.combine(py_dates[i], datetime.min.time()) for i in live_date_indices]
+    logger.info(f'实盘模拟: {LIVE_START}~{LIVE_END}, {len(live_valid_dates)}天, 分钟覆盖{n_lookup}只')
+
+    stock_indices_map = {c: i for i, c in enumerate([str(s) for s in stock_codes])}
+
+    base_open = live_data['open'].copy()
+    open_variants = {'base': base_open}
+    for minute in PRICE_MINUTES:
+        v = base_open.copy()
+        n = 0
+        for code, cm in lookup.items():
+            si = stock_indices_map.get(code)
+            if si is None:
+                continue
+            for d_int, mins in cm.items():
+                row = d2r.get(str(d_int))
+                if row is not None and minute in mins and mins[minute] > 0:
+                    v[row, si] = mins[minute]
+                    n += 1
+        open_variants[minute] = v
+
+    results = []
+    for idx, config in enumerate(individuals):
+        stock_pool = config.get('stock_pool') or ('60', '00', '30', '688')
+        pool_stocks = [s for s in all_valid_stocks if s.startswith(stock_pool)]
+        timing = _compute_timing_multipliers(config, live_valid_dates)
+
+        price_results = {}
+        for label in ['base'] + PRICE_MINUTES:
+            d = dict(live_data)
+            d['open'] = open_variants[label]
+            r = _backtest_direct(
+                d, live_scores, live_valid_dates, live_date_indices,
+                pool_stocks, stock_indices_map,
+                weights=config['weights'], buy_n=config['buy_n'], sell_m=config['sell_m'],
+                temperatures=config['temperatures'],
+                holding_period=config.get('holding_period'),
+                position_multipliers=timing, list_dates_map=list_dates_map,
+                lightweight=True)
+            m = compute_core_metrics(r['daily_returns'])
+            price_results[label] = {'sharpe': m['sharpe'], 'annualized': m['annualized'], 'max_drawdown': m['max_drawdown']}
+
+        results.append({'config': config, 'prices': price_results})
+
+    return results
 
 
 def _format_pool(pool: tuple) -> str:
@@ -779,13 +886,12 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
   trade_date_strs = [d.strftime('%Y-%m-%d') for d in trade_dates]
 
   metrics = compute_strategy_metrics(
-    cumulative_returns_pct=result.get('cumulative_returns', []),
-    trade_dates=trade_date_strs, init_cash=700_000.0,
-    final_asset=result.get('final_asset', 700_000.0),
-    trade_log=result.get('trade_log', []),
+    cumulative_returns_pct=result['cumulative_returns'],
+    trade_dates=trade_date_strs,
+    trade_log=result['trade_log'],
   )
   hs300_returns = compute_hs300_cumulative_returns(trade_date_strs)
-  per_year_metrics = compute_per_year_metrics(result.get('cumulative_returns', []), trade_date_strs)
+  per_year_metrics = compute_per_year_metrics(result['cumulative_returns'], trade_date_strs)
 
   testback_logger.info(
     f"回测: 年化={metrics['annualized']:.2f}% 夏普={metrics['sharpe_ratio']:.2f} "
@@ -793,30 +899,43 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
     f"胜率={metrics['win_rate']:.1f}% 总成交={metrics['total_trades']}"
   )
 
+  # 实盘模拟
+  max_hist = max(f().hist_days for f in config_factor_classes)
+  live_results = run_live_simulation(
+      data, all_scores, data['stock_codes'], valid_stocks,
+      [individual_config], list_dates_map, testback_logger, max_hist=max_hist)
+  live_sim = live_results[0]['prices'] if live_results else None
+  if live_sim:
+      labels = ['base', '09:32', '09:33', '09:34', '09:35']
+      testback_logger.info(
+          f"实盘模拟: " + ' | '.join(
+              f"{l} 夏普={live_sim[l]['sharpe']:.3f}" for l in labels))
+
   report_data = {
     'individual_config': individual_config,
     'total_return': result['total_return'],
-    'daily_returns': result.get('daily_returns', []),
-    'cumulative_returns': result.get('cumulative_returns', []),
+    'daily_returns': result['daily_returns'],
+    'cumulative_returns': result['cumulative_returns'],
     'signal_dates': signal_date_strs,
     'trade_dates': trade_date_strs,
-    'trade_log': result.get('trade_log', []),
-    'daily_snapshots': result.get('daily_snapshots', []),
-    'positions': result.get('positions', []),
-    'cleared_positions': result.get('cleared_positions', []),
-    'delist_events': result.get('delist_events', []),
-    'stock_name_map': result.get('stock_name_map', {}),
-    'holding_stats': result.get('holding_stats', {}),
-    'executed_buy_count': result.get('executed_buy_count', 0),
-    'executed_sell_count': result.get('executed_sell_count', 0),
-    'delist_count': result.get('delist_count', 0),
-    'round_trip_count': result.get('round_trip_count', result.get('cleared_positions_count', 0)),
-    'final_asset': result.get('final_asset', 700_000.0),
+    'trade_log': result['trade_log'],
+    'daily_snapshots': result['daily_snapshots'],
+    'positions': result['positions'],
+    'cleared_positions': result['cleared_positions'],
+    'delist_events': result['delist_events'],
+    'stock_name_map': result['stock_name_map'],
+    'holding_stats': result['holding_stats'],
+    'executed_buy_count': result['executed_buy_count'],
+    'executed_sell_count': result['executed_sell_count'],
+    'delist_count': result['delist_count'],
+    'round_trip_count': result['round_trip_count'],
+    'final_asset': result['final_asset'],
     'metrics': metrics,
     'per_year_metrics': per_year_metrics,
     'hs300_returns': hs300_returns,
     'cleared_positions_count': result['cleared_positions_count'],
     'current_positions_count': result['current_positions_count'],
+    'live_simulation': live_sim,
     'init_cash': 700_000.0,
     'verify_config': verify_config,
     'report_metadata': {

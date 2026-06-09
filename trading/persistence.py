@@ -477,6 +477,23 @@ class LiveTradeRecorder:
         from datetime import timedelta
         yesterday = get_last_trading_day(target_date - timedelta(days=1))
         yesterday_path = _TRADE_DIR / f"positions_{yesterday.isoformat()}.parquet"
+        # 链路断裂检测：T-1 快照缺失但存在更早快照 → 卖出无成本基线、持仓真伪不可辨，
+        # 此时不能算 per-stock daily_pnl（否则把卖出金额误当利润）→ 全部标 None。
+        # 无任何更早快照（真正首日）则正常计算（全是当日新开仓）。
+        chain_broken = False
+        if not yesterday_path.exists():
+            for p in _TRADE_DIR.glob("positions_*.parquet"):
+                try:
+                    d = date.fromisoformat(p.stem.split('positions_')[1])
+                except (ValueError, IndexError):
+                    continue
+                if d < target_date:
+                    chain_broken = True
+                    break
+            if chain_broken:
+                trading_logger.warning(
+                    f"[LiveTrade] T-1 快照 {yesterday_path.name} 缺失但存在更早快照 → "
+                    f"链路断裂，当日 per-stock P&L 标记为不可计算(None)")
         y_map: dict[str, dict] = {}
         if yesterday_path.exists():
             ydf = pd.read_parquet(yesterday_path)
@@ -554,9 +571,13 @@ class LiveTradeRecorder:
                 # 兜底估算：买 0.01%, 卖 0.06%
                 fee_real = buy_amt_real * 0.0001 + sell_amt_real * 0.0006
 
-            # Guard: 当日无任何 fills + 无昨日快照 + 仍有持仓 → 持仓来源未知（历史继承）
-            # cost basis 反推会得到错误的「假当日开仓」，更诚实地标 None
-            if vol_t > 0 and y_vol == 0 and buy_amt == 0 and sell_amt == 0:
+            # Guard: 链路断裂（缺 T-1 快照但有更早快照）且为「已清仓」(vol_t==0) →
+            # 卖出仓位无成本基线，旧公式把卖出金额误当利润 → 标 None。持有仓位(vol_t>0)
+            # 不受影响：y_mv=0 时公式退化为 (close-avg)×vol-fee = 持仓盈亏，照常计算。
+            # 或：当日无任何 fills + 无昨日快照 + 仍有持仓 → 持仓来源未知（历史继承），
+            # cost basis 反推会得到错误的「假当日开仓」，更诚实地标 None。
+            if (chain_broken and vol_t == 0) or (
+                    vol_t > 0 and y_vol == 0 and buy_amt == 0 and sell_amt == 0):
                 daily_pnl = None
                 daily_ret = None
             else:

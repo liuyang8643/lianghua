@@ -347,15 +347,33 @@ class PostCloseReport:
         return {'rows': rows, 'avg_slippage': avg_sp, 'total_slippage_cost': total_cost}
 
     def build_dim5_pnl(self) -> dict:
-        """维度5：日 P&L diff（结果层）。逐股对比。"""
+        """维度5：日 P&L diff（结果层）。逐股对比。
+
+        链路断裂（缺 T-1 快照）时，存档 daily_pnl 不可信（vs-昨收口径无昨日基线）：
+          - 持有仓位(volume>0)：改用成本基线 持仓盈亏 = 市值 - 买入成本(avg×vol)，
+            纯由 avg_price/last_price/volume 计算，不依赖任何链路；
+          - 已清仓(volume==0)：卖出无成本基线 → None 剔除（不计入合计）。
+        链路完整时沿用存档 daily_pnl（vs-昨收的当日盈亏，口径更准）。
+        """
+        chain_broken = self._chain_broken()
         live_pnl: dict[str, dict] = {}
         if self._positions is not None and not self._positions.empty:
             for _, r in self._positions.iterrows():
+                vol = int(r['volume'])
+                dp = float(r['daily_pnl']) if not pd.isna(r.get('daily_pnl')) else None
+                dr = float(r['daily_return_pct']) if not pd.isna(r.get('daily_return_pct')) else None
+                if chain_broken:
+                    if vol > 0:
+                        cost = float(r['avg_price']) * vol
+                        dp = float(r['market_value']) - cost
+                        dr = (dp / cost * 100) if cost > 0 else None
+                    else:
+                        dp, dr = None, None
                 live_pnl[r['code']] = {
-                    'volume': int(r['volume']),
+                    'volume': vol,
                     'mv': float(r['market_value']),
-                    'daily_pnl': float(r['daily_pnl']) if not pd.isna(r.get('daily_pnl')) else None,
-                    'daily_return_pct': float(r['daily_return_pct']) if not pd.isna(r.get('daily_return_pct')) else None,
+                    'daily_pnl': dp,
+                    'daily_return_pct': dr,
                 }
 
         # 回测 per-stock（用 _rebuild_backtest_per_stock_pnl 同口径重建）
@@ -461,6 +479,27 @@ class PostCloseReport:
             'within_tolerance': within,
         }
 
+    def _chain_broken(self) -> bool:
+        """T-1 持仓快照链路是否断裂（缺 T-1 但存在更早快照）。
+
+        断裂时**卖出仓位**无成本基线（已实现 P&L 不可计算，旧公式会把卖出金额误当
+        利润）；但**持有仓位**仍可用成本基线 (close-avg)×vol 算持仓盈亏，不受影响。
+        真正首日（无任何更早快照）不算断裂——全是当日新开仓。
+        """
+        from datetime import timedelta
+        from utils.stock.time import get_last_trading_day
+        prev = get_last_trading_day(self.trade_date - timedelta(days=1))
+        if (_TRADE_DIR / f"positions_{prev.isoformat()}.parquet").exists():
+            return False
+        for p in _TRADE_DIR.glob("positions_*.parquet"):
+            try:
+                d = date.fromisoformat(p.stem.split('positions_')[1])
+            except (ValueError, IndexError):
+                continue
+            if d < self.trade_date:
+                return True  # 链路断裂
+        return False  # 首日
+
     def build_summary(self, dim5: dict | None = None) -> dict:
         """整体汇总（账户层）。
 
@@ -479,7 +518,9 @@ class PostCloseReport:
         if self._prev_asset and self._asset and self._prev_asset > 0:
             live_account_pnl = self._asset - self._prev_asset - self._net_cash_flow
 
-        # 个股口径：仅当所有持仓都能算出 P&L（无 unreconcilable）时才采信
+        # 个股口径：仅当所有「实盘持有(volume>0)」的票都能算出 P&L（无 unreconcilable）
+        # 时才采信。链路断裂时卖出仓位的 P&L 已在 build_dim5_pnl 置 None 剔除（不计入
+        # 合计），剩余持有仓位用成本基线 (close-avg)×vol 计算，结果即「持仓盈亏」。
         per_stock_pnl = None
         if dim5 is not None:
             unrec = [r for r in dim5.get('rows', [])

@@ -1,9 +1,0 @@
-{
-  "ga_profile": "smallcap_st",
-  "all_factor_names": ["TMC_GARP_Quality", "LowTurnover20D"],
-  "individual_config": {
-    "weights": {"TMC_GARP_Quality": 0.8, "LowTurnover20D": 0.2},
-    "buy_n": 25, "sell_m": 25,
-    "temperatures": {"TMC_GARP_Quality": 1.0, "LowTurnover20D": 1.0}
-  }
-}

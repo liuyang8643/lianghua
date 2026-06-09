@@ -55,10 +55,19 @@ def _ms_to_date_ymd(ts_ms):
     return (dt.year * 10000 + dt.month * 100 + dt.day).to_numpy(np.int64)
 
 
+def _datetime_in_index(bars: pd.DataFrame) -> bool:
+    """检查 datetime 是否为 index 中任一层级名称（含 MultiIndex）。"""
+    if bars.index.name == 'datetime':
+        return True
+    if isinstance(bars.index, pd.MultiIndex):
+        return 'datetime' in (n for n in bars.index.names if n is not None)
+    return False
+
+
 def _bars_to_date_ymd(bars: pd.DataFrame) -> np.ndarray:
     """mootdx bars → YYYYMMDD int64 array (时间倒序)。"""
     if 'datetime' in bars.columns:
-        if bars.index.name == 'datetime':
+        if _datetime_in_index(bars):
             bars = bars.reset_index(drop=True)
         dt = pd.to_datetime(bars['datetime'])
         return (dt.dt.year * 10000 + dt.dt.month * 100 + dt.dt.day).to_numpy(np.int64)
@@ -73,8 +82,8 @@ def _mootdx_bars_to_df(bars: pd.DataFrame, *, xdxr_df: pd.DataFrame | None = Non
     if bars is None or bars.empty:
         return None
 
-    # mootdx 可能返回 datetime 既是列名又是 index 名，导致后续 bars['datetime'] 歧义
-    if bars.index.name == 'datetime' and 'datetime' in bars.columns:
+    # mootdx 可能返回 datetime 既是列名又是 index 层名（含 MultiIndex），导致后续 bars['datetime'] 歧义
+    if 'datetime' in bars.columns and _datetime_in_index(bars):
         bars = bars.reset_index(drop=True)
 
     # 先按时间升序排列，保证 _compute_preclose 按时间顺序计算
@@ -259,7 +268,7 @@ def resolve_recent_range(days: int, anchor_date: date | None = None) -> tuple[st
 
 def _merge_recent_into(path: Path, df_new: pd.DataFrame) -> pd.DataFrame:
     """用 df_new 覆盖 path 中 time 落在 df_new 区间内的旧行。"""
-    if path.exists():
+    if path.exists() and path.stat().st_size > 0:
         df_old = pd.read_parquet(path)
         df_old = df_old[df_old['time'] < int(df_new['time'].min())]
         df = pd.concat([df_new, df_old], ignore_index=True)

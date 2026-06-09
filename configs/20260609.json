@@ -1,0 +1,38 @@
+{
+  "ga_profile": "core6",
+  "all_factor_names": [
+    "TrueMarketCap",
+    "AmountBasedSmallCap",
+    "AmihudIlliquidity",
+    "VolumeCV",
+    "High52Week",
+    "PricePosition250"
+  ],
+  "search_space_version": "2026-05-31",
+  "individual_config": {
+    "weights": {
+      "AmihudIlliquidity": 0.4,
+      "TrueMarketCap": 0.9,
+      "VolumeCV": 0.1,
+      "High52Week": 0.2,
+      "PricePosition250": -0.2,
+      "AmountBasedSmallCap": 0.6
+    },
+    "buy_n": 20,
+    "sell_m": 20,
+    "temperatures": {
+      "TrueMarketCap": 1.0,
+      "AmountBasedSmallCap": 1.0,
+      "AmihudIlliquidity": 1.0,
+      "VolumeCV": 1.0,
+      "High52Week": 1.0,
+      "PricePosition250": 1.0
+    },
+    "timing_enabled": false,
+    "rebalance": true
+  },
+  "fitness": 1.7328213183777819,
+  "generation": 1213,
+  "generation_time": 2.8561453819274902,
+  "population_size": 100
+}

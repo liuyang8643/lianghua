@@ -111,6 +111,9 @@ class TradingDayBoard:
             self._buy_n: Optional[int] = None
             self._bt_ref: Optional[dict] = None
             self._y_positions: dict[str, int] = {}
+            # 实盘 T 日持仓权威快照（盘后从 positions_{T}.parquet 灌入，不走 QMT）。
+            # None = 未灌入（盘中按 y_positions+成交实时重建）；非 None = 直接采用。
+            self._live_positions: Optional[dict[str, int]] = None
             self._name_cache: dict[str, str] = {}
             self._bt_return: Optional[float] = None       # 回测预期日收益
             self._live_pnl: Optional[float] = None         # 实盘日盈亏（盘后填入）
@@ -225,6 +228,77 @@ class TradingDayBoard:
             self._live_return = live_return
         self._mark_dirty()
 
+    def feed_bt_reference(self, bt_ref: dict | None, *,
+                          bt_daily_return: float | None = None,
+                          y_positions: dict | None = None):
+        """补充/刷新「回测对账参考」并立即更新卡片。
+
+        盘前 seed-replay 缺 T-1 种子（sim / 首日）时 bt_ref 为空，导致「目标 vs 实盘」
+        三列全为「-」。盘后回测（连续回测）拿到真实目标后回灌进来，让卡片目标列有值。
+        finalized 后不再接受刷新（盘后 finalize 会做最后一次 push）。
+        """
+        with self._lock:
+            if self._finalized:
+                return
+            if bt_ref is not None:
+                self._bt_ref = bt_ref
+                self._preload_names()
+            if bt_daily_return is not None:
+                self._bt_return = bt_daily_return
+            if y_positions is not None:
+                self._y_positions = dict(y_positions)
+        self._mark_dirty()
+
+    def feed_live_fills(self, fills_df):
+        """从 fills_{T}.parquet 灌入实盘成交（盘后对账用，**不走 QMT**）。
+
+        动机：sim/replay/进程重启时没有 QMT 成交回调，self._trades 为空，
+        导致「操作(实盘)」「实盘日志」全空。盘后 fills 已落地 parquet（实盘回调 +
+        QMT 兜底回填都汇入它），直接读它即可，避免非交易时段查 QMT 卡死。
+        权威替换 self._trades（parquet 已去重，比回调累计更完整）。
+        """
+        if fills_df is None or getattr(fills_df, 'empty', True):
+            return
+        trades = []
+        for _, r in fills_df.iterrows():
+            direction = str(r.get('direction', '') or '').strip()
+            ot = xtconstant.STOCK_BUY if direction == 'buy' else xtconstant.STOCK_SELL
+            trades.append({
+                'order_id': int(r.get('order_id', 0) or 0),
+                'code': r['code'],
+                'order_type': ot,
+                'price': float(r.get('price', 0) or 0),
+                'volume': int(r.get('shares', 0) or 0),
+                'amount': float(r.get('amount', 0) or 0),
+                'at': datetime.now(),
+            })
+        with self._lock:
+            if self._finalized:
+                return
+            self._trades = trades
+        self._mark_dirty()
+
+    def feed_live_positions(self, positions_df):
+        """从 positions_{T}.parquet 灌入实盘 T 日持仓快照（盘后对账用，**不走 QMT**）。
+
+        盘后用真实 EOD 持仓作「实盘持仓」列，使其与「目标持仓」可直接比对
+        （理论上应差不多）。缺 T-1 快照时也不影响——直接采用 T 日权威快照，
+        不再依赖 y_positions+成交重建。
+        """
+        if positions_df is None or getattr(positions_df, 'empty', True):
+            return
+        pos = {}
+        for _, r in positions_df.iterrows():
+            vol = int(r.get('volume', 0) or 0)
+            if vol > 0:
+                pos[r['code']] = vol
+        with self._lock:
+            if self._finalized:
+                return
+            self._live_positions = pos
+            self._preload_names()
+        self._mark_dirty()
+
     def finalize(self):
         """post_close 调用：立即刷新最终状态并锁定。"""
         with self._lock:
@@ -240,6 +314,8 @@ class TradingDayBoard:
     def _preload_names(self):
         """对比表/订单表：盘前一次性从本地 parquet 预热简称缓存（无网络）。"""
         codes: set[str] = set(self._plan) | set(self._y_positions)
+        if self._live_positions:
+            codes |= set(self._live_positions)
         if self._bt_ref:
             codes |= set(self._bt_ref.get('buy', {}))
             codes |= set(self._bt_ref.get('sell', {}))
@@ -367,7 +443,10 @@ class TradingDayBoard:
             # 计划中但未下单：直接用 plan 里的具体原因
             limit = (plan or {}).get('limit_status', 'ok')
             if limit != 'ok':
-                bucket = 'failed'
+                # 仅「真实闸门」(缺开盘价/合法性/资金不足) 算失败标红；
+                # 「已达标/未触发少补/无实盘基线」是正常未下单，按待处理(灰)展示。
+                _block = any(k in reason for k in ('合法性', '缺开盘价', '资金', '废'))
+                bucket = 'failed' if _block else 'pending'
                 label = reason or '未下单'
                 status_msg = ''
             else:
@@ -473,11 +552,18 @@ class TradingDayBoard:
                      'live': sum(r['live_net'] for r in op_rows)}
 
         # ── T 日持仓对比（股数）──
+        # 实盘持仓优先用盘后灌入的 positions_{T} 权威快照（_live_positions）；
+        # 盘中未灌入时按 T-1 持仓 + 今日成交实时重建。
         pos_codes = set(bt_pos) | set(self._y_positions) | set(live_buy_sh) | set(live_sell_sh)
+        if self._live_positions is not None:
+            pos_codes |= set(self._live_positions)
         pos_rows = []
         for code in pos_codes:
-            live_sh = (self._y_positions.get(code, 0)
-                       + live_buy_sh.get(code, 0) - live_sell_sh.get(code, 0))
+            if self._live_positions is not None:
+                live_sh = self._live_positions.get(code, 0)
+            else:
+                live_sh = (self._y_positions.get(code, 0)
+                           + live_buy_sh.get(code, 0) - live_sell_sh.get(code, 0))
             bt_sh = bt_pos.get(code, 0)
             if live_sh == 0 and bt_sh == 0:
                 continue
@@ -507,6 +593,20 @@ class TradingDayBoard:
         color = 'red' if d > 0 else 'green'
         return f'<font color="{color}">实盘{word}{abs(d)}股</font>'
 
+    @staticmethod
+    def _pos_diff_text(bt_sh: int, live_sh: int) -> str:
+        """持仓差异 列：实盘相对「目标持仓」的偏离（权威，与持仓列口径一致）。
+
+        以 T 日终持仓（positions_{T} vs 回测 positions_eod）为唯一口径，
+        避免「操作」列受 fills 不完整 / 缺 T-1 链影响而与持仓列自相矛盾。
+        """
+        d = live_sh - bt_sh
+        if d == 0:
+            return '<font color="grey">对齐</font>'
+        color = 'red' if d > 0 else 'orange'
+        word = '多持' if d > 0 else '少持'
+        return f'<font color="{color}">实盘{word}{abs(d)}股</font>'
+
     def _build_card(self) -> dict:
         agg = self._aggregate()
         cmp = self._compute_comparison()
@@ -524,6 +624,8 @@ class TradingDayBoard:
             log_map.setdefault(r['code'], []).append(r)
 
         all_codes = set(pos_map) | set(ops_map) | set(log_map) | set(self._plan) | set(self._y_positions)
+        if self._live_positions:
+            all_codes |= set(self._live_positions)
 
         table = []
         for code in sorted(all_codes):
@@ -552,8 +654,9 @@ class TradingDayBoard:
             else:
                 ops_cell = '-'
 
-            # 列3: diff差异
-            diff_cell = self._sh_diff_text(bt_net_sh, live_net_sh) if (bt_net_sh or live_net_sh) else '-'
+            # 列3: 持仓差异 — 以「目标持仓 vs 实盘持仓」为权威口径（与列1一致），
+            # 不再用操作差（fills 不完整时会与持仓列矛盾）。
+            diff_cell = self._pos_diff_text(bt_sh, live_sh) if (bt_sh or live_sh) else '-'
 
             # 列4: 实盘日志
             log_parts = []
@@ -591,7 +694,7 @@ class TradingDayBoard:
                 'name': '— 合计 —',
                 'pos': f'目标{fmt_shares(pt["bt"])} vs 实盘{fmt_shares(pt["live"])}',
                 'ops': f'目标{total_bt_sh:+d} vs 实盘{total_live_sh:+d}',
-                'diff': self._sh_diff_text(total_bt_sh, total_live_sh),
+                'diff': self._pos_diff_text(pt["bt"], pt["live"]),
                 'log': f'<font color="grey">对齐 {pt["aligned"]}/{pt["total"]} 只</font>',
             })
 
@@ -600,7 +703,7 @@ class TradingDayBoard:
                 {'name': 'name', 'display_name': '股票', 'horizontal_align': 'left'},
                 {'name': 'pos', 'display_name': '持仓手数(目标vs实盘)', 'horizontal_align': 'right'},
                 {'name': 'ops', 'display_name': '操作(目标vs实盘)', 'horizontal_align': 'right'},
-                {'name': 'diff', 'display_name': 'diff差异', 'horizontal_align': 'right'},
+                {'name': 'diff', 'display_name': '持仓差异', 'horizontal_align': 'right'},
                 {'name': 'log', 'display_name': '实盘日志', 'horizontal_align': 'left'},
             ],
             rows=table, element_id='daily_tbl', page_size=20)]

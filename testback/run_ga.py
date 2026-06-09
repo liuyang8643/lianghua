@@ -1,9 +1,12 @@
 import os
 import sys
+import warnings
 from pathlib import Path
 from typing import Any, Dict, List
 
 import numpy as np
+
+warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 
 from core.scoring import scores_to_ranks
@@ -12,8 +15,9 @@ from utils.stock.time import get_trading_date_span
 from utils.windows_awake import keep_windows_awake
 from core.ga import (
     DEFAULT_GA_PROFILE,
-    build_individual_config, repair_config,
+    build_individual_config,
     generate_initial_configs,
+    get_intrinsic_params,
     get_mode_configs,
     get_profile,
     get_profile_factor_classes,
@@ -23,14 +27,6 @@ from core.ga import (
     get_profile_weight_search_spaces,
     resolve_profile_name,
     sample_factor_choice,
-    sample_position_count,
-    sample_holding_period,
-    sample_stock_pool,
-    sample_timing_base,
-    sample_timing_leverage,
-    sample_timing_direction,
-    sample_timing_index,
-    sample_timing_window,
 )
 
 from datetime import date, date as date_type, datetime
@@ -40,30 +36,41 @@ from core.backtest import (
   _parse_single_verify_config, _resolve_single_stock_pool,
   _extend_verify_stock_pool_with_historical_codes,
   _compute_factor_scores, _backtest_direct,
-  _compute_list_dates, _compute_timing_multipliers, _compute_metrics_simple,
+  _compute_list_dates, _compute_timing_multipliers,
   _load_all_index_data,
   _format_pool, _format_timing,
   _resolve_output_dir,
   run_single_mode,
+  run_live_simulation,
 )
+from core.metrics import compute_core_metrics
 
 
 # ========== GA 核心函数 ==========
 
 def _config_key(config: dict) -> tuple:
-  w = config['weights']
-  sp = config.get('stock_pool')
-  if isinstance(sp, list):
-    sp = tuple(sp)
-  return (config['buy_n'], config['sell_m'],
-          sp, config.get('holding_period'),
-          config.get('timing_base'), config.get('timing_leverage'),
-          config.get('timing_direction'),
-          config.get('timing_window'), config.get('timing_index'),
-          tuple(sorted(w.items())))
+    parts = []
+    for pdef in get_intrinsic_params():
+        val = config.get(pdef['config_key'])
+        if isinstance(val, list):
+            val = tuple(val)
+        parts.append(val)
+    parts.append(tuple(sorted(config['weights'].items())))
+    return tuple(parts)
 
 
-def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profile_name=DEFAULT_GA_PROFILE, ga_cache=None):
+def _format_filters(config: dict) -> str:
+    parts = []
+    amt = config.get('amount_filter_pct')
+    if amt:
+        parts.append(f'amt%={amt}')
+    mcap = config.get('market_cap_filter_pct')
+    if mcap:
+        parts.append(f'mcap%={mcap}')
+    return ' ' + '/'.join(parts) if parts else ''
+
+
+def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profile_name=DEFAULT_GA_PROFILE, ga_cache=None, gen=0):
   import random
 
   results_list = list(results) if not isinstance(results, list) else results
@@ -80,10 +87,10 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     key = _config_key(config)
     return state.get('fitness_cache', {}).get(key)
 
-  # GA 多样性参数（缓解早熟收敛）
-  elite_frac = 0.10        # 真精英占比：直接保留的历史最优个体
-  tournament_k = 3         # 锦标赛规模：越大选择压力越高
-  immigrant_frac = 0.15    # 随机移民占比：每代注入的全新随机个体
+  # GA 多样性参数
+  elite_frac = 0.10
+  tournament_k = 5          # 中等选择压力 (3太弱/7过强在欺骗区)
+  immigrant_frac = 0.08     # 中等移民率 (0.05过早收敛/0.15噪声过多)
 
   # 父代选择：少量真精英 + 锦标赛选择（从历史全局池抽，打破当代近亲繁殖、降低选择压力）
   if ga_cache and len(ga_cache) >= population_size:
@@ -133,15 +140,13 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     return (p1.get(key, default) if random.random() < 0.5 else p2.get(key, default))
 
   def crossover_config(p1, p2):
-    position_count = _crossover_field(p1, p2, 'buy_n')
-    fc = _crossover_field(p1, p2, 'factor_choice') if has_factor_choice else None
-    stock_pool = _crossover_field(p1, p2, 'stock_pool') if 'stock_pool' in search_spaces else None
-    holding_period = _crossover_field(p1, p2, 'holding_period') if 'holding_period' in search_spaces else None
-    timing_base = _crossover_field(p1, p2, 'timing_base') if 'timing_base' in search_spaces else None
-    timing_leverage = _crossover_field(p1, p2, 'timing_leverage') if 'timing_leverage' in search_spaces else None
-    timing_dir = _crossover_field(p1, p2, 'timing_direction') if 'timing_direction' in search_spaces else None
-    timing_window = _crossover_field(p1, p2, 'timing_window') if 'timing_window' in search_spaces else None
-    timing_index = _crossover_field(p1, p2, 'timing_index') if 'timing_index' in search_spaces else None
+    kwargs = {}
+    for pdef in get_intrinsic_params():
+        key = pdef['key']
+        if key in search_spaces:
+            kwargs[key] = _crossover_field(p1, p2, pdef['config_key'])
+    if has_factor_choice:
+        kwargs['factor_choice'] = _crossover_field(p1, p2, 'factor_choice')
     crossed_weights = None
     if has_weight_search:
       crossed_weights = {}
@@ -150,26 +155,15 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
         w1 = p1['weights'].get(k, 0.0)
         w2 = p2['weights'].get(k, 0.0)
         crossed_weights[k] = w1 if random.random() < 0.5 else w2
-    return build_individual_config(position_count, weights=crossed_weights,
-                                   factor_choice=fc,
-                                   stock_pool=stock_pool, holding_period=holding_period,
-                                   timing_base=timing_base, timing_leverage=timing_leverage,
-                                   timing_direction=timing_dir,
-                                   timing_window=timing_window,
-                                   timing_index=timing_index, profile_name=profile_name)
+    kwargs['weights'] = crossed_weights
+    kwargs['profile_name'] = profile_name
+    return build_individual_config(**kwargs)
 
   weight_spaces = get_profile_weight_search_spaces(profile_name) if has_weight_search else {}
 
   def _collect_dims():
-    dims = ['position_count']
+    dims = [p['key'] for p in get_intrinsic_params() if p['key'] in search_spaces]
     if has_factor_choice: dims.append('factor_choice')
-    if 'stock_pool' in search_spaces: dims.append('stock_pool')
-    if 'holding_period' in search_spaces: dims.append('holding_period')
-    if 'timing_base' in search_spaces: dims.append('timing_base')
-    if 'timing_leverage' in search_spaces: dims.append('timing_leverage')
-    if 'timing_direction' in search_spaces: dims.append('timing_direction')
-    if 'timing_window' in search_spaces: dims.append('timing_window')
-    if 'timing_index' in search_spaces: dims.append('timing_index')
     for k in weight_spaces: dims.append(f'weight_{k}')
     return dims
 
@@ -180,30 +174,31 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     if not _all_dims:
       return build_individual_config(config['buy_n'],
                                       weights=config.get('weights'), profile_name=profile_name)
-    n_mutate = max(1, min(math.ceil(random.uniform(0.25, 0.50) * len(_all_dims)), len(_all_dims)))
+    # 变异率退火：前期 25-35% 广泛探索，后期 8-15% 精细搜索
+    t = gen / max(gen + 20, 1)
+    lo = 0.25 - 0.17 * t
+    hi = 0.35 - 0.20 * t
+    n_mutate = max(1, min(math.ceil(random.uniform(lo, hi) * len(_all_dims)), len(_all_dims)))
     mutate_dims = set(random.sample(_all_dims, n_mutate))
-    position_count = sample_position_count(profile_name=profile_name) if 'position_count' in mutate_dims else config['buy_n']
-    fc = sample_factor_choice(profile_name=profile_name) if 'factor_choice' in mutate_dims else config.get('factor_choice')
-    stock_pool = sample_stock_pool(profile_name=profile_name) if 'stock_pool' in mutate_dims else config.get('stock_pool')
-    holding_period = sample_holding_period(profile_name=profile_name) if 'holding_period' in mutate_dims else config.get('holding_period')
-    timing_base = sample_timing_base(profile_name=profile_name) if 'timing_base' in mutate_dims else config.get('timing_base')
-    timing_leverage = sample_timing_leverage(profile_name=profile_name) if 'timing_leverage' in mutate_dims else config.get('timing_leverage')
-    timing_dir = sample_timing_direction(profile_name=profile_name) if 'timing_direction' in mutate_dims else config.get('timing_direction')
-    timing_window = sample_timing_window(profile_name=profile_name) if 'timing_window' in mutate_dims else config.get('timing_window')
-    timing_index = sample_timing_index(profile_name=profile_name) if 'timing_index' in mutate_dims else config.get('timing_index')
+    kwargs = {}
+    for pdef in get_intrinsic_params():
+        key = pdef['key']
+        if key in mutate_dims:
+            space = search_spaces.get(key)
+            kwargs[key] = random.choice(space) if space else config.get(pdef['config_key'])
+        else:
+            kwargs[key] = config.get(pdef['config_key'])
+    if has_factor_choice:
+        kwargs['factor_choice'] = sample_factor_choice(profile_name=profile_name) if 'factor_choice' in mutate_dims else config.get('factor_choice')
     mutated_weights = dict(config.get('weights', {}))
     for k in weight_spaces:
       if f'weight_{k}' in mutate_dims:
         mutated_weights[k] = random.choice(weight_spaces[k])
       elif k not in mutated_weights:
         mutated_weights[k] = 0.0
-    return build_individual_config(position_count, weights=mutated_weights,
-                                   factor_choice=fc,
-                                   stock_pool=stock_pool, holding_period=holding_period,
-                                   timing_base=timing_base, timing_leverage=timing_leverage,
-                                   timing_direction=timing_dir,
-                                   timing_window=timing_window,
-                                   timing_index=timing_index, profile_name=profile_name)
+    kwargs['weights'] = mutated_weights
+    kwargs['profile_name'] = profile_name
+    return build_individual_config(**kwargs)
 
   # 随机移民：每代注入全新随机个体，维持探索、逃离局部盆地（不依赖现有父代）
   n_immigrants = min(max(1, int(round(immigrant_frac * population_size))), population_size)
@@ -332,7 +327,8 @@ def _factor_worker(args):
   data['trade_dates'] = trade_dates
   f = factor_cls()
   name = f.__class__.__name__
-  raw = f.calc_batch(data)
+  with np.errstate(all='ignore'):
+      raw = f.calc_batch(data)
   scores = scores_to_ranks(raw.astype(np.float32, copy=False))
   if row_slice is not None:
     full = np.full((n_full, scores.shape[1]), np.nan, dtype=scores.dtype)
@@ -366,7 +362,7 @@ def _worker_evaluate(args):
     position_multipliers=timing_multipliers, list_dates_map=list_dates_map,
     lightweight=True)
 
-  metrics = _compute_metrics_simple(r['daily_returns'])
+  metrics = compute_core_metrics(r['daily_returns'])
   return {
     'individual_config': config,
     'total_return': r['total_return'],
@@ -431,6 +427,13 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     with open(test_cache_path, 'r', encoding='utf-8') as f:
       test_eval_cache = json_mod.load(f)
     testback_logger.info(f"加载测试集缓存: {len(test_eval_cache)} 条")
+
+  live_cache_path = output_dir / 'live_cache.json'
+  live_eval_cache = {}
+  if live_cache_path.exists():
+    with open(live_cache_path, 'r', encoding='utf-8') as f:
+      live_eval_cache = json_mod.load(f)
+    testback_logger.info(f"加载实盘模拟缓存: {len(live_eval_cache)} 条")
 
   t0 = time.time()
 
@@ -501,6 +504,23 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   n_needed = row_end - row_start
   testback_logger.info(f"因子计算范围: [{row_start}:{row_end}] = {n_needed} 天 (全量 {len(npz_dates)} 天, 截断 {len(npz_dates)-n_needed} 天)")
 
+  # 统一打印当前 profile 搜索空间
+  profile = get_profile(profile_name)
+  spaces = get_profile_search_spaces(profile_name)
+  weight_spaces = get_profile_weight_search_spaces(profile_name)
+  search_info = []
+  for pdef in get_intrinsic_params():
+      space = spaces.get(pdef['key'])
+      if space:
+          vals = [str(v) for v in space]
+          search_info.append(f"{pdef['display']}=[{','.join(vals[:8])}{'...' if len(vals) > 8 else ''}]" if len(vals) <= 10 else f"{pdef['display']}={len(vals)}值")
+  if profile.get('factor_choice_space'):
+      search_info.append(f"fc={len(profile['factor_choice_space'])}值")
+  if weight_spaces:
+      for k, vals in weight_spaces.items():
+          search_info.append(f"w_{k}=[{min(vals):.1f}-{max(vals):.1f}]")
+  testback_logger.info(f"搜索空间: " + " | ".join(search_info))
+
   score_keys = set()
   t_f_all = time.time()
   base_info = {k: v for k, v in info.items() if k not in ('stock_codes', 'trade_dates')}
@@ -564,7 +584,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     ga_state = _rebuild_ga_state(ga_cache)
     next_configs = ga_optimizer([], state=ga_state, population_size=population_size,
                                 hall_of_fame_size=population_size, profile_name=profile_name,
-                                ga_cache=ga_cache)
+                                ga_cache=ga_cache, gen=last_gen)
     start_generation = last_gen + 1
     testback_logger.info(f"从 JSONL 恢复: {len(ga_cache)} 个唯一配置, 第 {start_generation} 代开始")
   elif args.warm_start:
@@ -620,7 +640,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
         hs300_vals = index_data['sh000300'].astype(float)
         hs300_daily = np.diff(hs300_vals) / hs300_vals[:-1] * 100.0
         hs300_daily = hs300_daily[np.isfinite(hs300_daily)]
-        hs300_m = _compute_metrics_simple(list(hs300_daily))
+        hs300_m = compute_core_metrics(list(hs300_daily))
 
         gen_time = time.time() - generation_start_ts
         sorted_w = sorted(best_cfg['weights'].items(), key=lambda x: -abs(x[1]))
@@ -701,14 +721,72 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
             f"GA gen{generation + 1}: 训练Sharpe={best_m['sharpe']:.3f}/{avg_sharpe:.3f} | "
             f"验证Sharpe={train_best_val_m['sharpe']:.3f} | "
             f"测试Sharpe={_test_train_best_m['sharpe']:.3f} | "
-            f"{_format_pool(best_cfg.get('stock_pool'))}, hp={best_cfg.get('holding_period')}, pos={best_cfg['buy_n']}{_format_timing(best_cfg)}, rebal={'ON' if best_cfg.get('rebalance') else 'OFF'} | "
+            f"{_format_pool(best_cfg.get('stock_pool'))}, hp={best_cfg.get('holding_period')}, pos={best_cfg['buy_n']}{_format_timing(best_cfg)}{_format_filters(best_cfg)}, rebal={'ON' if best_cfg.get('rebalance') else 'OFF'} | "
             f"{', '.join(f'{k}={v:.1f}' for k, v in sorted_w)}")
           if best_live_cfg is not None:
             live_sorted_w = sorted(best_live_cfg['weights'].items(), key=lambda x: -abs(x[1]))
             testback_logger.info(
               f"实盘: total={best_live_total:.3f}(train={best_live_train_sharpe:.3f}/val={best_live_val_sharpe:.3f}) test={live_test_sharpe:.3f} | "
-              f"{_format_pool(best_live_cfg.get('stock_pool'))}, hp={best_live_cfg.get('holding_period')}, pos={best_live_cfg['buy_n']}{_format_timing(best_live_cfg)}, rebal={'ON' if best_live_cfg.get('rebalance') else 'OFF'} | "
+              f"{_format_pool(best_live_cfg.get('stock_pool'))}, hp={best_live_cfg.get('holding_period')}, pos={best_live_cfg['buy_n']}{_format_timing(best_live_cfg)}{_format_filters(best_live_cfg)}, rebal={'ON' if best_live_cfg.get('rebalance') else 'OFF'} | "
               f"{', '.join(f'{k}={v:.1f}' for k, v in live_sorted_w)}")
+
+          # 实盘模拟：仅评估 实盘个体(验证集挑出的checkpoint代训练最优) + 当代训练最优
+          shm_arrays = {}
+          for (_shm, arr), (name, _, _, _) in zip(_SHM_BLOCKS, shm_entries):
+              shm_arrays[name] = arr
+
+          live_data = {}
+          for k in ('open', 'close', 'high', 'low', 'volume', 'amount', 'total_share', 'preClose', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates'):
+              if k in shm_arrays:
+                  live_data[k] = shm_arrays[k]
+          live_data['stock_codes'] = shm_arrays.get('stock_codes', np.array(npz_stocks))
+          live_data['trade_dates'] = shm_arrays.get('trade_dates', npz_dates)
+
+          live_configs = []
+          live_labels = []
+          live_keys = []
+          if best_live_cfg is not None:
+              live_configs.append(best_live_cfg)
+              live_labels.append('实盘个体')
+              live_keys.append(json_mod.dumps(_config_key(best_live_cfg), ensure_ascii=False))
+          ck_best = _config_key(best_cfg)
+          ck_live = _config_key(best_live_cfg) if best_live_cfg else None
+          if ck_best != ck_live:
+              live_configs.append(best_cfg)
+              live_labels.append('当代最优')
+              live_keys.append(json_mod.dumps(_config_key(best_cfg), ensure_ascii=False))
+
+          if live_configs:
+              # 先查缓存
+              live_results = [live_eval_cache.get(k) for k in live_keys]
+              uncached = [(i, cfg) for i, (cfg, r) in enumerate(zip(live_configs, live_results)) if r is None]
+
+              if uncached:
+                  uncached_cfgs = [cfg for _, cfg in uncached]
+                  new_results = run_live_simulation(
+                      live_data,
+                      {k: shm_arrays[k] for k in score_keys if k in shm_arrays},
+                      npz_stocks, all_valid_stocks,
+                      uncached_cfgs,
+                      list_dates_full, testback_logger,
+                      max_hist=max(f.hist_days for f in factor_classes))
+                  for (idx, _), lr in zip(uncached, new_results):
+                      live_results[idx] = lr
+                      live_eval_cache[live_keys[idx]] = lr
+                  with open(live_cache_path, 'w', encoding='utf-8') as f:
+                      json_mod.dump(live_eval_cache, f, ensure_ascii=False)
+              else:
+                  testback_logger.info("实盘模拟: 全部命中缓存")
+
+              for label, lr in zip(live_labels, live_results):
+                  p = lr['prices']
+                  testback_logger.info(
+                      f"实盘模拟 {label}: base={p['base']['sharpe']:.3f} "
+                      f"09:32={p['09:32']['sharpe']:.3f} "
+                      f"09:33={p['09:33']['sharpe']:.3f} "
+                      f"09:34={p['09:34']['sharpe']:.3f} "
+                      f"09:35={p['09:35']['sharpe']:.3f}")
+
       if not results_list:
         raise RuntimeError(f"{'调试模式' if is_debug else '第 ' + str(generation + 1) + ' 代'}未获得任何有效回测结果")
 
@@ -780,7 +858,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
 
       next_configs = ga_optimizer(results_list, state=ga_state, population_size=population_size,
                                   hall_of_fame_size=population_size, profile_name=profile_name,
-                                  ga_cache=ga_cache)
+                                  ga_cache=ga_cache, gen=generation)
 
     # 最终测试集评估必须在 Pool terminate 前完成（共用 ga_pool）
     if not is_debug:

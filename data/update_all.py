@@ -69,6 +69,32 @@ DATA_DIR = Path(__file__).resolve().parent
 TODAY = date.today()
 YESTERDAY = TODAY - timedelta(days=1)
 
+
+def _run_with_process_timeout(func, timeout: float = 60, label: str = ""):
+    """在独立进程中运行 func，超时则 kill 进程（真杀，不残留卡死线程）。"""
+    import multiprocessing as _mp
+
+    def _target(conn):
+        try:
+            conn.send(('ok', func()))
+        except Exception as e:
+            conn.send(('err', e))
+
+    ctx = _mp.get_context('spawn')
+    parent_conn, child_conn = ctx.Pipe()
+    p = ctx.Process(target=_target, args=(child_conn,))
+    p.start()
+    p.join(timeout=timeout)
+    if p.is_alive():
+        p.terminate()
+        p.join()
+        tag = f" ({label})" if label else ""
+        raise TimeoutError(f"操作超时 {timeout}s{tag} (进程已 kill)")
+    status, result = parent_conn.recv()
+    if status == 'err':
+        raise result
+    return result
+
 # 16:00 全量更新时，K 线删除并重拉「最近 N 个交易日」，用收盘后的完整 OHLC
 # 覆盖开盘抓到的盘中快照（开盘只拉当天，不做覆盖）。
 REPULL_TRADING_DAYS = 3
@@ -98,6 +124,14 @@ def _clean_parquet_by_date(path: Path, date_col: str, cutoff: date):
 
 def _update_kline():
     """mootdx 刷新：已有股票增量合并最近 REPULL_TRADING_DAYS 个交易日，新股全量补齐。"""
+    # 今天已拉过则跳过（检查一只代表股即可）
+    sample = DATA_DIR / "k-line" / "000001.SZ.parquet"
+    if sample.exists():
+        from datetime import datetime as _dt
+        mtime = _dt.fromtimestamp(sample.stat().st_mtime).date()
+        if mtime == TODAY:
+            logger.info("[K线] 今日已更新, 跳过")
+            return
     from data.kline_mootdx import update_recent
     logger.info("[K线] mootdx 重拉最近 %d 个交易日 + 新股全量", REPULL_TRADING_DAYS)
     update_recent(REPULL_TRADING_DAYS)
@@ -137,6 +171,15 @@ def _update_stock_name():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     name_path = OUT_DIR / "name_changes.parquet"
     st_path = OUT_DIR / "st_changes.parquet"
+    cur_path = OUT_DIR / "current_names.parquet"
+
+    # 当天已全量更新过，直接跳过（更名历史+ST+当前简称均为当日产物）
+    if cur_path.exists():
+        mtime = datetime.fromtimestamp(cur_path.stat().st_mtime).date()
+        if mtime == TODAY:
+            logger.info("[股票名称] 今日已更新, 跳过")
+            return
+
     codes = get_all_stock_code_list()
     bare_codes = sorted(set(c.split('.')[0] for c in codes))
     logger.info("[股票名称] 开始: 全市场 %d 只 (ST + 更名历史 + 当前简称)", len(codes))
@@ -242,13 +285,24 @@ def _update_current_names(codes: list[str]):
     """
     from data.db.stock_name import invalidate_name_data_cache
 
+    path = DATA_DIR / "stock_name" / "current_names.parquet"
     t0 = time.time()
+
+    # 当天已成功落盘 → 跳过（同一交易日名称不变）
+    if path.exists():
+        from datetime import datetime as _dt
+        mtime = _dt.fromtimestamp(path.stat().st_mtime).date()
+        if mtime == TODAY:
+            logger.info("[当前简称] 今日已更新, 跳过")
+            return
+
     bare_to_code: dict[str, str] = {}
     for code in codes:
         bare_to_code.setdefault(code.split('.')[0], code)
 
     logger.info("[当前简称] 拉取 akshare 全量 (%d 只待对齐)...", len(bare_to_code))
-    df_ak = ak.stock_info_a_code_name()
+    df_ak = _run_with_process_timeout(ak.stock_info_a_code_name, timeout=60, label="当前简称")
+
     if df_ak is None or df_ak.empty:
         raise RuntimeError("[当前简称] ak.stock_info_a_code_name() 返回空，中止更新")
 
@@ -263,7 +317,6 @@ def _update_current_names(codes: list[str]):
         if nm:
             rows.append({'bare_code': bare, 'stock_code': stock_code, 'name': nm})
 
-    path = DATA_DIR / "stock_name" / "current_names.parquet"
     df = pd.DataFrame(rows).drop_duplicates(subset=['bare_code'], keep='last')
     df.to_parquet(path, index=False)
     invalidate_name_data_cache()
@@ -432,6 +485,14 @@ def _update_issue_price():
     OUT_PATH = DATA_DIR / "issue_price" / "issue_price.parquet"
     KLINE_DIR = DATA_DIR / "k-line"
 
+    # 当天已落盘跳过
+    if OUT_PATH.exists():
+        from datetime import datetime as _dt
+        mtime = _dt.fromtimestamp(OUT_PATH.stat().st_mtime).date()
+        if mtime == TODAY:
+            logger.info("[发行价] 今日已更新, 跳过")
+            return
+
     codes_from_kline = sorted({f.stem[:6] for f in KLINE_DIR.glob("*.parquet")})
     done_codes = set()
     if OUT_PATH.exists():
@@ -447,7 +508,9 @@ def _update_issue_price():
     rows = []
     for bare in remaining:
         try:
-            info = ak.stock_individual_info_em(symbol=bare)
+            info = _run_with_process_timeout(
+                lambda b=bare: ak.stock_individual_info_em(symbol=b),
+                timeout=30, label=f"发行价 {bare}")
             price = None
             list_date = None
             for _, row in info.iterrows():
@@ -487,10 +550,21 @@ def _update_indices():
         'sh000852': '中证1000',
     }
 
+    # 当天已落盘跳过（检查沪深300代表）
+    sample_path = DATA_DIR / "index_sh000300_daily.parquet"
+    if sample_path.exists():
+        from datetime import datetime as _dt
+        mtime = _dt.fromtimestamp(sample_path.stat().st_mtime).date()
+        if mtime == TODAY:
+            logger.info("[指数] 今日已更新, 跳过")
+            return
+
     for symbol, name in INDEX_INFO.items():
         path = DATA_DIR / f"index_{symbol}_daily.parquet"
         try:
-            df_new = ak.stock_zh_index_daily(symbol=symbol)
+            df_new = _run_with_process_timeout(
+                lambda s=symbol: ak.stock_zh_index_daily(symbol=s),
+                timeout=60, label=f"指数 {name}")
             dates = df_new['date'].values
             open_prices = df_new['open'].values.astype(np.float64)
 
@@ -522,11 +596,19 @@ def _update_indices():
 def _update_delist():
     import akshare as ak
 
+    # 当天已落盘跳过
     OUT_PATH = DATA_DIR / "delist" / "delist.parquet"
+    if OUT_PATH.exists():
+        from datetime import datetime as _dt
+        mtime = _dt.fromtimestamp(OUT_PATH.stat().st_mtime).date()
+        if mtime == TODAY:
+            logger.info("[退市列表] 今日已更新, 跳过")
+            return
+
     rows = []
     for fetch_func, market in [(ak.stock_info_sh_delist, 'SH'), (ak.stock_info_sz_delist, 'SZ')]:
         try:
-            df = fetch_func()
+            df = _run_with_process_timeout(fetch_func, timeout=60, label=f"退市列表 {market}")
             if df is not None and not df.empty:
                 df['exchange'] = market
                 rows.append(df)
@@ -551,7 +633,14 @@ def _update_trading_calendar():
     import pyarrow as pa
 
     OUT_PATH = DATA_DIR / "trading_calendar.parquet"
-    df = ak.tool_trade_date_hist_sina()
+    if OUT_PATH.exists():
+        from datetime import datetime as _dt
+        mtime = _dt.fromtimestamp(OUT_PATH.stat().st_mtime).date()
+        if mtime == TODAY:
+            logger.info("[交易日历] 今日已更新, 跳过")
+            return
+
+    df = _run_with_process_timeout(ak.tool_trade_date_hist_sina, timeout=60, label="交易日历")
     dates = sorted(set(df['trade_date']))
     table = pa.table({'trade_date': pa.array(dates)})
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
