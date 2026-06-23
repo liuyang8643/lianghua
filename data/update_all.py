@@ -159,6 +159,46 @@ def _update_stock_list():
 # 3. 股票名称/ST历史 — CNINFO API
 # ============================================================
 
+CURRENT_NAMES_REQUEST_TIMEOUT = 10
+CURRENT_NAMES_CHUNK_SIZE = 250
+
+
+def _tencent_quote_symbol(stock_code: str) -> str:
+    from utils.stock.info import is_bse_stock
+
+    bare = stock_code.split(".")[0]
+    if is_bse_stock(bare):
+        prefix = "bj"
+    elif bare.startswith(("6", "9")):
+        prefix = "sh"
+    else:
+        prefix = "sz"
+    return f"{prefix}{bare}"
+
+
+def _fetch_current_stock_names(codes: list[str]) -> pd.DataFrame:
+    """当前简称全量表：腾讯财经批量行情只取简称，避免 akshare 黑盒调用阻塞。"""
+    symbols = [_tencent_quote_symbol(code) for code in sorted(set(codes))]
+    rows = []
+    total_batches = (len(symbols) + CURRENT_NAMES_CHUNK_SIZE - 1) // CURRENT_NAMES_CHUNK_SIZE
+    headers = {"User-Agent": "Mozilla/5.0"}
+    for batch_idx, start in enumerate(range(0, len(symbols), CURRENT_NAMES_CHUNK_SIZE), 1):
+        chunk = symbols[start:start + CURRENT_NAMES_CHUNK_SIZE]
+        url = "https://qt.gtimg.cn/q=" + ",".join(chunk)
+        r = requests.get(url, headers=headers, timeout=CURRENT_NAMES_REQUEST_TIMEOUT)
+        text = r.content.decode("gbk", errors="ignore")
+        for item in text.split(";"):
+            if '="' not in item:
+                continue
+            payload = item.split('"', 1)[1].rsplit('"', 1)[0]
+            fields = payload.split("~")
+            if len(fields) >= 3 and fields[1].strip() and fields[2].strip():
+                rows.append({"code": fields[2].strip().zfill(6), "name": fields[1].strip()})
+        if batch_idx == 1 or batch_idx % 5 == 0 or batch_idx == total_batches:
+            logger.info("[当前简称] 腾讯批量 %d/%d, 已解析 %d 条", batch_idx, total_batches, len(rows))
+    return pd.DataFrame(rows).drop_duplicates(subset=["code"], keep="last")
+
+
 def _update_stock_name():
     from datetime import datetime
     import requests
@@ -281,11 +321,12 @@ def _update_stock_name():
 def _update_current_names(codes: list[str]):
     """写 current_names.parquet — 全市场当前简称（update_all 唯一写入入口）。
 
-    读取侧只认此表 + name_changes（历史时点）；由 akshare 一次拉全量对齐 stock_list。
+    读取侧只认此表 + name_changes（历史时点）；由腾讯财经批量行情对齐 stock_list。
     """
     from data.db.stock_name import invalidate_name_data_cache
 
     path = DATA_DIR / "stock_name" / "current_names.parquet"
+    path.parent.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
 
     # 当天已成功落盘 → 跳过（同一交易日名称不变）
@@ -300,15 +341,15 @@ def _update_current_names(codes: list[str]):
     for code in codes:
         bare_to_code.setdefault(code.split('.')[0], code)
 
-    logger.info("[当前简称] 拉取 akshare 全量 (%d 只待对齐)...", len(bare_to_code))
-    df_ak = _run_with_process_timeout(ak.stock_info_a_code_name, timeout=60, label="当前简称")
+    logger.info("[当前简称] 拉取腾讯财经批量简称 (%d 只待对齐)...", len(bare_to_code))
+    df_names = _fetch_current_stock_names(codes)
 
-    if df_ak is None or df_ak.empty:
-        raise RuntimeError("[当前简称] ak.stock_info_a_code_name() 返回空，中止更新")
+    if df_names is None or df_names.empty:
+        raise RuntimeError("[当前简称] 腾讯财经当前简称返回空，中止更新")
 
     name_map = dict(zip(
-        df_ak['code'].astype(str).str.zfill(6),
-        df_ak['name'].astype(str).str.strip(),
+        df_names['code'].astype(str).str.zfill(6),
+        df_names['name'].astype(str).str.strip(),
     ))
     rows = []
     for bare, stock_code in bare_to_code.items():
