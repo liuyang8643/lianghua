@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# 预加载子模块避免多线程 import 死锁 (CNINFO + akshare)
+# 预加载子模块避免运行中重复 import 抖动 (CNINFO + akshare)
 import json as _json_lib
 import requests  # noqa: F401
 import py_mini_racer  # noqa: F401
@@ -70,30 +70,6 @@ TODAY = date.today()
 YESTERDAY = TODAY - timedelta(days=1)
 
 
-def _run_with_process_timeout(func, timeout: float = 60, label: str = ""):
-    """在独立进程中运行 func，超时则 kill 进程（真杀，不残留卡死线程）。"""
-    import multiprocessing as _mp
-
-    def _target(conn):
-        try:
-            conn.send(('ok', func()))
-        except Exception as e:
-            conn.send(('err', e))
-
-    ctx = _mp.get_context('spawn')
-    parent_conn, child_conn = ctx.Pipe()
-    p = ctx.Process(target=_target, args=(child_conn,))
-    p.start()
-    p.join(timeout=timeout)
-    if p.is_alive():
-        p.terminate()
-        p.join()
-        tag = f" ({label})" if label else ""
-        raise TimeoutError(f"操作超时 {timeout}s{tag} (进程已 kill)")
-    status, result = parent_conn.recv()
-    if status == 'err':
-        raise result
-    return result
 
 # 16:00 全量更新时，K 线删除并重拉「最近 N 个交易日」，用收盘后的完整 OHLC
 # 覆盖开盘抓到的盘中快照（开盘只拉当天，不做覆盖）。
@@ -119,22 +95,40 @@ def _clean_parquet_by_date(path: Path, date_col: str, cutoff: date):
 
 
 # ============================================================
-# 1. K线日线 — QMT 唯一源（不复权 k-line/ + 官方 preClose；复权由 build_runtime 自建）
+# 1. K线日线 — mootdx 唯一源（不复权 k-line/ + preClose；复权由 build_runtime 自建）
 # ============================================================
 
 def _update_kline():
-    """mootdx 刷新：已有股票增量合并最近 REPULL_TRADING_DAYS 个交易日，新股全量补齐。"""
-    # 今天已拉过则跳过（检查一只代表股即可）
-    sample = DATA_DIR / "k-line" / "000001.SZ.parquet"
-    if sample.exists():
-        from datetime import datetime as _dt
-        mtime = _dt.fromtimestamp(sample.stat().st_mtime).date()
-        if mtime == TODAY:
-            logger.info("[K线] 今日已更新, 跳过")
-            return
+    """mootdx 刷新：已有股票增量合并最近 REPULL_TRADING_DAYS 个交易日，新股全量补齐。
+
+    退市股 parquet 缺失时仍只允许通过 mootdx 全量补齐，禁止混用其他 K 线源。
+    """
     from data.kline_mootdx import update_recent
     logger.info("[K线] mootdx 重拉最近 %d 个交易日 + 新股全量", REPULL_TRADING_DAYS)
     update_recent(REPULL_TRADING_DAYS)
+    _ensure_delist_kline_mootdx()
+
+
+def _ensure_delist_kline_mootdx():
+    """确保退市股 K 线存在；缺失时用 mootdx 全量补齐，补不齐则中止。"""
+    from data.db.delist import get_delist_stock_info
+    from data.kline_mootdx import update_full
+    from utils.stock.info import is_b_stock
+
+    kline_dir = DATA_DIR / "k-line"
+    delist_info = get_delist_stock_info()
+    missing = [c for c in delist_info
+               if not (kline_dir / f'{c}.parquet').exists() and not is_b_stock(c)]
+    if not missing:
+        return
+
+    logger.info("[K线-退市] mootdx 补齐缺失退市股 %d 只", len(missing))
+    update_full(codes=missing)
+    still_missing = [c for c in missing if not (kline_dir / f'{c}.parquet').exists()]
+    if still_missing:
+        shown = ', '.join(still_missing[:20])
+        suffix = f" ...(+{len(still_missing) - 20})" if len(still_missing) > 20 else ''
+        raise RuntimeError(f"[K线-退市] mootdx 未补齐 {len(still_missing)} 只退市股: {shown}{suffix}")
 
 
 # ============================================================
@@ -376,7 +370,6 @@ def _update_balance():
     import requests
     import py_mini_racer
     from akshare.stock.stock_profile_cninfo import _get_file_content_ths
-    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     OUT_PATH = DATA_DIR / "financial" / "balance.parquet"
     STOCK_LIST_PATH = DATA_DIR / "stock_list" / "stock_list.parquet"
@@ -434,14 +427,10 @@ def _update_balance():
     logger.info("[资产负债表] 下载 %d 只...", len(bare_codes))
     t0 = time.time()
     all_rows = []
-    done = 0
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = {pool.submit(_fetch, c): c for c in bare_codes}
-        for fut in as_completed(futures):
-            done += 1
-            all_rows.extend(fut.result())
-            if done % 500 == 0:
-                logger.info("[资产负债表] %d/%d", done, len(bare_codes))
+    for done, bare_code in enumerate(bare_codes, start=1):
+        all_rows.extend(_fetch(bare_code))
+        if done % 500 == 0:
+            logger.info("[资产负债表] %d/%d", done, len(bare_codes))
 
     if not all_rows:
         logger.warning("[资产负债表] 未下载到数据")
@@ -465,48 +454,7 @@ def _update_balance():
 
 
 # ============================================================
-# 5. 每股财务指标 — xtdata PershareIndex
-# ============================================================
-
-def _update_pershare_index():
-    from xtquant import xtdata
-    from data.db.stock_list import get_all_stock_code_list
-
-    OUT_PATH = DATA_DIR / "financial" / "pershare_index.parquet"
-    codes = get_all_stock_code_list()
-
-    logger.info("[每股指标] 下载 PershareIndex (xtdata)...")
-    xtdata.download_financial_data(codes, '')
-
-    all_rows = []
-    error_count=0
-    for code in codes:
-        try:
-            data = xtdata.get_financial_data([code], table_list=['PershareIndex'])
-            if code in data.get('PershareIndex', {}):
-                df = data['PershareIndex'][code]
-                if df is not None and not df.empty:
-                    df = df.copy()
-                    df['stock_code'] = code
-                    all_rows.append(df)
-        except Exception as e:
-            logger.warning(f"get_financial_data {code} 失败: {e}")
-            error_count+=1
-    logger.info(f"get_financial_data 失败{error_count} 成功{len(codes)-error_count}")
-
-    if not all_rows:
-        logger.warning("[每股指标] 未下载到数据")
-        return
-
-    df_all = pd.concat(all_rows, ignore_index=True)
-    df_all = df_all.drop_duplicates(subset=['stock_code', 'm_anntime'], keep='last')
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    df_all.to_parquet(OUT_PATH, index=False)
-    logger.info("[每股指标] 保存 %d 行, %d 只股票", len(df_all), df_all['stock_code'].nunique())
-
-
-# ============================================================
-# 5b. 深历史财务指标 — akshare 同花顺（runtime 财务字段唯一来源）
+# 5. 深历史财务指标 — akshare 同花顺（runtime 财务字段唯一来源）
 # ============================================================
 
 def _update_financial_deep():
@@ -549,9 +497,7 @@ def _update_issue_price():
     rows = []
     for bare in remaining:
         try:
-            info = _run_with_process_timeout(
-                lambda b=bare: ak.stock_individual_info_em(symbol=b),
-                timeout=30, label=f"发行价 {bare}")
+            info = ak.stock_individual_info_em(symbol=bare)
             price = None
             list_date = None
             for _, row in info.iterrows():
@@ -603,9 +549,7 @@ def _update_indices():
     for symbol, name in INDEX_INFO.items():
         path = DATA_DIR / f"index_{symbol}_daily.parquet"
         try:
-            df_new = _run_with_process_timeout(
-                lambda s=symbol: ak.stock_zh_index_daily(symbol=s),
-                timeout=60, label=f"指数 {name}")
+            df_new = ak.stock_zh_index_daily(symbol=symbol)
             dates = df_new['date'].values
             open_prices = df_new['open'].values.astype(np.float64)
 
@@ -648,13 +592,10 @@ def _update_delist():
 
     rows = []
     for fetch_func, market in [(ak.stock_info_sh_delist, 'SH'), (ak.stock_info_sz_delist, 'SZ')]:
-        try:
-            df = _run_with_process_timeout(fetch_func, timeout=60, label=f"退市列表 {market}")
-            if df is not None and not df.empty:
-                df['exchange'] = market
-                rows.append(df)
-        except Exception as e:
-            logger.warning("[退市列表] %s 失败: %s", market, e)
+        df = fetch_func()
+        if df is not None and not df.empty:
+            df['exchange'] = market
+            rows.append(df)
 
     if rows:
         df_all = pd.concat(rows, ignore_index=True)
@@ -662,7 +603,7 @@ def _update_delist():
         df_all.to_parquet(OUT_PATH, index=False)
         logger.info("[退市列表] 保存 %d 条", len(df_all))
     else:
-        logger.warning("[退市列表] 未下载到数据")
+        raise RuntimeError("[退市列表] 未下载到数据")
 
 
 # ============================================================
@@ -681,7 +622,7 @@ def _update_trading_calendar():
             logger.info("[交易日历] 今日已更新, 跳过")
             return
 
-    df = _run_with_process_timeout(ak.tool_trade_date_hist_sina, timeout=60, label="交易日历")
+    df = ak.tool_trade_date_hist_sina()
     dates = sorted(set(df['trade_date']))
     table = pa.table({'trade_date': pa.array(dates)})
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -716,7 +657,7 @@ def update_offline_toNow():
     logger.info("=" * 60)
 
     # Phase 1: 清理指数最近不完整数据。
-    # K 线无需在此清理：_update_kline(QMT update_recent) 会按 time 合并覆盖最近 N 个交易日。
+    # K 线无需在此清理：mootdx update_recent 会按 time 合并覆盖最近 N 个交易日。
     logger.info("--- Phase 1: 清理指数最近数据 ---")
     for f in DATA_DIR.glob("index_*_daily.parquet"):
         _clean_parquet_by_date(f, 'trade_date', YESTERDAY)
@@ -725,17 +666,14 @@ def update_offline_toNow():
     logger.info("--- Phase 2: 下载更新 ---")
     steps = [
         ("股票列表", _update_stock_list),
+        ("退市列表", _update_delist),
         ("股票名称/ST", _update_stock_name),
         ("K线日线", _update_kline),
         ("资产负债表", _update_balance),
         ("深历史财务", _update_financial_deep),
         ("发行价", _update_issue_price),
         ("大盘指数", _update_indices),
-        ("退市列表", _update_delist),
         ("交易日历", _update_trading_calendar),
-        # 每股财务指标(xtdata PershareIndex)已弃用：runtime 财务字段改用「深历史财务」
-        # (deep_indicators.parquet, 同花顺深历史) 单一来源，见 build_runtime.build_financial_arrays。
-        # ("每股财务指标", _update_pershare_index),
     ]
 
     for name, func in steps:

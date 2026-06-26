@@ -1,5 +1,4 @@
 import logging as _stdlib_logging
-import threading
 from datetime import timedelta
 
 from trading.trader import Trader, get_position
@@ -79,13 +78,21 @@ def create_lark_handler(trader: Trader):
   def handle_action_kill():
     """ 结束程序 """
     from utils.sys import terminate_process_tree
+    from trading.persistence import _TRADE_DIR
     trading_logger.debug(f"准备结束程序")
     lark_sender.send_notification_card(
       level=LarkMsgLevel.Info,
       title="紧急制动",
       content="程序已手动结束",
     )
-    terminate_process_tree()
+    pid_path = _TRADE_DIR / "trading_main.pid"
+    if pid_path.exists():
+      pid = int(pid_path.read_text(encoding="utf-8").strip())
+      trading_logger.warning(f"飞书紧急制动: 终止交易主进程 PID={pid}")
+      terminate_process_tree(pid)
+    else:
+      trading_logger.warning("飞书紧急制动: 未找到 trading_main.pid，终止当前飞书服务")
+      terminate_process_tree()
 
   handlers = {
     "query_positions": handle_action_query_positions,
@@ -108,7 +115,7 @@ def create_lark_handler(trader: Trader):
 
     # 处理事件
     if event_key in handlers:
-      threading.Thread(target=handlers[event_key], daemon=True).start()
+      handlers[event_key]()
     else:
       trading_logger.error(f"未知事件【{event_key}】")
 

@@ -28,6 +28,8 @@ class TraderCallback(XtQuantTraderCallback):
 
   def __init__(self, trader):
     self.trader = trader
+    self._seen_order_status = {}  # order_id -> (status, status_msg) 去重刷屏
+    self._seen_errors = set()     # (order_id, error_msg) 去重刷屏
 
   def on_connected(self):
     trading_logger.success("交易已连接")
@@ -43,13 +45,27 @@ class TraderCallback(XtQuantTraderCallback):
     status = order.order_status
 
     if status == xtconstant.ORDER_SUCCEEDED:
-      trading_logger.success(f"已成: {op_label} {name} {price_label} {order.order_volume}股")
+      trading_logger.success(
+          f"已成: order_id={order.order_id} {op_label} {name} {price_label} "
+          f"委托{order.order_volume}股 成交{getattr(order, 'traded_volume', 0)}股 "
+          f"委托价={float(order.price or 0):.4f} 成交价={float(getattr(order, 'traded_price', 0) or 0):.4f}")
     elif status in (xtconstant.ORDER_CANCELED, xtconstant.ORDER_JUNK, xtconstant.ORDER_PART_CANCEL):
-      trading_logger.warning(f"废单/已撤: {op_label} {name} [{status_label}] {order.status_msg}")
+      key = (order.order_id, status, order.status_msg)
+      if self._seen_order_status.get(order.order_id) != key:
+        self._seen_order_status[order.order_id] = key
+        trading_logger.warning(
+            f"废单/已撤: order_id={order.order_id} {op_label} {name} [{status_label}] "
+            f"委托{order.order_volume}股 成交{getattr(order, 'traded_volume', 0)}股 "
+            f"委托价={float(order.price or 0):.4f} msg={order.status_msg}")
     elif status == xtconstant.ORDER_REPORTED:
-      trading_logger.info(f"已报: {op_label} {name} {price_label} {order.order_volume}股")
+      trading_logger.info(
+          f"已报: order_id={order.order_id} {op_label} {name} {price_label} "
+          f"委托{order.order_volume}股 委托价={float(order.price or 0):.4f}")
     else:
-      trading_logger.info(f"订单状态变更: {op_label} {name} [{status_label}]")
+      trading_logger.info(
+          f"订单状态变更: order_id={order.order_id} {op_label} {name} [{status_label}] "
+          f"委托{order.order_volume}股 成交{getattr(order, 'traded_volume', 0)}股 "
+          f"msg={order.status_msg}")
 
     try:
       live_trade_recorder.record_event(
@@ -77,7 +93,8 @@ class TraderCallback(XtQuantTraderCallback):
     name = _stock_name(trade.stock_code) or trade.stock_code
     op_label = get_order_type_label(trade.order_type)
     trading_logger.success(
-        f"成交: {op_label} {name} ¥{trade.traded_price:.2f} × {trade.traded_volume}股 "
+        f"成交: order_id={trade.order_id} traded_id={getattr(trade, 'traded_id', '')} "
+        f"{op_label} {name} ¥{trade.traded_price:.4f} × {trade.traded_volume}股 "
         f"≈ ¥{trade.traded_amount:.2f}"
     )
 
@@ -105,7 +122,12 @@ class TraderCallback(XtQuantTraderCallback):
 
   def on_order_error(self, order_error: XtOrderError):
     """订单错误 — events + 战报聚合（不再发独立卡）。"""
-    trading_logger.warning(f"订单错误：{order_error.error_msg}")
+    oid = int(getattr(order_error, 'order_id', 0) or 0)
+    msg = getattr(order_error, 'error_msg', '') or ''
+    key = (oid, msg)
+    if key not in self._seen_errors:
+      self._seen_errors.add(key)
+      trading_logger.warning(f"订单错误：{msg}")
     code = getattr(order_error, 'stock_code', '') or ''
     try:
       live_trade_recorder.record_event(

@@ -14,8 +14,7 @@ from core.backtest import (
     _compute_list_dates,
 )
 from core.metrics import compute_core_metrics
-from core.runtime import load_runtime_npz
-from data.db import allow_buy_stock_code_list
+from core.runtime import load_runtime_npz, load_runtime_stock_codes
 from utils.stock.time import get_trading_date_span
 
 _NEG_INF = float('-inf')
@@ -52,7 +51,7 @@ def build_universe(start: str, end: str, pool_prefixes=None):
         datetime.combine(d, datetime.min.time())
         for d in get_trading_date_span(_parse_date(start), _parse_date(end))
     ]
-    stocks = list(allow_buy_stock_code_list())
+    stocks = load_runtime_stock_codes()
     if pool_prefixes:
         stocks = [s for s in stocks if s.startswith(tuple(pool_prefixes))]
     ip_stocks = _load_valid_issue_price_stocks()
@@ -131,7 +130,6 @@ def evaluate_detailed(factor_cls, name: str, dates, all_stocks, buy_n: int = 20,
         check_continuity(factor_cls, dates, data=data)
 
     weights = {name: 1.0}
-    temperatures = {name: 1.0}
 
     scored = _compute_factor_scores(dates, all_stocks, weights, [factor_cls], data=data)
     if scored is None:
@@ -139,12 +137,12 @@ def evaluate_detailed(factor_cls, name: str, dates, all_stocks, buy_n: int = 20,
                 'n_trades': 0, 'dates': [], 'daily_returns': [], 'topn': [],
                 'signature': None, 'sig_shape': None}
 
-    data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices = scored
+    data, all_scores, _, valid_dates, date_indices, valid_stocks, stock_indices = scored
     list_dates_map = _compute_list_dates(data['stock_codes'], data['open'], data['trade_dates'])
 
     bt = _backtest_direct(
         data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices,
-        weights=weights, buy_n=buy_n, sell_m=buy_n, temperatures=temperatures,
+        weights=weights, buy_n=buy_n, sell_m=buy_n,
         list_dates_map=list_dates_map, lightweight=True,
     )
     m = compute_core_metrics(bt['daily_returns'])

@@ -27,7 +27,7 @@ from core.ga import (
     get_profile,
     get_profile_search_spaces,
     get_profile_weight_search_spaces,
-    sample_position_count, sample_factor_choice, sample_stock_pool,
+    sample_buy_n, sample_factor_choice, sample_stock_pool,
     sample_holding_period, sample_timing_base, sample_timing_leverage,
     sample_timing_direction, sample_timing_window, sample_timing_index,
 )

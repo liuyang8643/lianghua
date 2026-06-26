@@ -131,7 +131,7 @@ class TradingDayBoard:
                       base_target: float | None = None, buy_n: int | None = None,
                       bt_ref: dict | None = None, bt_daily_return: float | None = None,
                       y_positions: dict | None = None):
-        """09:25 before_trade 调用：开启当日战报。
+        """09:25:10 before_trade 调用：开启当日战报。
 
         bt_ref / y_positions：盘前 seed-replay（继承 T-1 实盘状态）的回测参考 + T-1 实盘持仓，
         用于「回测 vs 实盘」实时对账（T 日操作 + T 日持仓）。缺失时退回纯订单进度战报。
@@ -698,7 +698,8 @@ class TradingDayBoard:
                 'log': f'<font color="grey">对齐 {pt["aligned"]}/{pt["total"]} 只</font>',
             })
 
-        elements = [make_v2_table(
+        title_md = '**T日操作对比 / T日持仓对比**' if cmp else '**目标→成交**'
+        elements = [md_div(title_md), make_v2_table(
             columns=[
                 {'name': 'name', 'display_name': '股票', 'horizontal_align': 'left'},
                 {'name': 'pos', 'display_name': '持仓手数(目标vs实盘)', 'horizontal_align': 'right'},

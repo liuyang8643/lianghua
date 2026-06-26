@@ -47,7 +47,6 @@ class RunConfig:
     crossover_ratio: float = 0.3  # 每个子代按此概率走交叉，否则走变异（MadEvolve ~30%交叉/70%变异）
     n_parents_crossover: int = 5  # 交叉子代参考的父代数（≤ n_parents）
     n_inspirations: int = 3       # 变异时附带的"灵感因子"数（全局最优若干，仅供参考勿照抄）
-    concurrency: int = 5          # 同一代内并发的 LLM 产因子子进程数（I/O 并发，不违反 CPU 多进程红线）
     model: str = 'deepseek-v4-pro'         # 产因子（创新，防克隆）
     verify_model: str = 'deepseek-v4-flash'  # verify 红线审查（静态检查，轻模型即可，快得多）
     seed: int = 42

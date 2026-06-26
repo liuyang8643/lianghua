@@ -16,10 +16,10 @@ def select_topn(
     valid_stocks: list[str],
     valid_cols: np.ndarray,
     weights: dict[str, float],
-    temperatures: dict[str, float],
     top_n: int,
     force_codes: Optional[list[str]] = None,
     filter_mask: Optional[np.ndarray] = None,
+    filter_exempt_codes: Optional[set[str]] = None,
 ) -> tuple[list[str], np.ndarray]:
     """加权打分 + 截面排序 + 取前 N。回测和实盘必须共用此函数。
 
@@ -29,7 +29,6 @@ def select_topn(
         valid_stocks: 候选股 codes（已经过 stock_indices 过滤）
         valid_cols: 候选股在 ranks_mat 中的列索引 np.intp 数组
         weights: {factor_name: weight}
-        temperatures: {factor_name: temperature}
         top_n: 取前 N 只
         force_codes: 强制纳入的 codes（保留位次，前置）；None 表示不启用
         filter_mask: (n_valid_stocks,) bool 数组，True=保留；None 表示不过滤
@@ -45,13 +44,14 @@ def select_topn(
         if w == 0:
             continue
         ranks = ranks_mat[score_idx][valid_cols]
-        temp = temperatures[name]
-        if temp != 1.0:
-            np.power(ranks, 1.0 / temp, out=ranks)
         final_score += ranks * w
 
     if filter_mask is not None:
-        final_score[~filter_mask] = -np.inf
+        if filter_exempt_codes:
+            exempt = np.array([s in filter_exempt_codes for s in valid_stocks], dtype=bool)
+            final_score[~filter_mask & ~exempt] = -np.inf
+        else:
+            final_score[~filter_mask] = -np.inf
 
     top_idx = np.argsort(-final_score)
     topn = [valid_stocks[i] for i in top_idx[:top_n]]

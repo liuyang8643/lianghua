@@ -6,12 +6,10 @@ from xtquant.xttype import StockAccount, XtOrder, XtAsset, XtPosition, XtTrade
 from xtquant import xtconstant, xtdata
 
 from configs import TRADE_ACCOUNT
-from data.db import get_stock_detail
 from trading.helper import get_price_type
 from trading.watcher import TraderCallback
 from trading.logger import trading_logger
 from utils.stock.info import is_convertible_bond
-from utils.stock.format import get_stock_desc
 
 qmt_data_dir = os.path.dirname(xtdata.get_data_dir())
 
@@ -78,7 +76,6 @@ class Trader:
 
   def query_order(self, order_id: int) -> Optional[XtOrder]:
     """查询委托"""
-    trading_logger.debug(f"[QMT] query_stock_order id={order_id} ...")
     return self.client.query_stock_order(self.account, order_id)
 
   def query_asset(self) -> Optional[XtAsset]:
@@ -108,16 +105,6 @@ class Trader:
 
     # 没找到对应股票持仓
     return None
-
-  def clear_position(self, code: str, reason: str = None):
-    """清仓，返回 order_id 或 None"""
-    position = self.query_stock_position(code)
-    if position and position.can_use_volume > 0:
-      return self.order(xtconstant.STOCK_SELL, code, position.can_use_volume, order_remark=reason)
-    else:
-      detail = get_stock_detail(code)
-      trading_logger.warning(f"{get_stock_desc(detail)} 当前没有可卖出仓位或持仓查询失败，无法清仓")
-      return None
 
   def query_buy_trades(self) -> List[XtTrade]:
     """查询当日成交"""

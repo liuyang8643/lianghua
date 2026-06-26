@@ -15,6 +15,7 @@ def _load() -> dict:
     if not _cache:
         d = np.load(_AUX_PATH, allow_pickle=False)
         _cache['dates'] = d['trade_dates'].astype('datetime64[D]')
+        _cache['stock_codes'] = [str(s) for s in d['stock_codes']]
         for k in d.files:
             if k not in ('trade_dates', 'stock_codes'):
                 _cache[k] = d[k]
@@ -33,12 +34,20 @@ def _aligned(panel: dict, field: str) -> np.ndarray:
     n_panel = len(pdates)
     n_cache = c[field].shape[0]
     if start + n_panel <= n_cache:
-        return c[field][start:start + n_panel].copy()
-    # panel 尾部超出缓存（如 overlay 新交易日），用最后一期财务数据前向填充
-    n_exist = max(0, n_cache - start)
-    out = np.empty((n_panel, c[field].shape[1]), dtype=c[field].dtype)
-    out[:n_exist] = c[field][start:]
-    out[n_exist:] = c[field][-1]
+        raw = c[field][start:start + n_panel].copy()
+    else:
+        # panel 尾部超出缓存（如 overlay 新交易日），用最后一期财务数据前向填充
+        n_exist = max(0, n_cache - start)
+        raw = np.empty((n_panel, c[field].shape[1]), dtype=c[field].dtype)
+        raw[:n_exist] = c[field][start:]
+        raw[n_exist:] = c[field][-1]
+
+    cache_codes = {code: i for i, code in enumerate(c['stock_codes'])}
+    panel_codes = [str(s) for s in panel['stock_codes']]
+    out = np.full((n_panel, len(panel_codes)), np.nan, dtype=raw.dtype)
+    src = np.array([cache_codes.get(code, -1) for code in panel_codes], dtype=np.intp)
+    hit = src >= 0
+    out[:, hit] = raw[:, src[hit]]
     return out
 
 

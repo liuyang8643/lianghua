@@ -577,19 +577,26 @@ class PostCloseReport:
         }
 
     def send(self, html_path: Optional[Path] = None, attach_html: bool = True):
-        """上传 HTML 附件 + 对账异常告警。返回 report data 供调用方取 P&L。
+        """上传 HTML 附件 + 个股盈亏差异&滑点卡片 + 对账异常告警。返回 report data。
 
-        不再发独立飞书日报卡片（统一由 day_board 单卡全天更新）。
+        日报主卡统一由 day_board 单卡全天更新；本方法另发一张
+        「个股盈亏差异 + 实盘滑点(vs 开盘价)」明细卡。
         """
         data = self.build()
 
-        # HTML 附件上传（不再发独立飞书卡片，日报统一由 day_board 发）
+        # HTML 附件上传（日报主卡统一由 day_board 发）
         if attach_html and html_path and html_path.exists():
             try:
                 lark_sender.send_file(str(html_path),
                                       file_name=f"diff_{self.trade_date.isoformat()}.html")
             except Exception as e:
                 trading_logger.warning(f"[PostClose] 飞书 HTML 附件失败: {e}")
+
+        # 个股盈亏差异 + 实盘滑点明细卡
+        try:
+            self._send_pnl_slippage_card(data)
+        except Exception as e:
+            trading_logger.warning(f"[PostClose] 盈亏差异&滑点卡片失败: {e}")
 
         # 对账异常 → 单独推送告警卡片（残差/疑似出入金，待人工确认）
         self._maybe_alert_reconcile(data)
@@ -603,6 +610,128 @@ class PostCloseReport:
             f"差 {fmt_diff_money(live - bt)}"
         )
         return data
+
+    # ── 个股盈亏差异 + 实盘滑点明细卡 ─────────────────────────
+
+    def _slippage_agg_rows(self) -> list[dict]:
+        """fills 按 (code, direction) 聚合滑点：成交均价(vwap) vs 开盘价(est_price)。
+
+        slippage_cost > 0 = 成本（买贵了/卖便宜了），< 0 = 反向占优。
+        """
+        if self._fills is None or self._fills.empty:
+            return []
+        df = self._fills[self._fills.get('est_price').notna()] if 'est_price' in self._fills.columns else None
+        if df is None or df.empty:
+            return []
+        out = []
+        for (code, direction), grp in df.groupby(['code', 'direction']):
+            shares = int(grp['shares'].sum())
+            amount = float(grp['amount'].sum())
+            if shares <= 0:
+                continue
+            vwap = amount / shares
+            est = float(grp['est_price'].iloc[0])
+            if est <= 0:
+                continue
+            sp = (vwap / est - 1) * 100
+            sign = 1 if direction == 'buy' else -1
+            out.append({
+                'code': code, 'name': self._name_of(code),
+                'direction': direction, 'est_price': est, 'vwap': vwap,
+                'shares': shares, 'amount': amount,
+                'slippage_pct': sp,
+                'slippage_cost': sign * (vwap - est) * shares,
+            })
+        out.sort(key=lambda r: abs(r['slippage_cost']), reverse=True)
+        return out
+
+    def _send_pnl_slippage_card(self, data: dict):
+        """飞书明细卡：表1 个股盈亏差异（实盘 vs 回测）；表2 实盘滑点（vs 开盘价）。"""
+        d5 = data.get('dim5_pnl') or {}
+        pnl_rows = d5.get('rows') or []
+        slip_rows = self._slippage_agg_rows()
+        if not pnl_rows and not slip_rows:
+            return
+
+        def _color(v, text):
+            if v is None or abs(v) < 1e-9:
+                return f'<font color="grey">{text}</font>'
+            return f'<font color="{"red" if v > 0 else "green"}">{text}</font>'
+
+        tables = []
+        if pnl_rows:
+            rows = []
+            for r in sorted(pnl_rows,
+                            key=lambda x: abs(x['pnl_diff']) if x['pnl_diff'] is not None else 0,
+                            reverse=True):
+                rows.append({
+                    'name': self._name_of(r['code']),
+                    'live': fmt_diff_money(r['live_daily_pnl']),
+                    'bt': fmt_diff_money(r['bt_daily_pnl']),
+                    'diff': _color(r['pnl_diff'], fmt_diff_money(r['pnl_diff'])),
+                    'ret_diff': _color(r['ret_diff'], fmt_pct(r['ret_diff'], sign=True)),
+                })
+            tables.append({
+                'title': '**📈 个股盈亏差异（实盘 vs 回测）**',
+                'element_id': 'pnl_diff_tbl',
+                'page_size': 15,
+                'columns': [
+                    {'name': 'name', 'display_name': '股票', 'horizontal_align': 'left'},
+                    {'name': 'live', 'display_name': 'P&L 实盘', 'horizontal_align': 'right'},
+                    {'name': 'bt', 'display_name': 'P&L 回测', 'horizontal_align': 'right'},
+                    {'name': 'diff', 'display_name': '差异', 'horizontal_align': 'right'},
+                    {'name': 'ret_diff', 'display_name': '收益差', 'horizontal_align': 'right'},
+                ],
+                'rows': rows,
+            })
+        if slip_rows:
+            rows = []
+            for r in slip_rows:
+                rows.append({
+                    'name': f"{r['name']} {'买' if r['direction'] == 'buy' else '卖'}",
+                    'open': f"{r['est_price']:.2f}",
+                    'vwap': f"{r['vwap']:.2f}",
+                    'sp': _color(r['slippage_cost'], f"{r['slippage_pct']:+.2f}%"),
+                    'cost': _color(r['slippage_cost'], fmt_diff_money(r['slippage_cost'])),
+                })
+            tables.append({
+                'title': '**🎯 实盘滑点（成交均价 vs 开盘价）**',
+                'element_id': 'slippage_tbl',
+                'page_size': 15,
+                'columns': [
+                    {'name': 'name', 'display_name': '股票·方向', 'horizontal_align': 'left'},
+                    {'name': 'open', 'display_name': '开盘价', 'horizontal_align': 'right'},
+                    {'name': 'vwap', 'display_name': '成交均价', 'horizontal_align': 'right'},
+                    {'name': 'sp', 'display_name': '滑点', 'horizontal_align': 'right'},
+                    {'name': 'cost', 'display_name': '滑点成本', 'horizontal_align': 'right'},
+                ],
+                'rows': rows,
+            })
+
+        s = data.get('summary') or {}
+        live_pnl = s.get('live_daily_pnl')
+        bt_pnl = s.get('bt_daily_pnl')
+        pnl_gap = (live_pnl - bt_pnl) if (live_pnl is not None and bt_pnl is not None) else None
+        total_slip_cost = sum(r['slippage_cost'] for r in slip_rows)
+        summary_parts = [
+            f"盈亏差异(实盘-回测) **{fmt_diff_money(pnl_gap)}**"
+            if pnl_gap is not None else None,
+            f"总滑点成本 **{fmt_diff_money(total_slip_cost)}**" if slip_rows else None,
+        ]
+        level = LarkMsgLevel.Info
+        if pnl_gap is not None:
+            level = LarkMsgLevel.Warning if abs(pnl_gap) > 1000 else LarkMsgLevel.Info
+
+        lark_sender.send_table_card(
+            title=f"📊 盈亏差异 & 滑点 @ {self.trade_date.isoformat()}",
+            level=level,
+            subtitle=f"实盘 {fmt_diff_money(live_pnl)} vs 回测 {fmt_diff_money(bt_pnl)}",
+            summary_md=' · '.join(p for p in summary_parts if p) or None,
+            tables=tables,
+        )
+        trading_logger.info(
+            f"[PostClose] 盈亏差异&滑点卡片已发送 "
+            f"(P&L行={len(pnl_rows)}, 滑点行={len(slip_rows)})")
 
     def _maybe_alert_reconcile(self, data: dict):
         """账户日盈亏 ≠ 个股盈亏总和（超容差）时，飞书推送残差告警，待人工确认是否出入金。

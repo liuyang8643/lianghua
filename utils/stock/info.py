@@ -20,8 +20,43 @@ def is_convertible_bond(stock_code: str) -> bool:
   return stock_code.startswith('11') or stock_code.startswith('12') or stock_code.startswith('13')
 
 def min_buy_shares(stock_code: str) -> int:
-  """市价委托最小买入数量：科创/创业板200股，主板/北交所100股。"""
-  if is_kcb_stock(stock_code) or is_cyb_stock(stock_code):
+  """委托最小买入数量：科创板 200 股起，其余 100 股起。"""
+  if is_kcb_stock(stock_code):
+    return 200
+  return 100
+
+
+def buy_step_shares(stock_code: str) -> int:
+  """买入申报递增步长：科创板 200 股起、1 股递增；其余 100 股递增。"""
+  if is_kcb_stock(stock_code):
+    return 1
+  return min_buy_shares(stock_code)
+
+
+def floor_buy_shares(stock_code: str, shares: int) -> int:
+  """把买入数量向下调整为合法申报量；不足最低买入量时返回 0。"""
+  qty = int(shares)
+  minimum = min_buy_shares(stock_code)
+  if qty < minimum:
+    return 0
+  step = buy_step_shares(stock_code)
+  return minimum + ((qty - minimum) // step) * step
+
+
+def round_buy_shares(stock_code: str, shares: int) -> int:
+  """把目标买入数量调整为合法申报量；小于最低量的正数提升到最低量。"""
+  qty = int(shares)
+  if qty <= 0:
+    return 0
+  minimum = min_buy_shares(stock_code)
+  if qty < minimum:
+    return minimum
+  return floor_buy_shares(stock_code, qty)
+
+
+def min_sell_shares(stock_code: str) -> int:
+  """部分卖出单笔申报最低股数：科创板200股（余额不足200可一次性全清，不受此限），其余100股。"""
+  if is_kcb_stock(stock_code):
     return 200
   return 100
 

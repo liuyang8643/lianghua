@@ -1,10 +1,4 @@
-"""GA profile 加载与查询
-
-所有 GA 可搜索参数定义在 INTRINSIC_PARAMS，新增参数只需：
-  1. 在 INTRINSIC_PARAMS 加一条
-  2. 在 YAML search_spaces 加同名字段 + 值列表
-  3. 如需在回测中使用，在 backtest.py 读取 config.get('key')
-"""
+"""策略总配置加载与 GA profile 查询。"""
 from copy import deepcopy
 from itertools import combinations
 from pathlib import Path
@@ -28,20 +22,9 @@ GA_PROFILES: dict[str, dict] = {}
 # config_key: 在 individual_config dict 中的键名
 # display: 日志缩写
 # default: 当不在 profile search_spaces 中时的值
-# crossover: True=参与交叉, False=不参与(如 position_count, stock_pool 等)
+# crossover: True=参与交叉, False=不参与(如 buy_n, stock_pool 等)
 # config_key_for_mutate: 变异时从搜索空间重新采样的键(可不同于 config_key)
-INTRINSIC_PARAMS: list[dict] = [
-    {'key': 'position_count',  'config_key': 'buy_n',          'type': 'int',     'display': 'pos',     'default': 20},
-    {'key': 'stock_pool',      'config_key': 'stock_pool',     'type': 'stock_pool','display': 'pool',  'default': ('60','00','30','688')},
-    {'key': 'holding_period',  'config_key': 'holding_period', 'type': 'int',     'display': 'hp',      'default': 1},
-    {'key': 'timing_base',     'config_key': 'timing_base',    'type': 'float',   'display': 't_base',  'default': None},
-    {'key': 'timing_leverage', 'config_key': 'timing_leverage','type': 'float',   'display': 't_lev',   'default': None},
-    {'key': 'timing_direction','config_key': 'timing_direction','type': 'int',    'display': 't_dir',   'default': None},
-    {'key': 'timing_window',   'config_key': 'timing_window',  'type': 'int',     'display': 't_win',   'default': None},
-    {'key': 'timing_index',    'config_key': 'timing_index',   'type': 'categorical','display': 't_idx','default': None},
-    {'key': 'amount_filter_pct',   'config_key': 'amount_filter_pct',    'type': 'int', 'display': 'amt%', 'default': 0},
-    {'key': 'market_cap_filter_pct','config_key': 'market_cap_filter_pct','type': 'int', 'display': 'mcap%','default': 0},
-]
+INTRINSIC_PARAMS: list[dict] = []
 
 def get_intrinsic_params() -> list[dict]:
     return deepcopy(INTRINSIC_PARAMS)
@@ -55,22 +38,36 @@ def set_yaml_path(path: Path):
 def _get_yaml_path() -> Path:
     if _YAML_PATH:
         return _YAML_PATH
-    return Path(__file__).parent.parent.parent / 'configs' / 'ga_profiles.yaml'
+    return Path(__file__).parent.parent.parent / 'configs' / 'strategy.yaml'
+
+
+def _expand_space(raw):
+    if not isinstance(raw, dict):
+        return raw
+    start, end, step = raw['range']
+    vals = [0.0 if abs(x) < 1e-9 else round(float(x), 10) for x in np.arange(start, end + step / 2, step)]
+    if all(float(v).is_integer() for v in vals):
+        vals = [int(v) for v in vals]
+    if 'include' in raw:
+        vals = list(raw['include']) + vals
+    return sorted(set(vals))
 
 
 def _load():
-    global _loaded, DEFAULT_GA_PROFILE, SEARCH_SPACE_VERSION, GA_PROFILES
+    global _loaded, DEFAULT_GA_PROFILE, SEARCH_SPACE_VERSION, GA_PROFILES, INTRINSIC_PARAMS
     if _loaded:
         return
     _loaded = True
 
     cfg = yaml.safe_load((_get_yaml_path()).read_text())
+    INTRINSIC_PARAMS = deepcopy(cfg['strategy_parameters'])
     DEFAULT_GA_PROFILE = cfg['default_profile']
     SEARCH_SPACE_VERSION = cfg['version']
 
-    board_prefixes = [str(p) for p in cfg['search_spaces']['board_prefixes']]
+    expanded_spaces = {k: _expand_space(v) for k, v in cfg['search_spaces'].items()}
+    board_prefixes = [str(p) for p in expanded_spaces['board_prefixes']]
     stock_pool_space = [tuple(c) for r in range(1, 5) for c in combinations(board_prefixes, r)]
-    search_spaces = {**cfg['search_spaces'], 'stock_pool': stock_pool_space}
+    search_spaces = {**expanded_spaces, 'stock_pool': stock_pool_space}
     del search_spaces['board_prefixes']
 
     mode_configs = cfg['mode_configs']
@@ -90,7 +87,6 @@ def _load():
             'desc': raw['desc'],
             'factor_classes': classes,
             'fixed_weights': {n: 1.0 for n in factor_names} if raw.get('factor_choice_space') is None else None,
-            'fixed_temperatures': {n: 1.0 for n in factor_names},
             'search_spaces': spaces,
             'preload_start_date': raw['preload_start'],
             'preload_end_date': raw['preload_end'],
@@ -151,10 +147,6 @@ def get_profile_fixed_weights(name: str | None = None) -> dict:
     if p.get('weight_search_spaces'):
         return {k: 1.0 for k in p['weight_search_spaces']}
     return {c.__name__: 1.0 for c in p['factor_classes']}
-
-
-def get_profile_fixed_temperatures(name: str | None = None) -> dict:
-    return dict(get_profile(name)['fixed_temperatures'])
 
 
 def get_profile_search_spaces(name: str | None = None) -> dict:

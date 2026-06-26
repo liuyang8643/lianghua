@@ -40,7 +40,6 @@ core/factors/results/
 
 # ---- Per-project runtime ----
 projects/
-tests/
 
 # ---- Agent runtime (仅忽略草稿与本地配置，已入库的 skills/rules 保留) ----
 .agents/todos/

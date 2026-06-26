@@ -142,6 +142,6 @@ def test_run_seed_replay_for_open_missing_seed(monkeypatch):
     from trading import post_close
     monkeypatch.setattr(post_close, '_load_seed', lambda trade_date: None)
     out = post_close.run_seed_replay_for_open(
-        date(2026, 6, 2), {'weights': {}, 'temperatures': {}, 'buy_n': 2},
+        date(2026, 6, 2), {'weights': {}, 'buy_n': 2},
         data=None, all_scores=None, date_idx=0, valid_stocks=[], stock_indices={})
     assert out is None

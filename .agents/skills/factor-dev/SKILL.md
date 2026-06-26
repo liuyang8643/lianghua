@@ -7,7 +7,7 @@ description: A股量化因子迭代研发——agent-team 编写因子 → GA 50
 
 ## 概述
 
-在 `core4` GA profile 框架下做因子迭代研发。agent-team 并行编写纯 numpy 因子 → 单因子 smoke test → 注册到 profile → GA 搜索 500 代 → 统计分析权重/夏普 → 淘汰无效因子 → 联网搜索发掘新思路 → 循环，直到训练/验证/测试三段夏普率均 > 2.5。
+在 `configs/strategy.yaml` 的目标 GA profile 下做因子迭代研发。agent-team 并行编写纯 numpy 因子 → 单因子 smoke test → 注册到 profile → GA 搜索 500 代 → 统计分析权重/夏普 → 淘汰无效因子 → 联网搜索发掘新思路 → 循环，直到训练/验证/测试三段夏普率均 > 2.5。
 
 ## 终止条件
 
@@ -23,7 +23,7 @@ agent-team 编写因子 → smoke test → 杀旧GA → 注册因子 → 重启G
 
 ### 1. agent-team 编写新因子
 
-用 agent-team 并行分发任务。每个因子一个文件，放在 `core/factors/` 下：
+用 agent-team 并行分发任务。每个因子一个文件，放在 `factor_db/factors/` 下：
 
 ```python
 import numpy as np
@@ -51,13 +51,13 @@ class FactorName:
 每个新因子写入后，先用 single 模式验证无报错：
 
 ```powershell
-uv run python -u -m testback.main --mode single `
-  --individual-config configs/single_<factor_name>.json `
+uv run python -u testback/run_backtest.py `
+  --individual-config configs/config.json `
   --start-date 20200101 --end-date 20201231 `
   > $env:TEMP\smoke_<factor_name>.log 2>&1
 ```
 
-配置模板（复制 `configs/single_smallcap_g2a_config.json`，保留 `ga_profile: core4`，修改 `weights` 只保留新因子名）。
+单因子临时验证时只改 `configs/config.json` 的 `individual_config.weights`；策略模板和 GA 搜索空间统一在 `configs/strategy.yaml`。
 
 确认无报错后再进入注册步骤。
 
@@ -76,37 +76,40 @@ if ($mem -lt 30) { Write-Warning "空闲内存不足: $mem GB"; exit 1 }
 Write-Host "OK: 进程=0, 空闲内存=$([math]::Round($mem,1))GB"
 ```
 
-**注册因子**：编辑 `testback/ga_config.py`，在 `_FACTOR_REGISTRY` 的 import 和列表中加入新因子类。
+**注册因子**：在 `factor_db/factors/` 新增因子类后，`core/factors/registry.py` 会自动发现。
 
-**更新 profile**：编辑 `configs/ga_profiles.yaml`，在 `core4` profile 的 `factor_classes` 中加入新因子名。
+**更新 profile**：编辑 `configs/strategy.yaml`，在目标 profile 的 `factor_classes` 中加入新因子名。
 
 ### 4. 重启 GA 500 代
 
-先将 `ga_profiles.yaml` 的 `mode_configs.ga.generations` 临时改为 `500`（原值 10000）。GA 模式日期范围由 profile 的 `preload_start`/`preload_end` 决定（`--start-date`/`--end-date` 仅对 single 模式有效）。
+先将 `configs/strategy.yaml` 的 `mode_configs.ga.generations` 临时改为 `500`（原值 10000）。GA 模式日期范围由 profile 的 `preload_start`/`preload_end` 决定（`--start-date`/`--end-date` 仅对 single 模式有效）。
 
 ```powershell
 $logPath = Join-Path $env:TEMP ("ga-factor-dev-" + (Get-Date -Format 'yyyyMMdd_HHmmss') + ".log")
 $outputDir = "results/ga_factor_dev_" + (Get-Date -Format 'yyyyMMdd_HHmmss')
 
-uv run python -u -m testback.main --mode ga --profile core4 --output-dir $outputDir > $logPath 2>&1
+uv run python -u testback/run_ga.py --mode ga --profile core --output-dir $outputDir > $logPath 2>&1
 ```
 
 ### 5. 数据分析
 
-读取 GA checkpoint，统计每个因子在所有历史个体中的表现：
+读取 GA JSONL，统计每个因子在所有历史个体中的表现：
 
 ```python
-import pickle
+import json
 from pathlib import Path
 import numpy as np
 
-ckpt = pickle.loads(Path('results/<latest>/checkpoint.pkl').read_bytes())
-all_results = ckpt['all_results']  # list of {individual_config, sharpe, ...}
+all_results = [
+    json.loads(line)
+    for line in Path('results/<latest>/all_results.jsonl').read_text(encoding='utf-8').splitlines()
+    if line.strip()
+]
 
 # 按因子统计权重均值、方差、平均夏普率
 factor_stats = {}
 for r in all_results:
-    w = r['individual_config']['weights']
+    w = r['config']['weights']
     s = r['sharpe']
     for fname, fw in w.items():
         if fname not in factor_stats:
@@ -120,7 +123,7 @@ for fname, v in factor_stats.items():
     print(f"{fname}: 权重均值={w_arr.mean():.3f} 方差={w_arr.var():.3f} 平均夏普={s_arr.mean():.3f}")
 ```
 
-**淘汰规则**：权重均值接近 0 且方差小、平均夏普率显著低于其他因子的 → 从 profile 的 `factor_classes` 中移除，同时从 `_FACTOR_REGISTRY` 的列表中移除。
+**淘汰规则**：权重均值接近 0 且方差小、平均夏普率显著低于其他因子的 → 从 `configs/strategy.yaml` profile 的 `factor_classes` 中移除。
 
 ### 6. 联网搜索 + 深度思考迭代
 
@@ -128,7 +131,7 @@ for fname, v in factor_stats.items():
 
 ### 7. 终止判断
 
-每次 GA 结束后检查 checkpoint 中最佳个体的三段夏普率：训练集、验证集、测试集是否同时 > 2.5。满足则停止迭代，将 `ga_profiles.yaml` 中 `mode_configs.ga.generations` 恢复为 `10000`。
+每次 GA 结束后检查 checkpoint 中最佳个体的三段夏普率：训练集、验证集、测试集是否同时 > 2.5。满足则停止迭代，将 `configs/strategy.yaml` 中 `mode_configs.ga.generations` 恢复为 `10000`。
 
 ## 注意事项
 

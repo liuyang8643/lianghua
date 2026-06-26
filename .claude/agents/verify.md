@@ -18,12 +18,12 @@ description: 独立验收员，模拟一个严苛的人类 reviewer 做完全独
 ### 回测（单次完整回测，构建缓存 + 全量模拟交易）
 
 ```bash
-cd D:/coding/WBR && uv run python -m testback.main --mode single --individual-config results/<path>/<name>_config.json
+cd D:/coding/WBR && uv run python testback/run_backtest.py --individual-config configs/config.json --start-date 2024-01-01 --end-date 2024-12-31
 ```
 
 example:
 ```bash
-cd D:/coding/WBR && uv run python -m testback.main --mode single --individual-config "results/financial_smallcap_top25_20100101_20260430/G2a_SmallCapDailyMVMaskRoe2xBottom10_config.json"
+cd D:/coding/WBR && uv run python testback/run_backtest.py --individual-config configs/config.json --start-date 2024-01-01 --end-date 2024-12-31
 ```
 
 ### 实盘（调仓预计算 + 下单验证，非交互跳过确认）
@@ -51,7 +51,7 @@ cd D:/coding/WBR && uv run pytest core/database/ -v --timeout=120
 4、runtime读取（耗时np.load几秒最多）
 5、因子向量化：runtime数据因子必须可向量化。向量计算耗时超过1s则一定有bug。大概毫秒级别计算完。
 6、回测收益计算：仅仅计算收益速度极快。
-项目验收：全量股票回测十年D:\coding\WBR\configs\single_smallcap_g2a_config.json策略，大概3-6min左右，才符合预期。
+项目验收：全量股票回测十年 `D:\coding\WBR\configs\config.json` 策略，大概 3-6min 左右，才符合预期。
 
 ## 强制性规则检查
 

@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-import json, sys, time
+import sys, time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -55,7 +55,7 @@ def _annual_return(r: np.ndarray) -> float:
     return float(np.prod(1 + a) ** (252 / len(a)) - 1) * 100
 
 
-def _nav_from_snaps(snaps, init=700_000.0) -> np.ndarray:
+def _nav_from_snaps(snaps, init=1_000_000.0) -> np.ndarray:
     nav = np.empty(len(snaps) + 1); nav[0] = init
     for i, s in enumerate(snaps):
         nav[i + 1] = nav[i] * (1 + s["daily_return_pct"] / 100.0)
@@ -69,7 +69,7 @@ def _max_dd(nav: np.ndarray) -> float:
 
 def _metrics(nav: np.ndarray) -> dict:
     r = np.diff(nav) / nav[:-1] * 100
-    return {"final": nav[-1], "total": (nav[-1]-700000)/700000*100,
+    return {"final": nav[-1], "total": (nav[-1] - 1_000_000) / 1_000_000 * 100,
             "ann_ret": _annual_return(r), "sharpe": _annual_sharpe(r), "max_dd": _max_dd(nav)}
 
 
@@ -140,21 +140,19 @@ def _run_one(data, all_scores, valid_dates, date_indices, valid_stocks, stock_in
 
 def run_all(config_path: str, start_date: str, end_date: str):
     from core.backtest import _compute_factor_scores, _compute_list_dates
-    from core.factors.registry import get_factor_class
-    from core.runtime import load_runtime_npz
-    from data.db import allow_buy_stock_code_list
+    from core.strategy_config import load_strategy_config
+    from core.runtime import load_runtime_stock_codes
     from utils.stock.time import get_trading_date_span
 
-    with open(config_path, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
-    ic = cfg["individual_config"]
+    strategy_config = load_strategy_config(config_path)
+    ic = strategy_config["individual_config"]
 
     bdt_list = [datetime.combine(d, datetime.min.time())
                 for d in get_trading_date_span(
                     date(int(start_date[:4]), int(start_date[4:6]), int(start_date[6:8])),
                     date(int(end_date[:4]), int(end_date[4:6]), int(end_date[6:8])))]
 
-    all_stocks = list(allow_buy_stock_code_list())
+    all_stocks = load_runtime_stock_codes()
     pool = ic.get("stock_pool") or ("60", "00", "30", "688")
     pool_t = tuple(pool) if isinstance(pool, list) else pool
     all_stocks = [s for s in all_stocks if s.startswith(pool_t)]
@@ -163,13 +161,12 @@ def run_all(config_path: str, start_date: str, end_date: str):
     # OvernightGap 权重置 0
     weights_no_og = dict(ic["weights"])
     weights_no_og["OvernightGap"] = 0
-    temps = dict(ic["temperatures"])
-    factor_classes = [get_factor_class(fn) for fn in ic["weights"]]
+    factor_classes = strategy_config["factor_classes"]
 
     # 首次加载 NPZ
     sr0 = _compute_factor_scores(bdt_list, all_stocks, weights=weights_no_og, factor_classes=factor_classes)
     if sr0 is None: _log("因子计算失败"); sys.exit(1)
-    data_orig, _, valid_dates, date_indices, valid_stocks, stock_indices = sr0
+    data_orig, _, _, valid_dates, date_indices, valid_stocks, stock_indices = sr0
 
     lookup = _build_lookup()
     trade_dates = data_orig["trade_dates"]
@@ -178,7 +175,7 @@ def run_all(config_path: str, start_date: str, end_date: str):
     # 择时
     timing = None
     if ic.get("timing_enabled", True) and ic.get("timing_base") is not None:
-        from testback.market_timing import load_index_open, compute_position_multiplier
+        from core.timing import load_index_open, compute_position_multiplier
         _, io = load_index_open(ic.get("timing_index", "sh000852"), valid_dates)
         if io is not None:
             timing = compute_position_multiplier(io, window=ic.get("timing_window", 20),
@@ -187,7 +184,7 @@ def run_all(config_path: str, start_date: str, end_date: str):
     list_dates = _compute_list_dates(data_orig["stock_codes"], data_orig["open"], data_orig["trade_dates"])
 
     base_kwa = dict(weights=weights_no_og, buy_n=ic["buy_n"], sell_m=ic["sell_m"],
-                    temperatures=temps, holding_period=ic.get("holding_period"),
+                    holding_period=ic.get("holding_period"),
                     position_multipliers=timing, list_dates_map=list_dates, lightweight=False)
 
     buy_minutes = ["09:32", "09:33", "09:34", "09:35"]
@@ -223,7 +220,7 @@ def run_all(config_path: str, start_date: str, end_date: str):
         sr = _compute_factor_scores(bdt_list, all_stocks, weights=weights_no_og,
                                     factor_classes=factor_classes, data=d)
         if sr is None: _log("因子计算失败"); continue
-        data_new, all_scores, vd, di, vs, si = sr
+        data_new, all_scores, _, vd, di, vs, si = sr
 
         if do_filter:
             th = _apply_amount_filter(all_scores, data_new)
@@ -257,4 +254,4 @@ def run_all(config_path: str, start_date: str, end_date: str):
 
 
 if __name__ == "__main__":
-    run_all(config_path="configs/20260526.json", start_date="20251118", end_date="20260605")
+    run_all(config_path="configs/config.json", start_date="20251118", end_date="20260605")

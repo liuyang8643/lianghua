@@ -39,7 +39,6 @@ def main():
     p.add_argument('--pool', type=str, default='all_A', choices=list(_POOL_PRESETS))
     p.add_argument('--param-cap', type=int, default=20)
     p.add_argument('--crossover-ratio', type=float, default=0.3)
-    p.add_argument('--concurrency', type=int, default=5, help='同一代内并发产因子的子进程数')
     p.add_argument('--model', type=str, default='deepseek-v4-pro', help='产因子模型')
     p.add_argument('--verify-model', type=str, default='deepseek-v4-flash', help='verify 红线审查模型')
     p.add_argument('--seed', type=int, default=42)
@@ -56,7 +55,7 @@ def main():
             pool_prefixes=_POOL_PRESETS[args.pool], pool_label=args.pool,
             generations=args.generations,
             param_cap=args.param_cap, crossover_ratio=args.crossover_ratio,
-            concurrency=args.concurrency, model=args.model, verify_model=args.verify_model,
+            model=args.model, verify_model=args.verify_model,
             seed=args.seed, llm_verify=not args.no_llm_verify,
         )
     else:
@@ -68,7 +67,7 @@ def main():
             n_offspring=n_offspring, n_parents=args.population - n_offspring,
             n_parents_crossover=min(5, args.population - n_offspring),
             param_cap=args.param_cap, crossover_ratio=args.crossover_ratio,
-            concurrency=args.concurrency, model=args.model, verify_model=args.verify_model,
+            model=args.model, verify_model=args.verify_model,
             seed=args.seed, llm_verify=not args.no_llm_verify,
         )
     results = evolve(cfg)

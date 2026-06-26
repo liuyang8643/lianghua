@@ -21,7 +21,6 @@ from core.ga import (
     get_mode_configs,
     get_profile,
     get_profile_factor_classes,
-    get_profile_metadata,
     get_profile_preload_range,
     get_profile_search_spaces,
     get_profile_weight_search_spaces,
@@ -29,21 +28,19 @@ from core.ga import (
     sample_factor_choice,
 )
 
-from datetime import date, date as date_type, datetime
+from datetime import date, datetime
 from testback.logger import testback_logger
 from core.backtest import (
-  _count_holding_trading_days, _get_stock_name_map, _calc_holding_stats,
-  _parse_single_verify_config, _resolve_single_stock_pool,
-  _extend_verify_stock_pool_with_historical_codes,
-  _compute_factor_scores, _backtest_direct,
+  _backtest_direct,
   _compute_list_dates, _compute_timing_multipliers,
   _load_all_index_data,
   _format_pool, _format_timing,
   _resolve_output_dir,
-  run_single_mode,
   run_live_simulation,
 )
 from core.metrics import compute_core_metrics
+from core.runtime import load_runtime_stock_codes
+from core.strategy_config import strategy_config_payload
 
 
 # ========== GA 核心函数 ==========
@@ -90,7 +87,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
   # GA 多样性参数
   elite_frac = 0.10
   tournament_k = 5          # 中等选择压力 (3太弱/7过强在欺骗区)
-  immigrant_frac = 0.08     # 中等移民率 (0.05过早收敛/0.15噪声过多)
+  immigrant_frac = 0.15     # 中等移民率：每代保留足够随机移民，避免早熟收敛
 
   # 父代选择：少量真精英 + 锦标赛选择（从历史全局池抽，打破当代近亲繁殖、降低选择压力）
   if ga_cache and len(ga_cache) >= population_size:
@@ -344,7 +341,7 @@ def _worker_evaluate(args):
   train_info, score_keys, valid_dates, date_indices, stock_indices, \
       all_stocks_list, config, index_data, list_dates_map = args
 
-  needed = score_keys | {'open', 'close', 'high', 'low', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates'}
+  needed = score_keys | {'open', 'close', 'high', 'low', 'preClose', 'volume', 'amount', 'total_share', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates'}
   all_arrays = {k: arr for k, (shm, arr) in _worker_shm_cache.items() if k in needed}
   data = {k: v for k, v in all_arrays.items() if k not in score_keys}
   all_scores = {k: v for k, v in all_arrays.items() if k in score_keys}
@@ -354,21 +351,34 @@ def _worker_evaluate(args):
 
   timing_multipliers = _compute_timing_multipliers(config, valid_dates, index_data)
 
-  r = _backtest_direct(
-    data, all_scores, valid_dates, date_indices, pool_stocks, stock_indices,
-    weights=config['weights'], buy_n=config['buy_n'], sell_m=config['sell_m'],
-    temperatures=config['temperatures'],
-    holding_period=config.get('holding_period'),
-    position_multipliers=timing_multipliers, list_dates_map=list_dates_map,
-    lightweight=True)
+  hp = config.get('holding_period', 1)
+  n_starts = hp if hp > 1 else 1
 
-  metrics = compute_core_metrics(r['daily_returns'])
+  sharpe_list, ann_list, dd_list, tr_list = [], [], [], []
+  for offset in range(n_starts):
+      od = valid_dates[offset:]
+      oi = date_indices[offset:]
+      om = _compute_timing_multipliers(config, od, index_data) if index_data else None
+      r = _backtest_direct(
+          data, all_scores, od, oi, pool_stocks, stock_indices,
+          weights=config['weights'], buy_n=config['buy_n'], sell_m=config['sell_m'],
+          holding_period=hp,
+          position_multipliers=om if om is not None and len(om) == len(od) else None,
+          list_dates_map=list_dates_map,
+          lightweight=True, limit_up_protection=config.get('limit_up_protection', False),
+          rebalance=config.get('rebalance', True))
+      m = compute_core_metrics(r['daily_returns'])
+      sharpe_list.append(m['sharpe'])
+      ann_list.append(m['annualized'])
+      dd_list.append(m['max_drawdown'])
+      tr_list.append(r['total_return'])
+
   return {
     'individual_config': config,
-    'total_return': r['total_return'],
-    'sharpe': metrics['sharpe'],
-    'annualized': metrics['annualized'],
-    'max_drawdown': metrics['max_drawdown'],
+    'total_return': float(np.mean(tr_list)),
+    'sharpe': float(np.mean(sharpe_list)),
+    'annualized': float(np.mean(ann_list)),
+    'max_drawdown': float(np.mean(dd_list)),
     'cleared_positions_count': r['cleared_positions_count'],
   }
 
@@ -384,7 +394,7 @@ def _eval_parallel(worker_args, results_list, ga_cache, logger, pool):
   gc.collect()
 
 
-def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=DEFAULT_GA_PROFILE, resume_dir=None):
+def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=DEFAULT_GA_PROFILE, resume_dir=None, live_sim=True):
   """GA/调试模式：多进程并行回测。预计算共享内存复用。"""
   import json as json_mod
   import os
@@ -541,7 +551,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
 
   # === 构建 SharedMemory 供 worker 高速访问（替代 memmap 磁盘 I/O）===
   from multiprocessing.shared_memory import SharedMemory
-  needed_shm = score_keys | {'open', 'close', 'high', 'low', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates'}
+  needed_shm = score_keys | {'open', 'close', 'high', 'low', 'preClose', 'volume', 'amount', 'total_share', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates'}
   shm_entries = []
   for name in needed_shm:
     if name not in info:
@@ -721,71 +731,72 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
             f"GA gen{generation + 1}: 训练Sharpe={best_m['sharpe']:.3f}/{avg_sharpe:.3f} | "
             f"验证Sharpe={train_best_val_m['sharpe']:.3f} | "
             f"测试Sharpe={_test_train_best_m['sharpe']:.3f} | "
-            f"{_format_pool(best_cfg.get('stock_pool'))}, hp={best_cfg.get('holding_period')}, pos={best_cfg['buy_n']}{_format_timing(best_cfg)}{_format_filters(best_cfg)}, rebal={'ON' if best_cfg.get('rebalance') else 'OFF'} | "
+            f"{_format_pool(best_cfg.get('stock_pool'))}, hp={best_cfg.get('holding_period')}, buy={best_cfg['buy_n']},sell={best_cfg['sell_m']}{_format_timing(best_cfg)}{_format_filters(best_cfg)}, rebal={'ON' if best_cfg.get('rebalance') else 'OFF'} | "
             f"{', '.join(f'{k}={v:.1f}' for k, v in sorted_w)}")
           if best_live_cfg is not None:
             live_sorted_w = sorted(best_live_cfg['weights'].items(), key=lambda x: -abs(x[1]))
             testback_logger.info(
               f"实盘: total={best_live_total:.3f}(train={best_live_train_sharpe:.3f}/val={best_live_val_sharpe:.3f}) test={live_test_sharpe:.3f} | "
-              f"{_format_pool(best_live_cfg.get('stock_pool'))}, hp={best_live_cfg.get('holding_period')}, pos={best_live_cfg['buy_n']}{_format_timing(best_live_cfg)}{_format_filters(best_live_cfg)}, rebal={'ON' if best_live_cfg.get('rebalance') else 'OFF'} | "
+              f"{_format_pool(best_live_cfg.get('stock_pool'))}, hp={best_live_cfg.get('holding_period')}, buy={best_live_cfg['buy_n']},sell={best_live_cfg['sell_m']}{_format_timing(best_live_cfg)}{_format_filters(best_live_cfg)}, rebal={'ON' if best_live_cfg.get('rebalance') else 'OFF'} | "
               f"{', '.join(f'{k}={v:.1f}' for k, v in live_sorted_w)}")
 
           # 实盘模拟：仅评估 实盘个体(验证集挑出的checkpoint代训练最优) + 当代训练最优
-          shm_arrays = {}
-          for (_shm, arr), (name, _, _, _) in zip(_SHM_BLOCKS, shm_entries):
-              shm_arrays[name] = arr
+          if live_sim:
+              shm_arrays = {}
+              for (_shm, arr), (name, _, _, _) in zip(_SHM_BLOCKS, shm_entries):
+                  shm_arrays[name] = arr
 
-          live_data = {}
-          for k in ('open', 'close', 'high', 'low', 'volume', 'amount', 'total_share', 'preClose', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates'):
-              if k in shm_arrays:
-                  live_data[k] = shm_arrays[k]
-          live_data['stock_codes'] = shm_arrays.get('stock_codes', np.array(npz_stocks))
-          live_data['trade_dates'] = shm_arrays.get('trade_dates', npz_dates)
+              live_data = {}
+              for k in ('open', 'close', 'high', 'low', 'volume', 'amount', 'total_share', 'preClose', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates'):
+                  if k in shm_arrays:
+                      live_data[k] = shm_arrays[k]
+              live_data['stock_codes'] = shm_arrays.get('stock_codes', np.array(npz_stocks))
+              live_data['trade_dates'] = shm_arrays.get('trade_dates', npz_dates)
 
-          live_configs = []
-          live_labels = []
-          live_keys = []
-          if best_live_cfg is not None:
-              live_configs.append(best_live_cfg)
-              live_labels.append('实盘个体')
-              live_keys.append(json_mod.dumps(_config_key(best_live_cfg), ensure_ascii=False))
-          ck_best = _config_key(best_cfg)
-          ck_live = _config_key(best_live_cfg) if best_live_cfg else None
-          if ck_best != ck_live:
-              live_configs.append(best_cfg)
-              live_labels.append('当代最优')
-              live_keys.append(json_mod.dumps(_config_key(best_cfg), ensure_ascii=False))
+              live_configs = []
+              live_labels = []
+              live_keys = []
+              if best_live_cfg is not None:
+                  live_configs.append(best_live_cfg)
+                  live_labels.append('实盘个体')
+                  live_keys.append(json_mod.dumps(_config_key(best_live_cfg), ensure_ascii=False))
+              ck_best = _config_key(best_cfg)
+              ck_live = _config_key(best_live_cfg) if best_live_cfg else None
+              if ck_best != ck_live:
+                  live_configs.append(best_cfg)
+                  live_labels.append('当代最优')
+                  live_keys.append(json_mod.dumps(_config_key(best_cfg), ensure_ascii=False))
 
-          if live_configs:
-              # 先查缓存
-              live_results = [live_eval_cache.get(k) for k in live_keys]
-              uncached = [(i, cfg) for i, (cfg, r) in enumerate(zip(live_configs, live_results)) if r is None]
+              if live_configs:
+                  # 先查缓存
+                  live_results = [live_eval_cache.get(k) for k in live_keys]
+                  uncached = [(i, cfg) for i, (cfg, r) in enumerate(zip(live_configs, live_results)) if r is None]
 
-              if uncached:
-                  uncached_cfgs = [cfg for _, cfg in uncached]
-                  new_results = run_live_simulation(
-                      live_data,
-                      {k: shm_arrays[k] for k in score_keys if k in shm_arrays},
-                      npz_stocks, all_valid_stocks,
-                      uncached_cfgs,
-                      list_dates_full, testback_logger,
-                      max_hist=max(f.hist_days for f in factor_classes))
-                  for (idx, _), lr in zip(uncached, new_results):
-                      live_results[idx] = lr
-                      live_eval_cache[live_keys[idx]] = lr
-                  with open(live_cache_path, 'w', encoding='utf-8') as f:
-                      json_mod.dump(live_eval_cache, f, ensure_ascii=False)
-              else:
-                  testback_logger.info("实盘模拟: 全部命中缓存")
+                  if uncached:
+                      uncached_cfgs = [cfg for _, cfg in uncached]
+                      new_results = run_live_simulation(
+                          live_data,
+                          {k: shm_arrays[k] for k in score_keys if k in shm_arrays},
+                          npz_stocks, all_valid_stocks,
+                          uncached_cfgs,
+                          list_dates_full, testback_logger,
+                          max_hist=max(f.hist_days for f in factor_classes))
+                      for (idx, _), lr in zip(uncached, new_results):
+                          live_results[idx] = lr
+                          live_eval_cache[live_keys[idx]] = lr
+                      with open(live_cache_path, 'w', encoding='utf-8') as f:
+                          json_mod.dump(live_eval_cache, f, ensure_ascii=False)
+                  else:
+                      testback_logger.info("实盘模拟: 全部命中缓存")
 
-              for label, lr in zip(live_labels, live_results):
-                  p = lr['prices']
-                  testback_logger.info(
-                      f"实盘模拟 {label}: base={p['base']['sharpe']:.3f} "
-                      f"09:32={p['09:32']['sharpe']:.3f} "
-                      f"09:33={p['09:33']['sharpe']:.3f} "
-                      f"09:34={p['09:34']['sharpe']:.3f} "
-                      f"09:35={p['09:35']['sharpe']:.3f}")
+                  for label, lr in zip(live_labels, live_results):
+                      p = lr['prices']
+                      testback_logger.info(
+                          f"实盘模拟 {label}: base={p['base']['sharpe']:.3f} "
+                          f"09:32={p['09:32']['sharpe']:.3f} "
+                          f"09:33={p['09:33']['sharpe']:.3f} "
+                          f"09:34={p['09:34']['sharpe']:.3f} "
+                          f"09:35={p['09:35']['sharpe']:.3f}")
 
       if not results_list:
         raise RuntimeError(f"{'调试模式' if is_debug else '第 ' + str(generation + 1) + ' 代'}未获得任何有效回测结果")
@@ -846,13 +857,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
         with open(output_dir / 'generation_results.pkl', 'wb') as f:
           pickle.dump(generation_results, f)
 
-        profile_metadata = get_profile_metadata(profile_name)
-        best_result = {
-          **profile_metadata,
-          'individual_config': best_in_gen['individual_config'],
-          'fitness': best_in_gen['fitness'], 'generation': generation + 1,
-          'generation_time': generation_time, 'population_size': len(results_list),
-        }
+        best_result = strategy_config_payload(profile_name, best_in_gen['individual_config'])
         with open(output_dir / 'best_individual_config.json', 'w', encoding='utf-8') as f:
           json_mod.dump(best_result, f, indent=2, ensure_ascii=False)
 
@@ -887,12 +892,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     key = _config_key(best_config)
     best_fitness = ga_state['fitness_cache'].get(key, 0.0)
 
-    profile_metadata = get_profile_metadata(profile_name)
-    best_result = {
-      **profile_metadata,
-      'individual_config': best_config, 'fitness': best_fitness,
-      'generation': generations, 'population_size': population_size,
-    }
+    best_result = strategy_config_payload(profile_name, best_config)
     with open(output_dir / 'best_individual_config.json', 'w', encoding='utf-8') as f:
       json_mod.dump(best_result, f, indent=2, ensure_ascii=False)
 
@@ -901,7 +901,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     timing_str = _format_timing(best_cfg)
     testback_logger.info(f"\n最优参数已保存:")
     testback_logger.info(f"  - {output_dir / 'best_individual_config.json'}")
-    testback_logger.info(f"最优夏普率: {best_fitness:.3f}, 参数: [{w_str}], pool={_format_pool(best_cfg.get('stock_pool'))}, pos={best_cfg['buy_n']}{timing_str}, rebal={'ON' if best_cfg.get('rebalance') else 'OFF'}")
+    testback_logger.info(f"最优夏普率: {best_fitness:.3f}, 参数: [{w_str}], pool={_format_pool(best_cfg.get('stock_pool'))}, buy={best_cfg['buy_n']},sell={best_cfg['sell_m']}{timing_str}, rebal={'ON' if best_cfg.get('rebalance') else 'OFF'}")
     testback_logger.info(f"最优buy_n: {best_config['buy_n']}, sell_m: {best_config['sell_m']}")
 
     sharpes = [v['sharpe'] for v in ga_cache.values() if v.get('sharpe') is not None]
@@ -934,6 +934,8 @@ def main():
   parser.add_argument('--resume', type=str, nargs='?', const='auto', default=None,
                       help='从 JSONL 恢复: 不传则自动找最新, 或指定目录路径')
   parser.add_argument('--profile', type=str, default=None)
+  parser.add_argument('--live-sim', action='store_true', default=True, help='启用实盘模拟 (默认开启)')
+  parser.add_argument('--no-live-sim', action='store_false', dest='live_sim', help='禁用实盘模拟')
   args = parser.parse_args()
 
   profile_name = args.profile or DEFAULT_GA_PROFILE
@@ -959,13 +961,9 @@ def main():
   hist_detail = ', '.join(f'{name}={days}天' for name, days in factor_histories.items())
   testback_logger.info(f"因子历史需求: {hist_detail}，最大需求={max_hist_days}天")
 
-  # GA/debug: 从 npz 取股票列表
-  npz_dir = Path(__file__).resolve().parent.parent / 'data' / 'runtime'
-  npz_files = sorted(npz_dir.glob('runtime_*.npz'))
-  if not npz_files:
-    raise FileNotFoundError(f"未找到 runtime npz 文件: {npz_dir}")
-  filtered_stocks = [str(s) for s in np.load(npz_files[0], allow_pickle=False)['stock_codes']]
-  testback_logger.info(f"股票池 (npz): {len(filtered_stocks)} 只")
+  # GA/debug: 从最新 runtime NPZ 取历史全集，避免当前可买池带来幸存者偏差
+  filtered_stocks = load_runtime_stock_codes()
+  testback_logger.info(f"股票池(runtime历史全集): {len(filtered_stocks)} 只")
 
   resume_dir = None
   if args.resume:
@@ -985,7 +983,7 @@ def main():
     if keep_awake_enabled:
       testback_logger.info('已启用 Windows 防休眠，任务结束后自动恢复')
 
-    result = _run_ga(args, mode_config, backtest_datetime_list, filtered_stocks, profile_name=profile_name, resume_dir=resume_dir)
+    result = _run_ga(args, mode_config, backtest_datetime_list, filtered_stocks, profile_name=profile_name, resume_dir=resume_dir, live_sim=args.live_sim)
 
   te = datetime.now()
   testback_logger.info(f"总耗时: {(te - ts).total_seconds():.2f} 秒")

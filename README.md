@@ -29,7 +29,7 @@ uv sync
 ```bash
 uv run python testback/run_backtest.py \
   --start-date 20240101 --end-date 20241231 \
-  --individual-config configs/single_tmc_pure.json
+  --individual-config configs/config.json
 ```
 
 ### GA 参数搜索
@@ -40,4 +40,4 @@ uv run python testback/run_ga.py --mode ga
 
 ### 添加新因子
 
-在 `core/factors/` 下创建新 `.py` 文件，定义类包含 `hist_days` 属性 + `calc_batch(self, panel)` 方法，`registry.py` 自动发现注册。
+在 `factor_db/factors/` 下创建新 `.py` 文件，定义类包含 `hist_days` 属性 + `calc_batch(self, panel)` 方法，`core/factors/registry.py` 自动发现注册。策略/GA 搜索模板统一维护在 `configs/strategy.yaml`，实盘最终配置统一使用 `configs/config.json`。

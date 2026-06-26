@@ -21,9 +21,8 @@ import numpy as np
 DEFAULT_DIM = 16384
 DEFAULT_SEED = 20260530
 CLONE_CORR = 0.99  # 近克隆阈值：截面 rank 相关 >= 此值即视为行为克隆（选父去重 / 入库闸门 / 库去重统一口径）
+DEDUP_CORR = CLONE_CORR
 
-_CACHE = Path(__file__).resolve().parent / 'signatures.npz'
-_META = Path(__file__).resolve().parent / 'signatures.meta.json'
 
 
 # 按形状缓存 hash 桶：算一次放内存，同形状所有因子复用（模块级 dict，非装饰器缓存）。
@@ -82,33 +81,12 @@ def signature(rank_mat: np.ndarray, dim: int = DEFAULT_DIM, seed: int = DEFAULT_
 # ========== 指纹缓存（派生数据，可重建） ==========
 
 def load_cache() -> tuple[list[str], np.ndarray, dict]:
-    """返回 (names, sigs(N,D), meta)。无缓存时返回空。"""
-    if not _CACHE.exists():
-        return [], np.zeros((0, DEFAULT_DIM), dtype=np.float32), {}
-    data = np.load(_CACHE, allow_pickle=False)
-    meta = json.loads(_META.read_text(encoding='utf-8')) if _META.exists() else {}
-    return [str(n) for n in data['names']], data['sigs'].astype(np.float32), meta
-
-
-def save_cache(names: list[str], sigs: np.ndarray, meta: dict) -> None:
-    np.savez_compressed(_CACHE, names=np.array(names, dtype='U64'), sigs=sigs.astype(np.float32))
-    _META.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+    """返回空缓存（禁用磁盘缓存）。"""
+    return [], np.zeros((0, DEFAULT_DIM), dtype=np.float32), {}
 
 
 def add_to_cache(name: str, sig: np.ndarray, meta: dict) -> None:
-    """把单个因子指纹增量写入缓存（基底 meta 不匹配则重置）。"""
-    names, sigs, old_meta = load_cache()
-    keys = ('dim', 'seed', 'start', 'end', 'n_days', 'n_stocks')
-    if old_meta and any(old_meta.get(k) != meta.get(k) for k in keys):
-        names, sigs = [], np.zeros((0, meta['dim']), dtype=np.float32)
-    if name in names:
-        i = names.index(name)
-        sigs = sigs.copy()
-        sigs[i] = sig
-    else:
-        names = names + [name]
-        sigs = np.vstack([sigs, sig[None, :]]) if len(sigs) else sig[None, :]
-    save_cache(names, sigs, meta)
+    """禁用磁盘缓存，仅保持内存哈希。"""
 
 
 def cached_matrix() -> tuple[list[str], np.ndarray]:

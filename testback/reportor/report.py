@@ -895,11 +895,10 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     weights = config.get('weights', {})
     buy_n = config.get('buy_n', 0)
     sell_m = config.get('sell_m', 0)
-    temperatures = config.get('temperatures', {})
     verify_config = report_data.get('verify_config', {}) or {}
     report_metadata = report_data.get('report_metadata', {}) or {}
 
-    init_cash = report_data.get('init_cash', 700_000.0)
+    init_cash = report_data.get('init_cash', 1_000_000.0)
     cumulative_returns = report_data.get('cumulative_returns', []) or []
     trade_dates = report_data.get('trade_dates', []) or []
     trade_log = report_data.get('trade_log', []) or []
@@ -1003,10 +1002,19 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
         f'<span class="weight-tag">{"+" if value > 0 else ""}{value:.2f} {html_escape(name)}</span>'
         for name, value in sorted(weights.items(), key=lambda item: abs(item[1]), reverse=True) if value != 0
     ) or '<span class="muted">—</span>'
-    temps_html = ' '.join(
-        f'<span class="temp-tag">{html_escape(name)}={value:.1f}</span>'
-        for name, value in temperatures.items()
-    ) or '<span class="muted">—</span>'
+    # 动态渲染 individual_config 全部字段（排除 weights，已单独展示）
+    _config_display = dict(config)
+    _config_display.pop('weights', None)
+    config_rows = []
+    for k, v in _config_display.items():
+        if isinstance(v, bool):
+            disp = '✅ ON' if v else '❌ OFF'
+        elif isinstance(v, float):
+            disp = f'{v:.4g}'
+        else:
+            disp = str(v)
+        config_rows.append(f'<span class="config-item"><strong>{html_escape(str(k))}:</strong> {html_escape(disp)}</span>')
+    config_params_html = ' &nbsp;|&nbsp; '.join(config_rows) if config_rows else '<span class="muted">—</span>'
 
     verify_notice_html = ''
     if verify_config:
@@ -1032,7 +1040,7 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
 <title>回测报告 - {html_escape(period_str)}</title><link rel="icon" href="data:,"><link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css"><script src="https://unpkg.com/@popperjs/core@2/dist/umd/popper.min.js"></script><script src="https://unpkg.com/tippy.js@6/dist/tippy-bundle.umd.min.js"></script><script src="https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js"></script><style>{styles}</style></head>
 <body><div class="container">
 <div class="report-header"><div class="report-title">回测报告</div><div class="report-subtitle">WBR 量化交易系统 · T-1 信号 / T 日开盘执行 详细报告</div><div class="report-meta"><span>信号周期: {html_escape(signal_period_str)}</span><span>执行周期: {html_escape(trade_period_str or period_str)}</span><span>调仓日数: {trade_days}</span><span>初始资金: {_fmt_money(init_cash)}</span><span>最终资产: {_fmt_money(final_asset)}</span><span>生成时间: {html_escape(generated_time)}</span></div></div>
-<div class="config-box"><strong>因子权重:</strong> {weights_html}<br><strong>温度参数:</strong> {temps_html}<br><strong>调仓配置:</strong> buy_n={buy_n}, sell_m={sell_m}<br><strong>调仓规则:</strong> 信号={html_escape(signal_timing)} &nbsp;|&nbsp; 执行={html_escape(trade_timing)} &nbsp;|&nbsp; 价格字段={html_escape(price_field)}<br><strong>实际买入次数:</strong> {metrics.get('executed_buy_count', 0)} &nbsp;|&nbsp;<strong>实际卖出次数:</strong> {metrics.get('executed_sell_count', 0)} &nbsp;|&nbsp;<strong>完整 round-trip 数:</strong> {metrics.get('round_trip_count', 0)}</div>
+<div class="config-box"><strong>因子权重:</strong> {weights_html}<br><strong>策略参数:</strong> {config_params_html}<br><strong>调仓规则:</strong> 信号={html_escape(signal_timing)} &nbsp;|&nbsp; 执行={html_escape(trade_timing)} &nbsp;|&nbsp; 价格字段={html_escape(price_field)}<br><strong>实际买入次数:</strong> {metrics.get('executed_buy_count', 0)} &nbsp;|&nbsp;<strong>实际卖出次数:</strong> {metrics.get('executed_sell_count', 0)} &nbsp;|&nbsp;<strong>完整 round-trip 数:</strong> {metrics.get('round_trip_count', 0)}</div>
 {verify_notice_html}
 <div class="card"><div class="card-title">核心指标</div><div class="metrics-grid">{metric_cards}</div></div>
 <div class="card"><div class="card-title">分年度指标</div>{_build_per_year_table(per_year_metrics)}</div>

@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from core.fees import COMMISSION_RATE, MIN_COMMISSION, STAMP_TAX_RATE, TRANSFER_FEE_RATE
 from trading.logger import trading_logger
 
 _TRADE_DIR = Path(__file__).resolve().parents[1] / "data" / "live_trades"
@@ -354,6 +355,14 @@ class LiveTradeRecorder:
             'name': (payload.get('name') or '').strip(),
         }
         self._append_event(row)
+        trading_logger.info(
+            f"[LiveTradeEvent] type={row['event_type']} source={row['source']} "
+            f"order_id={row['order_id']} code={row['code']} order_type={row['order_type']} "
+            f"status={row['order_status']} order_vol={row['order_volume']} "
+            f"traded_vol={row['traded_volume']} price={row['price']:.4f} "
+            f"traded_price={row['traded_price']:.4f} amount={row['amount']:.2f} "
+            f"msg={row['status_msg']}"
+        )
 
         # 派生 fill: trade 事件同步更新 fills_{T}.parquet
         if event_type == EVT_TRADE:
@@ -366,9 +375,9 @@ class LiveTradeRecorder:
             fee = payload.get('fee_est')
             if fee is None:
                 amt = row['amount']
-                fee = max(amt * 0.0000854, 0.1) + amt * 0.00002
+                fee = max(amt * COMMISSION_RATE, MIN_COMMISSION) + amt * TRANSFER_FEE_RATE
                 if row['direction'] == 'sell':
-                    fee += amt * 0.0005
+                    fee += amt * STAMP_TAX_RATE
             fill = {
                 'date': target_date, 'code': row['code'], 'name': row['name'],
                 'direction': row['direction'],
@@ -672,9 +681,9 @@ class LiveTradeRecorder:
                 (total_asset - prev_asset - net_cash_flow)。账户口径始终另存 account_pnl。
         """
         target = trade_date or date.today()
-        buys = sum(1 for r in self._today_fills if r['direction'] == 'buy')
-        sells = sum(1 for r in self._today_fills if r['direction'] == 'sell')
-        fees = sum(r['fee_est'] for r in self._today_fills)
+        buys = sum(1 for r in self._today_fills if r['direction'] == 'buy' and r['date'] == target)
+        sells = sum(1 for r in self._today_fills if r['direction'] == 'sell' and r['date'] == target)
+        fees = sum(r['fee_est'] for r in self._today_fills if r['date'] == target)
         net_cf = self.get_today_cash_flows(trade_date=target)
 
         summary_path = _TRADE_DIR / "daily_summary.parquet"
@@ -843,7 +852,11 @@ class LiveTradeRecorder:
                 key = ['ts', 'event_type', 'order_id', 'traded_volume', 'price']
                 try:
                     mask = ~df_old.set_index(key).index.isin(df_new.set_index(key).index)
-                    df_all = pd.concat([df_old[mask], df_new], ignore_index=True)
+                    old_filtered = df_old[mask]
+                    if old_filtered.empty:
+                        df_all = df_new
+                    else:
+                        df_all = pd.concat([old_filtered, df_new], ignore_index=True)
                 except KeyError as e:
                     trading_logger.warning(
                         f"[LiveTrade] {path.name} 去重key缺失({e}), 回退直接拼接 (旧{len(df_old)}行+新{len(df_new)}行)")

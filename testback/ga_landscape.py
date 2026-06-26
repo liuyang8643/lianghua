@@ -159,7 +159,7 @@ class _ConfigEncoder:
         weight_spaces = get_profile_weight_search_spaces(profile_name)
 
         # 离散维度
-        for key in ['position_count', 'holding_period',
+        for key in ['buy_n', 'holding_period',
                      'timing_base', 'timing_leverage', 'timing_direction',
                      'timing_window', 'timing_index', 'stock_pool', 'factor_choice']:
             space = spaces.get(key)

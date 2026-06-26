@@ -4,7 +4,7 @@
   1. 选父代：n_elite 个上一轮最优保留 + 其余从全库 top50%(NSGA: 夏普+多样性) 随机挑。
      父代均为库中现有因子，【不重新过 LLM、不重新回测】。
   2. 对每个子代随机决定走【交叉】(综合多父代) 或【变异】(对单父代做定向修改，附灵感因子)。
-  3. 并发调用 LLM 产出子代（I/O 并发的子进程，不违反 CPU 多进程红线）。
+  3. 串行调用 LLM 产出子代。
   4. 子代逐个过 guard / LLM-verify / 连续性闸门 → 回测 → 入库 + 明细 + 指纹。
   5. elite 更新为本代最优子代，传入下一代。
 """
@@ -12,7 +12,6 @@ import ast
 import json
 import random
 import shutil
-from concurrent.futures import ThreadPoolExecutor
 
 from core.runtime import load_runtime_npz
 from factor_db import db, dedup_library, records, similarity
@@ -54,7 +53,7 @@ def _build_jobs(gen: int, cfg: RunConfig, parents: list[dict], inspirations: lis
 
 
 def _propose_job(job: dict, cfg: RunConfig) -> tuple[dict, object]:
-    """单个子代的 LLM 产因子（在线程池中并发执行）。返回 (job, path|None)。"""
+    """单个子代的 LLM 产因子。返回 (job, path|None)。"""
     try:
         written = agent.propose(job['op'], job['parents'], [job['name']], cfg.model,
                                 cfg.param_cap, job['tag'], job['inspirations'])
@@ -78,9 +77,8 @@ def run_generation(gen: int, cfg: RunConfig, dates, stocks, rng: random.Random,
     for j in jobs:
         print(f'  · {j["name"]} <- {j["op"]} {[p["name"] for p in j["parents"]]}')
 
-    # 阶段1：并发产因子（子进程 I/O 并发）
-    with ThreadPoolExecutor(max_workers=cfg.concurrency) as ex:
-        produced = list(ex.map(lambda j: _propose_job(j, cfg), jobs))
+    # 阶段1：串行产因子
+    produced = [_propose_job(j, cfg) for j in jobs]
 
     # 阶段2：guard + sha 去重（同步、廉价）→ 候选；不通过的直接出局，避免浪费后续 verify/回测
     results, candidates = [], []
@@ -103,10 +101,9 @@ def run_generation(gen: int, cfg: RunConfig, dates, stocks, rng: random.Random,
         existing_sha.add(sha)
         candidates.append({'job': job, 'path': path, 'code': code, 'sha': sha, 'n_params': n_params})
 
-    # 阶段3：并发 LLM verify 红线审查（之前串行是大瓶颈）
+    # 阶段3：串行 LLM verify 红线审查
     if cfg.llm_verify and candidates:
-        with ThreadPoolExecutor(max_workers=cfg.concurrency) as ex:
-            verdicts = list(ex.map(lambda c: verify.review(c['code'], cfg.verify_model), candidates))
+        verdicts = [verify.review(c['code'], cfg.verify_model) for c in candidates]
     else:
         verdicts = [(True, '')] * len(candidates)
 
@@ -195,7 +192,7 @@ def evolve(cfg: RunConfig) -> list[dict]:
     dates, stocks = evaluator.build_universe(cfg.start, cfg.end, cfg.pool_prefixes)
     print(f'回测口径: {cfg.start}~{cfg.end}, 股票池={cfg.pool_label}({len(stocks)}只), top{cfg.buy_n}')
     print(f'population={cfg.population} (父代{cfg.n_parents}/子代{cfg.n_offspring}), '
-          f'代数={cfg.generations}, 模型={cfg.model}, 并发={cfg.concurrency}')
+          f'代数={cfg.generations}, 模型={cfg.model}')
 
     # 整轮只加载一次 NPZ 面板，所有代/所有子代的连续性检查与因子计算共用（避免每个因子重复加载 580MB）
     panel = load_runtime_npz(dates, max_lookback=_PRELOAD_LOOKBACK)

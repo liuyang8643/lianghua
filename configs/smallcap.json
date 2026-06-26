@@ -1,0 +1,17 @@
+{
+  "ga_profile": "core6",
+  "individual_config": {
+    "weights": {
+      "TrueMarketCap": 1,
+      "AmountBasedSmallCap": 1
+    },
+    "buy_n": 20,
+    "sell_m": 20,
+    "timing_enabled": false,
+    "rebalance": true,
+    "limit_up_protection": true,
+    "empty_months": [],
+    "cash_reserve_ratio": 0.5,
+    "holding_period": 7
+  }
+}

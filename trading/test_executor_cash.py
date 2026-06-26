@@ -14,15 +14,15 @@ class _FakeTrader:
         self.cash = cash
         self._next = 1000
         self.on_order = None  # (code, shares, oid) -> SimpleNamespace | None
-        self.submitted = []
+        self.submitted = []  # (code, shares, oid, price)
 
     def query_asset(self):
-        return SimpleNamespace(current_balance=self.cash)
+        return SimpleNamespace(cash=self.cash)
 
     def order(self, order_type, code, shares, price, order_remark=''):
         oid = self._next
         self._next += 1
-        self.submitted.append((code, shares, oid))
+        self.submitted.append((code, shares, oid, price))
         o = SimpleNamespace(order_status=xtconstant.ORDER_SUCCEEDED,
                             traded_volume=shares, order_volume=shares,
                             traded_price=0.0, status_msg='')
@@ -51,21 +51,17 @@ def _make_buy_monitor(executor, allocations, prices, limit_prices=None):
 
 # ── 可用资金口径 ─────────────────────────────────────────
 
-def test_available_buy_cash_prefers_current_balance():
+def test_available_buy_cash_uses_xtasset_cash():
+    """回归 2026-06-11:current_balance/fetch_balance 是上日结存/可取金额口径,
+    盘中不反映卖出回款 → 必须用 XtAsset.cash(可用金额),且无视这两个字段。"""
     asset = SimpleNamespace(cash=100_000.0, current_balance=12_345.0,
                             fetch_balance=12_000.0, frozen_cash=5_000.0)
-    assert RebalanceExecutor._available_buy_cash(asset) == 12_345.0
+    assert RebalanceExecutor._available_buy_cash(asset) == 100_000.0
 
 
-def test_available_buy_cash_falls_back_to_fetch_balance():
-    asset = SimpleNamespace(cash=100_000.0, current_balance=None,
-                            fetch_balance=23_456.0, frozen_cash=5_000.0)
-    assert RebalanceExecutor._available_buy_cash(asset) == 23_456.0
-
-
-def test_available_buy_cash_falls_back_to_cash_minus_frozen():
-    asset = SimpleNamespace(cash=100_000.0, frozen_cash=7_000.0)
-    assert RebalanceExecutor._available_buy_cash(asset) == 93_000.0
+def test_available_buy_cash_handles_missing_asset():
+    assert RebalanceExecutor._available_buy_cash(None) == 0.0
+    assert RebalanceExecutor._available_buy_cash(SimpleNamespace(cash=None)) == 0.0
 
 
 # ── 涨停价 / 板块比例 ─────────────────────────────────────
@@ -103,22 +99,59 @@ def test_unit_cost_falls_back_to_open_when_no_limit():
 
 # ── 卖单在途感知 / 缺口计算 ────────────────────────────────
 
-def test_sells_pending_reflects_sell_monitor_state():
-    ex = RebalanceExecutor(_FakeTrader())
-    bm = _make_buy_monitor(ex, {'600000.SH': 100}, {'600000.SH': 10.0})
-    assert bm._sells_pending() is False
-    sm = SellMonitor(ex, [], date.today(), date.today())
+def _inject_inflight_sell(trader, sm, code='600000.SH', oid=9000, volume=100):
+    """给 SellMonitor 注入一笔「未终态」卖单。"""
+    trader.orders[oid] = SimpleNamespace(
+        stock_code=code, order_status=xtconstant.ORDER_REPORTED,
+        order_volume=volume, traded_volume=0, status_msg='')
+    sm.submitted.append({'code': code, 'order_id': oid, 'shares': volume,
+                         'submitted_at': 0})
+
+
+def test_submit_initial_sells_registers_into_self_submitted():
+    """回归（验收发现）:_submit_initial_sells 必须写入 self.submitted——
+    否则 all_terminal() 恒为 True,买单会误以为没有卖单回款在途。
+    本测试走真实装配路径,不手工注入 sm.submitted。"""
+    trader = _FakeTrader()
+    # 卖单提交后停在「已报」未终态
+    trader.on_order = lambda code, shares, oid: SimpleNamespace(
+        stock_code=code, order_status=xtconstant.ORDER_REPORTED,
+        traded_volume=0, order_volume=shares, traded_price=0.0, status_msg='')
+    ex = RebalanceExecutor(trader)
+    sm = SellMonitor(ex, [('600000.SH', 700)], date.today(), date.today())
+    sm.record_action = lambda *a, **k: None
+    sm._submit_initial_sells()
+    assert len(sm.submitted) == 1            # 已登记进 self.submitted
+    assert sm.all_terminal() is False        # 在途卖单 → 回款在途
+
+    bm = _make_buy_monitor(ex, {'600100.SH': 100}, {'600100.SH': 10.0})
     bm.sell_monitor = sm
     assert bm._sells_pending() is True
-    sm.finished = True
+
+    oid = sm.submitted[0]['order_id']
+    trader.orders[oid].order_status = xtconstant.ORDER_SUCCEEDED
+    assert sm.all_terminal() is True
     assert bm._sells_pending() is False
 
 
-def test_empty_sell_monitor_marks_finished():
-    ex = RebalanceExecutor(_FakeTrader())
-    sm = SellMonitor(ex, [], date.today(), date.today())
-    assert sm.run() == []
-    assert sm.finished is True
+def test_sells_pending_reflects_order_terminal_state():
+    """回归 2026-06-11:回款在途与否必须实时查卖单终态,不能依赖标志位——
+    旧 finished 标志在三阶段串行流程里直到买入结束后才置位,导致买入循环
+    全程认为回款在途、软超时失效、空转到 600s 硬超时。"""
+    trader = _FakeTrader()
+    ex = RebalanceExecutor(trader)
+    bm = _make_buy_monitor(ex, {'600000.SH': 100}, {'600000.SH': 10.0})
+    assert bm._sells_pending() is False          # 无卖单 monitor
+
+    sm = SellMonitor(ex, [('600000.SH', 100)], date.today(), date.today())
+    bm.sell_monitor = sm
+    assert bm._sells_pending() is False          # 卖单还没提交 → 无在途
+
+    _inject_inflight_sell(trader, sm)
+    assert bm._sells_pending() is True           # 在途卖单 → 回款在途
+
+    trader.orders[9000].order_status = xtconstant.ORDER_SUCCEEDED
+    assert bm._sells_pending() is False          # 终态 → 回款完毕
 
 
 def test_remaining_counts_filled_and_inflight():
@@ -133,46 +166,50 @@ def test_remaining_counts_filled_and_inflight():
     assert bm._remaining(code) == 1000 - 300 - 200
 
 
-# ── 串行补单核心 ─────────────────────────────────────────
+# ── 持久挂单核心 ─────────────────────────────────────────
 
-def test_fill_one_stock_happy_path_fully_buys():
-    """正常成交:一笔打满目标,剩余归零。"""
+def test_submit_affordable_buys_places_limit_order_once():
+    """现金够时直接挂 open[T] 限价单；挂上后不等待、不撤单。"""
     ex = RebalanceExecutor(_FakeTrader(cash=1e7))
     code = '600000.SH'
     bm = _make_buy_monitor(ex, {code: 1000}, {code: 10.0}, limit_prices={code: 11.0})
-    assert bm._fill_one_stock(code) is True
+    assert bm._submit_affordable_buys() is True
     assert bm._remaining(code) == 0
     assert len(bm.submitted) == 1
+    assert ex.trader.submitted[0][3] == 10.0
 
 
-def test_fill_one_stock_blocks_after_hard_reject_limit():
-    """非资金类硬废单(如价格/权限):减一手重试,达 BUY_REJECT_LIMIT 次后熔断该票。"""
+def test_reject_retries_same_size_later_without_blocking_or_shrinking():
+    """非资金类废单不减手、不熔断；冷却后仍按原 open[T] 和原缺口重试。"""
     trader = _FakeTrader(cash=1e7)
     trader.on_order = lambda code, shares, oid: SimpleNamespace(
         order_status=xtconstant.ORDER_JUNK, traded_volume=0,
-        order_volume=shares, traded_price=0.0, status_msg='无对手方价格,废单')
+        order_volume=shares, traded_price=0.0, status_msg='订单价格超出范围')
     ex = RebalanceExecutor(trader)
     code = '600000.SH'
     bm = _make_buy_monitor(ex, {code: 1000}, {code: 10.0}, limit_prices={code: 11.0})
-    bm._fill_one_stock(code)
-    assert code in bm.blocked_codes
-    assert bm.fail_counts[code] == ex.BUY_REJECT_LIMIT
-    assert len(bm.submitted) == 3  # 1000 → 900 → 800
+    assert bm._submit_affordable_buys() is True
+    bm._handle_terminal_orders()
+    assert bm._remaining(code) == 1000
+    assert bm.retry_after[code] > 0
+    bm.retry_after[code] = 0
+    assert bm._submit_affordable_buys() is True
+    assert [x[1] for x in trader.submitted] == [1000, 1000]
 
 
-def test_fill_one_stock_underfunded_reject_does_not_block():
-    """资金不足废单:只减仓重试、不计熔断;减到买不起一手就跳过,不会被熔断。"""
+def test_underfunded_reject_waits_for_cash_without_blocking():
+    """资金不足废单只退避等 cash 更新,不熔断也不减手。"""
     trader = _FakeTrader(cash=1e7)
     trader.on_order = lambda code, shares, oid: SimpleNamespace(
         order_status=xtconstant.ORDER_JUNK, traded_volume=0,
         order_volume=shares, traded_price=0.0, status_msg='资金可用数不足,尚需3440')
     ex = RebalanceExecutor(trader)
-    code = '688296.SH'  # 科创 min_lot=200
+    code = '688296.SH'
     bm = _make_buy_monitor(ex, {code: 600}, {code: 10.0}, limit_prices={code: 11.0})
-    bm._fill_one_stock(code)
-    assert code not in bm.blocked_codes      # 资金类不熔断
-    assert bm.fail_counts[code] == 0         # 不计坏票
-    assert len(bm.submitted) > 0             # 确实减仓试过
+    assert bm._submit_affordable_buys() is True
+    bm._handle_terminal_orders()
+    assert bm._remaining(code) == 600
+    assert bm.retry_after[code] > 0
 
 
 def test_is_insufficient_funds_recognizes_qmt_numeric_code():
@@ -186,8 +223,8 @@ def test_is_insufficient_funds_recognizes_qmt_numeric_code():
     assert _is_insufficient_funds('') is False
 
 
-def test_fill_one_stock_numeric_code_reject_does_not_block():
-    """资金不足废单只给数字码(无中文)时,也不能计熔断。"""
+def test_numeric_code_reject_uses_underfunded_retry():
+    """资金不足废单只给数字码(无中文)时,也按资金退避处理。"""
     trader = _FakeTrader(cash=1e7)
     trader.on_order = lambda code, shares, oid: SimpleNamespace(
         order_status=xtconstant.ORDER_JUNK, traded_volume=0,
@@ -195,40 +232,23 @@ def test_fill_one_stock_numeric_code_reject_does_not_block():
     ex = RebalanceExecutor(trader)
     code = '688466.SH'  # 科创 min_lot=200
     bm = _make_buy_monitor(ex, {code: 600}, {code: 10.0}, limit_prices={code: 11.0})
-    bm._fill_one_stock(code)
-    assert code not in bm.blocked_codes
-    assert bm.fail_counts[code] == 0
+    bm._submit_affordable_buys()
+    bm._handle_terminal_orders()
+    assert bm._remaining(code) == 600
+    assert bm.retry_after[code] > 0
 
 
-def test_fill_one_stock_no_block_while_sells_pending():
-    """卖单回款在途时,买单废单(哪怕拿不到任何 msg)都不计熔断——格式无关的兜底。
-
-    复刻 2026-06-02:开盘现金不够、4 只买单被废,但卖单回款 09:30:22 才到。
-    旧逻辑在 09:30:06 就把它们熔断;新逻辑应保持不熔断,等回款再补。
-    """
-    trader = _FakeTrader(cash=1e7)
-    # 模拟拿不到 status_msg 的硬废单(空 msg)——若无 sells-pending 兜底就会熔断
-    trader.on_order = lambda code, shares, oid: SimpleNamespace(
-        order_status=xtconstant.ORDER_JUNK, traded_volume=0,
-        order_volume=shares, traded_price=0.0, status_msg='')
+def test_cash_gate_waits_until_cash_is_available():
+    """现金不够时不下废单；QMT cash 到位后才挂后续买单。"""
+    trader = _FakeTrader(cash=1500.0)
     ex = RebalanceExecutor(trader)
-    code = '300876.SZ'  # 创业 min_lot=200
-    bm = _make_buy_monitor(ex, {code: 600}, {code: 10.0}, limit_prices={code: 11.0})
-    # 注入一个「未完成」的卖单 monitor,表示回款仍在途
-    sm = SellMonitor(ex, [('600000.SH', 100)], date.today(), date.today())
-    bm.sell_monitor = sm
-    assert bm._sells_pending() is True
-    bm._fill_one_stock(code)
-    assert code not in bm.blocked_codes   # 回款在途不熔断
-    assert bm.fail_counts[code] == 0
-
-    # 卖单收尾后,同样的空 msg 硬废单恢复计熔断
-    sm.finished = True
-    bm2 = _make_buy_monitor(ex, {code: 600}, {code: 10.0}, limit_prices={code: 11.0})
-    bm2.sell_monitor = sm
-    bm2._fill_one_stock(code)
-    assert code in bm2.blocked_codes
-    assert bm2.fail_counts[code] == ex.BUY_REJECT_LIMIT
+    code = '688296.SH'  # 科创最少 200 股,按涨停价 11 估需 2200+
+    bm = _make_buy_monitor(ex, {code: 2000}, {code: 10.0}, limit_prices={code: 11.0})
+    assert bm._submit_affordable_buys() is False
+    assert trader.submitted == []
+    trader.cash = 11.0 * (1 + ex.BUY_FEE_RATE) * 250 + 0.01
+    assert bm._submit_affordable_buys() is True
+    assert trader.submitted[0][1] == 250
 
 
 # ── 卖单撤单重挂(等股份释放 + 可用量封顶) ──────────────────
@@ -281,44 +301,111 @@ def _stuck_sell_monitor(ex, code, volume):
     return sm, sub
 
 
-def test_sell_repost_waits_for_release_then_reposts_available():
-    """复刻 2026-06-02:撤单后股份释放,按当前可用量重挂(不再撞「股份可用数不足」)。"""
-    ex = RebalanceExecutor(_FakeSellTrader(release_on_cancel=True))
-    ex.SELL_CANCEL_SETTLE_SEC = 0.5
-    code = '603168.SH'
-    sm, sub = _stuck_sell_monitor(ex, code, 5900)
-    sm._try_repost_sell(sub, ex.trader.orders[5000])
-    assert len(ex.trader.sell_submits) == 1
-    rcode, rshares, _ = ex.trader.sell_submits[0]
-    assert rcode == code and rshares == 5900
+def test_execute_does_not_cancel_persistent_orders():
+    """主执行路径只挂单不撤单；未终态订单继续留在柜台。"""
+    class _PendingTrader(_FakeTrader):
+        def __init__(self):
+            super().__init__(cash=1e7)
+            self.cancel_count = 0
+        def order(self, order_type, code, shares, price, order_remark=''):
+            oid = super().order(order_type, code, shares, price, order_remark)
+            self.orders[oid].order_status = xtconstant.ORDER_REPORTED
+            self.orders[oid].traded_volume = 0
+            return oid
+        def cancel_order(self, oid):
+            self.cancel_count += 1
+
+    trader = _PendingTrader()
+    ex = RebalanceExecutor(trader)
+    ex.BUY_MONITOR_DEADLINE_SEC = 0.1
+    ex.SETTLE_WAIT_SEC = 0
+    pending = {
+        'signal_date': date.today(), 'trade_date': date.today(),
+        'sell_orders': [('600001.SH', 100)],
+        'buy_allocations': {'600002.SH': 100},
+        'buy_n_stocks': ['600002.SH'],
+        'prices': {'600001.SH': 10.0, '600002.SH': 10.0},
+        'limit_prices': {'600002.SH': 11.0},
+    }
+    ex.execute(pending)
+    assert trader.cancel_count == 0
 
 
-def test_sell_repost_skips_when_shares_not_released():
-    """撤单后股份始终没释放回可用 → 放弃重挂,不盲目用旧量下单产生废单。"""
-    ex = RebalanceExecutor(_FakeSellTrader(release_on_cancel=False))
-    ex.SELL_CANCEL_SETTLE_SEC = 0.3
-    code = '688026.SH'
-    sm, sub = _stuck_sell_monitor(ex, code, 2400)
-    sm._try_repost_sell(sub, ex.trader.orders[5000])
-    assert ex.trader.sell_submits == []
+def test_submit_affordable_buys_kcb_300_share_target_submits_300():
+    """executor 主循环也必须保留科创板 300 股合法买入量。"""
+    ex = RebalanceExecutor(_FakeTrader(cash=1e7))
+    code = '688420.SH'
+    bm = _make_buy_monitor(ex, {code: 300}, {code: 22.33}, limit_prices={code: 26.80})
+    assert bm._submit_affordable_buys() is True
+    assert ex.trader.submitted[0][1] == 300
+    assert bm._remaining(code) == 0
 
 
-def test_fill_one_stock_skips_when_cash_below_one_lot():
-    """现金不足以按涨停价买一手 → 不下单,直接跳过(不产生废单)。"""
-    # 现金只有 1500,涨停价 11 → 一手(100股)需 ~1100,但科创最小 200 手 → 需 ~2200 > 1500
-    ex = RebalanceExecutor(_FakeTrader(cash=1500.0))
-    code = '688296.SH'  # 科创,min_lot=200
-    bm = _make_buy_monitor(ex, {code: 2000}, {code: 10.0}, limit_prices={code: 11.0})
-    assert bm._fill_one_stock(code) is False
-    assert len(bm.submitted) == 0  # 没下单,没废单
+def test_submit_affordable_buys_kcb_affordable_250_submits_250():
+    """科创板资金只够 250 股时，250 股合法，不应再按 200 股截断。"""
+    code = '688420.SH'
+    limit_price = 26.80
+    ex = RebalanceExecutor(_FakeTrader())
+    unit_cost = limit_price * (1 + ex.BUY_FEE_RATE)
+    ex.trader.cash = unit_cost * 250 + 0.01
+    bm = _make_buy_monitor(ex, {code: 300}, {code: 22.33}, limit_prices={code: limit_price})
+    assert bm._submit_affordable_buys() is True
+    assert ex.trader.submitted[0][1] == 250
+    assert bm._remaining(code) == 50
+
+
+def test_submit_affordable_buys_kcb_remaining_below_minimum_skips():
+    """科创板剩余缺口低于 200 股时不能单独提交一笔新买单。"""
+    ex = RebalanceExecutor(_FakeTrader(cash=1e7))
+    code = '688420.SH'
+    bm = _make_buy_monitor(ex, {code: 199}, {code: 22.33}, limit_prices={code: 26.80})
+    assert bm._submit_affordable_buys() is False
+    assert ex.trader.submitted == []
 
 
 def test_off_hours_fast_restores_default_timeouts():
     ex = RebalanceExecutor(_FakeTrader())
     before = ex._snapshot_timeouts()
     ex._apply_off_hours_timeouts()
-    assert ex.BUY_TIMEOUT_HARD_SEC == 90
-    assert ex.SELL_MONITOR_SEC == 30
+    assert ex.BUY_MONITOR_DEADLINE_SEC == 0.5
+    assert ex.SETTLE_WAIT_SEC == 10
     ex._restore_timeouts(before)
-    assert ex.BUY_TIMEOUT_HARD_SEC == 600
-    assert ex.SELL_MONITOR_SEC == 120
+    assert ex.BUY_MONITOR_DEADLINE_SEC is None
+    assert ex.SETTLE_WAIT_SEC == 5
+
+
+def test_order_reject_retry_sec_is_60():
+    ex = RebalanceExecutor(_FakeTrader())
+    assert ex.ORDER_REJECT_RETRY_SEC == 60.0
+
+
+def test_buy_protect_price_rounds_to_tick():
+    ex = RebalanceExecutor(_FakeTrader())
+    assert ex._buy_protect_price(25.02, 0.015) == 25.40
+    assert ex._buy_protect_price(10.0, 0.015) == 10.15
+    assert ex._buy_protect_price(0.50, 0.015) == 0.507
+
+
+def test_submit_buy_uses_protect_limit_price():
+    """买入应带保护限价(开盘×1.015),不再裸对手价市价单。"""
+    ex = RebalanceExecutor(_FakeTrader())
+    open_px = 25.02
+    code = '301520.SZ'
+    expected = ex._buy_protect_price(open_px, ex.BUY_PROTECT_PCT)
+    bm = _make_buy_monitor(ex, {code: 100}, {code: open_px})
+    bm._submit_buy(code, 100)
+    assert len(ex.trader.submitted) == 1
+    _, shares, _, limit_price = ex.trader.submitted[0]
+    assert shares == 100
+    assert limit_price == expected
+
+
+def test_submit_buy_keeps_kcb_300_share_order():
+    """科创板最低 200 股起、1 股递增；300 股买单不能被截成 200。"""
+    ex = RebalanceExecutor(_FakeTrader())
+    code = '688420.SH'
+    bm = _make_buy_monitor(ex, {code: 300}, {code: 22.33})
+    bm._submit_buy(code, 300)
+    assert len(ex.trader.submitted) == 1
+    _, shares, _, _ = ex.trader.submitted[0]
+    assert shares == 300

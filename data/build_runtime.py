@@ -378,18 +378,14 @@ def build_runtime(
 
     print(f"交易日范围: {all_trade_dates[0]} ~ {all_trade_dates[-1]}, 共 {len(all_trade_dates)} 天")
 
-    # 确定 stock_codes: allow_buy_stock_code_list ∩ 有K线parquet的股票
-    from data.db import allow_buy_stock_code_list
-    allowed = set(allow_buy_stock_code_list())
-    kline_stocks = sorted([
-        f.stem for f in KLINE_DIR.glob("*.parquet") if f.stem in allowed
-    ])
+    # 确定 stock_codes: 有 K 线 parquet 的历史全集，不能用当前可买池过滤历史退市股。
+    kline_stocks = sorted([f.stem for f in KLINE_DIR.glob("*.parquet")])
     stock_codes = np.array(kline_stocks, dtype='U12')
 
     if max_stocks:
         stock_codes = stock_codes[:max_stocks]
 
-    print(f"可买池: {len(allowed)} 只, 有K线: {len(kline_stocks)} 只, 使用: {len(stock_codes)} 只")
+    print(f"有K线: {len(kline_stocks)} 只, 使用: {len(stock_codes)} 只")
 
     print(f"[{time.strftime('%H:%M:%S')}] ===== 2/7 构建K线面板 =====")
     kline_arrays = load_kline_panel(stock_codes, all_trade_dates)
@@ -413,6 +409,12 @@ def build_runtime(
     output_name = f"runtime_{all_trade_dates[0]}_{all_trade_dates[-1]}.npz"
     output_path = OUT_DIR / output_name
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 删除旧的全量 NPZ 文件，避免堆积（与 _patch_npz_incremental 口径一致）
+    for old in OUT_DIR.glob("runtime_*.npz"):
+        if old.name != output_name:
+            old.unlink()
+            print(f"  删除旧文件: {old.name}")
 
     np.savez_compressed(
         output_path,

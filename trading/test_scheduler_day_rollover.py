@@ -74,13 +74,66 @@ def test_cross_day_resets_all_daily_flags():
 
 
 def test_cross_day_allows_new_day_prepare_condition():
-  """重置后，新交易日 09:25 的『not prepared』前置条件应重新成立。"""
+  """重置后，新交易日 09:25:10 的『not prepared』前置条件应重新成立。"""
   clock = _Clock(datetime(2026, 6, 3, 16, 5))
   sch = TradingScheduler(trader=object(), time_provider=clock)
   sch._check_day_rollover(sch._now())
   sch.prepared = True  # 上一日已准备
 
-  clock.set(datetime(2026, 6, 4, 9, 25))
+  clock.set(datetime(2026, 6, 4, 9, 25, 10))
   sch._check_day_rollover(sch._now())
   # 主循环 line `if not self.prepared` 的判定恢复为 True → 会重新触发 before_trade
   assert (not sch.prepared) is True
+
+
+def test_execute_window_starts_at_prepare_time():
+  """预计算完成后立即执行：09:25:10 已进入执行窗口，不再等 09:30。"""
+  sch = _make_scheduler(datetime(2026, 6, 4, 9, 25, 10))
+  assert sch._in_execute_window(sch._now()) is True
+
+
+def test_open_rebalance_waits_until_092510():
+  sch = _make_scheduler(datetime(2026, 6, 4, 9, 25, 9))
+  assert sch._in_prepare_window(sch._now()) is False
+  assert sch._in_execute_window(sch._now()) is False
+
+  sch = _make_scheduler(datetime(2026, 6, 4, 9, 25, 10))
+  assert sch._in_prepare_window(sch._now()) is True
+  assert sch._in_execute_window(sch._now()) is True
+
+
+def test_fast_forward_runs_prepare_and_execute_synchronously(monkeypatch):
+  calls = []
+  clock = _Clock(datetime(2026, 6, 4, 9, 25, 10))
+  sch = TradingScheduler(
+      trader=object(), time_provider=clock, fast_forward=True,
+      before_trade=lambda store: calls.append("before"),
+      execute_trade=lambda store: calls.append("execute"),
+      post_close=lambda store: calls.append("post_close"),
+      update_all=lambda store: calls.append("update_all"),
+  )
+  monkeypatch.setattr("trading.scheduler.is_trading_day", lambda d: True)
+  monkeypatch.setattr("trading.scheduler.is_current_trading", lambda now: False)
+
+  sch.start_check_trading()
+
+  assert calls == ["before", "execute", "post_close", "update_all"]
+
+
+def test_fast_forward_advances_from_092500_to_rebalance_start(monkeypatch):
+  calls = []
+  clock = _Clock(datetime(2026, 6, 4, 9, 25))
+  sch = TradingScheduler(
+      trader=object(), time_provider=clock, fast_forward=True,
+      before_trade=lambda store: calls.append(("before", store._now().time())),
+      execute_trade=lambda store: calls.append(("execute", store._now().time())),
+      post_close=lambda store: calls.append(("post_close", store._now().time())),
+      update_all=lambda store: calls.append(("update_all", store._now().time())),
+  )
+  monkeypatch.setattr("trading.scheduler.is_trading_day", lambda d: True)
+  monkeypatch.setattr("trading.scheduler.is_current_trading", lambda now: False)
+
+  sch.start_check_trading()
+
+  assert calls[0] == ("before", datetime(2026, 6, 4, 9, 25, 10).time())
+  assert [name for name, _ in calls] == ["before", "execute", "post_close", "update_all"]

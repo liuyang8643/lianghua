@@ -135,3 +135,71 @@ def test_reconcile_alert_silent_when_within_tolerance(monkeypatch):
     data = rpt.build()
     rpt._maybe_alert_reconcile(data)
     assert calls == []
+
+
+# ════════════════════════════════════════════════════════════
+# 个股盈亏差异 & 滑点明细卡（每日盘后随 diff 报告增发）
+# ════════════════════════════════════════════════════════════
+
+def _fills_df(rows):
+    return pd.DataFrame(rows, columns=[
+        'code', 'name', 'direction', 'price', 'shares', 'amount',
+        'fee_est', 'est_price', 'slippage_pct'])
+
+
+def test_pnl_slippage_card_contents(monkeypatch):
+    calls = []
+    monkeypatch.setattr(report_mod.lark_sender, 'send_table_card',
+                        lambda **k: calls.append(k))
+    rpt = PostCloseReport(date(2026, 6, 12))
+    rpt.feed_positions_df(pd.DataFrame([
+        {'code': 'AAA', 'name': '甲股', 'volume': 100, 'market_value': 1000.0,
+         'daily_pnl': 800.0, 'daily_return_pct': 8.0},
+    ]))
+    rpt.feed_backtest(_bt_with_positions([
+        {'code': 'AAA', 'volume': 100, 'current_price': 10.0,
+         'current_value': 1000.0, 'avg_price': 9.0},
+    ]))
+    # 两笔分批买入同一只票：滑点按 vwap 聚合（(10.5×100+10.7×100)/200=10.6 vs 开盘 10.0 → +6%）
+    rpt.feed_fills_df(_fills_df([
+        {'code': 'BBB', 'name': '乙股', 'direction': 'buy', 'price': 10.5,
+         'shares': 100, 'amount': 1050.0, 'fee_est': 0.1, 'est_price': 10.0, 'slippage_pct': 5.0},
+        {'code': 'BBB', 'name': '乙股', 'direction': 'buy', 'price': 10.7,
+         'shares': 100, 'amount': 1070.0, 'fee_est': 0.1, 'est_price': 10.0, 'slippage_pct': 7.0},
+        {'code': 'CCC', 'name': '丙股', 'direction': 'sell', 'price': 9.8,
+         'shares': 200, 'amount': 1960.0, 'fee_est': 0.2, 'est_price': 10.0, 'slippage_pct': -2.0},
+    ]))
+    rpt.feed_asset(total_asset=1_000_800.0, prev_asset=1_000_000.0)
+
+    rpt._send_pnl_slippage_card(rpt.build())
+
+    assert len(calls) == 1
+    card = calls[0]
+    assert '盈亏差异 & 滑点' in card['title']
+    tables = {t['element_id']: t for t in card['tables']}
+    assert set(tables) == {'pnl_diff_tbl', 'slippage_tbl'}
+
+    # 表1：AAA 实盘 800 vs 回测 1000 → 差 -200
+    pnl_rows = tables['pnl_diff_tbl']['rows']
+    aaa = next(r for r in pnl_rows if r['name'] == '甲股')
+    assert '-200' in aaa['diff']
+
+    # 表2：BBB 买入 vwap 10.6 vs 开盘 10.0 → 滑点 +6%、成本 +120；
+    #       CCC 卖出 9.8 vs 10.0 → 滑点 -2%、成本 +40（卖便宜也是成本）
+    slip = {r['name']: r for r in tables['slippage_tbl']['rows']}
+    assert slip['乙股 买']['vwap'] == '10.60'
+    assert '+6.00%' in slip['乙股 买']['sp']
+    assert '+120' in slip['乙股 买']['cost']
+    assert '+40' in slip['丙股 卖']['cost']
+    # 汇总：总滑点成本 120 + 40 = 160
+    assert '160' in card['summary_md']
+
+
+def test_pnl_slippage_card_skipped_when_no_data(monkeypatch):
+    calls = []
+    monkeypatch.setattr(report_mod.lark_sender, 'send_table_card',
+                        lambda **k: calls.append(k))
+    rpt = PostCloseReport(date(2026, 6, 12))
+    rpt.feed_backtest(_bt_with_positions([]))
+    rpt._send_pnl_slippage_card(rpt.build())
+    assert calls == []

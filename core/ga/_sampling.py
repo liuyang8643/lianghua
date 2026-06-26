@@ -5,8 +5,7 @@
 import random
 from ._profiles import (
     get_profile, get_profile_search_spaces, get_profile_weight_search_spaces,
-    get_profile_fixed_weights, get_profile_fixed_temperatures,
-    get_intrinsic_params,
+    get_profile_fixed_weights, get_intrinsic_params,
 )
 
 
@@ -16,7 +15,14 @@ def _sample_from_space(space: list):
 
 def _sample_space_key(key: str, profile_name: str | None = None):
     space = get_profile_search_spaces(profile_name).get(key)
-    return _sample_from_space(space) if space else None
+    if space:
+        return _sample_from_space(space)
+    return _sample_registry.get(key, {}).get('default')
+
+
+def sample_buy_n(profile_name: str | None = None) -> int:
+    space = get_profile_search_spaces(profile_name).get('buy_n')
+    return _sample_from_space(space) if space else 20
 
 
 def sample_weights(profile_name: str | None = None) -> dict:
@@ -28,7 +34,7 @@ def sample_weights(profile_name: str | None = None) -> dict:
     return fixed
 
 
-# ---- 向后兼容的具名采样函数 (由 INTRINSIC_PARAMS 注册) ----
+# ---- 参数采样函数 (由 INTRINSIC_PARAMS 注册表自动生成) ----
 _sample_registry = {p['key']: p for p in get_intrinsic_params()}
 
 for _key, _def in _sample_registry.items():
@@ -47,7 +53,8 @@ def sample_factor_choice(profile_name: str | None = None):
 # ---- 核心构建函数 ----
 
 def build_individual_config(
-    position_count: int | None = None,
+    buy_n: int | None = None,
+    sell_m: int | None = None,
     weights: dict | None = None,
     factor_choice: str | None = None,
     stock_pool: list | None = None,
@@ -68,28 +75,31 @@ def build_individual_config(
     if factor_choice:
         weights = {k: (v if k == factor_choice else 0.0) for k, v in weights.items()}
 
-    n = position_count if position_count is not None else sample_position_count(profile_name=profile_name)
+    n = buy_n if buy_n is not None else sample_buy_n(profile_name=profile_name)
     cfg: dict = {
         'weights': weights,
         'buy_n': n,
         'sell_m': n,
-        'temperatures': get_profile_fixed_temperatures(profile_name),
     }
 
-    # 内置参数：从注册表驱动
+    # 内置参数：从注册表驱动（buy_n 已在上面处理，跳过）
     kwargs = locals()
     for pdef in get_intrinsic_params():
         key = pdef['key']
+        if key == 'buy_n':
+            continue
         ck = pdef['config_key']
-        val = kwargs.get(key)
+        val = kwargs[key]
         if val is None and key in _sample_registry:
-            space = get_profile_search_spaces(profile_name).get(key)
-            if space:
-                val = _sample_from_space(space)
+            val = _sample_space_key(key, profile_name)
         if val is not None:
             if pdef['type'] == 'int' and val == 0:
                 continue  # 零值不写入 config, 视为关闭
             cfg[ck] = val
+
+    # sell_m >= buy_n 约束
+    if cfg['sell_m'] < cfg['buy_n']:
+        cfg['sell_m'] = cfg['buy_n']
 
     # timing_enabled 特殊处理
     cfg['timing_enabled'] = cfg.get('timing_base') is not None
@@ -103,22 +113,30 @@ def repair_config(config: dict, profile_name: str | None = None) -> bool:
     fixed_weights = get_profile_fixed_weights(profile_name)
     changed = False
 
-    # position_count 特殊处理(buy_n/sell_m 联动)
-    pos_space = spaces.get('position_count')
-    if pos_space and config.get('buy_n') not in pos_space:
-        config['buy_n'] = random.choice(pos_space)
-        config['sell_m'] = config['buy_n']
+    # buy_n / sell_m 修复
+    buy_n_space = spaces.get('buy_n')
+    sell_m_space = spaces.get('sell_m')
+    if buy_n_space and config['buy_n'] not in buy_n_space:
+        config['buy_n'] = random.choice(buy_n_space)
+        changed = True
+    if sell_m_space and config['sell_m'] not in sell_m_space:
+        config['sell_m'] = random.choice(sell_m_space)
         changed = True
 
     # 内置参数
     for pdef in get_intrinsic_params():
-        if pdef['key'] == 'position_count':
+        if pdef['key'] == 'buy_n':
             continue  # 上面已处理
         space = spaces.get(pdef['key'])
         ck = pdef['config_key']
         if space and ck in config and config[ck] not in space:
             config[ck] = random.choice(space)
             changed = True
+
+    # sell_m >= buy_n 约束
+    if config['sell_m'] < config['buy_n']:
+        config['sell_m'] = config['buy_n']
+        changed = True
 
     # 权重
     old_weights = config['weights']
@@ -152,21 +170,20 @@ def generate_initial_configs(count: int, profile_name: str | None = None) -> lis
 
     configs = []
     for _ in range(count):
-        pc = sample_position_count(profile_name=profile_name)
+        buy_n_val = sample_buy_n(profile_name=profile_name)
         fc = sample_factor_choice(profile_name=profile_name) if has_fc else None
 
-        # 内置参数
+        # 内置参数（不在 search_spaces 中的参数使用 INTRINSIC_PARAMS default）
         extra = {}
         for pdef in get_intrinsic_params():
             key = pdef['key']
-            if key == 'position_count':
+            if key == 'buy_n':
                 continue
-            if key in spaces:
-                extra[key] = _sample_space_key(key, profile_name)
+            extra[key] = _sample_space_key(key, profile_name)
 
         w = sample_weights(profile_name=profile_name) if has_weight else None
         configs.append(build_individual_config(
-            pc, weights=w, factor_choice=fc,
+            buy_n_val, sell_m=extra.get('sell_m'), weights=w, factor_choice=fc,
             stock_pool=extra.get('stock_pool'),
             holding_period=extra.get('holding_period'),
             timing_base=extra.get('timing_base'),

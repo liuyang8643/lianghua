@@ -16,6 +16,19 @@ _2D_FIELDS = ['open', 'high', 'low', 'close', 'volume', 'amount',
 _1D_FIELDS = ['issue_price', 'stock_names']
 
 
+def latest_runtime_npz_path() -> Path:
+    npz_files = sorted(_RUNTIME_DIR.glob("runtime_*.npz"))
+    if not npz_files:
+        raise FileNotFoundError(f"未找到 runtime npz 文件: {_RUNTIME_DIR}")
+    return npz_files[-1]
+
+
+def load_runtime_stock_codes() -> list[str]:
+    """研究回测/GA 默认股票池：runtime NPZ 中的历史全集。"""
+    with np.load(latest_runtime_npz_path(), allow_pickle=False) as npz:
+        return [str(s) for s in npz['stock_codes']]
+
+
 def load_runtime_npz(dates: List[datetime], max_lookback: Optional[int] = None) -> dict | None:
     """加载 runtime NPZ 数据。
 
@@ -35,6 +48,20 @@ def load_runtime_npz(dates: List[datetime], max_lookback: Optional[int] = None) 
         trim_start = min_date - np.timedelta64(int(max_lookback * 1.5) + 10, 'D')
 
     npz_files = sorted(_RUNTIME_DIR.glob("runtime_*.npz"))
+
+    # 实盘/单回测 (max_lookback 已设): 只需最新一个 NPZ，避免加载多个高度重叠的全量文件再合并
+    if trim_start is not None and len(npz_files) > 1:
+        best = None
+        for npz_path in npz_files:
+            with np.load(npz_path, allow_pickle=False) as npz:
+                td = npz['trade_dates']
+                d0, d1 = td[0], td[-1]
+                if d0 <= trim_start and d1 >= min_date:
+                    if best is None or d1 > best[0]:
+                        best = (d1, npz_path)
+        if best is not None:
+            npz_files = [best[1]]
+
     parts = []
     for npz_path in npz_files:
         with np.load(npz_path, allow_pickle=False) as npz:

@@ -104,7 +104,7 @@ def propose(op: str, parents: list[dict], names: list[str], model: str,
     """让 claude 在 scratch 目录生成期望命名的因子文件，返回 {name: path}（只含实际写出的）。
 
     op='mutation' 时 parents 应为单个父代，inspirations 为若干灵感因子；op='crossover' 时
-    parents 为多个父代。多个并发调用各用独立 tag → scratch 目录隔离，线程并发安全。
+    parents 为多个父代。每个任务使用独立 tag → scratch 目录隔离。
     """
     scratch = SCRATCH_DIR / tag
     scratch.mkdir(parents=True, exist_ok=True)
