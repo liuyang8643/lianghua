@@ -214,7 +214,6 @@ footer {{ margin-top:40px; padding-top:16px; border-top:1px solid #30363d; color
 <div class="config-item"><span class="config-key">持仓周期</span><span class="config-val">{', '.join(map(str, HOLDING_PERIODS))} 日</span></div>
 <div class="config-item"><span class="config-key">调仓方式</span><span class="config-val">均仓多退少补 (rebalance)</span></div>
 <div class="config-item"><span class="config-key">涨停保护</span><span class="config-val">禁用 (limit_up_protection=false)</span></div>
-<div class="config-item"><span class="config-key">滑点</span><span class="config-val">默认 (SIM_SLIPPAGE_RATE)</span></div>
 <div class="config-item"><span class="config-key">费率</span><span class="config-val">默认 (佣金+印花税+过户费)</span></div>
 <div class="config-item"><span class="config-key">生成时间</span><span class="config-val">{config['generated_at']}</span></div>
 </div>

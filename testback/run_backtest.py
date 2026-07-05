@@ -27,8 +27,6 @@ def main():
     parser.add_argument('--output-dir', type=str, default=None)
     parser.add_argument('--start-date', type=str, default='20240101')
     parser.add_argument('--end-date', type=str, default='20241231')
-    parser.add_argument('--live-sim', action='store_true', default=True, help='启用实盘模拟 (默认开启)')
-    parser.add_argument('--no-live-sim', action='store_false', dest='live_sim', help='禁用实盘模拟')
     parser.add_argument('--filter', action='store_true', default=None, dest='filter_enabled', help='启用 NaN 并集过滤 (默认开启)')
     parser.add_argument('--no-filter', action='store_false', dest='filter_enabled', help='禁用 NaN 并集过滤')
     args = parser.parse_args()
@@ -48,7 +46,7 @@ def main():
     testback_logger.info(f"股票池(runtime历史全集): {len(all_stocks)} 只, 区间: {start_date} ~ {end_date}")
 
     mode_config = {'desc': '单回测', 'log_level': 'INFO', 'save_charts': True}
-    return run_single_mode(args, mode_config, backtest_datetime_list, all_stocks, live_sim=args.live_sim)
+    return run_single_mode(args, mode_config, backtest_datetime_list, all_stocks)
 
 
 if __name__ == '__main__':

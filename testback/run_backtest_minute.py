@@ -1,4 +1,4 @@
-"""OvernightGap 权重=0, 过滤×信号 四版对比。
+"""OvernightGapDown 权重=0, 过滤×信号 四版对比。
 
 4 组: (无过滤/有过滤) × (信号=09:30 open / 信号=09:32 open)
 每组内: 买入价 = 信号open(base) / 09:32 / 09:33 / 09:34 / 09:35 open
@@ -158,9 +158,9 @@ def run_all(config_path: str, start_date: str, end_date: str):
     all_stocks = [s for s in all_stocks if s.startswith(pool_t)]
     _log(f"股票池: {len(all_stocks)}  区间: {start_date}~{end_date}  {len(bdt_list)} 交易日")
 
-    # OvernightGap 权重置 0
+    # OvernightGapDown 权重置 0
     weights_no_og = dict(ic["weights"])
-    weights_no_og["OvernightGap"] = 0
+    weights_no_og["OvernightGapDown"] = 0
     factor_classes = strategy_config["factor_classes"]
 
     # 首次加载 NPZ

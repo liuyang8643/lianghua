@@ -34,9 +34,11 @@ def _info(msg: str, *args):
 
 
 def _download_kline_all(download_trading_days: int = DOWNLOAD_TRADING_DAYS,
-                        anchor_date: date | None = None) -> dict:
+                        anchor_date: date | None = None,
+                        codes: list[str] | None = None) -> dict:
     from data.kline_mootdx import update_recent
-    return update_recent(download_trading_days, anchor_date=anchor_date, collect=True)
+    return update_recent(download_trading_days, anchor_date=anchor_date, collect=True,
+                         codes=codes)
 
 
 def apply_kline_overlay(data: dict, kline_data: dict) -> tuple[dict, int, list]:
@@ -129,8 +131,11 @@ def _patch_npz_incremental(kline_data: dict):
 
 def update_live_quick(download_trading_days: int = DOWNLOAD_TRADING_DAYS, *,
                       patch_npz: bool = False,
-                      anchor_date: date | None = None) -> dict:
-    """快速 K 线更新。默认只写 parquet；patch_npz=True 时才落盘 NPZ。"""
+                      anchor_date: date | None = None,
+                      codes: list[str] | None = None) -> dict:
+    """快速 K 线更新。默认只写 parquet；patch_npz=True 时才落盘 NPZ。
+    codes 非空时只拉取指定股票（用于实盘 prefilter 加速）。
+    """
     from data.kline_mootdx import resolve_recent_range
 
     t0 = time.time()
@@ -138,12 +143,14 @@ def update_live_quick(download_trading_days: int = DOWNLOAD_TRADING_DAYS, *,
     anchor_note = f"锚定={end_d.isoformat()}" + (
         f" (来自 --skip {anchor_date})" if anchor_date else " (日历最近交易日)")
     _info("=" * 60)
-    _info("快速K线: 最近 %d 日 parquet%s | %s",
-          download_trading_days, " + NPZ落盘" if patch_npz else " only", anchor_note)
+    _info("快速K线: 最近 %d 日 parquet%s | %s%s",
+          download_trading_days, " + NPZ落盘" if patch_npz else " only", anchor_note,
+          f" | 子集 {len(codes)}只" if codes else "")
     _info("=" * 60)
 
     _info("--- Phase 1: K线下载 → parquet ---")
-    kline_data = _download_kline_all(download_trading_days, anchor_date=anchor_date)
+    kline_data = _download_kline_all(download_trading_days, anchor_date=anchor_date,
+                                     codes=codes)
 
     if patch_npz:
         _info("--- Phase 2: NPZ 落盘 ---")

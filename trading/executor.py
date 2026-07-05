@@ -378,7 +378,7 @@ class RebalanceExecutor:
     BUY_FEE_RATE = LIVE_BUY_FEE_RATE       # 实盘券商冻结费率(佣金+过户费)
     BUY_PROTECT_PCT = 0.0     # 买入限价 = 开盘价（限价 ≤ 开盘价才能成交）
     SELL_PROTECT_PCT = 0.0    # 卖出限价 = 开盘价（限价 ≤ 开盘价才能成交）
-    BUY_MONITOR_END = dt_time(14, 55)  # 资金不够时等卖出回款到收盘前,再挂后续买单
+    BUY_MONITOR_END = dt_time(15, 30)  # 资金不够时等卖出回款到收盘前,再挂后续买单
     BUY_MONITOR_DEADLINE_SEC = None    # 测试/闭市演练可覆盖为秒级
     UNDERFUNDED_BACKOFF_SEC = 3.0      # 资金不足废单后退避,等 QMT cash 更新
     ORDER_REJECT_RETRY_SEC = 60.0      # 价格范围/柜台废单后按原价低频重试

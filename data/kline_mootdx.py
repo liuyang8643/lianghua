@@ -289,12 +289,15 @@ def update_full(start: str = START_DEFAULT, end: str | None = None,
     download(mdx, codes, start, end)
 
 
-def update_recent(days: int, *, anchor_date: date | None = None, collect: bool = False) -> dict:
-    """刷新最近 days 个交易日并合并进 parquet；新股全量补齐。"""
+def update_recent(days: int, *, anchor_date: date | None = None, collect: bool = False,
+                  codes: list[str] | None = None) -> dict:
+    """刷新最近 days 个交易日并合并进 parquet；新股全量补齐。
+    codes 非空时只处理指定股票子集（用于实盘 prefilter 加速）。
+    """
     mdx = _connect_mootdx()
     start, end, end_d = resolve_recent_range(days, anchor_date)
 
-    all_codes = _all_codes()
+    all_codes = sorted(codes) if codes is not None else _all_codes()
     existing = {f.stem for f in RAW_DIR.glob('*.parquet')}
     new_codes = [c for c in all_codes if c not in existing]
     upd_codes = [c for c in all_codes if c in existing]

@@ -36,7 +36,6 @@ from core.backtest import (
   _load_all_index_data,
   _format_pool, _format_timing,
   _resolve_output_dir,
-  run_live_simulation,
 )
 from core.metrics import compute_core_metrics
 from core.runtime import load_runtime_stock_codes
@@ -394,7 +393,7 @@ def _eval_parallel(worker_args, results_list, ga_cache, logger, pool):
   gc.collect()
 
 
-def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=DEFAULT_GA_PROFILE, resume_dir=None, live_sim=True):
+def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=DEFAULT_GA_PROFILE, resume_dir=None):
   """GA/调试模式：多进程并行回测。预计算共享内存复用。"""
   import json as json_mod
   import os
@@ -438,12 +437,6 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
       test_eval_cache = json_mod.load(f)
     testback_logger.info(f"加载测试集缓存: {len(test_eval_cache)} 条")
 
-  live_cache_path = output_dir / 'live_cache.json'
-  live_eval_cache = {}
-  if live_cache_path.exists():
-    with open(live_cache_path, 'r', encoding='utf-8') as f:
-      live_eval_cache = json_mod.load(f)
-    testback_logger.info(f"加载实盘模拟缓存: {len(live_eval_cache)} 条")
 
   t0 = time.time()
 
@@ -740,63 +733,6 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
               f"{_format_pool(best_live_cfg.get('stock_pool'))}, hp={best_live_cfg.get('holding_period')}, buy={best_live_cfg['buy_n']},sell={best_live_cfg['sell_m']}{_format_timing(best_live_cfg)}{_format_filters(best_live_cfg)}, rebal={'ON' if best_live_cfg.get('rebalance') else 'OFF'} | "
               f"{', '.join(f'{k}={v:.1f}' for k, v in live_sorted_w)}")
 
-          # 实盘模拟：仅评估 实盘个体(验证集挑出的checkpoint代训练最优) + 当代训练最优
-          if live_sim:
-              shm_arrays = {}
-              for (_shm, arr), (name, _, _, _) in zip(_SHM_BLOCKS, shm_entries):
-                  shm_arrays[name] = arr
-
-              live_data = {}
-              for k in ('open', 'close', 'high', 'low', 'volume', 'amount', 'total_share', 'preClose', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates'):
-                  if k in shm_arrays:
-                      live_data[k] = shm_arrays[k]
-              live_data['stock_codes'] = shm_arrays.get('stock_codes', np.array(npz_stocks))
-              live_data['trade_dates'] = shm_arrays.get('trade_dates', npz_dates)
-
-              live_configs = []
-              live_labels = []
-              live_keys = []
-              if best_live_cfg is not None:
-                  live_configs.append(best_live_cfg)
-                  live_labels.append('实盘个体')
-                  live_keys.append(json_mod.dumps(_config_key(best_live_cfg), ensure_ascii=False))
-              ck_best = _config_key(best_cfg)
-              ck_live = _config_key(best_live_cfg) if best_live_cfg else None
-              if ck_best != ck_live:
-                  live_configs.append(best_cfg)
-                  live_labels.append('当代最优')
-                  live_keys.append(json_mod.dumps(_config_key(best_cfg), ensure_ascii=False))
-
-              if live_configs:
-                  # 先查缓存
-                  live_results = [live_eval_cache.get(k) for k in live_keys]
-                  uncached = [(i, cfg) for i, (cfg, r) in enumerate(zip(live_configs, live_results)) if r is None]
-
-                  if uncached:
-                      uncached_cfgs = [cfg for _, cfg in uncached]
-                      new_results = run_live_simulation(
-                          live_data,
-                          {k: shm_arrays[k] for k in score_keys if k in shm_arrays},
-                          npz_stocks, all_valid_stocks,
-                          uncached_cfgs,
-                          list_dates_full, testback_logger,
-                          max_hist=max(f.hist_days for f in factor_classes))
-                      for (idx, _), lr in zip(uncached, new_results):
-                          live_results[idx] = lr
-                          live_eval_cache[live_keys[idx]] = lr
-                      with open(live_cache_path, 'w', encoding='utf-8') as f:
-                          json_mod.dump(live_eval_cache, f, ensure_ascii=False)
-                  else:
-                      testback_logger.info("实盘模拟: 全部命中缓存")
-
-                  for label, lr in zip(live_labels, live_results):
-                      p = lr['prices']
-                      testback_logger.info(
-                          f"实盘模拟 {label}: base={p['base']['sharpe']:.3f} "
-                          f"09:32={p['09:32']['sharpe']:.3f} "
-                          f"09:33={p['09:33']['sharpe']:.3f} "
-                          f"09:34={p['09:34']['sharpe']:.3f} "
-                          f"09:35={p['09:35']['sharpe']:.3f}")
 
       if not results_list:
         raise RuntimeError(f"{'调试模式' if is_debug else '第 ' + str(generation + 1) + ' 代'}未获得任何有效回测结果")
@@ -935,7 +871,6 @@ def main():
                       help='从 JSONL 恢复: 不传则自动找最新, 或指定目录路径')
   parser.add_argument('--profile', type=str, default=None)
   parser.add_argument('--live-sim', action='store_true', default=True, help='启用实盘模拟 (默认开启)')
-  parser.add_argument('--no-live-sim', action='store_false', dest='live_sim', help='禁用实盘模拟')
   args = parser.parse_args()
 
   profile_name = args.profile or DEFAULT_GA_PROFILE
@@ -983,7 +918,7 @@ def main():
     if keep_awake_enabled:
       testback_logger.info('已启用 Windows 防休眠，任务结束后自动恢复')
 
-    result = _run_ga(args, mode_config, backtest_datetime_list, filtered_stocks, profile_name=profile_name, resume_dir=resume_dir, live_sim=args.live_sim)
+    result = _run_ga(args, mode_config, backtest_datetime_list, filtered_stocks, profile_name=profile_name, resume_dir=resume_dir)
 
   te = datetime.now()
   testback_logger.info(f"总耗时: {(te - ts).total_seconds():.2f} 秒")
