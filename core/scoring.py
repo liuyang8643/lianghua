@@ -10,6 +10,22 @@ import numpy as np
 from typing import Optional
 
 
+def compute_weighted_scores(
+    all_scores: dict,
+    score_idx: int,
+    valid_cols: np.ndarray,
+    weights: dict[str, float],
+) -> np.ndarray:
+    """加权求和：各因子排名 × 权重，返回 (n_stocks,) 数组。"""
+    final_score = np.zeros(len(valid_cols))
+    for name, ranks_mat in all_scores.items():
+        w = weights[name]
+        if w == 0:
+            continue
+        final_score += ranks_mat[score_idx][valid_cols] * w
+    return final_score
+
+
 def select_topn(
     all_scores: dict,
     score_idx: int,
@@ -38,13 +54,7 @@ def select_topn(
             topn_stocks: 选出的 top-N 股票代码列表
             final_score_arr: 全候选股的加权打分（按 valid_stocks 顺序，用于落地 plan）
     """
-    final_score = np.zeros(len(valid_stocks))
-    for name, ranks_mat in all_scores.items():
-        w = weights[name]
-        if w == 0:
-            continue
-        ranks = ranks_mat[score_idx][valid_cols]
-        final_score += ranks * w
+    final_score = compute_weighted_scores(all_scores, score_idx, valid_cols, weights)
 
     if filter_mask is not None:
         if filter_exempt_codes:
@@ -71,8 +81,14 @@ def select_topn(
     return topn, final_score
 
 
-def scores_to_ranks(scores: np.ndarray) -> np.ndarray:
-    """每日截面排名归一化 (0~1, 1=最优), NaN → 0。原地修改。"""
+def scores_to_ranks(scores: np.ndarray, total_n: int | None = None) -> np.ndarray:
+    """每日截面排名归一化 (0~1, 1=最优), NaN → 0。原地修改。
+
+    Args:
+        scores: (n_dates, n_stocks) 原始因子值
+        total_n: 全量股票数，用于排名间距修正。非空时用 total_n 做分母
+                 而非本地有效股票数，保证子集排名与全量排名的间距对齐。
+    """
     n_days = scores.shape[0]
     ranks = np.empty_like(scores, dtype=np.float32)
     for d in range(n_days):
@@ -86,5 +102,6 @@ def scores_to_ranks(scores: np.ndarray) -> np.ndarray:
         order = np.argsort(row[valid_mask])[::-1]
         ranks[d, nans] = 0.0
         col_idx = np.where(valid_mask)[0]
-        ranks[d, col_idx[order]] = 1.0 - np.arange(n_valid, dtype=np.float32) / n_valid
+        denom = max(total_n - 1, 1) if total_n is not None else n_valid
+        ranks[d, col_idx[order]] = 1.0 - np.arange(n_valid, dtype=np.float32) / denom
     return ranks

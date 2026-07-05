@@ -15,6 +15,7 @@
     "limit_up_protection": true,
     "empty_months": [],
     "cash_reserve_ratio": 0.15,
-    "holding_period": 1
+    "holding_period": 1,
+    "prefilter_n": 1200
   }
 }

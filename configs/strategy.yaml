@@ -51,7 +51,7 @@ profiles:
     factor_classes: [
       TrueMarketCap, AmountBasedSmallCap,
       AmihudIlliquidity, VolumeCV,
-      OvernightGap, High52Week,
+      OvernightGapDown, High52Week,
       ProfitGrowth, CashFlowYield,
       Factor_20260531_005210_g17_4,
       Factor_20260531_005210_g41_0,
@@ -66,7 +66,7 @@ profiles:
     factor_classes: [
       TrueMarketCap, AmountBasedSmallCap,
       AmihudIlliquidity, VolumeCV,
-      OvernightGap, High52Week,
+      OvernightGapDown, High52Week,
       Factor_20260530_195339_g14_4,
       BookToMarket,
       Factor_20260530_195339_g34_4,
@@ -83,7 +83,7 @@ profiles:
     factor_classes: [
       TrueMarketCap, AmountBasedSmallCap,
       AmihudIlliquidity, VolumeCV,
-      OvernightGap, High52Week,
+      OvernightGapDown, High52Week,
       Factor_20260531_005210_g38_4,
       Factor_20260530_195339_g34_4,
     ]
@@ -97,7 +97,7 @@ profiles:
     factor_classes: [
       TrueMarketCap, AmountBasedSmallCap,
       AmihudIlliquidity, VolumeCV,
-      OvernightGap, High52Week,
+      OvernightGapDown, High52Week,
       BookToMarket, EarningsYield, CashFlowYield,
       Factor_20260531_005210_g15_4,
     ]
@@ -129,7 +129,7 @@ profiles:
       CashFlowYield, EarningsYield, ProfitGrowth, BookToMarketQuality,
       Factor_20260531_005210_g17_4, Factor_20260531_005210_g41_0,
       Factor_20260531_005210_g39_1, Factor_20260531_005210_g16_1,
-      VolumeCV, OvernightGap,
+      VolumeCV, OvernightGapDown,
     ]
     weight_range: [-1.0, 1.0, 0.1]
     search_spaces: [buy_n, stock_pool]
@@ -141,7 +141,7 @@ profiles:
     factor_classes: [
       TrueMarketCap, AmountBasedSmallCap,
       AmihudIlliquidity, VolumeCV,
-      OvernightGap, High52Week,
+      OvernightGapDown, High52Week,
       CashFlowYield, ProfitGrowth, BookToMarketQuality,
       BookToMarket, DeepValueComposite, EarningsYield, ROEQuality,
     ]
@@ -150,7 +150,7 @@ profiles:
       AmountBasedSmallCap: 0.7
       AmihudIlliquidity: 0.6
       VolumeCV: 0.4
-      OvernightGap: 0.5
+      OvernightGapDown: 0.5
       High52Week: 0.0
     weight_range: [-1.0, 1.0, 0.1]
     search_spaces: [buy_n]

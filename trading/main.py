@@ -12,10 +12,13 @@ from configs import TRADE_ACCOUNT
 from data.db import allow_buy_stock_code_list
 from core.backtest import _compute_factor_scores
 from core.legality import LegalityChecker
+from core.prefilter import apply_prefilter
+from core.scoring import compute_weighted_scores
 from core.strategy_config import load_strategy_config
 from core.strategy import build_rebalance_day
 from core.timing import compute_position_multiplier_for_date
 from data.db.stock_name import get_stock_name_at_date
+from utils.stock.time import get_last_trading_day
 
 
 def _build_plan_rows(*, trade_date, buy_n_stocks, buy_details, sell_details,
@@ -222,11 +225,39 @@ if __name__ == '__main__':
             trading_logger.info(f"[盘前耗时] QMT持仓查询: {time.time() - stage_t:.1f}s")
             stage_t = time.time()
 
+        # ① 候选池
+        all_stocks = allow_buy_stock_code_list(target_date=trade_date)
+        trading_logger.info(f"候选股票池: {len(all_stocks)} 只")
+        trading_logger.info(f"[盘前耗时] 候选池加载: {time.time() - stage_t:.1f}s")
+        stage_t = time.time()
+
+        # ② T-1 排名 → prefilter（NPZ 已有 T-1 完整 K 线，不叠加今日 overlay）
+        npz_data = None
+        prefilter_n = individual_config.get('prefilter_n', 0)
+        if prefilter_n > 0:
+            prev_date = get_last_trading_day(trade_date)
+            prev_dt = datetime.combine(prev_date, datetime.min.time())
+            t1 = _compute_factor_scores([prev_dt], all_stocks, weights, factor_classes)
+            if t1:
+                t1_data, t1_scores, _, _, t1_di, t1_stocks, t1_si = t1
+                t1_cols = np.array([t1_si[s] for s in t1_stocks], dtype=np.intp)
+                t1_w = compute_weighted_scores(t1_scores, t1_di[0], t1_cols, weights)
+                t1_ranking = [t1_stocks[i] for i in np.argsort(-t1_w)]
+                pos_codes = list(positions.keys()) if positions else []
+                all_stocks = apply_prefilter(t1_ranking, prefilter_n, all_stocks, pos_codes)
+                npz_data = t1_data
+                trading_logger.info(f"[Prefilter] → {len(all_stocks)} 只 (T-1 top {prefilter_n})")
+            else:
+                trading_logger.warning("[Prefilter] T-1 不在 NPZ 范围内，跳过")
+            trading_logger.info(f"[盘前耗时] T-1排名+prefilter: {time.time() - stage_t:.1f}s")
+            stage_t = time.time()
+
+        # ③ 拉 K 线（只拉 prefiltered 股票）
         kline_overlay = None
         if not no_data_fetch:
             from data.update_live import update_live_quick
             anchor = skip_dt.date() if skip_update else None
-            kline_overlay = update_live_quick(patch_npz=False, anchor_date=anchor)
+            kline_overlay = update_live_quick(patch_npz=False, anchor_date=anchor, codes=all_stocks)
             trading_logger.info(f"[盘前耗时] 快速数据更新: {time.time() - stage_t:.1f}s")
             stage_t = time.time()
         store._kline_overlay = kline_overlay
@@ -236,13 +267,10 @@ if __name__ == '__main__':
         trading_logger.info(f"[盘前耗时] 行情订阅: {time.time() - stage_t:.1f}s")
         stage_t = time.time()
 
-        all_stocks = allow_buy_stock_code_list(target_date=trade_date)
-        trading_logger.info(f"候选股票池: {len(all_stocks)} 只")
-        trading_logger.info(f"[盘前耗时] 候选池加载: {time.time() - stage_t:.1f}s")
-        stage_t = time.time()
+        # ④ T 日因子（复用 npz_data + 叠加今日 K 线 overlay）
         result = _compute_factor_scores(
             [signal_datetime], all_stocks, weights, factor_classes,
-            kline_data=getattr(store, '_kline_overlay', None))
+            kline_data=kline_overlay, data=npz_data)
         if result is None:
             raise ValueError(f"信号日期 {signal_datetime.date()} 不在 runtime npz 日期范围内")
         data, all_scores, _, valid_dates, date_indices, valid_stocks, stock_indices = result

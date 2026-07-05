@@ -11,20 +11,19 @@
    - `pending['prices']`: 盘前开盘估算价。
    - `pending['limit_prices']`: 每只涨停价(前收×(1+板块涨跌幅)),买单按它估资金冻结。
 
-2. 卖、买挂单模型
-   - 卖单:一次性提交全部 open[T] 限价单,不撤单、不重挂,让订单留在交易所队列里。
+2. 卖、买挂单模型（统一 OrderMonitor）
+   - 卖单:一次性提交全部 open[T] 限价单，被拒后低频重试。
    - 买单:按 TopN 顺序检查 QMT 可用资金,够一只/一部分就立即提交 open[T] 限价单。
    - 资金暂时不够:不下废单,轮询 QMT 可用资金;任何卖出成交回款到账后继续挂后续买单。
 
-3. 买单:持久挂单、不撤单
-   - 已提交买单不因 30s 未成交撤单,保留时间优先权。
+3. 持久挂单、不撤单、买卖共用重试
+   - 已提交买卖单不因 30s 未成交撤单,保留时间优先权。
    - 资金不足废单只等待回款后重试,不熔断。
-   - 非资金类废单(价格范围/柜台限制)不减手、不熔断,按同一 open[T] 限价低频重试到收盘前。
+   - 非资金类废单(价格范围/柜台限制)不减手、不熔断,按同一限价低频重试到收盘前。
    - 无需本地账本:每次提交前重新查询 QMT 可用资金;在途冻结由 QMT cash 反映。
 
 4. 资金口径
-   - 买入校验用「可用资金」,`_available_buy_cash()` 优先 `current_balance`/`fetch_balance`,
-     再回退 `cash - frozen_cash`。
+   - 买入校验用「可用资金」,`_available_buy_cash()` 使用 XtAsset.cash（可用金额,实时含冻结扣减与卖出回款）。
    - 单笔占用按涨停价估(券商市价单按涨停价冻结),避免按开盘价低估 → 「资金可用数不足」废单。
 
 5. 飞书与本地留存
@@ -39,7 +38,7 @@ from datetime import datetime, time as dt_time
 
 from xtquant import xtconstant
 
-from core.fees import LIVE_BUY_FEE_RATE, LIVE_BUY_PRICE_BUFFER
+from core.fees import LIVE_BUY_FEE_RATE
 from data.db import get_stock_detail
 from trading.helper import get_order_status_label
 from trading.logger import trading_logger
@@ -73,134 +72,111 @@ def _is_insufficient_funds(msg: str) -> bool:
             or '不足' in m or 'insufficient' in m.lower())
 
 
-class BaseMonitor:
-    def __init__(self, executor, signal_date, trade_date):
+class OrderMonitor:
+    """统一买卖订单监控器。
+
+    卖单：一次性全提交，被拒后低频重试。
+    买单：按 TopN + QMT 可用资金循环提交，资金不够等卖单回款。
+    买卖共用：_submit / _handle_terminal_orders / retry_after 退避。
+    """
+
+    def __init__(self, executor, sell_orders, buy_allocations, buy_n_stocks,
+                 prices, signal_date, trade_date, limit_prices=None):
         self.executor = executor
         self.trader = executor.trader
         self.signal_date = signal_date
         self.trade_date = trade_date
         self.submitted: list[dict] = []
 
-    def record_action(self, action: str, *, code: str = '', order_id: int = 0,
-                      order_type: int | None = None, shares: int = 0,
-                      amount: float = 0.0, msg: str = ''):
-        trading_logger.info(
-            f"[ExecutorAction] action={action} code={code} order_id={order_id} "
-            f"order_type={order_type} shares={shares} amount={amount:.2f} msg={msg}"
-        )
-        try:
-            live_trade_recorder.record_event(
-                EVT_EXECUTION_ACTION,
-                source=SRC_EXECUTOR,
-                trade_date=self.trade_date,
-                code=code,
-                order_id=order_id,
-                order_type=order_type,
-                order_volume=shares,
-                amount=amount,
-                status_msg=f"{action}: {msg}".strip(),
-            )
-        except Exception as e:
-            trading_logger.warning(f"execution_action 落盘失败: {e}")
+        # 解析卖单：负数 → 查 QMT 取实际可卖股数
+        self.sell_targets: dict[str, int] = {}
+        for code, shares in (sell_orders or []):
+            if shares < 0:
+                pos = self.trader.query_stock_position(code)
+                resolved = int(getattr(pos, 'can_use_volume', 0) or 0) if pos else 0
+                self.sell_targets[code] = resolved
+            else:
+                self.sell_targets[code] = shares
 
-    @staticmethod
-    def _remaining_from_order(o):
-        if not o:
-            return 0
-        return max(0, int(getattr(o, 'order_volume', 0) or 0) - int(getattr(o, 'traded_volume', 0) or 0))
-
-
-class SellMonitor(BaseMonitor):
-    """卖单 monitor:一次性提交卖单,供买单侧判断卖出回款是否仍在途。"""
-
-    def __init__(self, executor, sell_orders, signal_date, trade_date, prices=None):
-        super().__init__(executor, signal_date, trade_date)
-        self.sell_orders = list(sell_orders or [])
-        self.prices = prices or {}
-
-    def all_terminal(self) -> bool:
-        """全部卖单是否已达终态（即回款不再有新增在途）。"""
-        for s in self.submitted:
-            o = self.trader.query_order(s['order_id'])
-            if o and o.order_status not in TERMINAL_STATUS:
-                return False
-        return True
-
-    def _submit_initial_sells(self):
-        """串行提交全部卖单并登记到 self.submitted,供买单资金门控判断卖单是否仍在途。"""
-        for code, shares in self.sell_orders:
-            open_px = self.prices.get(code, 0)
-            limit_price = (self.executor._sell_protect_price(open_px, self.executor.SELL_PROTECT_PCT)
-                           if open_px > 0 else None)
-            r = self.executor._submit_sell_order(code, shares,
-                                                  self.signal_date, self.trade_date,
-                                                  limit_price=limit_price)
-            if r:
-                r['submitted_at'] = time.time()
-                self.submitted.append(r)
-                self.record_action(
-                    'sell_submit',
-                    code=r['code'],
-                    order_id=r['order_id'],
-                    order_type=xtconstant.STOCK_SELL,
-                    shares=r['shares'],
-                )
-        return self.submitted
-
-class BuyMonitor(BaseMonitor):
-    """买单 monitor:资金够就挂 open[T] 限价单,挂上后不撤单。
-
-    只做两件事:
-      1. 用 QMT cash 判断当前还能挂多少买单;
-      2. 卖单回款或废单冷却后,继续按 TopN 顺序挂剩余买单。
-    """
-
-    def __init__(self, executor, buy_allocations, buy_n_stocks, prices,
-                 signal_date, trade_date, limit_prices=None):
-        super().__init__(executor, signal_date, trade_date)
+        # 解析买单
         self.buy_allocations = buy_allocations or {}
-        self.buy_seq = [
-            c for c in (buy_n_stocks or list(self.buy_allocations.keys()))
-            if c in self.buy_allocations and prices.get(c, 0) > 0
-        ]
         self.prices = prices or {}
-        # 市价买单券商按涨停价冻结资金,用涨停价(前收×(1+板块涨跌幅))估占用,缺失回退 开盘价×SLIPPAGE
         self.limit_prices = limit_prices or {}
+        self.buy_seq = [
+            c for c in (buy_n_stocks or list(self.buy_allocations))
+            if c in self.buy_allocations and self.prices.get(c, 0) > 0
+        ]
         self.targets = {c: int(self.buy_allocations[c]) for c in self.buy_seq}
-        self.orders_by_code = {c: [] for c in self.buy_seq}
-        self.handled_terminal_orders: set[int] = set()
-        # 废单后低频重试,避免价格范围暂不可报时刷爆柜台。
+
+        # 统一状态追踪（买+卖）
+        self.orders_by_code: dict[str, list[int]] = {}
+        self.handled_terminal: set[int] = set()
         self.retry_after: dict[str, float] = {}
-        # 并发卖买时由 execute() 注入,用于判断卖单回款是否仍在途
-        self.sell_monitor: SellMonitor | None = None
+
+    # ── 主流程 ─────────────────────────────────────────────
 
     def run(self):
-        if not self.buy_seq:
-            return []
-        self.record_action('buy_monitor_start', msg=f"{len(self.buy_seq)} targets")
-        self._buy_loop()
-        self.record_action('buy_monitor_done', msg=f"{len(self.submitted)} submitted")
+        # Phase 1: 卖单一次性全提交
+        for code, shares in self.sell_targets.items():
+            self._submit('SELL', code, shares)
+
+        # Phase 2+3: 主循环（买提交 + 买卖废单重试）
+        if self.buy_seq or self.sell_targets:
+            self._main_loop()
+
         return self.submitted
 
-    # ── 资金 / 缺口 ─────────────────────────────────────────
+    # ── 统一提交入口 ────────────────────────────────────────
+
+    def _submit(self, direction, code, shares):
+        if direction == 'SELL':
+            price = self.prices.get(code, 0)
+            limit = (self.executor._protect_price(price, self.executor.SELL_PROTECT_PCT, 'SELL')
+                     if price > 0 else None)
+            r = self.executor.submit_order('SELL', code, shares, limit, self.signal_date, self.trade_date)
+            otype = xtconstant.STOCK_SELL
+        else:
+            shares = floor_buy_shares(code, shares)
+            if shares < min_buy_shares(code):
+                return None
+            price = self.prices.get(code, 0)
+            limit = (self.executor._protect_price(price, self.executor.BUY_PROTECT_PCT, 'BUY')
+                     if price > 0 else None)
+            r = self.executor.submit_order('BUY', code, shares, limit, self.signal_date, self.trade_date)
+            otype = xtconstant.STOCK_BUY
+
+        if not r:
+            self.retry_after[code] = time.time() + self.executor.ORDER_REJECT_RETRY_SEC
+            self.record_action(f'{direction.lower()}_submit_failed', code=code,
+                               order_type=otype, shares=shares)
+            return None
+
+        r['submitted_at'] = time.time()
+        r['direction'] = direction
+        self.submitted.append(r)
+        self.orders_by_code.setdefault(code, []).append(r['order_id'])
+        amount = shares * self._unit_cost(code) if direction == 'BUY' else 0.0
+        self.record_action(f'{direction.lower()}_submit', code=code, order_id=r['order_id'],
+                           order_type=otype, shares=shares, amount=amount,
+                           msg=f'limit={limit:.2f}' if limit else '')
+        return r
+
+    # ── 资金 / 单位成本 ──────────────────────────────────────
+
     def _available_cash(self) -> float:
         return self.executor._available_buy_cash(self.trader.query_asset())
 
     def _unit_cost(self, code) -> float:
-        """单笔每股占用现金:优先涨停价×(1+费率)(镜像券商按涨停价冻结),缺失回退 开盘价×SLIPPAGE。"""
         lp = self.limit_prices.get(code, 0)
         if lp and lp > 0:
             return lp * (1 + self.executor.BUY_FEE_RATE)
-        return self.prices[code] * self.executor.SLIPPAGE * (1 + self.executor.BUY_FEE_RATE)
+        return self.prices[code] * (1 + self.executor.BUY_FEE_RATE)
 
-    def _sells_pending(self) -> bool:
-        """卖单回款是否仍在途——实时查卖单终态,不依赖外部标志位。"""
-        sm = self.sell_monitor
-        return bool(sm is not None and not sm.all_terminal())
+    # ── 订单追踪 ─────────────────────────────────────────────
 
     def _filled_inflight(self, code):
         filled = inflight = 0
-        for oid in self.orders_by_code[code]:
+        for oid in self.orders_by_code.get(code, []):
             o = self.trader.query_order(oid)
             if not o:
                 continue
@@ -211,17 +187,41 @@ class BuyMonitor(BaseMonitor):
         return filled, inflight
 
     def _remaining(self, code):
+        """买单剩余未成交股数"""
         filled, inflight = self._filled_inflight(code)
-        return max(0, self.targets[code] - filled - inflight)
+        return max(0, self.targets.get(code, 0) - filled - inflight)
 
-    def _all_done_or_blocked(self):
+    def _sell_remaining(self, code):
+        """卖单剩余未成交股数"""
+        filled, inflight = self._filled_inflight(code)
+        return max(0, self.sell_targets.get(code, 0) - filled - inflight)
+
+    def _sells_pending(self) -> bool:
+        """有卖单仍在途（未达终态）→ 回款还在路上"""
+        for code in self.sell_targets:
+            for oid in self.orders_by_code.get(code, []):
+                o = self.trader.query_order(oid)
+                if o and o.order_status not in TERMINAL_STATUS:
+                    return True
+        return False
+
+    # ── 退出条件 ─────────────────────────────────────────────
+
+    def _all_buys_done(self):
         for code in self.buy_seq:
             if self._remaining(code) >= min_buy_shares(code):
                 return False
         return True
 
+    def _all_done_or_blocked(self):
+        if not self._all_buys_done():
+            return False
+        for code in self.sell_targets:
+            if self._sell_remaining(code) > 0:
+                return False
+        return True
+
     def _can_afford_any(self, cash: float) -> bool:
-        """可用现金是否买得起任意剩余标的最小1手。"""
         for code in self.buy_seq:
             minimum = min_buy_shares(code)
             if self._remaining(code) < minimum:
@@ -230,76 +230,59 @@ class BuyMonitor(BaseMonitor):
                 return True
         return False
 
-    def _monitor_deadline(self) -> float:
-        override = getattr(self.executor, 'BUY_MONITOR_DEADLINE_SEC', None)
-        if override is not None:
-            return time.time() + float(override)
-        return datetime.combine(self.trade_date, self.executor.BUY_MONITOR_END).timestamp()
+    def _waiting_for_retry(self) -> bool:
+        now = time.time()
+        for code in self.buy_seq:
+            if self._remaining(code) < min_buy_shares(code):
+                continue
+            if self.retry_after.get(code, 0) > now:
+                return True
+        for code in self.sell_targets:
+            if self._sell_remaining(code) <= 0:
+                continue
+            if self.retry_after.get(code, 0) > now:
+                return True
+        return False
+
+    # ── 废单识别（买卖共用）──────────────────────────────────
 
     def _handle_terminal_orders(self):
-        """处理已终态零成交委托:资金不足等回款,其他柜台废单按原价低频重试。"""
+        """检查所有订单（买+卖），0成交终态 → 设退避 timer"""
         now = time.time()
         for code, order_ids in self.orders_by_code.items():
             for oid in order_ids:
-                if oid in self.handled_terminal_orders:
+                if oid in self.handled_terminal:
                     continue
                 o = self.trader.query_order(oid)
                 if not o or o.order_status not in TERMINAL_STATUS:
                     continue
-                self.handled_terminal_orders.add(oid)
+                self.handled_terminal.add(oid)
                 traded = int(getattr(o, 'traded_volume', 0) or 0)
                 if traded > 0:
                     continue
                 msg = (getattr(o, 'status_msg', '') or '').strip()
-                action = 'buy_underfunded' if _is_insufficient_funds(msg) else 'buy_reject_retry_later'
-                delay = (self.executor.UNDERFUNDED_BACKOFF_SEC if _is_insufficient_funds(msg)
-                         else self.executor.ORDER_REJECT_RETRY_SEC)
+                is_buy = int(getattr(o, 'order_type', 0) or 0) == xtconstant.STOCK_BUY
+                if is_buy and _is_insufficient_funds(msg):
+                    action = 'buy_underfunded'
+                    delay = self.executor.UNDERFUNDED_BACKOFF_SEC
+                else:
+                    direction = 'buy' if is_buy else 'sell'
+                    action = f'{direction}_reject_retry_later'
+                    delay = self.executor.ORDER_REJECT_RETRY_SEC
                 self.retry_after[code] = now + delay
                 self.record_action(action, code=code, order_id=oid,
-                                   order_type=xtconstant.STOCK_BUY,
+                                   order_type=int(getattr(o, 'order_type', 0) or 0),
                                    shares=int(getattr(o, 'order_volume', 0) or 0),
                                    msg=msg)
 
-    def _waiting_for_retry(self, now: float) -> bool:
-        for code in self.buy_seq:
-            if self._remaining(code) < min_buy_shares(code):
-                continue
-            if self.retry_after.get(code, 0.0) > now:
-                return True
-        return False
-
-    # ── 主循环 ─────────────────────────────────────────────
-    def _buy_loop(self):
-        deadline = self._monitor_deadline()
-        last_log = time.time()
-        while time.time() < deadline:
-            self._handle_terminal_orders()
-            if time.time() - last_log >= 30:
-                trading_logger.info(
-                    f"[BuyMonitor] 挂单监控中: 已提交 {len(self.submitted)} 笔, "
-                    f"卖单回款在途={self._sells_pending()}")
-                last_log = time.time()
-            progressed = self._submit_affordable_buys()
-            if self._all_done_or_blocked():
-                return
-            if not progressed:
-                now = time.time()
-                if self._waiting_for_retry(now):
-                    time.sleep(self.executor.MONITOR_POLL_SEC)
-                    continue
-                cash = self._available_cash()
-                if not self._sells_pending() and not self._can_afford_any(cash):
-                    trading_logger.warning(
-                        f"[BuyMonitor] 可用资金 {cash:.2f} 不足以买入任何剩余标的,结束挂单提交")
-                    return
-                time.sleep(self.executor.MONITOR_POLL_SEC)
+    # ── 买单提交 ─────────────────────────────────────────────
 
     def _submit_affordable_buys(self) -> bool:
-        """按 TopN 顺序提交当前现金买得起的买单。返回本轮是否有新委托。"""
+        """按 TopN 顺序提交当前现金买得起的买单"""
         progressed = False
         now = time.time()
         for code in self.buy_seq:
-            if now < self.retry_after.get(code, 0.0):
+            if now < self.retry_after.get(code, 0):
                 continue
             rem = self._remaining(code)
             min_lot = min_buy_shares(code)
@@ -310,43 +293,88 @@ class BuyMonitor(BaseMonitor):
             shares = floor_buy_shares(code, min(rem, afford))
             if shares < min_lot:
                 continue
-            r = self._submit_buy(code, shares)
-            if not r:
-                self.retry_after[code] = time.time() + self.executor.ORDER_REJECT_RETRY_SEC
-                self.record_action('buy_submit_failed_retry_later', code=code,
-                                   order_type=xtconstant.STOCK_BUY, shares=shares)
-                continue
-            progressed = bool(r) or progressed
+            if self._submit('BUY', code, shares):
+                progressed = True
         return progressed
 
-    def _submit_buy(self, code, shares):
-        ml = min_buy_shares(code)
-        shares = floor_buy_shares(code, shares)
-        if shares < ml:
-            return None
-        open_px = self.prices.get(code, 0)
-        limit_price = (self.executor._buy_protect_price(open_px, self.executor.BUY_PROTECT_PCT)
-                       if open_px > 0 else None)
-        r = self.executor._submit_buy_order(
-            code, shares, self.signal_date, self.trade_date, limit_price=limit_price)
-        if not r:
-            return None
-        r['submitted_at'] = time.time()
-        self.orders_by_code[code].append(r['order_id'])
-        self.submitted.append(r)
-        self.record_action(
-            'buy_submit', code=code, order_id=r['order_id'],
-            order_type=xtconstant.STOCK_BUY, shares=shares,
-            amount=shares * self._unit_cost(code),
-            msg=f'limit={limit_price:.2f}' if limit_price else '',
+    # ── 卖单重试 ─────────────────────────────────────────────
+
+    def _retry_sells(self) -> bool:
+        """重试被拒卖单（超退避期后）"""
+        progressed = False
+        now = time.time()
+        for code in self.sell_targets:
+            if now < self.retry_after.get(code, 0):
+                continue
+            rem = self._sell_remaining(code)
+            if rem <= 0:
+                continue
+            if self._submit('SELL', code, rem):
+                progressed = True
+        return progressed
+
+    # ── 主循环 ───────────────────────────────────────────────
+
+    def _monitor_deadline(self) -> float:
+        override = getattr(self.executor, 'BUY_MONITOR_DEADLINE_SEC', None)
+        if override is not None:
+            return time.time() + float(override)
+        return datetime.combine(self.trade_date, self.executor.BUY_MONITOR_END).timestamp()
+
+    def _main_loop(self):
+        deadline = self._monitor_deadline()
+        last_log = time.time()
+        while time.time() < deadline:
+            self._handle_terminal_orders()
+            if time.time() - last_log >= 30:
+                trading_logger.info(
+                    f"[OrderMonitor] 监控中: 已提交 {len(self.submitted)} 笔, "
+                    f"卖单在途={self._sells_pending()}")
+                last_log = time.time()
+
+            buy_progress = self._submit_affordable_buys()
+            sell_progress = self._retry_sells()
+            progressed = buy_progress or sell_progress
+
+            if self._all_done_or_blocked():
+                return
+
+            if not progressed:
+                if self._waiting_for_retry():
+                    time.sleep(self.executor.MONITOR_POLL_SEC)
+                    continue
+                cash = self._available_cash()
+                if not self._sells_pending() and not self._can_afford_any(cash):
+                    trading_logger.warning(
+                        f"[OrderMonitor] 可用资金 {cash:.2f} 不足以买入任何剩余标的, 结束")
+                    return
+                time.sleep(self.executor.MONITOR_POLL_SEC)
+
+    # ── 日志 / 落盘 ─────────────────────────────────────────
+
+    def record_action(self, action: str, *, code: str = '', order_id: int = 0,
+                      order_type: int | None = None, shares: int = 0,
+                      amount: float = 0.0, msg: str = ''):
+        trading_logger.info(
+            f"[ExecutorAction] action={action} code={code} order_id={order_id} "
+            f"order_type={order_type} shares={shares} amount={amount:.2f} msg={msg}"
         )
-        return r
+        live_trade_recorder.record_event(
+            EVT_EXECUTION_ACTION,
+            source=SRC_EXECUTOR,
+            trade_date=self.trade_date,
+            code=code,
+            order_id=order_id,
+            order_type=order_type,
+            order_volume=shares,
+            amount=amount,
+            status_msg=f"{action}: {msg}".strip(),
+        )
 
 
 class RebalanceExecutor:
     """调仓下单执行器,依赖一个 `Trader` 实例进行实际委托。"""
 
-    SLIPPAGE = LIVE_BUY_PRICE_BUFFER       # 缺涨停价时 unit_cost 回退缓冲(=开盘价×SLIPPAGE)
     BUY_FEE_RATE = LIVE_BUY_FEE_RATE       # 实盘券商冻结费率(佣金+过户费)
     BUY_PROTECT_PCT = 0.0     # 买入限价 = 开盘价（限价 ≤ 开盘价才能成交）
     SELL_PROTECT_PCT = 0.0    # 卖出限价 = 开盘价（限价 ≤ 开盘价才能成交）
@@ -394,60 +422,25 @@ class RebalanceExecutor:
         return max(0.0, float(getattr(asset, 'cash', 0.0) or 0.0))
 
     @staticmethod
-    def _buy_protect_price(open_price: float, protect_pct: float) -> float:
-        """买入限价:开盘价×(1+protect_pct),按 A 股最小报价单位取整。"""
-        tick = 0.001 if open_price < 1.0 else 0.01
-        raw = open_price * (1 + protect_pct)
+    def _protect_price(price: float, pct: float, direction: str) -> float:
+        """保护限价:price×(1±pct),按 A 股最小报价单位取整。direction='BUY'上浮,'SELL'下浮。"""
+        sign = 1 if direction == 'BUY' else -1
+        tick = 0.001 if price < 1.0 else 0.01
+        raw = price * (1 + sign * pct)
         return round(round(raw / tick) * tick, 3 if tick == 0.001 else 2)
 
-    @staticmethod
-    def _sell_protect_price(open_price: float, protect_pct: float) -> float:
-        """卖出限价:开盘价×(1-protect_pct),按 A 股最小报价单位取整。"""
-        tick = 0.001 if open_price < 1.0 else 0.01
-        raw = open_price * (1 - protect_pct)
-        return round(round(raw / tick) * tick, 3 if tick == 0.001 else 2)
-
-    def _submit_sell_order(self, code, shares, signal_date, trade_date, *, limit_price=None):
-        """提交卖出委托(限价单)。shares=-1 表示全部清仓。返回 {code, order_type, order_id, shares} 或 None。"""
+    def submit_order(self, direction, code, shares, limit_price, signal_date, trade_date):
+        """统一的 QMT 下单入口。direction='BUY'|'SELL',返回 {code,order_type,order_id,shares} 或 None。"""
+        order_type = xtconstant.STOCK_BUY if direction == 'BUY' else xtconstant.STOCK_SELL
         remark = f'rebalance signal={signal_date.isoformat()} trade={trade_date.isoformat()}'
-        try:
-            if shares < 0:
-                pos = self.trader.query_stock_position(code)
-                shares = int(getattr(pos, 'can_use_volume', 0) or 0) if pos else 0
-                if shares < 100:
-                    trading_logger.info(f"{code} 无可卖持仓，跳过清仓")
-                    return None
-            order_id = self.trader.order(
-                xtconstant.STOCK_SELL, code, shares, limit_price, order_remark=remark)
-            if order_id is None:
-                trading_logger.info(f"{code} 无需卖出或委托未发出")
-                return None
-            px_msg = f' @{limit_price:.2f}' if limit_price else ''
-            trading_logger.info(
-                f"已提交卖出委托: {code} {shares}股{px_msg} order_id={order_id}")
-            recorder.mark("提交卖出委托")
-            return {'code': code, 'order_type': 'SELL', 'order_id': order_id, 'shares': shares}
-        except ValueError as e:
-            trading_logger.info(f"{code} 卖出前校验拦截: {e}")
-        except Exception as e:
-            trading_logger.warning(f"{code} 卖出委托失败: {e}")
-        return None
-
-    def _submit_buy_order(self, code, shares, signal_date, trade_date, *, limit_price=None):
-        """提交买入委托(保护限价单)。返回 {code, order_type, order_id, shares} 或 None。"""
-        remark = f'rebalance signal={signal_date.isoformat()} trade={trade_date.isoformat()}'
-        try:
-            order_id = self.trader.order(
-                xtconstant.STOCK_BUY, code, shares, limit_price, order_remark=remark)
-            px_msg = f' @{limit_price:.2f}' if limit_price else ''
-            trading_logger.info(f"已提交买入委托: {code} * {shares} 股{px_msg} order_id={order_id}")
-            recorder.mark("提交买入委托")
-            return {'code': code, 'order_type': 'BUY', 'order_id': order_id, 'shares': shares}
-        except ValueError as e:
-            trading_logger.info(f"{code} 买入前校验拦截: {e}")
-        except Exception as e:
-            trading_logger.warning(f"{code} 买入委托失败: {e}")
-        return None
+        order_id = self.trader.order(order_type, code, shares, limit_price, order_remark=remark)
+        if order_id is None:
+            trading_logger.info(f"{code} {direction}委托未发出")
+            return None
+        px_msg = f' @{limit_price:.2f}' if limit_price else ''
+        trading_logger.info(f"已提交{direction}委托: {code} {shares}股{px_msg} order_id={order_id}")
+        recorder.mark(f"提交{direction}委托")
+        return {'code': code, 'order_type': direction, 'order_id': order_id, 'shares': shares}
 
     def _wait_terminal(self, submitted):
         """轮询等待所有委托进入终态。"""
@@ -533,29 +526,26 @@ class RebalanceExecutor:
             item['shares'] += r['shares']
 
         rows = sorted(grouped.values(), key=lambda x: (-x['count'], x['stock']))
-        try:
-            from trading.lark.sender import LarkMsgLevel, lark_sender
-            lark_sender.send_table_card(
-                title=f"❌ 调仓失败汇总 · {len(fail_rows)} 笔 / {len(rows)} 类",
-                level=LarkMsgLevel.Danger,
-                summary_md="失败委托已聚合展示；完整本地明细见交易日志。",
-                tables=[{
-                    'title': '**失败委托**',
-                    'element_id': 'rebalance_failures',
-                    'page_size': 20,
-                    'columns': [
-                        {'name': 'direction', 'display_name': '方向', 'horizontal_align': 'left'},
-                        {'name': 'stock', 'display_name': '股票', 'horizontal_align': 'left'},
-                        {'name': 'status', 'display_name': '状态', 'horizontal_align': 'left'},
-                        {'name': 'count', 'display_name': '笔数', 'horizontal_align': 'right'},
-                        {'name': 'shares', 'display_name': '股数', 'horizontal_align': 'right'},
-                        {'name': 'reason', 'display_name': '原因', 'horizontal_align': 'left'},
-                    ],
-                    'rows': rows,
-                }],
-            )
-        except Exception as e:
-            trading_logger.warning(f"失败委托聚合卡片发送失败: {e}")
+        from trading.lark.sender import LarkMsgLevel, lark_sender
+        lark_sender.send_table_card(
+            title=f"❌ 调仓失败汇总 · {len(fail_rows)} 笔 / {len(rows)} 类",
+            level=LarkMsgLevel.Danger,
+            summary_md="失败委托已聚合展示；完整本地明细见交易日志。",
+            tables=[{
+                'title': '**失败委托**',
+                'element_id': 'rebalance_failures',
+                'page_size': 20,
+                'columns': [
+                    {'name': 'direction', 'display_name': '方向', 'horizontal_align': 'left'},
+                    {'name': 'stock', 'display_name': '股票', 'horizontal_align': 'left'},
+                    {'name': 'status', 'display_name': '状态', 'horizontal_align': 'left'},
+                    {'name': 'count', 'display_name': '笔数', 'horizontal_align': 'right'},
+                    {'name': 'shares', 'display_name': '股数', 'horizontal_align': 'right'},
+                    {'name': 'reason', 'display_name': '原因', 'horizontal_align': 'left'},
+                ],
+                'rows': rows,
+            }],
+        )
 
     def execute(self, pending, *, execute_sell=True, execute_buy=True,
                 off_hours_fast: bool = False):
@@ -594,50 +584,38 @@ class RebalanceExecutor:
         for code, shares in sell_orders:
             trading_logger.info(
                 f"[执行计划-卖] code={code} shares={shares} "
-                f"open_price={prices.get(code, 0):.4f}")
+                f"close_price={prices.get(code, 0):.4f}")
         for code in buy_n_stocks:
             if code not in buy_allocations:
                 continue
             trading_logger.info(
                 f"[执行计划-买] code={code} shares={int(buy_allocations[code])} "
-                f"open_price={prices.get(code, 0):.4f} "
+                f"close_price={prices.get(code, 0):.4f} "
                 f"freeze_price={limit_prices.get(code, 0):.4f}")
 
         if getattr(self, '_skip_real_orders', False):
             self._summarize([])
             return []
 
-        sell_submitted, buy_submitted = [], []
-        try:
-            avail = self._available_buy_cash(self.trader.query_asset())
-            live_trade_recorder.record_event(
-                EVT_EXECUTION_ACTION,
-                source=SRC_EXECUTOR,
-                trade_date=trade_date,
-                status_msg=f"rebalance_start: available_cash={avail:.2f}",
-            )
-        except Exception as e:
-            trading_logger.warning(f"[Executor] rebalance_start 事件记录失败: {e}")
+        avail = self._available_buy_cash(self.trader.query_asset())
+        live_trade_recorder.record_event(
+            EVT_EXECUTION_ACTION,
+            source=SRC_EXECUTOR,
+            trade_date=trade_date,
+            status_msg=f"rebalance_start: available_cash={avail:.2f}",
+        )
 
-        sell_monitor = None
-        if execute_sell and sell_orders:
-            sell_monitor = SellMonitor(self, sell_orders, signal_date, trade_date, prices=prices)
-        buy_monitor = None
-        if execute_buy and buy_allocations:
-            buy_monitor = BuyMonitor(
-                self, buy_allocations, buy_n_stocks, prices,
-                signal_date, trade_date, limit_prices=limit_prices)
-
-        # 持久挂单：先把卖单全部报出,随后买单按 QMT 可用现金尽量报出。
-        # 已报订单不撤,资金不够的买单等卖出回款到账后继续挂。
-        if sell_monitor:
-            sell_submitted = sell_monitor._submit_initial_sells()
-        if buy_monitor:
-            if sell_monitor:
-                buy_monitor.sell_monitor = sell_monitor
-            buy_submitted = buy_monitor.run()
-
-        submitted = sell_submitted + buy_submitted
+        monitor = OrderMonitor(
+            self,
+            sell_orders=sell_orders if execute_sell else [],
+            buy_allocations=buy_allocations if execute_buy else {},
+            buy_n_stocks=buy_n_stocks,
+            prices=prices,
+            signal_date=signal_date,
+            trade_date=trade_date,
+            limit_prices=limit_prices,
+        )
+        submitted = monitor.run()
         self._wait_terminal(submitted)
         self._summarize(submitted)
         return submitted

@@ -14,7 +14,8 @@ warnings.filterwarnings('ignore', category=RuntimeWarning)
 from core.strategy_config import load_strategy_config
 from core.metrics import compute_core_metrics
 from core.runtime import load_runtime_npz
-from core.scoring import scores_to_ranks
+from core.scoring import scores_to_ranks, compute_weighted_scores
+from core.prefilter import apply_prefilter
 from core.legality import LegalityChecker
 from core.sim.account import StockAccountMocker
 from core.strategy import build_rebalance_day
@@ -257,7 +258,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
                      position_multipliers=None, list_dates_map=None,
                      lightweight=False, init_cash=1_000_000.0, init_positions=None,
                      market_order_freeze=True, limit_up_protection=False,
-                     rebalance=True, filter_masks=None):
+                     rebalance=True, filter_masks=None, prefilter_n=None):
   """直接 numpy 回测，不创建 TopN 对象。lightweight=True 跳过明细组装，仅返回收益序列。
 
   init_cash / init_positions: 种子参数，用于「单日回放」对账（盘后用实盘 T-1 真实
@@ -300,7 +301,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
   prices: dict[str, float] = {}
   delist_events: List[Dict] = []
 
-  valid_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
+  full_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
 
   # 临退禁买：把退市股摘牌/暂停日传入合法性闸门（实盘不传，由 allow_buy 名单剔除）
   delist_dates_map = {c: info.delist_date for c, info in delist_stock_info.items()}
@@ -341,6 +342,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
     _lw_topn: List[List[str]] = []
     _lw_last_asset = account.init_cash
 
+  t1_ranking: list[str] = []
   for i, dt in enumerate(valid_dates):
     signal_date = dt.date()
     date_idx = date_indices[i]
@@ -355,13 +357,21 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
 
     pos_volumes = {c: p['volume'] for c, p in account.positions.items()}
     timing_mult = position_multipliers[i] if (position_multipliers is not None and not np.isnan(position_multipliers[i])) else 1.0
+
+    # prefilter：首日全量，后续用 T-1 排名限制候选池
+    if prefilter_n and i > 0 and t1_ranking:
+      day_stocks = apply_prefilter(t1_ranking, prefilter_n, valid_stocks, pos_volumes)
+    else:
+      day_stocks = valid_stocks
+    day_cols = np.array([stock_indices[s] for s in day_stocks], dtype=np.intp)
+
     buy_filter_mask = None
     if filter_masks:
-      rows = [mask[date_idx][valid_cols] for mask in filter_masks.values()]
+      rows = [mask[date_idx][day_cols] for mask in filter_masks.values()]
       buy_filter_mask = np.logical_and.reduce(rows) if rows else None
     day_plan = build_rebalance_day(
         data=data, all_scores=all_scores, date_idx=date_idx, trade_idx=trade_idx,
-        signal_date=signal_date, valid_stocks=valid_stocks, valid_cols=valid_cols,
+        signal_date=signal_date, valid_stocks=day_stocks, valid_cols=day_cols,
         stock_indices=stock_indices, weights=weights, buy_n=buy_n, sell_m=sell_m,
         checker=checker, positions=pos_volumes, sellable_volumes=pos_volumes,
         cash=account.current_cash, rebalance=rebalance,
@@ -377,6 +387,11 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
     sell_m_stocks = day_plan.sell_m_stocks
     prices = day_plan.prices
     close_prices = day_plan.close_prices
+
+    # 全量排名供 T+1 prefilter
+    if prefilter_n:
+      t_full = compute_weighted_scores(all_scores, date_idx, full_cols, weights)
+      t1_ranking = [valid_stocks[i] for i in np.argsort(-t_full)]
     tradable_buy_stocks = day_plan.tradable_buy_stocks
 
     executed_sell_list: List[str] = []
@@ -853,6 +868,10 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks, live_
       parts.append(f"闲钱保留: {cash_reserve*100:.0f}%")
     testback_logger.info(f"{' + '.join(parts)}, multiplier范围=[{np.nanmin(timing_multipliers):.2f}, {np.nanmax(timing_multipliers):.2f}]")
 
+  prefilter_n = individual_config.get('prefilter_n')
+  if prefilter_n:
+    testback_logger.info(f"启用 prefilter: T-1 排名 top {prefilter_n} + 持仓")
+
   result = _backtest_direct(
     data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices,
     weights=individual_config['weights'],
@@ -864,6 +883,7 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks, live_
     limit_up_protection=individual_config.get('limit_up_protection', False),
     rebalance=individual_config.get('rebalance', True),
     filter_masks=filter_masks,
+    prefilter_n=prefilter_n,
   )
 
   signal_date_strs = [d.strftime('%Y-%m-%d') for d in signal_dates]
