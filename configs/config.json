@@ -14,7 +14,7 @@
     "rebalance": true,
     "limit_up_protection": true,
     "empty_months": [],
-    "cash_reserve_ratio": 0.15,
+    "cash_reserve_ratio": 0.25,
     "holding_period": 1,
     "prefilter_n": 1200
   }
