@@ -13,7 +13,7 @@ class Factor_20260605_192540_g4_1:
     hist_days = 0
 
     def calc_batch(self, panel: dict) -> np.ndarray:
-        base_valid = ~np.isnan(panel['open']) & (panel['open'] >= 2.0) & ~panel['st_mask']
+        base_valid = ~np.isnan(panel['close']) & (panel['close'] >= 2.0) & ~panel['st_mask']
 
         def _rank_norm(x):
             x = x.astype(np.float64)
@@ -24,8 +24,8 @@ class Factor_20260605_192540_g4_1:
             return np.where(nan, np.nan, r).astype(np.float32)
 
         with np.errstate(divide='ignore', invalid='ignore'):
-            ey = panel['eps'] / panel['open']
-            cf_yield = panel['operating_cf_ps'] / panel['open']
+            ey = panel['eps'] / panel['close']
+            cf_yield = panel['operating_cf_ps'] / panel['close']
 
         ey_in = np.nan_to_num(ey, nan=0.0, posinf=0.0, neginf=0.0)
         cf_in = np.nan_to_num(cf_yield, nan=0.0, posinf=0.0, neginf=0.0)

@@ -29,7 +29,7 @@ flowchart LR
 
 - **Plan 先行红线**：**任何代码修改前必须先通过 EnterPlanMode 生成 plan 并获用户批准，方可执行修改。** 禁止未经 plan 直接改代码。纯查询/阅读/搜索类操作无需 plan。
 - **数据源红线（按是否联网判断）**：除 `data/update_*.py`、`data/kline_mootdx.py` 预下载入口、`trading/` 买卖模块（QMT/xtdata）外，**所有其它模块禁止任何形式的网络获取**（akshare / requests / xtdata / CNINFO 等）。NPZ + 预下载产物 parquet 均可读，因为它们不联网。mootdx（腾讯通达信）为 K 线唯一数据源，无需本地 QMT。
-- **T 日价格红线（最高优先级，防数据泄露）**：信号触发、买卖合法性检查、账户成交价 **只允许使用 `open[T]`**。当日的 `high[T] / low[T] / close[T] / volume[T] / amount[T]` 全部视为前视野泄露，禁止出现在选股 / 风控 / 估值路径。需要"前收"时统一使用 `close[T-1]`。
+- **T 日价格红线（最高优先级，防数据泄露）**：本项目为**尾盘收盘交易**（15:00-15:30 收盘集合竞价固定价成交）。信号触发、买卖合法性检查、账户成交价 **只允许使用 `close[T]`**。当日的 `open[T] / high[T] / low[T] / volume[T] / amount[T]` 一律不用于选股 / 风控 / 估值路径（统一口径，避免盘中路径依赖）。需要"前收"时统一使用 `preClose[T]`（除权参考价）或 `close[T-1]`。
 - **因子 `calc_batch` 纯 numpy 向量化，禁止逐股票遍历**。5000+ 股票 × 20 年耗时应 < 1s，超过必有 bug。
 - **多进程/多线程红线**：仅 `_run_ga` 中 GA 个体评估可用 `multiprocessing.Pool`。其他所有地方（因子计算、数据加载、实盘路径）禁止多进程/多线程。
 - **回测/实盘对齐红线**：选股、买卖合法性检查、Top-N 排序等逻辑必须由 `core/` 提供唯一实现，回测和实盘共同调用；**禁止任何相同逻辑出现两份实现**。
@@ -78,7 +78,7 @@ np.savez_compressed('runtime_{start}_{end}.npz',
 
 - **K线唯一源 = mootdx（腾讯通达信），一套不复权 parquet**：`data/kline_mootdx.py` 取 `fq=0` 的不复权 OHLCV，preClose 由 `xdxr()` 除权除息数据按交易所公式自算（99.4% 除权日与官方一致），→ `data/k-line/`。
 - **收益计算用 preClose**：个股日收益 `r[t]=close[t]/preClose[t]-1`（普通日 preClose=昨收，除权日=除权参考价，已吸收分红送转配股），除权日不产生假跳空。不需要后复权价格序列。
-- **涨跌停 / 合法性判断（`legality`）一律用「原始 OHLC + 官方 preClose」**：`涨停价=preClose×(1+板块涨跌幅)`、`一字板=open≥涨停价`。preClose 已是除权参考价，除权日 open/preClose 天然不假跳空——研究与实盘对账口径完全一致。
+- **涨跌停 / 合法性判断（`legality`）一律用「原始 OHLC + 官方 preClose」**：`涨停价=preClose×(1+板块涨跌幅)`、收盘封板 `close≥涨停价`（禁买）/ `close≤跌停价`（禁卖）。preClose 已是除权参考价，除权日 close/preClose 天然不假跳空——研究与实盘对账口径完全一致。
 - **所有成交量/金额/市值/财务因子用原始真实价**（`TrueMarketCap`/`AmountBasedSmallCap`/`VolumeCV`/`deep_value` 及全部 `Factor_*` 等，绝对规模口径）。
 
 

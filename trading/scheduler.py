@@ -8,9 +8,11 @@ from utils.stock.time import is_current_trading, is_trading_day
 from .trader import Trader
 from .lark.sender import LarkMsgLevel, lark_sender
 
-PREPARE_REBALANCE_START = time(9, 25, 10)
-EXECUTE_REBALANCE_START = PREPARE_REBALANCE_START
-EXECUTE_REBALANCE_END = time(10, 0)
+# 尾盘收盘交易：收盘集合竞价（14:57-15:00）结束、收盘价形成后开始预计算；
+# 盘后固定价格撮合 15:05-15:30（2026-07-06 起扩至全部 A 股），此窗口内挂单。
+PREPARE_REBALANCE_START = time(15, 0, 30)   # 收盘价形成后开始预计算
+EXECUTE_REBALANCE_START = time(15, 5, 0)    # 盘后固定价格撮合开始
+EXECUTE_REBALANCE_END = time(15, 30)         # 盘后固定价格交易窗口截止
 POST_CLOSE_START = time(15, 35)
 POST_CLOSE_END = time(16, 0)
 UPDATE_ALL_START = time(16, 0)
@@ -33,6 +35,7 @@ class TradingScheduler:
     self.trading = False
     self.prepared = False
     self.executed = False
+    self.after_trade_done = False
     self.post_close_done = False
     self.update_all_done = False
     # 当前状态标志所归属的日期。用于检测跨日运行（进程未被 watchdog/人工重启）
@@ -50,6 +53,7 @@ class TradingScheduler:
     self.fast_forward = fast_forward
 
     self.whole_sub_id = None
+    self._execute_wait_logged = False
 
   def _now(self) -> datetime:
     return self.time_provider()
@@ -66,8 +70,10 @@ class TradingScheduler:
     self.trading = False
     self.prepared = False
     self.executed = False
+    self.after_trade_done = False
     self.post_close_done = False
     self.update_all_done = False
+    self._execute_wait_logged = False
 
   def _check_day_rollover(self, now: datetime) -> bool:
     """检测是否跨入新的一天；若跨日则重置当日状态。返回是否发生了重置。
@@ -103,18 +109,19 @@ class TradingScheduler:
       self.time_provider.set(new_dt)
 
   def _handle_missed_open_window(self, now: datetime):
-    """启动时已错过 09:25:10-10:00 调仓窗口的状态置位。
+    """启动时已错过 15:05-15:30 盘后固定价格窗口的状态置位。
 
     根据当前时间精确设置 prepared/executed/post_close_done，
-    保证「未到的环节」（15:00 实盘/回测 diff、16:00 update_all）后续仍能触发：
-    - 启动时 10:00 <= now < 16:00：仅置 prepared/executed=True，post_close_done 保持 False，
-      15:00 之后 line 126 elif 触发 post_close。
+    保证「未到的环节」（15:35 实盘/回测 diff、16:00 update_all）后续仍能触发：
+    - 启动时 15:30 <= now < 16:00：仅置 prepared/executed=True，post_close_done 保持 False，
+      15:35 之后触发 post_close。
     - 启动时 now >= 16:00：post_close 窗口也错过，直接置位 post_close_done=True，
-      line 171 触发 update_all（如果还在 update_all 时间范围内）。
+      触发 update_all（如果还在 update_all 时间范围内）。
     """
-    trading_logger.warning("已错过开盘调仓窗口，今日跳过调仓")
+    trading_logger.warning("已错过尾盘调仓窗口，今日跳过调仓")
     self.prepared = True
     self.executed = True
+    self.after_trade_done = True
     if now.time() >= POST_CLOSE_END:
       self.post_close_done = True
 
@@ -137,13 +144,13 @@ class TradingScheduler:
       if self._check_day_rollover(now):
         current_check_interval = self.check_interval
 
-      # ---- 09:25:10 准备 ----
+      # ---- 15:00:30 尾盘预计算；15:05 起盘后固定价格挂单 ----
       if not self.prepared:
         if is_trading_day(now.date()) and self._in_prepare_window(now):
           current_check_interval = self.check_interval
-          trading_logger.debug("今日开盘预计算开始")
+          trading_logger.debug("今日尾盘预计算开始")
           _run_stage(self.before_trade)
-          trading_logger.debug("开盘预计算完成")
+          trading_logger.debug("尾盘预计算完成")
           self.prepared = True
           self._advance_time(EXECUTE_REBALANCE_START)
         elif is_trading_day(now.date()) and now.time() >= EXECUTE_REBALANCE_END:
@@ -156,7 +163,14 @@ class TradingScheduler:
         else:
           current_check_interval = min(10 * self.check_interval, 5 * 60)
 
-      # ---- 预计算完成立即执行 ----
+      # ---- 预计算完成，15:05 起进入盘后固定价格执行窗口 ----
+      if (self.prepared and not self.executed and is_trading_day(now.date())
+          and now.time() < EXECUTE_REBALANCE_START):
+        if not self._execute_wait_logged:
+          trading_logger.info(
+              f"预计算已完成，等待盘后固定价格窗口 "
+              f"{EXECUTE_REBALANCE_START.strftime('%H:%M:%S')} 起挂单")
+          self._execute_wait_logged = True
       if self.prepared and not self.executed and is_trading_day(now.date()) and self._in_execute_window(now):
         current_check_interval = self.check_interval
         trading_logger.debug("今日调仓执行开始")
@@ -165,24 +179,25 @@ class TradingScheduler:
         self.executed = True
         self._advance_time(POST_CLOSE_START)
 
-      # ---- 盘中 ----
+      # ---- 行情时段（09:30-15:00，尾盘策略不在此下单，仅作会话标记）----
       if is_current_trading(now):
         if not self.trading:
           lark_sender.send_notification_card(
             level=LarkMsgLevel.Info,
-            title=f"📈 盘中交易开始 @ {now.strftime('%Y-%m-%d')}",
-            sub_title=f"开盘时刻: {now.strftime('%H:%M:%S')}",
-            content="盘中交易已开始，订单/成交回调进入飞书通知。")
-          trading_logger.debug("今日交易开始")
+            title=f"📈 行情开始 @ {now.strftime('%Y-%m-%d')}",
+            sub_title=f"行情时刻: {now.strftime('%H:%M:%S')}",
+            content="尾盘收盘交易：15:00:30 预计算，15:05-15:30 盘后固定价格挂单。")
+          trading_logger.debug("今日行情开始")
           self.trading = True
 
-      # ---- 15:00 交易结束 + 盘后对比 ----
-      elif self.trading and time(15, 0) <= now.time():
+      # ---- 15:30 尾盘交易结束 + 盘后对比 ----
+      elif self.prepared and not self.after_trade_done and EXECUTE_REBALANCE_END <= now.time():
         self.trading = False
+        self.after_trade_done = True
         # 注意：不要 reset prepared/executed — 它们应保持 True 表示「今日已处理」，
-        # 否则下个循环会进 line 91 的「已错过开盘调仓窗口」分支重复刷屏。
+        # 否则下个循环会进「已错过尾盘调仓窗口」分支重复刷屏。
         # 跨日通过 _check_day_rollover 自动重置，支持连续多天运行。
-        trading_logger.debug("今日交易结束")
+        trading_logger.debug("今日尾盘交易结束")
         _run_stage(self.after_trade)
         trading_logger.debug("盘后处理完成")
 

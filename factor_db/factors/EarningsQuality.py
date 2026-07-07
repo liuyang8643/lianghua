@@ -20,7 +20,7 @@ class SloanAccruals:
     def calc_batch(self, panel: dict) -> np.ndarray:
         eps = _shift(panel["eps"])
         ocfps = _shift(panel["operating_cf_ps"])
-        open_p = panel["open"]
+        open_p = panel["close"]
         valid = (
             ~np.isnan(open_p) & (open_p >= MIN_RAW_PRICE)
             & ~panel["st_mask"]
@@ -41,7 +41,7 @@ class CashFlowCoverage:
     def calc_batch(self, panel: dict) -> np.ndarray:
         eps = _shift(panel["eps"])
         ocfps = _shift(panel["operating_cf_ps"])
-        open_p = panel["open"]
+        open_p = panel["close"]
         valid = (
             ~np.isnan(open_p) & (open_p >= MIN_RAW_PRICE)
             & ~panel["st_mask"]
@@ -61,7 +61,7 @@ class AccrualsYield:
     def calc_batch(self, panel: dict) -> np.ndarray:
         eps = _shift(panel["eps"])
         ocfps = _shift(panel["operating_cf_ps"])
-        open_p = panel["open"]
+        open_p = panel["close"]
         valid = (
             ~np.isnan(open_p) & (open_p >= MIN_RAW_PRICE)
             & ~panel["st_mask"]
@@ -80,7 +80,7 @@ class GrossMarginQuality:
 
     def calc_batch(self, panel: dict) -> np.ndarray:
         gm = _shift(panel["gross_margin"])
-        open_p = panel["open"]
+        open_p = panel["close"]
         valid = (
             ~np.isnan(open_p) & (open_p >= MIN_RAW_PRICE)
             & ~panel["st_mask"]
@@ -98,7 +98,7 @@ class EarningsQualityComposite:
         eps = _shift(panel["eps"])
         ocfps = _shift(panel["operating_cf_ps"])
         gm = _shift(panel["gross_margin"])
-        open_p = panel["open"]
+        open_p = panel["close"]
         st = panel["st_mask"]
 
         bv = ~np.isnan(open_p) & (open_p >= MIN_RAW_PRICE) & ~st

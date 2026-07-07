@@ -7,9 +7,9 @@ ALPHA = 0.5
 class Good:
     hist_days = 0
     def calc_batch(self, panel):
-        o = panel['open']
-        base_valid = np.isfinite(o) & (o >= 2.0) & ~panel['st_mask']
-        score = np.log(o) + ALPHA * np.log(panel['total_share'] + 1.0)
+        c = panel['close']
+        base_valid = np.isfinite(c) & (c >= 2.0) & ~panel['st_mask']
+        score = np.log(c) + ALPHA * np.log(panel['total_share'] + 1.0)
         return np.where(base_valid & np.isfinite(score), score, np.nan)
 '''
 
@@ -19,16 +19,17 @@ def test_good_factor_passes():
     assert ok and reason == '' and n == 1
 
 
-def test_leak_close_rejected():
-    code = _OK.replace("np.log(o)", "panel['close']")
+def test_leak_open_rejected():
+    # 尾盘收盘交易：close[T] 为唯一允许价格，open[T] 视为禁止字段
+    code = _OK.replace("np.log(c)", "panel['open']")
     ok, _, reason = guard.check(code, 20)
     assert not ok and '泄露' in reason
 
 
 def test_loop_rejected():
     code = _OK.replace(
-        "score = np.log(o) + ALPHA * np.log(panel['total_share'] + 1.0)",
-        "score = np.zeros_like(o)\n        for i in range(o.shape[1]):\n            score[:, i] = o[:, i]",
+        "score = np.log(c) + ALPHA * np.log(panel['total_share'] + 1.0)",
+        "score = np.zeros_like(c)\n        for i in range(c.shape[1]):\n            score[:, i] = c[:, i]",
     )
     ok, _, reason = guard.check(code, 20)
     assert not ok and '向量化' in reason
@@ -41,7 +42,7 @@ def test_bad_import_rejected():
 
 
 def test_file_read_rejected():
-    code = _OK.replace("o = panel['open']", "o = np.load('x.npy')")
+    code = _OK.replace("c = panel['close']", "c = np.load('x.npy')")
     ok, _, reason = guard.check(code, 20)
     assert not ok and '外部文件' in reason
 

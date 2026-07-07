@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import argparse
 import os
 import sys
@@ -10,14 +10,17 @@ from xtquant import xtdata
 
 from configs import TRADE_ACCOUNT
 from data.db import allow_buy_stock_code_list
-from core.backtest import _compute_factor_scores
+from core.backtest import (
+    _compute_factor_scores, apply_t1_prefilter_for_date,
+    build_delist_dates_map, build_list_dates_map,
+    is_rebalance_day_index, stock_pool_prefixes,
+)
 from core.legality import LegalityChecker
-from core.prefilter import apply_prefilter
-from core.scoring import compute_weighted_scores
 from core.strategy_config import load_strategy_config
 from core.strategy import build_rebalance_day
 from core.timing import compute_position_multiplier_for_date
 from data.db.stock_name import get_stock_name_at_date
+from trading.helper import get_index_close_today
 from utils.stock.time import get_last_trading_day
 
 
@@ -67,7 +70,7 @@ from trading.logger import trading_logger
 from utils.recorder import recorder
 
 from .manual_confirm import build_manual_confirmation_text, is_manual_confirmation_approved
-from .persistence import _TRADE_DIR, live_trade_recorder
+from .persistence import _TRADE_DIR, get_live_rebalance_index, live_trade_recorder
 from .post_close import run_post_close, run_update_all
 from .scheduler import PREPARE_REBALANCE_START, TradingScheduler
 from .trader import Trader
@@ -90,11 +93,10 @@ def _load_prev_eod_baseline(trade_date):
 
     Returns: (prev_cash, {code: yesterday_shares}) 或 (None, None)（缺快照时回退实时）。
     """
-    from datetime import timedelta
-    from utils.stock.time import get_last_trading_day
     from trading.persistence import _TRADE_DIR
 
-    prev = get_last_trading_day(trade_date - timedelta(days=1))
+    from utils.stock.time import get_last_trading_day as _get_last_trading_day
+    prev = _get_last_trading_day(trade_date - timedelta(days=1))
     pos_path = _TRADE_DIR / f"positions_{prev.isoformat()}.parquet"
     summary_path = _TRADE_DIR / "daily_summary.parquet"
     if not pos_path.exists() or not summary_path.exists():
@@ -122,10 +124,10 @@ class MutableTime:
 
 
 def _parse_skip_datetime(skip_arg: str) -> datetime:
-    """解析 --skip 的快进时间；分钟级 09:25 自动对齐到开盘调仓触发秒。"""
+    """解析 --skip 的快进时间；分钟级 15:00 自动对齐到尾盘调仓触发秒。"""
     if len(skip_arg) == 12:
         skip_dt = datetime.strptime(skip_arg, '%Y%m%d%H%M')
-        if skip_dt.hour == 9 and skip_dt.minute == 25 and skip_dt.second == 0:
+        if skip_dt.hour == 15 and skip_dt.minute == 0 and skip_dt.second == 0:
             return datetime.combine(skip_dt.date(), PREPARE_REBALANCE_START)
         return skip_dt
     if len(skip_arg) == 14:
@@ -226,7 +228,8 @@ if __name__ == '__main__':
             stage_t = time.time()
 
         # ① 候选池
-        all_stocks = allow_buy_stock_code_list(target_date=trade_date)
+        boards = stock_pool_prefixes(individual_config.get('stock_pool'))
+        all_stocks = allow_buy_stock_code_list(target_date=trade_date, boards=boards)
         trading_logger.info(f"候选股票池: {len(all_stocks)} 只")
         trading_logger.info(f"[盘前耗时] 候选池加载: {time.time() - stage_t:.1f}s")
         stage_t = time.time()
@@ -235,20 +238,10 @@ if __name__ == '__main__':
         npz_data = None
         prefilter_n = individual_config.get('prefilter_n', 0)
         if prefilter_n > 0:
-            prev_date = get_last_trading_day(trade_date)
-            prev_dt = datetime.combine(prev_date, datetime.min.time())
-            t1 = _compute_factor_scores([prev_dt], all_stocks, weights, factor_classes)
-            if t1:
-                t1_data, t1_scores, _, _, t1_di, t1_stocks, t1_si = t1
-                t1_cols = np.array([t1_si[s] for s in t1_stocks], dtype=np.intp)
-                t1_w = compute_weighted_scores(t1_scores, t1_di[0], t1_cols, weights)
-                t1_ranking = [t1_stocks[i] for i in np.argsort(-t1_w)]
-                pos_codes = list(positions.keys()) if positions else []
-                all_stocks = apply_prefilter(t1_ranking, prefilter_n, all_stocks, pos_codes)
-                npz_data = t1_data
-                trading_logger.info(f"[Prefilter] → {len(all_stocks)} 只 (T-1 top {prefilter_n})")
-            else:
-                trading_logger.warning("[Prefilter] T-1 不在 NPZ 范围内，跳过")
+            prev_date = get_last_trading_day(trade_date - timedelta(days=1))
+            all_stocks, npz_data = apply_t1_prefilter_for_date(
+                prev_date, all_stocks, weights, factor_classes, prefilter_n, positions)
+            trading_logger.info(f"[Prefilter] → {len(all_stocks)} 只 (T-1 top {prefilter_n})")
             trading_logger.info(f"[盘前耗时] T-1排名+prefilter: {time.time() - stage_t:.1f}s")
             stage_t = time.time()
 
@@ -280,12 +273,14 @@ if __name__ == '__main__':
 
         valid_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
 
-        # 合法性闸门（实盘不传退市日，由 allow_buy 名单剔除）
+        # 合法性闸门
         limit_up_protection = individual_config['limit_up_protection'] if 'limit_up_protection' in individual_config else False
-        checker = LegalityChecker(data, stock_indices, limit_up_protection=limit_up_protection)
+        checker = LegalityChecker(
+            data, stock_indices, build_list_dates_map(data), build_delist_dates_map(),
+            limit_up_protection=limit_up_protection)
 
-        # T 日开盘契约：signal_date == trade_date == score_date_idx → trade_idx=date_idx，与回测对齐。
-        # 实盘严禁缺 T 日开盘价时回退到历史价格；当天 K 线不完整应中止调仓。
+        # T 日收盘契约：signal_date == trade_date == score_date_idx → trade_idx=date_idx，与回测对齐。
+        # 实盘严禁缺 T 日收盘价时回退到历史价格；当天 K 线不完整应中止调仓。
         trade_idx = score_date_idx
         trade_dt64 = data['trade_dates'][trade_idx]
         exec_date = trade_dt64.astype('datetime64[D]').item()
@@ -293,13 +288,19 @@ if __name__ == '__main__':
         _cash = float(asset.cash) if not no_data_fetch else (prev_cash or prev_cash_qmt or 0)
         pos_volumes = {c: int(p.volume) for c, p in positions.items()}
         sellable_volumes = {c: int(p.can_use_volume) for c, p in positions.items()}
-        timing_mult = compute_position_multiplier_for_date(individual_config, exec_date)
+        index_close_today = None
+        if individual_config.get('timing_enabled') and individual_config.get('timing_base') is not None:
+            index_close_today = get_index_close_today(individual_config.get('timing_index', 'sh000852'), exec_date)
+        timing_mult = compute_position_multiplier_for_date(individual_config, exec_date, index_close_today)
+        rebalance_idx = get_live_rebalance_index(exec_date)
+        is_rebalance_day = is_rebalance_day_index(rebalance_idx, individual_config.get('holding_period'))
         day_plan = build_rebalance_day(
             data=data, all_scores=all_scores, date_idx=score_date_idx, trade_idx=trade_idx,
             signal_date=exec_date, valid_stocks=valid_stocks, valid_cols=valid_cols,
             stock_indices=stock_indices, weights=weights, buy_n=buy_n, sell_m=sell_m,
             checker=checker, positions=pos_volumes, sellable_volumes=sellable_volumes,
-            cash=_cash, rebalance=rebalance_enabled, position_multiplier=timing_mult,
+            cash=_cash, rebalance=rebalance_enabled, is_rebalance_day=is_rebalance_day,
+            position_multiplier=timing_mult,
             target_cash=prev_cash if prev_cash is not None else None,
             target_positions=y_shares if prev_cash is not None else None,
             price_codes_extra=set(y_shares or {}),
@@ -316,7 +317,7 @@ if __name__ == '__main__':
         total_eq = day_plan.total_eq
         base_target = day_plan.base_target
         live_eq = _cash + sum(day_plan.pos_vals.values())
-        eq_note = (f"T-1基线 cash={prev_cash:.0f}+昨持仓@开盘"
+        eq_note = (f"T-1基线 cash={prev_cash:.0f}+昨持仓@收盘"
                    if (prev_cash is not None and y_shares) else "实时(缺T-1快照,非幂等)")
         _log_extra = f", QMT.total_asset={asset.total_asset:.0f}" if not skip_update else ""
         trading_logger.info(f"选股完成 Top{buy_n}: {buy_n_stocks[:5]}...")
@@ -399,7 +400,7 @@ if __name__ == '__main__':
                 continue
             px = float(prices.get(code, 0.0))
             if px <= 0:
-                buy_skip_reasons[code] = '缺开盘价/停牌'
+                buy_skip_reasons[code] = '缺收盘价/停牌'
                 continue
             if base_target <= 0:
                 # sim / 无实盘资金基线：base_target=0 时所有 cv>=target 恒成立，

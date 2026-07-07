@@ -9,7 +9,7 @@ class AmountBasedSmallCap:
   hist_days = 60
 
   def calc_batch(self, panel: dict) -> np.ndarray:
-    close = panel["open"]
+    close = panel["close"]
     amount = panel["amount"]
     st_mask = panel["st_mask"]
 

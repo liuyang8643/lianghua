@@ -24,7 +24,7 @@ class Factor_20260531_005210_g11_0:
     hist_days = 0
 
     def calc_batch(self, panel: dict) -> np.ndarray:
-        base_valid = ~np.isnan(panel['open']) & (panel['open'] >= 2.0) & ~panel['st_mask']
+        base_valid = ~np.isnan(panel['close']) & (panel['close'] >= 2.0) & ~panel['st_mask']
 
         def _zscore(x):
             x = x.astype(np.float64)
@@ -44,9 +44,9 @@ class Factor_20260531_005210_g11_0:
             return np.where(x >= 0, np.tanh(x * s_pos), np.tanh(x * s_neg))
 
         with np.errstate(divide='ignore', invalid='ignore'):
-            ey = panel['eps'] / panel['open']
-            cf_yield = panel['operating_cf_ps'] / panel['open']
-            ipo_premium = panel['open'] / panel['issue_price']
+            ey = panel['eps'] / panel['close']
+            cf_yield = panel['operating_cf_ps'] / panel['close']
+            ipo_premium = panel['close'] / panel['issue_price']
             growth_eff = panel['profit_yoy'] / np.where(np.isfinite(panel['revenue_yoy']) & (np.abs(panel['revenue_yoy']) > 1e-8), np.abs(panel['revenue_yoy']), np.nan)
 
         roe_s = np.sign(panel['roe']) * (np.abs(panel['roe']) ** (1.0 / 3.0))

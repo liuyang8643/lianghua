@@ -15,12 +15,12 @@ SCRATCH_DIR = REPO_ROOT / 'llm_ga' / '_scratch'
 TRAIN_START = '20100101'
 TRAIN_END = datetime.now().strftime('%Y%m%d')
 
-# T 日仅允许 open；以下字段为前视野泄露，新因子禁止使用（guard 强制）。
-FORBIDDEN_FIELDS = ('close', 'high', 'low', 'volume', 'amount')
+# 尾盘收盘交易：T 日仅允许 close；以下当日字段禁止用于选股（guard 强制，统一口径）。
+FORBIDDEN_FIELDS = ('open', 'high', 'low', 'volume', 'amount')
 
 # 因子可用 panel 字段（写进 prompt 上下文）
 ALLOWED_FIELDS = (
-    'open', 'st_mask', 'total_share', 'issue_price',
+    'close', 'st_mask', 'total_share', 'issue_price',
     'eps', 'roe', 'gross_margin', 'operating_cf_ps', 'profit_yoy', 'revenue_yoy',
 )
 

@@ -1,6 +1,6 @@
 """深历史价值/质量/成长财务因子（基于 deep_fin_pit.npz，覆盖 1990s~今）。
 
-高分=优先买入。所有比率使用 open[T]（T 日唯一允许价格），财务量为 PIT 滞后值，
+高分=优先买入。所有比率使用 close[T]（收盘交易 T 日唯一允许价格），财务量为 PIT 滞后值，
 不构成数据泄露。辅助 NPZ 由 data/build_deep_fin_runtime.py 生成。
 """
 import numpy as np
@@ -52,7 +52,7 @@ def _aligned(panel: dict, field: str) -> np.ndarray:
 
 
 def _base_valid(panel: dict) -> np.ndarray:
-    raw_open = panel['open']
+    raw_open = panel['close']
     return ~np.isnan(raw_open) & (raw_open >= MIN_RAW_PRICE) & ~panel['st_mask']
 
 
@@ -73,7 +73,7 @@ class BookToMarket:
     def calc_batch(self, panel: dict) -> np.ndarray:
         bps = _aligned(panel, 'bps')
         with np.errstate(divide='ignore', invalid='ignore'):
-            score = bps / panel['open']
+            score = bps / panel['close']
         valid = _base_valid(panel) & np.isfinite(bps) & (bps > 0)
         return np.where(valid, score, np.nan)
 
@@ -84,7 +84,7 @@ class EarningsYield:
     def calc_batch(self, panel: dict) -> np.ndarray:
         eps = _aligned(panel, 'eps')
         with np.errstate(divide='ignore', invalid='ignore'):
-            score = eps / panel['open']
+            score = eps / panel['close']
         valid = _base_valid(panel) & np.isfinite(eps)
         return np.where(valid, score, np.nan)
 
@@ -95,7 +95,7 @@ class CashFlowYield:
     def calc_batch(self, panel: dict) -> np.ndarray:
         ocfps = _aligned(panel, 'ocfps')
         with np.errstate(divide='ignore', invalid='ignore'):
-            score = ocfps / panel['open']
+            score = ocfps / panel['close']
         valid = _base_valid(panel) & np.isfinite(ocfps)
         return np.where(valid, score, np.nan)
 
@@ -119,11 +119,11 @@ class ProfitGrowth:
 
 
 class DeepValueComposite:
-    """价值复合：bps/open、eps/open、ocfps/open 三路截面排名平均。高分=便宜。"""
+    """价值复合：bps/close、eps/close、ocfps/close 三路截面排名平均。高分=便宜。"""
     hist_days = 0
 
     def calc_batch(self, panel: dict) -> np.ndarray:
-        open_ = panel['open']
+        open_ = panel['close']
         with np.errstate(divide='ignore', invalid='ignore'):
             bm = _aligned(panel, 'bps') / open_
             ep = _aligned(panel, 'eps') / open_
@@ -145,6 +145,6 @@ class BookToMarketQuality:
         bps = _aligned(panel, 'bps')
         eps = _aligned(panel, 'eps')
         with np.errstate(divide='ignore', invalid='ignore'):
-            score = bps / panel['open']
+            score = bps / panel['close']
         valid = _base_valid(panel) & np.isfinite(bps) & (bps > 0) & np.isfinite(eps) & (eps > 0)
         return np.where(valid, score, np.nan)

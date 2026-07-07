@@ -20,17 +20,17 @@ _DATES = [
 
 
 class _Continuous:
-    """全市场连续打分：log(open) 叠加极小权重的 log(总股本) -> 几乎无 tie，覆盖率≈100%。"""
+    """全市场连续打分：log(close) 叠加极小权重的 log(总股本) -> 几乎无 tie，覆盖率≈100%。"""
     hist_days = 0
 
     def calc_batch(self, panel):
-        open_ = panel['open'].astype(float)
+        close_ = panel['close'].astype(float)
         ts = panel['total_share'].astype(float)
         med = np.nanmedian(np.where(np.isfinite(ts), ts, np.nan), axis=1, keepdims=True)
         ts = np.where(np.isfinite(ts) & (ts > 0), ts, med)
         ts = np.where(np.isfinite(ts) & (ts > 0), ts, 1.0)
-        score = np.log(np.maximum(open_, 1e-6)) + 1.731e-4 * np.log(ts)
-        base_valid = np.isfinite(open_) & (open_ >= 2.0) & ~panel['st_mask']
+        score = np.log(np.maximum(close_, 1e-6)) + 1.731e-4 * np.log(ts)
+        base_valid = np.isfinite(close_) & (close_ >= 2.0) & ~panel['st_mask']
         return np.where(base_valid & np.isfinite(score), score, np.nan)
 
 
@@ -39,8 +39,8 @@ class _Discrete:
     hist_days = 0
 
     def calc_batch(self, panel):
-        open_ = panel['open'].astype(float)
-        base_valid = np.isfinite(open_) & (open_ >= 2.0) & ~panel['st_mask']
+        close_ = panel['close'].astype(float)
+        base_valid = np.isfinite(close_) & (close_ >= 2.0) & ~panel['st_mask']
         score = np.sign(np.where(np.isnan(panel['eps']), 0.0, panel['eps']))
         return np.where(base_valid, score, np.nan)
 
@@ -50,9 +50,9 @@ class _OverFilter:
     hist_days = 0
 
     def calc_batch(self, panel):
-        open_ = panel['open'].astype(float)
-        base_valid = np.isfinite(open_) & (open_ >= 2.0) & ~panel['st_mask']
-        ey = np.where(panel['eps'] > 0, panel['eps'] / open_, np.nan)
+        close_ = panel['close'].astype(float)
+        base_valid = np.isfinite(close_) & (close_ >= 2.0) & ~panel['st_mask']
+        ey = np.where(panel['eps'] > 0, panel['eps'] / close_, np.nan)
         return np.where(base_valid & np.isfinite(ey), ey, np.nan)
 
 

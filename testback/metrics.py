@@ -83,7 +83,7 @@ def compute_hs300_cumulative_returns(trade_dates: List[str]) -> List[float]:
 
   table = pq.read_table(path)
   dates_arr = table.column('trade_date').to_numpy().astype('datetime64[D]')
-  close_arr = table.column('open').to_numpy()  # parquet 存的是 open，改用 close 更合理；此处暂用 open 做近似
+  close_arr = table.column('close').to_numpy()
 
   date_to_val: Dict[str, float] = {}
   for i in range(len(dates_arr)):

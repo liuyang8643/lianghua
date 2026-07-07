@@ -49,7 +49,7 @@ class StockAccountMocker:
       price: float,
       buy_date: sys_date,
       signal_date: sys_date | None = None,
-      price_field: str = 'open',
+      price_field: str = 'close',
       reason: str | None = None,
   ):
     cost = volume * price
@@ -108,7 +108,7 @@ class StockAccountMocker:
       sell_date: sys_date,
       clear_reason: str = None,
       signal_date: sys_date | None = None,
-      price_field: str = 'open',
+      price_field: str = 'close',
   ):
     if code not in self.positions:
       raise Exception(f'Position not found for code: {code}')

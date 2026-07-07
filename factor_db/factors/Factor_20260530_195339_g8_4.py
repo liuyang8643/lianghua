@@ -15,7 +15,7 @@ class Factor_20260530_195339_g8_4:
     hist_days = 0
 
     def calc_batch(self, panel: dict) -> np.ndarray:
-        base_valid = ~np.isnan(panel['open']) & (panel['open'] >= 2.0) & ~panel['st_mask']
+        base_valid = ~np.isnan(panel['close']) & (panel['close'] >= 2.0) & ~panel['st_mask']
 
         def _zscore(x):
             x = x.astype(np.float64)
@@ -24,9 +24,9 @@ class Factor_20260530_195339_g8_4:
             return np.where(sd > 1e-12, (x - mu) / sd, np.nan).astype(np.float32)
 
         with np.errstate(divide='ignore', invalid='ignore'):
-            ey = panel['eps'] / panel['open']
-            cf_yield = panel['operating_cf_ps'] / panel['open']
-            ipo_premium = panel['open'] / panel['issue_price']
+            ey = panel['eps'] / panel['close']
+            cf_yield = panel['operating_cf_ps'] / panel['close']
+            ipo_premium = panel['close'] / panel['issue_price']
 
         # Quality composite: profitability (ROE) + pricing power (GM) + cash realization (CF yield)
         roe_s = np.sign(panel['roe']) * np.sqrt(np.abs(panel['roe']))

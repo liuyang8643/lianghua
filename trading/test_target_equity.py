@@ -21,8 +21,8 @@ class _AlwaysOkChecker:
 
 def _strategy_fixture():
     data = {
-        'open': np.array([[10.0, 5.0, 20.0]], dtype=np.float64),
         'close': np.array([[10.0, 5.0, 20.0]], dtype=np.float64),
+        'preClose': np.array([[10.0, 5.0, 20.0]], dtype=np.float64),
         'trade_dates': np.array(['2026-06-02'], dtype='datetime64[D]'),
     }
     valid_stocks = ['A.SZ', 'B.SH', 'C.SH']
@@ -66,16 +66,16 @@ def test_target_equity_falls_back_without_baseline():
     assert p.total_eq == 88_888.0
 
 
-def test_missing_open_is_suspended_no_trade_and_uses_previous_close_for_equity():
-    """T 日 open 缺失视为停牌：不买不卖，不用历史 open 回退成交。"""
+def test_missing_close_is_suspended_no_trade_and_uses_previous_close_for_equity():
+    """T 日 close 缺失视为停牌：不买不卖，不用历史 close 回退成交。"""
     data, all_scores, valid_stocks, stock_indices, valid_cols = _strategy_fixture()
-    data['open'] = np.array([
-        [10.0, 5.0, 20.0],
-        [np.nan, 5.5, 21.0],
-    ], dtype=np.float64)
     data['close'] = np.array([
         [10.0, 5.0, 20.0],
         [np.nan, 5.5, 21.0],
+    ], dtype=np.float64)
+    data['preClose'] = np.array([
+        [10.0, 5.0, 20.0],
+        [10.0, 5.0, 20.0],
     ], dtype=np.float64)
     data['trade_dates'] = np.array(['2026-06-01', '2026-06-02'], dtype='datetime64[D]')
     all_scores = {'F': np.array([

@@ -75,6 +75,13 @@ YESTERDAY = TODAY - timedelta(days=1)
 # 覆盖开盘抓到的盘中快照（开盘只拉当天，不做覆盖）。
 REPULL_TRADING_DAYS = 3
 
+INDEX_INFO = {
+    'sh000300': '沪深300',
+    'sh000905': '中证500',
+    'sh000852': '中证1000',
+}
+INDEX_REQUIRED_COLUMNS = ('trade_date', 'open', 'close')
+
 
 # ============================================================
 # 辅助函数
@@ -92,6 +99,28 @@ def _clean_parquet_by_date(path: Path, date_col: str, cutoff: date):
         df_clean.to_parquet(path, index=False)
         removed = len(df) - len(df_clean)
         logger.info("  清理 %s: 删除 %d 行 (>= %s)", path.name, removed, cutoff)
+
+
+def _is_valid_index_parquet(path: Path) -> bool:
+    import pyarrow.parquet as pq
+
+    if not path.exists():
+        return False
+    names = tuple(pq.read_schema(path).names)
+    return all(col in names for col in INDEX_REQUIRED_COLUMNS)
+
+
+def _indices_ready_today(symbols=None) -> bool:
+    from datetime import datetime as _dt
+
+    target_symbols = tuple(symbols) if symbols is not None else tuple(INDEX_INFO)
+    for symbol in target_symbols:
+        path = DATA_DIR / f"index_{symbol}_daily.parquet"
+        if not _is_valid_index_parquet(path):
+            return False
+        if _dt.fromtimestamp(path.stat().st_mtime).date() != TODAY:
+            return False
+    return True
 
 
 # ============================================================
@@ -526,52 +555,46 @@ def _update_issue_price():
 # 7. 大盘指数 — akshare
 # ============================================================
 
-def _update_indices():
+def _update_indices(symbols=None):
     import akshare as ak
     import pyarrow.parquet as pq
     import pyarrow as pa
 
-    INDEX_INFO = {
-        'sh000300': '沪深300',
-        'sh000905': '中证500',
-        'sh000852': '中证1000',
-    }
+    target_symbols = tuple(symbols) if symbols is not None else tuple(INDEX_INFO)
 
-    # 当天已落盘跳过（检查沪深300代表）
-    sample_path = DATA_DIR / "index_sh000300_daily.parquet"
-    if sample_path.exists():
-        from datetime import datetime as _dt
-        mtime = _dt.fromtimestamp(sample_path.stat().st_mtime).date()
-        if mtime == TODAY:
-            logger.info("[指数] 今日已更新, 跳过")
-            return
+    if symbols is None and _indices_ready_today():
+        logger.info("[指数] 今日已更新, 跳过")
+        return
 
-    for symbol, name in INDEX_INFO.items():
+    for symbol in target_symbols:
+        name = INDEX_INFO[symbol]
         path = DATA_DIR / f"index_{symbol}_daily.parquet"
-        try:
-            df_new = ak.stock_zh_index_daily(symbol=symbol)
-            dates = df_new['date'].values
-            open_prices = df_new['open'].values.astype(np.float64)
+        df_new = ak.stock_zh_index_daily(symbol=symbol)
+        dates = df_new['date'].values
+        open_prices = df_new['open'].values.astype(np.float64)
+        close_prices = df_new['close'].values.astype(np.float64)
 
-            if isinstance(dates[0], str) or isinstance(dates[0], np.str_):
-                dates_np = np.array([np.datetime64(d[:10], 'D') for d in dates])
-            else:
-                dates_np = np.asarray(dates).astype('datetime64[D]')
+        if isinstance(dates[0], str) or isinstance(dates[0], np.str_):
+            dates_np = np.array([np.datetime64(d[:10], 'D') for d in dates])
+        else:
+            dates_np = np.asarray(dates).astype('datetime64[D]')
 
-            sort_idx = np.argsort(dates_np)
-            dates_sorted = dates_np[sort_idx]
-            open_sorted = open_prices[sort_idx]
+        sort_idx = np.argsort(dates_np)
+        dates_sorted = dates_np[sort_idx]
+        open_sorted = open_prices[sort_idx]
+        close_sorted = close_prices[sort_idx]
 
-            table = pa.table({
-                'trade_date': pa.array(dates_sorted),
-                'open': pa.array(open_sorted),
-            })
-            path.parent.mkdir(parents=True, exist_ok=True)
-            pq.write_table(table, path)
-            logger.info("[指数] %s(%s): %d 天, %s ~ %s",
-                        name, symbol, len(dates_sorted), dates_sorted[0], dates_sorted[-1])
-        except Exception as e:
-            logger.warning("[指数] %s 失败: %s", symbol, e)
+        table = pa.table({
+            'trade_date': pa.array(dates_sorted),
+            'open': pa.array(open_sorted),
+            'close': pa.array(close_sorted),
+        })
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(table, path)
+        if not _is_valid_index_parquet(path):
+            raise RuntimeError(f"[指数] {symbol} 写出缺列文件: {path}")
+        logger.info("[指数] %s(%s): %d 天, %s ~ %s",
+                    name, symbol, len(dates_sorted), dates_sorted[0], dates_sorted[-1])
 
 
 # ============================================================

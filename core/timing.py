@@ -17,8 +17,8 @@ def _index_parquet_path(symbol):
   return DATA_DIR / f"index_{symbol}_daily.parquet"
 
 
-def load_index_open(symbol, trade_dates=None):
-  """加载指数开盘价（从预下载 parquet，不联网）。返回 (dates_array, open_array)。"""
+def load_index_close(symbol, trade_dates=None):
+  """加载指数收盘价（从预下载 parquet，不联网）。返回 (dates_array, close_array)。"""
   import pyarrow.parquet as pq
 
   path = _index_parquet_path(symbol)
@@ -27,33 +27,27 @@ def load_index_open(symbol, trade_dates=None):
 
   table = pq.read_table(path)
   dates_arr = table.column('trade_date').to_numpy().astype('datetime64[D]')
-  open_arr = table.column('open').to_numpy().astype(np.float64)
+  close_arr = table.column('close').to_numpy().astype(np.float64)
 
   if trade_dates is None:
-    return dates_arr, open_arr
+    return dates_arr, close_arr
 
   date_to_val = {}
   for i in range(len(dates_arr)):
-    date_to_val[dates_arr[i].item()] = open_arr[i]
+    date_to_val[dates_arr[i].item()] = close_arr[i]
 
-  aligned = np.array([
-    date_to_val[d.date()] if d.date() in date_to_val else np.nan
-    for d in trade_dates
-  ], dtype=np.float64)
+  missing = [d.date() for d in trade_dates if d.date() not in date_to_val]
+  if missing:
+    raise ValueError(f"指数 {symbol} 缺少交易日 close: {missing[:5]}")
 
-  mask = np.isnan(aligned)
-  if mask.any():
-    idx = np.where(~mask, np.arange(len(aligned)), 0)
-    np.maximum.accumulate(idx, out=idx)
-    aligned = aligned[idx]
-
+  aligned = np.array([date_to_val[d.date()] for d in trade_dates], dtype=np.float64)
   return np.array(trade_dates), aligned
 
 
-def compute_position_multiplier(index_open, window=20, base=0.5, leverage=10,
+def compute_position_multiplier(index_close, window=20, base=0.5, leverage=10,
                                 direction=1, floor=0.0, cap=1.0):
   """仓位乘数：窗口收益率 × 杠杆 + 基准仓位，clip 到 [floor, cap]。"""
-  arr = np.asarray(index_open, dtype=np.float64)
+  arr = np.asarray(index_close, dtype=np.float64)
   n = len(arr)
   ret = np.full(n, np.nan)
 
@@ -79,7 +73,7 @@ def compute_calendar_empty_mask(trade_dates, empty_months) -> np.ndarray | None:
   return mask
 
 
-def compute_position_multiplier_for_date(config: dict, target_date) -> float:
+def compute_position_multiplier_for_date(config: dict, target_date, index_close_today=None) -> float:
   empty_months = config.get('empty_months')
   if empty_months and target_date.month in empty_months:
     return 0.0
@@ -93,11 +87,18 @@ def compute_position_multiplier_for_date(config: dict, target_date) -> float:
     return invest_ratio
 
   symbol = config['timing_index'] if 'timing_index' in config else 'sh000852'
-  dates_arr, open_arr = load_index_open(symbol)
+  dates_arr, close_arr = load_index_close(symbol)
   py_dates = [d.item() for d in dates_arr]
-  row = py_dates.index(target_date)
+  if target_date in py_dates:
+    row = py_dates.index(target_date)
+  else:
+    if index_close_today is None:
+      raise ValueError(f"指数 {symbol} 缺少 {target_date} close，禁止用 T-1 择时")
+    dates_arr = np.append(dates_arr, np.datetime64(target_date, 'D'))
+    close_arr = np.append(close_arr, float(index_close_today))
+    row = len(close_arr) - 1
   mult = compute_position_multiplier(
-    open_arr,
+    close_arr,
     window=config['timing_window'] if 'timing_window' in config else 20,
     base=timing_base,
     leverage=config['timing_leverage'] if 'timing_leverage' in config else 10,

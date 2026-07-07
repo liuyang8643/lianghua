@@ -201,7 +201,7 @@ def test_sell_proceeds_fund_buys():
 def test_freeze_downsize_replays_20260612_meiteng():
     """回归 2026-06-12 实景:卖出回款后剩 ~3.6w,美腾科技目标 1500 股(3.4w 按开盘价
     买得起),但科创板涨停价冻结口径需 ~4.07w → 旧逻辑整只跳过、3.5w 现金闲置一天。
-    减量后按科创板 200 股起、1 股递增规则买入 1326 股。"""
+    减量后按科创板 200 股起、1 股递增规则买入 1327 股。"""
     code = '688420.SH'
     open_px, pre_close = 22.63, 22.59
     unit = freeze_unit_price(code, open_px, pre_close)   # 22.59×1.2 = 27.108
@@ -211,7 +211,7 @@ def test_freeze_downsize_replays_20260612_meiteng():
         prices={code: open_px}, limit_prices={code: unit},
         base_target=34_000.0,
     )
-    assert buys == {code: 1326}
+    assert buys == {code: 1327}
     assert code not in skip
 
 

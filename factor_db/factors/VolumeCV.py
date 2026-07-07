@@ -16,7 +16,7 @@ class VolumeCV:
 
   def calc_batch(self, panel: dict) -> np.ndarray:
     volume_known = _shift(panel["volume"])
-    raw_open = panel["open"]
+    raw_open = panel["close"]
     st_mask = panel["st_mask"]
 
     w = self.hist_days

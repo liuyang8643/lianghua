@@ -7,7 +7,7 @@ class TrueMarketCap:
     hist_days = 0
 
     def calc_batch(self, panel: dict) -> np.ndarray:
-        raw_open = panel["open"]
+        raw_open = panel["close"]
         total_share = panel["total_share"]
         st_mask = panel["st_mask"]
 

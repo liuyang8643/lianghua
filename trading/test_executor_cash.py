@@ -92,11 +92,11 @@ def test_unit_cost_uses_limit_price_when_present():
     om = _make_order_monitor(ex, {code: 200}, {code: 14.3}, limit_prices={code: 17.23})
     expected = 17.23 * (1 + ex.BUY_FEE_RATE)
     assert abs(om._unit_cost(code) - expected) < 1e-9
-    # 涨停价口径显著高于开盘价口径,避免低估资金占用
+    # 涨停价口径显著高于收盘价口径,避免低估资金占用
     assert om._unit_cost(code) > 14.3 * (1 + ex.BUY_FEE_RATE)
 
 
-def test_unit_cost_falls_back_to_open_when_no_limit():
+def test_unit_cost_falls_back_to_close_when_no_limit():
     ex = RebalanceExecutor(_FakeTrader())
     code = '600000.SH'
     om = _make_order_monitor(ex, {code: 100}, {code: 10.0})
@@ -166,7 +166,7 @@ def test_remaining_counts_filled_and_inflight():
 # ── 持久挂单核心 ─────────────────────────────────────────
 
 def test_submit_affordable_buys_places_limit_order_once():
-    """现金够时直接挂 open[T] 限价单；挂上后不等待、不撤单。"""
+    """现金够时直接挂 close[T] 限价单；挂上后不等待、不撤单。"""
     ex = RebalanceExecutor(_FakeTrader(cash=1e7))
     code = '600000.SH'
     om = _make_order_monitor(ex, {code: 1000}, {code: 10.0}, limit_prices={code: 11.0})
@@ -176,8 +176,42 @@ def test_submit_affordable_buys_places_limit_order_once():
     assert ex.trader.submitted[0][3] == 10.0
 
 
+def test_no_duplicate_submit_while_qmt_order_not_visible():
+    """QMT 尚未登记新单时，不得因 query_order 暂空而重复提交。"""
+    class _SlowRegisterTrader(_FakeTrader):
+        def __init__(self):
+            super().__init__(cash=1e7)
+            self.pending_visible: set[int] = set()
+
+        def order(self, order_type, code, shares, price, order_remark=''):
+            oid = super().order(order_type, code, shares, price, order_remark)
+            self.orders[oid].order_status = xtconstant.ORDER_REPORTED
+            self.orders[oid].traded_volume = 0
+            return oid
+
+        def query_order(self, oid):
+            if oid not in self.pending_visible:
+                return None
+            return super().query_order(oid)
+
+    trader = _SlowRegisterTrader()
+    ex = RebalanceExecutor(trader)
+    ex.MONITOR_POLL_SEC = 0.01
+    code = '301006.SZ'
+    om = _make_order_monitor(ex, {code: 2500}, {code: 13.07}, limit_prices={code: 15.68})
+    om._submit_affordable_buys()
+    assert len(trader.submitted) == 1
+    om._submit_affordable_buys()
+    assert len(trader.submitted) == 1
+    oid = trader.submitted[0][2]
+    trader.pending_visible.add(oid)
+    assert om._has_open_order(code) is True
+    om._submit_affordable_buys()
+    assert len(trader.submitted) == 1
+
+
 def test_reject_retries_same_size_later_without_blocking_or_shrinking():
-    """非资金类废单不减手、不熔断；冷却后仍按原 open[T] 和原缺口重试。"""
+    """非资金类废单不减手、不熔断；冷却后仍按原 close[T] 和原缺口重试。"""
     trader = _FakeTrader(cash=1e7)
     trader.on_order = lambda code, shares, oid: SimpleNamespace(
         order_status=xtconstant.ORDER_JUNK, traded_volume=0,
@@ -388,12 +422,12 @@ def test_protect_price_rounds_to_tick():
 
 
 def test_submit_buy_uses_protect_limit_price():
-    """买入应带保护限价(开盘×1.015),不再裸对手价市价单。"""
+    """买入应带保护限价(收盘×(1+保护比例)),不再裸对手价市价单。"""
     ex = RebalanceExecutor(_FakeTrader())
-    open_px = 25.02
+    close_px = 25.02
     code = '301520.SZ'
-    expected = ex._protect_price(open_px, ex.BUY_PROTECT_PCT, 'BUY')
-    om = _make_order_monitor(ex, {code: 100}, {code: open_px})
+    expected = ex._protect_price(close_px, ex.BUY_PROTECT_PCT, 'BUY')
+    om = _make_order_monitor(ex, {code: 100}, {code: close_px})
     om._submit('BUY', code, 100)
     assert len(ex.trader.submitted) == 1
     _, shares, _, limit_price = ex.trader.submitted[0]

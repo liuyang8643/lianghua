@@ -11,7 +11,6 @@
 """
 from __future__ import annotations
 from datetime import date
-from pathlib import Path
 from typing import Optional
 
 import pandas as pd
@@ -20,9 +19,6 @@ from data.db.stock_name import get_stock_name_at_date
 from trading.lark.format import fmt_money, fmt_pct, fmt_diff_money
 from trading.lark.sender import lark_sender, LarkMsgLevel
 from trading.logger import trading_logger
-
-_TRADE_DIR = Path(__file__).resolve().parents[1] / "data" / "live_trades"
-
 
 def _name(code: str, signal_date: date) -> str:
     return get_stock_name_at_date(code, signal_date) or ''
@@ -134,6 +130,7 @@ class PostCloseReport:
         self._asset: float | None = None
         self._prev_asset: float | None = None
         self._net_cash_flow: float = 0.0
+        self._chain_broken_state = False
         # code → name 映射（feed 数据时累积，飞书卡片只显示名称）
         self._code_to_name: dict[str, str] = {}
 
@@ -181,6 +178,9 @@ class PostCloseReport:
         self._asset = total_asset
         self._prev_asset = prev_asset
         self._net_cash_flow = net_cash_flow
+
+    def feed_chain_broken(self, chain_broken: bool):
+        self._chain_broken_state = chain_broken
 
     # ── 5 维构建 ────────────────────────────────────────────
 
@@ -355,7 +355,7 @@ class PostCloseReport:
           - 已清仓(volume==0)：卖出无成本基线 → None 剔除（不计入合计）。
         链路完整时沿用存档 daily_pnl（vs-昨收的当日盈亏，口径更准）。
         """
-        chain_broken = self._chain_broken()
+        chain_broken = self._chain_broken_state
         live_pnl: dict[str, dict] = {}
         if self._positions is not None and not self._positions.empty:
             for _, r in self._positions.iterrows():
@@ -479,27 +479,6 @@ class PostCloseReport:
             'within_tolerance': within,
         }
 
-    def _chain_broken(self) -> bool:
-        """T-1 持仓快照链路是否断裂（缺 T-1 但存在更早快照）。
-
-        断裂时**卖出仓位**无成本基线（已实现 P&L 不可计算，旧公式会把卖出金额误当
-        利润）；但**持有仓位**仍可用成本基线 (close-avg)×vol 算持仓盈亏，不受影响。
-        真正首日（无任何更早快照）不算断裂——全是当日新开仓。
-        """
-        from datetime import timedelta
-        from utils.stock.time import get_last_trading_day
-        prev = get_last_trading_day(self.trade_date - timedelta(days=1))
-        if (_TRADE_DIR / f"positions_{prev.isoformat()}.parquet").exists():
-            return False
-        for p in _TRADE_DIR.glob("positions_*.parquet"):
-            try:
-                d = date.fromisoformat(p.stem.split('positions_')[1])
-            except (ValueError, IndexError):
-                continue
-            if d < self.trade_date:
-                return True  # 链路断裂
-        return False  # 首日
-
     def build_summary(self, dim5: dict | None = None) -> dict:
         """整体汇总（账户层）。
 
@@ -556,7 +535,7 @@ class PostCloseReport:
 
         只输出 3 个有实际诊断价值的维度：
           - dim3_orders   操作差距（多退少补的实盘 vs 回测）
-          - dim4_slippage 滑点（成交价 vs 开盘价，HTML debug 用）
+          - dim4_slippage 滑点（成交价 vs 收盘价，HTML debug 用）
           - dim5_pnl      逐股盈亏对比
           - summary       收益对比
           - reconcile     账务自检
@@ -580,7 +559,7 @@ class PostCloseReport:
         """上传 HTML 附件 + 个股盈亏差异&滑点卡片 + 对账异常告警。返回 report data。
 
         日报主卡统一由 day_board 单卡全天更新；本方法另发一张
-        「个股盈亏差异 + 实盘滑点(vs 开盘价)」明细卡。
+        「个股盈亏差异 + 实盘滑点(vs 收盘价)」明细卡。
         """
         data = self.build()
 
@@ -614,7 +593,7 @@ class PostCloseReport:
     # ── 个股盈亏差异 + 实盘滑点明细卡 ─────────────────────────
 
     def _slippage_agg_rows(self) -> list[dict]:
-        """fills 按 (code, direction) 聚合滑点：成交均价(vwap) vs 开盘价(est_price)。
+        """fills 按 (code, direction) 聚合滑点：成交均价(vwap) vs 收盘价(est_price)。
 
         slippage_cost > 0 = 成本（买贵了/卖便宜了），< 0 = 反向占优。
         """
@@ -646,7 +625,7 @@ class PostCloseReport:
         return out
 
     def _send_pnl_slippage_card(self, data: dict):
-        """飞书明细卡：表1 个股盈亏差异（实盘 vs 回测）；表2 实盘滑点（vs 开盘价）。"""
+        """飞书明细卡：表1 个股盈亏差异（实盘 vs 回测）；表2 实盘滑点（vs 收盘价）。"""
         d5 = data.get('dim5_pnl') or {}
         pnl_rows = d5.get('rows') or []
         slip_rows = self._slippage_agg_rows()
@@ -695,12 +674,12 @@ class PostCloseReport:
                     'cost': _color(r['slippage_cost'], fmt_diff_money(r['slippage_cost'])),
                 })
             tables.append({
-                'title': '**🎯 实盘滑点（成交均价 vs 开盘价）**',
+                'title': '**🎯 实盘滑点（成交均价 vs 收盘价）**',
                 'element_id': 'slippage_tbl',
                 'page_size': 15,
                 'columns': [
                     {'name': 'name', 'display_name': '股票·方向', 'horizontal_align': 'left'},
-                    {'name': 'open', 'display_name': '开盘价', 'horizontal_align': 'right'},
+                    {'name': 'open', 'display_name': '收盘价', 'horizontal_align': 'right'},
                     {'name': 'vwap', 'display_name': '成交均价', 'horizontal_align': 'right'},
                     {'name': 'sp', 'display_name': '滑点', 'horizontal_align': 'right'},
                     {'name': 'cost', 'display_name': '滑点成本', 'horizontal_align': 'right'},
@@ -930,7 +909,7 @@ class PostCloseReport:
 </div>
 
 <div class='section'>
-  <h2>滑点明细（成交价 vs 开盘价，仅 debug 用）</h2>
+  <h2>滑点明细（成交价 vs 收盘价，仅 debug 用）</h2>
   <div>平均滑点 {d4['avg_slippage']:+.3f}% ({d4['avg_slippage']*100:+.1f} bp) · 总滑点成本 {fmt_diff_money(d4['total_slippage_cost'])}</div>
   {_slippage_table(d4['rows'])}
 </div>

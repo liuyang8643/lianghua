@@ -4,12 +4,17 @@
 """
 import time
 import traceback
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 
 from data.db.stock_list import allow_buy_stock_code_list
+from core.backtest import (
+    _compute_timing_multipliers, apply_t1_prefilter_for_date,
+    build_list_dates_map, filter_stock_pool, stock_pool_prefixes,
+)
+from trading.persistence import get_live_rebalance_index, is_position_chain_broken
 from trading.lark.sender import LarkMsgLevel, lark_sender
 from trading.logger import trading_logger
 from utils.recorder import recorder
@@ -138,14 +143,31 @@ def _load_latest_seed(trade_date: date):
     for seed_date, p in sorted(cand, reverse=True):  # 由近及远
         seed = _extract_live_seed(pd.read_parquet(p), summary_df, seed_date)
         if seed is not None:
-            seed_cash, seed_positions, _ = seed
-            return seed_date, seed_cash, seed_positions
+            seed_cash, seed_positions, y_positions_eod = seed
+            return seed_date, seed_cash, seed_positions, y_positions_eod
     return None
 
 
 def _ensure_no_filter_factors(individual_config: dict):
     if individual_config.get('filter_factors'):
         raise ValueError("filter_factors 目前仅支持研究回测，盘后回放路径未启用，禁止静默忽略")
+
+
+def _post_close_timing_multipliers(config: dict, valid_dates):
+    if not (config.get('timing_enabled') and config.get('timing_base') is not None):
+        return _compute_timing_multipliers(config, valid_dates)
+    import numpy as np
+    from core.timing import load_index_close
+    from trading.helper import get_index_close_today
+
+    symbol = config.get('timing_index', 'sh000852')
+    dates_arr, close_arr = load_index_close(symbol)
+    date_to_close = {dates_arr[i].item(): float(close_arr[i]) for i in range(len(dates_arr))}
+    trade_date = valid_dates[-1].date()
+    if trade_date not in date_to_close:
+        date_to_close[trade_date] = get_index_close_today(symbol, trade_date)
+    idx_close = np.array([date_to_close[d.date()] for d in valid_dates], dtype=np.float64)
+    return _compute_timing_multipliers(config, valid_dates, {symbol: idx_close})
 
 
 def _seed_replay_core(*, prev_date: date, seed_cash: float, seed_positions: dict,
@@ -169,24 +191,20 @@ def _seed_replay_core(*, prev_date: date, seed_cash: float, seed_positions: dict
         trading_logger.warning(
             f"[SeedReplay] {len(dropped)} 只种子持仓不在 NPZ，回放忽略: {dropped[:5]}")
 
-    import numpy as np
-    empty_months = individual_config.get('empty_months')
-    cash_reserve = float(individual_config.get('cash_reserve_ratio', 0.0))
-    invest_ratio = 1.0 - cash_reserve
-    position_multipliers = None
     t_date = valid_dates[0].date() if valid_dates else None
-    if t_date and empty_months and t_date.month in empty_months:
-        position_multipliers = np.array([0.0])
-    elif cash_reserve > 0:
-        position_multipliers = np.array([invest_ratio])
-
+    position_multipliers = _post_close_timing_multipliers(individual_config, valid_dates)
+    init_total_asset = seed_cash + sum(p['current_value'] for p in y_positions_eod)
     bt_result = _backtest_direct(
         data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices,
         weights=weights, buy_n=buy_n, sell_m=sell_m,
         init_cash=seed_cash, init_positions=seed_in_npz,
+        init_total_asset=init_total_asset,
         position_multipliers=position_multipliers,
+        list_dates_map=build_list_dates_map(data),
         limit_up_protection=individual_config.get('limit_up_protection', False),
         rebalance=individual_config.get('rebalance', True),
+        prefilter_n=individual_config.get('prefilter_n'),
+        rebalance_start_index=get_live_rebalance_index(t_date) if t_date else 0,
     )
     snaps = bt_result.get('daily_snapshots') or []
     if not snaps:
@@ -229,8 +247,14 @@ def _run_seed_replay(trade_date: date, individual_config: dict,
         return None
     prev_date, seed_cash, seed_positions, y_positions_eod = loaded
 
-    all_stocks = allow_buy_stock_code_list(target_date=trade_date)
+    all_stocks = allow_buy_stock_code_list(
+        target_date=trade_date,
+        boards=stock_pool_prefixes(individual_config.get('stock_pool')))
     weights = individual_config['weights']
+    prefilter_n = individual_config.get('prefilter_n', 0)
+    if prefilter_n:
+        all_stocks, _ = apply_t1_prefilter_for_date(
+            prev_date, all_stocks, weights, factor_classes, prefilter_n, seed_positions)
 
     signal_dt = [datetime.combine(trade_date, datetime.min.time())]
     scores_result = _compute_factor_scores(signal_dt, all_stocks, weights, factor_classes,
@@ -293,7 +317,8 @@ def _run_continuous_backtest(start_date: date, end_date: date,
                               individual_config: dict, factor_classes: list,
                               kline_data: dict | None = None,
                               init_cash: float = 1_000_000.0,
-                              init_positions: dict | None = None) -> dict | None:
+                              init_positions: dict | None = None,
+                              init_positions_eod: list | None = None) -> dict | None:
     """连续多日回测 [start_date, end_date]，让回测演化形成对齐 T-1 的持仓。
 
     init_cash / init_positions: 实盘真实资金基线种子（T-1 缺失时取更早一天的真实持仓+
@@ -314,7 +339,7 @@ def _run_continuous_backtest(start_date: date, end_date: date,
         return None
 
     signal_datetimes = [datetime.combine(d, datetime.min.time()) for d in trading_days]
-    all_stocks = load_runtime_stock_codes()
+    all_stocks = filter_stock_pool(load_runtime_stock_codes(), individual_config.get('stock_pool'))
     weights = individual_config['weights']
     buy_n = individual_config['buy_n']
     sell_m = individual_config.get('sell_m', buy_n)
@@ -331,12 +356,21 @@ def _run_continuous_backtest(start_date: date, end_date: date,
 
     seed_in_npz = ({c: v for c, v in init_positions.items() if c in stock_indices}
                    if init_positions else None)
+    init_total_asset = None
+    if init_positions_eod is not None:
+        init_total_asset = init_cash + sum(p['current_value'] for p in init_positions_eod)
     return _backtest_direct(
         data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices,
         weights=weights, buy_n=buy_n, sell_m=sell_m,
+        holding_period=individual_config.get('holding_period'),
         lightweight=False, init_cash=init_cash, init_positions=seed_in_npz,
+        init_total_asset=init_total_asset,
+        position_multipliers=_post_close_timing_multipliers(individual_config, valid_dates),
+        list_dates_map=build_list_dates_map(data),
         limit_up_protection=individual_config.get('limit_up_protection', False),
         rebalance=individual_config.get('rebalance', True),
+        prefilter_n=individual_config.get('prefilter_n'),
+        rebalance_start_index=get_live_rebalance_index(start_date),
     )
 
 
@@ -389,7 +423,7 @@ def run_post_close(store) -> dict | None:
         from utils.stock.time import get_trading_date_span
         seed = _load_latest_seed(trade_date)
         if seed is not None:
-            seed_date, seed_cash, seed_positions = seed
+            seed_date, seed_cash, seed_positions, y_positions_eod = seed
             span = get_trading_date_span(seed_date, trade_date)
             bt_start = span[1] if len(span) >= 2 else trade_date
             trading_logger.info(
@@ -397,7 +431,8 @@ def run_post_close(store) -> dict | None:
                 f"(现金¥{seed_cash:,.0f}+{len(seed_positions)}只) 连续演化 {bt_start} → {trade_date}")
             bt_result = _run_continuous_backtest(
                 bt_start, trade_date, individual_config, factor_classes,
-                kline_data=kline_data, init_cash=seed_cash, init_positions=seed_positions)
+                kline_data=kline_data, init_cash=seed_cash, init_positions=seed_positions,
+                init_positions_eod=y_positions_eod)
         else:
             bt_start = _resolve_backtest_start(trade_date)
             if bt_start < trade_date:
@@ -418,6 +453,7 @@ def run_post_close(store) -> dict | None:
     from trading.report import PostCloseReport
 
     report = PostCloseReport(trade_date)
+    report.feed_chain_broken(is_position_chain_broken(trade_date))
 
     # 3.1 实盘资产
     prev_asset = None
@@ -628,6 +664,11 @@ def run_update_all(store):
                 return True
         return False
 
+    def _indices_updated_today() -> bool:
+        from data.update_all import _indices_ready_today
+
+        return _indices_ready_today()
+
     if not (CKPT_DIR / f"{today_str}.done").exists():
         auto_steps = [
             ("股票列表", lambda: _was_updated_today("stock_list/stock_list.parquet")),
@@ -636,7 +677,7 @@ def run_update_all(store):
             ("资产负债表", lambda: _was_updated_today("financial/balance.parquet")),
             ("深历史财务", lambda: _was_updated_today("financial/deep_indicators.parquet")),
             ("发行价", lambda: _was_updated_today("issue_price/issue_price.parquet")),
-            ("大盘指数", lambda: _was_updated_today("index_*_daily.parquet")),
+            ("大盘指数", _indices_updated_today),
         ]
         for auto_name, check in auto_steps:
             try:

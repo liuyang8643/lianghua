@@ -32,17 +32,18 @@ class RebalanceDayPlan:
   skip_reasons: dict[str, str]
 
 
-def _map_open_prices(data, stock_indices, trade_idx: int, price_codes) -> dict[str, float]:
-  open_all = data['open']
-  day_open = open_all[trade_idx]
+def _map_trade_prices(data, stock_indices, trade_idx: int, price_codes) -> dict[str, float]:
+  """成交价 = close[T]（尾盘收盘集合竞价固定价）。仅含当日有有效收盘价（可成交）的股票。"""
+  close_all = data['close']
+  day_close = close_all[trade_idx]
   prices: dict[str, float] = {}
   for code in price_codes:
     if code not in stock_indices:
       continue
     si = stock_indices[code]
-    open_val = day_open[si]
-    if not np.isnan(open_val) and open_val > 0:
-      prices[code] = float(open_val)
+    close_val = day_close[si]
+    if not np.isnan(close_val) and close_val > 0:
+      prices[code] = float(close_val)
   return prices
 
 
@@ -71,7 +72,7 @@ def _map_close_prices(data, stock_indices, trade_idx: int, price_codes,
 def _map_equity_prices(data, stock_indices, trade_idx: int, price_codes,
                        prices: dict[str, float],
                        last_valid_close_prices: dict[str, float] | None) -> dict[str, float]:
-  """目标权益估值价：优先 open[T]；停牌/缺 open 时只用 close[T-1]。"""
+  """目标权益估值价：优先 close[T]（成交价）；停牌/缺 close 时只用 close[T-1]。"""
   close_all = data['close']
   prev_close = close_all[trade_idx - 1] if trade_idx >= 1 else None
   equity_prices: dict[str, float] = {}
@@ -96,12 +97,11 @@ def _freeze_prices(data, stock_indices, trade_idx: int, prices: dict[str, float]
                    market_order_freeze: bool) -> dict[str, float]:
   if not market_order_freeze:
     return {}
-  close_all = data['close']
-  prev_close_row = close_all[trade_idx - 1] if trade_idx >= 1 else data['open'][trade_idx]
+  preclose_row = data['preClose'][trade_idx]
   limit_prices: dict[str, float] = {}
   for code, price in prices.items():
     si = stock_indices[code]
-    pc = float(prev_close_row[si])
+    pc = float(preclose_row[si])
     if np.isnan(pc):
       pc = 0.0
     limit_prices[code] = freeze_unit_price(code, price, pc)
@@ -155,7 +155,7 @@ def build_rebalance_day(
 
   extra = set(price_codes_extra or [])
   price_universe = set(positions) | set(sell_m_stocks) | set(buy_n_stocks) | extra
-  prices = _map_open_prices(data, stock_indices, trade_idx, price_universe)
+  prices = _map_trade_prices(data, stock_indices, trade_idx, price_universe)
   close_prices = _map_close_prices(
     data, stock_indices, trade_idx, price_universe,
     prices, last_valid_close_prices,
@@ -201,7 +201,7 @@ def build_rebalance_day(
       pos_vals=pos_vals, cash=cash,
       buy_n_stocks=buy_n_stocks, tradable_buy_stocks=tradable_buy_stocks,
       sellable_ok=sellable_ok, prices=prices, limit_prices=limit_prices,
-      base_target=base_target, rebalance=rebalance,
+      base_target=base_target, keep_stocks=sell_m_stocks, rebalance=rebalance,
     )
 
   return RebalanceDayPlan(

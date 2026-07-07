@@ -66,6 +66,10 @@ def build_individual_config(
     timing_index: str | None = None,
     amount_filter_pct: int | None = None,
     market_cap_filter_pct: int | None = None,
+    rebalance: bool | None = None,
+    limit_up_protection: bool | None = None,
+    cash_reserve_ratio: float | None = None,
+    prefilter_enabled: int | None = None,
     profile_name: str | None = None,
 ) -> dict:
     if weights is None:
@@ -97,13 +101,17 @@ def build_individual_config(
                 continue  # 零值不写入 config, 视为关闭
             cfg[ck] = val
 
+    # stock_pool 类型保证：startswith 需要 tuple
+    sp = cfg.get('stock_pool')
+    if isinstance(sp, list):
+        cfg['stock_pool'] = tuple(sp)
+
     # sell_m >= buy_n 约束
     if cfg['sell_m'] < cfg['buy_n']:
         cfg['sell_m'] = cfg['buy_n']
 
     # timing_enabled 特殊处理
     cfg['timing_enabled'] = cfg.get('timing_base') is not None
-    cfg['rebalance'] = True
     return cfg
 
 
@@ -181,17 +189,9 @@ def generate_initial_configs(count: int, profile_name: str | None = None) -> lis
                 continue
             extra[key] = _sample_space_key(key, profile_name)
 
+        extra.pop('buy_n', None)
         w = sample_weights(profile_name=profile_name) if has_weight else None
         configs.append(build_individual_config(
-            buy_n_val, sell_m=extra.get('sell_m'), weights=w, factor_choice=fc,
-            stock_pool=extra.get('stock_pool'),
-            holding_period=extra.get('holding_period'),
-            timing_base=extra.get('timing_base'),
-            timing_leverage=extra.get('timing_leverage'),
-            timing_direction=extra.get('timing_direction'),
-            timing_window=extra.get('timing_window'),
-            timing_index=extra.get('timing_index'),
-            amount_filter_pct=extra.get('amount_filter_pct'),
-            market_cap_filter_pct=extra.get('market_cap_filter_pct'),
-            profile_name=profile_name))
+            buy_n_val, weights=w, factor_choice=fc,
+            profile_name=profile_name, **extra))
     return configs

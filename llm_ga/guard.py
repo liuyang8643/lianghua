@@ -1,7 +1,7 @@
 """因子代码静态红线校验（评测前的第一道闸门，纯静态、确定性）。
 
 逐条对应 CLAUDE.md 红线：
-1. T 日价格红线：禁止引用 close/high/low/volume/amount（前视野泄露）。新因子只能用 open[T] + 财务/滞后量。
+1. T 日价格红线（尾盘收盘交易）：禁止引用 open/high/low/volume/amount。新因子只能用 close[T] + 财务/滞后量。
 2. 矩阵计算红线：calc_batch 必须纯向量化，禁止任何 for/while 逐股票 / 逐日循环。
 3. 自包含 / 数据源红线：除 numpy 外禁止 import 任何库（含 akshare/requests/xtdata 等联网库），
    禁止 open()/np.load 等读取外部文件。
@@ -75,7 +75,7 @@ def check(code: str, param_cap: int) -> tuple[bool, int, str]:
 
     leaks = find_leak_fields(code)
     if leaks:
-        return False, 0, f'T 日数据泄露：引用了禁止字段 {leaks}（仅允许 open[T]）'
+        return False, 0, f'T 日数据泄露：引用了禁止字段 {leaks}（仅允许 close[T]）'
 
     tree = ast.parse(code)
 

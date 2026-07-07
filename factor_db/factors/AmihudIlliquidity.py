@@ -17,7 +17,7 @@ class AmihudIlliquidity:
   def calc_batch(self, panel: dict) -> np.ndarray:
     close_known = _shift(panel["close"])
     amount_known = _shift(panel["amount"])
-    raw_open = panel["open"]
+    raw_open = panel["close"]
     st_mask = panel["st_mask"]
 
     ret = np.empty_like(close_known)

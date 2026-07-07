@@ -80,13 +80,47 @@ def signature(rank_mat: np.ndarray, dim: int = DEFAULT_DIM, seed: int = DEFAULT_
 
 # ========== 指纹缓存（派生数据，可重建） ==========
 
+_CACHE = Path(__file__).resolve().parent / 'signatures.npz'
+_META = Path(__file__).resolve().parent / 'signatures.meta.json'
+_CACHE_KEYS = ('dim', 'seed', 'start', 'end', 'n_days', 'n_stocks', 'pool')
+
+
 def load_cache() -> tuple[list[str], np.ndarray, dict]:
-    """返回空缓存（禁用磁盘缓存）。"""
-    return [], np.zeros((0, DEFAULT_DIM), dtype=np.float32), {}
+    if not _CACHE.exists():
+        return [], np.zeros((0, DEFAULT_DIM), dtype=np.float32), {}
+    with np.load(_CACHE, allow_pickle=False) as data:
+        names = [str(n) for n in data['names']]
+        sigs = data['sigs'].astype(np.float32, copy=False)
+    meta = json.loads(_META.read_text(encoding='utf-8')) if _META.exists() else {}
+    return names, sigs, meta
+
+
+def save_cache(names: list[str], sigs: np.ndarray, meta: dict) -> None:
+    _CACHE.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        _CACHE,
+        names=np.asarray(names, dtype='U128'),
+        sigs=np.asarray(sigs, dtype=np.float32),
+    )
+    _META.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def _same_cache_base(a: dict, b: dict) -> bool:
+    return all(a.get(k) == b.get(k) for k in _CACHE_KEYS)
 
 
 def add_to_cache(name: str, sig: np.ndarray, meta: dict) -> None:
-    """禁用磁盘缓存，仅保持内存哈希。"""
+    names, sigs, old_meta = load_cache()
+    sig2 = np.asarray(sig, dtype=np.float32).reshape(1, -1)
+    if not names or not old_meta or not _same_cache_base(old_meta, meta):
+        save_cache([name], sig2, meta)
+        return
+    if name in names:
+        sigs[names.index(name)] = sig2[0]
+    else:
+        names.append(name)
+        sigs = np.vstack([sigs, sig2])
+    save_cache(names, sigs, meta)
 
 
 def cached_matrix() -> tuple[list[str], np.ndarray]:

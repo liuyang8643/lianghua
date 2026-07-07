@@ -160,7 +160,7 @@ def test_pnl_slippage_card_contents(monkeypatch):
         {'code': 'AAA', 'volume': 100, 'current_price': 10.0,
          'current_value': 1000.0, 'avg_price': 9.0},
     ]))
-    # 两笔分批买入同一只票：滑点按 vwap 聚合（(10.5×100+10.7×100)/200=10.6 vs 开盘 10.0 → +6%）
+    # 两笔分批买入同一只票：滑点按 vwap 聚合（(10.5×100+10.7×100)/200=10.6 vs 收盘 10.0 → +6%）
     rpt.feed_fills_df(_fills_df([
         {'code': 'BBB', 'name': '乙股', 'direction': 'buy', 'price': 10.5,
          'shares': 100, 'amount': 1050.0, 'fee_est': 0.1, 'est_price': 10.0, 'slippage_pct': 5.0},
@@ -184,7 +184,7 @@ def test_pnl_slippage_card_contents(monkeypatch):
     aaa = next(r for r in pnl_rows if r['name'] == '甲股')
     assert '-200' in aaa['diff']
 
-    # 表2：BBB 买入 vwap 10.6 vs 开盘 10.0 → 滑点 +6%、成本 +120；
+    # 表2：BBB 买入 vwap 10.6 vs 收盘 10.0 → 滑点 +6%、成本 +120；
     #       CCC 卖出 9.8 vs 10.0 → 滑点 -2%、成本 +40（卖便宜也是成本）
     slip = {r['name']: r for r in tables['slippage_tbl']['rows']}
     assert slip['乙股 买']['vwap'] == '10.60'

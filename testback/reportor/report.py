@@ -923,9 +923,9 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
         **holding_stats,
     })
 
-    signal_timing = rebalance_rule.get('signal_timing', 'T-1')
-    trade_timing = rebalance_rule.get('trade_timing', 'T open')
-    price_field = rebalance_rule.get('price_field', 'open')
+    signal_timing = rebalance_rule.get('signal_timing', 'T')
+    trade_timing = rebalance_rule.get('trade_timing', 'T close')
+    price_field = rebalance_rule.get('price_field', 'close')
 
     report_json = json.dumps({
         'summary': {

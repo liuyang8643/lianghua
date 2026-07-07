@@ -49,15 +49,19 @@ class Trader:
       order_remark=''
   ):
     """ 下单 """
-    trading_logger.info(f"[QMT] order_stock {stock_code} {'买' if order_type == xtconstant.STOCK_BUY else '卖'} {volume}股 ...")
     price_type = get_price_type(order_type, stock_code, price)
+    side = '买' if order_type == xtconstant.STOCK_BUY else '卖'
+    px = f' @{price:.2f}' if price else ''
+    trading_logger.info(f"[QMT] order_stock {stock_code} {side} {volume}股{px} type={price_type}")
+    # 盘后定价(49)：收盘价由交易所确定，price 传 0
+    actual_price = 0 if price_type == 49 else (0 if price is None else price)
     order_id = self.client.order_stock(
       self.account,
       stock_code,
       order_type,
       volume,
       price_type=price_type,
-      price=0 if price is None else price,
+      price=actual_price,
       strategy_name=self.strategy_name,
       order_remark=order_remark,
     )
@@ -80,7 +84,6 @@ class Trader:
 
   def query_asset(self) -> Optional[XtAsset]:
     """查询证券资产"""
-    trading_logger.info("[QMT] query_stock_asset ...")
     try:
       return self.client.query_stock_asset(self.account)
     except Exception as e:
@@ -89,7 +92,6 @@ class Trader:
 
   def query_positions(self) -> Optional[List[XtPosition]]:
     """查询持仓"""
-    trading_logger.info("[QMT] query_stock_positions ...")
     try:
       return self.client.query_stock_positions(self.account)
     except Exception as e:

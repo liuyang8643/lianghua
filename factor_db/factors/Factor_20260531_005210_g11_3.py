@@ -24,7 +24,7 @@ class Factor_20260531_005210_g11_3:
     hist_days = 0
 
     def calc_batch(self, panel: dict) -> np.ndarray:
-        base_valid = ~np.isnan(panel['open']) & (panel['open'] >= 2.0) & ~panel['st_mask']
+        base_valid = ~np.isnan(panel['close']) & (panel['close'] >= 2.0) & ~panel['st_mask']
 
         def _zscore(x):
             x = x.astype(np.float64)
@@ -44,11 +44,11 @@ class Factor_20260531_005210_g11_3:
             return np.where(x >= 0, np.tanh(x * s_pos), np.tanh(x * s_neg))
 
         with np.errstate(divide='ignore', invalid='ignore'):
-            ey = panel['eps'] / panel['open']
-            cf_yield = panel['operating_cf_ps'] / panel['open']
+            ey = panel['eps'] / panel['close']
+            cf_yield = panel['operating_cf_ps'] / panel['close']
             cash_cov = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
             accruals = cf_yield - ey
-            ipo_premium = panel['open'] / panel['issue_price']
+            ipo_premium = panel['close'] / panel['issue_price']
 
         roe_s = np.sign(panel['roe']) * (np.abs(panel['roe']) ** (1.0 / 3.0))
         gm_s = np.sign(panel['gross_margin']) * (np.abs(panel['gross_margin']) ** (1.0 / 3.0))

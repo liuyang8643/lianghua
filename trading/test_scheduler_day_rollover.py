@@ -1,12 +1,14 @@
 """跨日重置回归测试 —— 防止「进程常驻跨日运行 → 新交易日带着上一日 True 标志静默跳过调仓」复发。
 
 背景：2026-06-03 启动的实盘进程未在 16:00 被重启，跑到 2026-06-04 时
-prepared/executed/post_close_done/update_all_done 全为 True，导致 06-04 开盘
-不再触发选股(before_trade)与下单(execute_trade)，只误发一张「盘中交易开始」卡片却零成交。
+prepared/executed/post_close_done/update_all_done 全为 True，导致 06-04 尾盘
+不再触发选股(before_trade)与下单(execute_trade)，只误发一张「行情开始」卡片却零成交。
 """
 from datetime import datetime
 
-from trading.scheduler import TradingScheduler
+from trading.scheduler import (
+    EXECUTE_REBALANCE_START, PREPARE_REBALANCE_START, TradingScheduler,
+)
 
 
 class _Clock:
@@ -74,37 +76,48 @@ def test_cross_day_resets_all_daily_flags():
 
 
 def test_cross_day_allows_new_day_prepare_condition():
-  """重置后，新交易日 09:25:10 的『not prepared』前置条件应重新成立。"""
+  """重置后，新交易日 15:00:30 的『not prepared』前置条件应重新成立。"""
   clock = _Clock(datetime(2026, 6, 3, 16, 5))
   sch = TradingScheduler(trader=object(), time_provider=clock)
   sch._check_day_rollover(sch._now())
   sch.prepared = True  # 上一日已准备
 
-  clock.set(datetime(2026, 6, 4, 9, 25, 10))
+  clock.set(datetime(2026, 6, 4, 15, 0, 30))
   sch._check_day_rollover(sch._now())
   # 主循环 line `if not self.prepared` 的判定恢复为 True → 会重新触发 before_trade
   assert (not sch.prepared) is True
 
 
-def test_execute_window_starts_at_prepare_time():
-  """预计算完成后立即执行：09:25:10 已进入执行窗口，不再等 09:30。"""
-  sch = _make_scheduler(datetime(2026, 6, 4, 9, 25, 10))
+def test_execute_window_starts_at_1505():
+  """盘后固定价格撮合 15:05 起才进入执行窗口。"""
+  sch = _make_scheduler(datetime(2026, 6, 4, 15, 0, 30))
+  assert sch._in_prepare_window(sch._now()) is True
+  assert sch._in_execute_window(sch._now()) is False
+
+  sch = _make_scheduler(datetime(2026, 6, 4, 15, 5, 0))
   assert sch._in_execute_window(sch._now()) is True
 
 
-def test_open_rebalance_waits_until_092510():
-  sch = _make_scheduler(datetime(2026, 6, 4, 9, 25, 9))
+def test_rebalance_waits_until_150030():
+  sch = _make_scheduler(datetime(2026, 6, 4, 15, 0, 29))
   assert sch._in_prepare_window(sch._now()) is False
   assert sch._in_execute_window(sch._now()) is False
 
-  sch = _make_scheduler(datetime(2026, 6, 4, 9, 25, 10))
+  sch = _make_scheduler(datetime(2026, 6, 4, 15, 0, 30))
   assert sch._in_prepare_window(sch._now()) is True
+  assert sch._in_execute_window(sch._now()) is False
+
+  sch = _make_scheduler(datetime(2026, 6, 4, 15, 4, 59))
+  assert sch._in_prepare_window(sch._now()) is True
+  assert sch._in_execute_window(sch._now()) is False
+
+  sch = _make_scheduler(datetime(2026, 6, 4, 15, 5, 0))
   assert sch._in_execute_window(sch._now()) is True
 
 
 def test_fast_forward_runs_prepare_and_execute_synchronously(monkeypatch):
   calls = []
-  clock = _Clock(datetime(2026, 6, 4, 9, 25, 10))
+  clock = _Clock(datetime(2026, 6, 4, 15, 0, 30))
   sch = TradingScheduler(
       trader=object(), time_provider=clock, fast_forward=True,
       before_trade=lambda store: calls.append("before"),
@@ -120,7 +133,7 @@ def test_fast_forward_runs_prepare_and_execute_synchronously(monkeypatch):
   assert calls == ["before", "execute", "post_close", "update_all"]
 
 
-def test_fast_forward_advances_from_092500_to_rebalance_start(monkeypatch):
+def test_fast_forward_advances_from_before_window_to_rebalance_start(monkeypatch):
   calls = []
   clock = _Clock(datetime(2026, 6, 4, 9, 25))
   sch = TradingScheduler(
@@ -135,5 +148,6 @@ def test_fast_forward_advances_from_092500_to_rebalance_start(monkeypatch):
 
   sch.start_check_trading()
 
-  assert calls[0] == ("before", datetime(2026, 6, 4, 9, 25, 10).time())
+  assert calls[0] == ("before", PREPARE_REBALANCE_START)
+  assert calls[1] == ("execute", EXECUTE_REBALANCE_START)
   assert [name for name, _ in calls] == ["before", "execute", "post_close", "update_all"]

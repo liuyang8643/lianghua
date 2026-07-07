@@ -19,7 +19,7 @@ class Factor_20260531_005210_g22_2:
     hist_days = 0
 
     def calc_batch(self, panel: dict) -> np.ndarray:
-        base_valid = ~np.isnan(panel['open']) & (panel['open'] >= 2.0) & ~panel['st_mask']
+        base_valid = ~np.isnan(panel['close']) & (panel['close'] >= 2.0) & ~panel['st_mask']
 
         def _zscore(x):
             x = x.astype(np.float64)
@@ -36,8 +36,8 @@ class Factor_20260531_005210_g22_2:
             return np.where(nan, np.nan, r).astype(np.float32)
 
         with np.errstate(divide='ignore', invalid='ignore'):
-            ey = panel['eps'] / panel['open']
-            cf_yield = panel['operating_cf_ps'] / panel['open']
+            ey = panel['eps'] / panel['close']
+            cf_yield = panel['operating_cf_ps'] / panel['close']
             cash_conf = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
 
         z_cash = _zscore(cash_conf)
@@ -63,7 +63,7 @@ class Factor_20260531_005210_g22_2:
         accrual_trust = 1.0 - np.abs(np.tanh(z_accrual * ACCRUAL_S))
         z_growth_accrual = _zscore(z_profit * accrual_trust * cash_gate)
 
-        ipo_premium = panel['open'] / np.where(np.isfinite(panel['issue_price']) & (panel['issue_price'] > 1e-8), panel['issue_price'], np.nan)
+        ipo_premium = panel['close'] / np.where(np.isfinite(panel['issue_price']) & (panel['issue_price'] > 1e-8), panel['issue_price'], np.nan)
         ipo_raw = _rank_norm(np.where(np.isfinite(ipo_premium) & (ipo_premium > 0.01), -np.log(ipo_premium), np.nan))
         z_ipo = _zscore(ipo_raw * cash_gate)
 

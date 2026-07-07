@@ -15,7 +15,7 @@ class LiquidityFilter:
     def calc_batch(self, panel: dict) -> np.ndarray:
         amount = panel["amount"]
         st_mask = panel["st_mask"]
-        close = panel["open"]
+        close = panel["close"]
 
         amount_known = np.empty_like(amount)
         amount_known[0] = np.nan

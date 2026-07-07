@@ -8,13 +8,13 @@ class Factor_g1_8cd0a4_0:
     hist_days = 0
 
     def calc_batch(self, panel: dict) -> np.ndarray:
-        base_valid = ~np.isnan(panel['open']) & (panel['open'] >= 2.0) & ~panel['st_mask']
+        base_valid = ~np.isnan(panel['close']) & (panel['close'] >= 2.0) & ~panel['st_mask']
 
         fin_ok = (np.isfinite(panel['roe']) & np.isfinite(panel['gross_margin']) &
                   np.isfinite(panel['profit_yoy']) & np.isfinite(panel['eps']))
 
         with np.errstate(divide='ignore', invalid='ignore'):
-            ey = panel['eps'] / panel['open']
+            ey = panel['eps'] / panel['close']
 
         valid_all = base_valid & fin_ok & np.isfinite(ey) & (panel['eps'] > 0)
 

@@ -21,7 +21,7 @@ class Factor_20260531_005210_g13_2:
     hist_days = 0
 
     def calc_batch(self, panel: dict) -> np.ndarray:
-        base_valid = ~np.isnan(panel['open']) & (panel['open'] >= 2.0) & ~panel['st_mask']
+        base_valid = ~np.isnan(panel['close']) & (panel['close'] >= 2.0) & ~panel['st_mask']
 
         def _zscore(x):
             x = x.astype(np.float64)
@@ -38,12 +38,12 @@ class Factor_20260531_005210_g13_2:
             return np.where(nan, np.nan, r).astype(np.float32)
 
         with np.errstate(divide='ignore', invalid='ignore'):
-            ey = panel['eps'] / panel['open']
-            cf_yield = panel['operating_cf_ps'] / panel['open']
+            ey = panel['eps'] / panel['close']
+            cf_yield = panel['operating_cf_ps'] / panel['close']
             cash_cover = panel['operating_cf_ps'] / np.where(np.isfinite(panel['eps']) & (np.abs(panel['eps']) > 1e-8), np.abs(panel['eps']), np.nan)
-            accruals = (panel['operating_cf_ps'] - panel['eps']) / panel['open']
+            accruals = (panel['operating_cf_ps'] - panel['eps']) / panel['close']
             op_leverage = panel['gross_margin'] / np.where(np.isfinite(ey) & (np.abs(ey) > 1e-6), np.abs(ey), np.nan)
-            ipo_premium = panel['open'] / np.where(np.isfinite(panel['issue_price']) & (panel['issue_price'] > 1e-8), panel['issue_price'], np.nan)
+            ipo_premium = panel['close'] / np.where(np.isfinite(panel['issue_price']) & (panel['issue_price'] > 1e-8), panel['issue_price'], np.nan)
 
         # Layer 1: Cash foundation — yield + coverage fused
         z_cf_yield = _zscore(cf_yield)

@@ -8,12 +8,13 @@
    - `pending['sell_orders']`: 需卖出的 `(code, shares)`,`shares < 0` 表示清仓。
    - `pending['buy_allocations']`: 每只目标买入股数(已含 reserve)。
    - `pending['buy_n_stocks']`: 买入优先级顺序(topN)。
-   - `pending['prices']`: 盘前开盘估算价。
+   - `pending['prices']`: 尾盘收盘成交价(close[T])。
+   - 委托类型: QMT `OPT_AFTER_FIX_BUY/SELL`(盘后固定价格)，15:05-15:30 撮合。price 传 0。
    - `pending['limit_prices']`: 每只涨停价(前收×(1+板块涨跌幅)),买单按它估资金冻结。
 
 2. 卖、买挂单模型（统一 OrderMonitor）
-   - 卖单:一次性提交全部 open[T] 限价单，被拒后低频重试。
-   - 买单:按 TopN 顺序检查 QMT 可用资金,够一只/一部分就立即提交 open[T] 限价单。
+   - 卖单:一次性提交全部 close[T] 限价单，被拒后低频重试。
+   - 买单:按 TopN 顺序检查 QMT 可用资金,够一只/一部分就立即提交 close[T] 限价单。
    - 资金暂时不够:不下废单,轮询 QMT 可用资金;任何卖出成交回款到账后继续挂后续买单。
 
 3. 持久挂单、不撤单、买卖共用重试
@@ -24,7 +25,7 @@
 
 4. 资金口径
    - 买入校验用「可用资金」,`_available_buy_cash()` 使用 XtAsset.cash（可用金额,实时含冻结扣减与卖出回款）。
-   - 单笔占用按涨停价估(券商市价单按涨停价冻结),避免按开盘价低估 → 「资金可用数不足」废单。
+   - 单笔占用按涨停价估(券商市价单按涨停价冻结),避免按收盘价低估 → 「资金可用数不足」废单。
 
 5. 飞书与本地留存
    - QMT 原始回调由 `watcher.py` 落 events;executor 的提交/资金等待/废单重试落 `execution_action`。
@@ -112,13 +113,20 @@ class OrderMonitor:
         self.orders_by_code: dict[str, list[int]] = {}
         self.handled_terminal: set[int] = set()
         self.retry_after: dict[str, float] = {}
+        # QMT 异步登记前本地在途量（oid→股数），避免 query_order 暂空时重复提交
+        self._local_inflight: dict[int, int] = {}
 
     # ── 主流程 ─────────────────────────────────────────────
 
     def run(self):
-        # Phase 1: 卖单一次性全提交
-        for code, shares in self.sell_targets.items():
-            self._submit('SELL', code, shares)
+        # Phase 1: 卖单一次性全提交（已有在途则跳过，等废单退避后重试）
+        for code in self.sell_targets:
+            if self._has_open_order(code):
+                continue
+            rem = self._sell_remaining(code)
+            if rem <= 0:
+                continue
+            self._submit('SELL', code, rem)
 
         # Phase 2+3: 主循环（买提交 + 买卖废单重试）
         if self.buy_seq or self.sell_targets:
@@ -155,6 +163,7 @@ class OrderMonitor:
         r['direction'] = direction
         self.submitted.append(r)
         self.orders_by_code.setdefault(code, []).append(r['order_id'])
+        self._local_inflight[r['order_id']] = shares
         amount = shares * self._unit_cost(code) if direction == 'BUY' else 0.0
         self.record_action(f'{direction.lower()}_submit', code=code, order_id=r['order_id'],
                            order_type=otype, shares=shares, amount=amount,
@@ -179,12 +188,19 @@ class OrderMonitor:
         for oid in self.orders_by_code.get(code, []):
             o = self.trader.query_order(oid)
             if not o:
+                inflight += self._local_inflight.get(oid, 0)
                 continue
+            self._local_inflight.pop(oid, None)
             traded = int(getattr(o, 'traded_volume', 0) or 0)
             filled += traded
             if o.order_status not in TERMINAL_STATUS:
                 inflight += max(0, int(getattr(o, 'order_volume', 0) or 0) - traded)
         return filled, inflight
+
+    def _has_open_order(self, code) -> bool:
+        """该标的已有在途委托（含 QMT 尚未登记的新单）。"""
+        _, inflight = self._filled_inflight(code)
+        return inflight > 0
 
     def _remaining(self, code):
         """买单剩余未成交股数"""
@@ -201,7 +217,11 @@ class OrderMonitor:
         for code in self.sell_targets:
             for oid in self.orders_by_code.get(code, []):
                 o = self.trader.query_order(oid)
-                if o and o.order_status not in TERMINAL_STATUS:
+                if not o:
+                    if self._local_inflight.get(oid, 0) > 0:
+                        return True
+                    continue
+                if o.order_status not in TERMINAL_STATUS:
                     return True
         return False
 
@@ -257,6 +277,7 @@ class OrderMonitor:
                 if not o or o.order_status not in TERMINAL_STATUS:
                     continue
                 self.handled_terminal.add(oid)
+                self._local_inflight.pop(oid, None)
                 traded = int(getattr(o, 'traded_volume', 0) or 0)
                 if traded > 0:
                     continue
@@ -281,20 +302,23 @@ class OrderMonitor:
         """按 TopN 顺序提交当前现金买得起的买单"""
         progressed = False
         now = time.time()
+        cash = self._available_cash()
         for code in self.buy_seq:
             if now < self.retry_after.get(code, 0):
+                continue
+            if self._has_open_order(code):
                 continue
             rem = self._remaining(code)
             min_lot = min_buy_shares(code)
             if rem < min_lot:
                 continue
-            cash = self._available_cash()
             afford = floor_buy_shares(code, int(cash / self._unit_cost(code)))
             shares = floor_buy_shares(code, min(rem, afford))
             if shares < min_lot:
                 continue
             if self._submit('BUY', code, shares):
                 progressed = True
+                cash -= shares * self._unit_cost(code)
         return progressed
 
     # ── 卖单重试 ─────────────────────────────────────────────
@@ -305,6 +329,8 @@ class OrderMonitor:
         now = time.time()
         for code in self.sell_targets:
             if now < self.retry_after.get(code, 0):
+                continue
+            if self._has_open_order(code):
                 continue
             rem = self._sell_remaining(code)
             if rem <= 0:
@@ -348,14 +374,14 @@ class OrderMonitor:
                     trading_logger.warning(
                         f"[OrderMonitor] 可用资金 {cash:.2f} 不足以买入任何剩余标的, 结束")
                     return
-                time.sleep(self.executor.MONITOR_POLL_SEC)
+            time.sleep(self.executor.MONITOR_POLL_SEC)
 
     # ── 日志 / 落盘 ─────────────────────────────────────────
 
     def record_action(self, action: str, *, code: str = '', order_id: int = 0,
                       order_type: int | None = None, shares: int = 0,
                       amount: float = 0.0, msg: str = ''):
-        trading_logger.info(
+        trading_logger.debug(
             f"[ExecutorAction] action={action} code={code} order_id={order_id} "
             f"order_type={order_type} shares={shares} amount={amount:.2f} msg={msg}"
         )
@@ -376,8 +402,8 @@ class RebalanceExecutor:
     """调仓下单执行器,依赖一个 `Trader` 实例进行实际委托。"""
 
     BUY_FEE_RATE = LIVE_BUY_FEE_RATE       # 实盘券商冻结费率(佣金+过户费)
-    BUY_PROTECT_PCT = 0.0     # 买入限价 = 开盘价（限价 ≤ 开盘价才能成交）
-    SELL_PROTECT_PCT = 0.0    # 卖出限价 = 开盘价（限价 ≤ 开盘价才能成交）
+    BUY_PROTECT_PCT = 0.0     # 买入限价 = 收盘价（尾盘固定价格成交）
+    SELL_PROTECT_PCT = 0.0    # 卖出限价 = 收盘价（尾盘固定价格成交）
     BUY_MONITOR_END = dt_time(15, 30)  # 资金不够时等卖出回款到收盘前,再挂后续买单
     BUY_MONITOR_DEADLINE_SEC = None    # 测试/闭市演练可覆盖为秒级
     UNDERFUNDED_BACKOFF_SEC = 3.0      # 资金不足废单后退避,等 QMT cash 更新

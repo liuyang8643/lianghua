@@ -13,6 +13,10 @@ strategy_parameters:
   - {key: timing_index, config_key: timing_index, type: categorical, display: t_idx, default: null}
   - {key: amount_filter_pct, config_key: amount_filter_pct, type: int, display: amt%, default: 0}
   - {key: market_cap_filter_pct, config_key: market_cap_filter_pct, type: int, display: mcap%, default: 0}
+  - {key: rebalance, config_key: rebalance, type: categorical, display: rebal, default: true}
+  - {key: limit_up_protection, config_key: limit_up_protection, type: categorical, display: limup, default: false}
+  - {key: cash_reserve_ratio, config_key: cash_reserve_ratio, type: float, display: cash%, default: 0}
+  - {key: prefilter_enabled, config_key: prefilter_n, type: int, display: pref, default: 0}
 
 mode_configs:
   single:
@@ -35,9 +39,13 @@ mode_configs:
     desc: GA优化模式（默认）
 
 search_spaces:
-  buy_n: [20, 25, 30, 35, 40, 45, 50, 100]
-  sell_m: {range: [20, 50, 5]}
-  holding_period: [1, 7, 15, 30, 60]
+  buy_n: {range: [5, 100, 5]}
+  sell_m: {range: [5, 100, 5]}
+  holding_period: [1, 3, 5, 7, 15, 30, 60]
+  rebalance: [true, false]
+  limit_up_protection: [true, false]
+  cash_reserve_ratio: {range: [0.0, 1.0, 0.1]}
+  prefilter_enabled: [0, 300]
   board_prefixes: ["60", "00", "30", "688"]
   timing_base: {range: [0.1, 1.0, 0.1]}
   timing_leverage: [0, 0.5, 1, 2, 3, 5, 8, 10, 12, 15, 20, 25, 30, 40, 50]
@@ -51,7 +59,7 @@ profiles:
     factor_classes: [
       TrueMarketCap, AmountBasedSmallCap,
       AmihudIlliquidity, VolumeCV,
-      OvernightGapDown, High52Week,
+      High52Week,
       ProfitGrowth, CashFlowYield,
       Factor_20260531_005210_g17_4,
       Factor_20260531_005210_g41_0,
@@ -66,7 +74,7 @@ profiles:
     factor_classes: [
       TrueMarketCap, AmountBasedSmallCap,
       AmihudIlliquidity, VolumeCV,
-      OvernightGapDown, High52Week,
+      High52Week,
       Factor_20260530_195339_g14_4,
       BookToMarket,
       Factor_20260530_195339_g34_4,
@@ -83,7 +91,7 @@ profiles:
     factor_classes: [
       TrueMarketCap, AmountBasedSmallCap,
       AmihudIlliquidity, VolumeCV,
-      OvernightGapDown, High52Week,
+      High52Week,
       Factor_20260531_005210_g38_4,
       Factor_20260530_195339_g34_4,
     ]
@@ -97,7 +105,7 @@ profiles:
     factor_classes: [
       TrueMarketCap, AmountBasedSmallCap,
       AmihudIlliquidity, VolumeCV,
-      OvernightGapDown, High52Week,
+      High52Week,
       BookToMarket, EarningsYield, CashFlowYield,
       Factor_20260531_005210_g15_4,
     ]
@@ -129,7 +137,7 @@ profiles:
       CashFlowYield, EarningsYield, ProfitGrowth, BookToMarketQuality,
       Factor_20260531_005210_g17_4, Factor_20260531_005210_g41_0,
       Factor_20260531_005210_g39_1, Factor_20260531_005210_g16_1,
-      VolumeCV, OvernightGapDown,
+      VolumeCV,
     ]
     weight_range: [-1.0, 1.0, 0.1]
     search_spaces: [buy_n, stock_pool]
@@ -141,7 +149,7 @@ profiles:
     factor_classes: [
       TrueMarketCap, AmountBasedSmallCap,
       AmihudIlliquidity, VolumeCV,
-      OvernightGapDown, High52Week,
+      High52Week,
       CashFlowYield, ProfitGrowth, BookToMarketQuality,
       BookToMarket, DeepValueComposite, EarningsYield, ROEQuality,
     ]
@@ -150,7 +158,6 @@ profiles:
       AmountBasedSmallCap: 0.7
       AmihudIlliquidity: 0.6
       VolumeCV: 0.4
-      OvernightGapDown: 0.5
       High52Week: 0.0
     weight_range: [-1.0, 1.0, 0.1]
     search_spaces: [buy_n]
@@ -230,6 +237,14 @@ profiles:
     ]
     weight_range: [-1.0, 1.0, 0.1]
     search_spaces: [holding_period, stock_pool]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  config_sweep:
+    desc: 全参数搜索 — config.json参数空间，4因子，timing关闭
+    factor_classes: [TrueMarketCap, AmountBasedSmallCap, AmihudIlliquidity, VolumeCV]
+    weight_range: [-1.0, 1.0, 0.1]
+    search_spaces: [buy_n, sell_m, holding_period, rebalance, limit_up_protection, cash_reserve_ratio, prefilter_enabled]
     preload_start: 2010-01-01
     preload_end: 2018-12-31
 

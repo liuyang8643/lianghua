@@ -1,4 +1,17 @@
-from xtquant import xtconstant
+from xtquant import xtconstant, xtdata
+
+
+def timing_symbol_to_qmt(symbol: str) -> str:
+  return f"{symbol[2:]}.{symbol[:2].upper()}"
+
+
+def get_index_close_today(symbol: str, trade_date) -> float:
+  qmt_code = timing_symbol_to_qmt(symbol)
+  ds = trade_date.strftime('%Y%m%d')
+  data = xtdata.get_market_data_ex(['close'], [qmt_code], period='1d', start_time=ds, end_time=ds)
+  df = data[qmt_code]
+  return float(df['close'].iloc[-1])
+
 
 
 def get_order_type_label(order_type):
@@ -46,10 +59,16 @@ def get_price_type_label(price_type: int) -> str:
     return '深交所五档即成剩撤'
   elif price_type == xtconstant.FIX_PRICE:
     return '限价委托'
+  elif price_type == xtconstant.OPT_AFTER_FIX_BUY:
+    return '盘后固定价格买入'
+  elif price_type == xtconstant.OPT_AFTER_FIX_SELL:
+    return '盘后固定价格卖出'
   else:
     return str(price_type)
 
 def get_price_type(order_type: int, stock_code: str, price: float = None) -> int:
-  if price:
-    return xtconstant.FIX_PRICE
+  """尾盘收盘价成交：盘后固定价格委托（15:05-15:30 撮合）。
+  prType=49(盘后定价)，QMT 策略框架文档的枚举值，1043/1044 在旧版 xtquant 不支持。"""
+  if price is not None:
+    return 49  # 盘后定价
   return xtconstant.MARKET_PEER_PRICE_FIRST

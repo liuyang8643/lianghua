@@ -22,14 +22,14 @@ _CONTRACT = """因子契约（必须严格遵守）：
 - 返回 float 数组，形状 (n_dates, n_stocks)；分数【越高越好】（越优先买入）；
   无效/不合格的股票置为 np.nan。
 - 纯 numpy、完全【向量化】。禁止任何 python 逐股票 / 逐日循环（含 for/while 对股票或日期维度的遍历）。
-- T 日泄露红线：当日价格【只允许】用 panel['open']。绝对禁止引用
-  panel['close']、panel['high']、panel['low']、panel['volume']、panel['amount']。
+- T 日泄露红线（尾盘收盘交易）：当日价格【只允许】用 panel['close']。绝对禁止引用
+  panel['open']、panel['high']、panel['low']、panel['volume']、panel['amount']。
 - 可用 panel 字段：{fields}。其中财务字段（eps/roe/gross_margin/operating_cf_ps/
   profit_yoy/revenue_yoy）是 point-in-time 滞后口径，当日使用安全。
 - 必须【自包含】：只能用上面 panel 字典里的字段计算。禁止调用 _aligned/_load 等辅助函数，
   禁止读取任何外部文件 / npz，除 numpy 外禁止 import 任何库（尤其禁止 akshare/requests/
   mootdx/xtdata 等联网库），禁止 open()/文件读写。
-- 合法域：base_valid = ~np.isnan(panel['open']) & (panel['open'] >= 2.0) & ~panel['st_mask']。
+- 合法域：base_valid = ~np.isnan(panel['close']) & (panel['close'] >= 2.0) & ~panel['st_mask']。
 - 连续分数红线（硬性闸门，不满足直接拒绝）：分数对【每一只 base_valid 股票】都必须是
   【连续、无重复】的实数。具体要求：
   * 覆盖率：每日至少 90% 的 base_valid 股票要拿到有限分数。禁止用基本面条件收缩股票池
@@ -38,7 +38,7 @@ _CONTRACT = """因子契约（必须严格遵守）：
     np.sign / np.round / 分位分桶标签 / clip 成常数 / 布尔×常数 / 把大量股票置为 0.0 或同一常数。
   * 财务缺失值：在截面上做插补（如 NaN -> 当日 nanmedian，或 z-score 时把 NaN 当 0），
     不要因此丢弃该股票。插补后必须再【混入一个对所有股票都存在的连续项】（如对
-    z-score 化的 eps/open 给小权重，或用 total_share*open 取对数市值），避免被插补的股票挤成同一个值。
+    z-score 化的 eps/close 给小权重，或用 total_share*close 取对数市值），避免被插补的股票挤成同一个值。
   * 禁止对【可能为负】的输入做 sqrt/log/分数次幂（会产生 NaN 而丢股票）。改用带符号变换，
     如 np.sign(x)*np.sqrt(np.abs(x)) 或 np.tanh(x)。
   * 最后一行：return np.where(base_valid & np.isfinite(score), score, np.nan)，

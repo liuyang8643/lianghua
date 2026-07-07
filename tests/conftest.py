@@ -65,12 +65,12 @@ class RealMarket:
         return self.delist_map.get(code)
 
     def buy(self, code, d):
-        """该股 d 日开盘能否买入。"""
+        """该股 d 日收盘能否买入。"""
         ok, _ = self.checker.check([self.stock_indices[code]], self.didx(d), d, is_buy=True)
         return bool(ok[0])
 
     def sell(self, code, d):
-        """该股 d 日开盘能否卖出。"""
+        """该股 d 日收盘能否卖出。"""
         ok, _ = self.checker.check([self.stock_indices[code]], self.didx(d), d, is_buy=False)
         return bool(ok[0])
 
@@ -95,5 +95,5 @@ def market(runtime_data):
 
 
 def test_conftest_smoke(market):
-    # 冒烟：603690.SH IPO 首日(2017-01-13)一字/秒封 → 禁买（真实数据）
+    # 冒烟：603690.SH IPO 首日(2017-01-13) 收盘封 +44% 涨停 → 禁买（真实数据）
     assert market.buy('603690.SH', date(2017, 1, 13)) is False

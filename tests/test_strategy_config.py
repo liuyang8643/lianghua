@@ -16,4 +16,4 @@ def test_final_config_only_uses_weights_as_runtime_factors():
     assert cfg['factor_names'] == list(cfg['individual_config']['weights'])
     assert [c.__name__ for c in cfg['factor_classes']] == cfg['factor_names']
     assert cfg['individual_config']['sell_m'] == cfg['individual_config']['buy_n']
-    assert cfg['individual_config']['cash_reserve_ratio'] == 0.15
+    assert cfg['individual_config']['cash_reserve_ratio'] == 0.25

@@ -1,7 +1,7 @@
 """共享打分模块 — 回测和实盘共用，纯 numpy 无外部依赖。
 
-红线（CLAUDE.md §2.2）：T 日开盘契约——选股 **只允许使用 open[T]**，当日的
-close/high/low/volume/amount 全部视为前视野泄露。需要"前收"统一用 close[T-1]。
+红线（CLAUDE.md §2.2）：T 日收盘契约（尾盘收盘交易）——选股 **只允许使用 close[T]**，
+当日的 open/high/low/volume/amount 一律不用于选股。需要"前收"统一用 preClose[T]/close[T-1]。
 
 买卖合法性闸门（涨跌停/IPO 首日/退市整理/ST）已独立到 core/legality.py 的
 LegalityChecker 类，回测与实盘共用唯一实现。

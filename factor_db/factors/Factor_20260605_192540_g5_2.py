@@ -13,7 +13,7 @@ class Factor_20260605_192540_g5_2:
     hist_days = 0
 
     def calc_batch(self, panel: dict) -> np.ndarray:
-        base_valid = ~np.isnan(panel['open']) & (panel['open'] >= 2.0) & ~panel['st_mask']
+        base_valid = ~np.isnan(panel['close']) & (panel['close'] >= 2.0) & ~panel['st_mask']
 
         def _fillna_median(x):
             x = x.astype(np.float64)
@@ -29,9 +29,9 @@ class Factor_20260605_192540_g5_2:
             return np.where(nan, np.nan, r).astype(np.float32)
 
         with np.errstate(divide='ignore', invalid='ignore'):
-            ey = panel['eps'] / panel['open']
-            cf_yield = panel['operating_cf_ps'] / panel['open']
-            accrual_gap = (panel['operating_cf_ps'] - panel['eps']) / panel['open']
+            ey = panel['eps'] / panel['close']
+            cf_yield = panel['operating_cf_ps'] / panel['close']
+            accrual_gap = (panel['operating_cf_ps'] - panel['eps']) / panel['close']
 
         roe_f = _fillna_median(panel['roe'])
         gm_f = _fillna_median(panel['gross_margin'])
@@ -61,7 +61,7 @@ class Factor_20260605_192540_g5_2:
 
         r_accrual = _rank_norm(ag_f)
 
-        r_price_inv = _rank_norm(-panel['open'])
+        r_price_inv = _rank_norm(-panel['close'])
 
         qv = quality * value
         qv_s = np.sign(qv) * np.sqrt(np.abs(qv))

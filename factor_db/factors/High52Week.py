@@ -16,7 +16,7 @@ class High52Week:
 
   def calc_batch(self, panel: dict) -> np.ndarray:
     close_known = _shift(panel["close"])
-    raw_open = panel["open"]
+    raw_open = panel["close"]
     st_mask = panel["st_mask"]
 
     w = self.hist_days

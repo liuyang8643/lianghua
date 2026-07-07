@@ -83,8 +83,8 @@ def _raw_scores(factor_cls, dates, data=None):
         'trade_dates': [d.astype('datetime64[D]').item() for d in data['trade_dates']],
     }
     raw = np.asarray(factor_cls().calc_batch(panel), dtype=np.float64)
-    open_ = np.asarray(data['open'], dtype=np.float64)
-    base_valid = np.isfinite(open_) & (open_ >= 2.0) & ~np.asarray(data['st_mask'], dtype=bool)
+    close_ = np.asarray(data['close'], dtype=np.float64)
+    base_valid = np.isfinite(close_) & (close_ >= 2.0) & ~np.asarray(data['st_mask'], dtype=bool)
     return raw, base_valid
 
 

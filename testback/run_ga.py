@@ -73,10 +73,10 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
 
   for r in results_list:
     key = _config_key(r['individual_config'])
-    state['fitness_cache'][key] = r['sharpe']
+    state['fitness_cache'][key] = r['calmar']
 
   if not state['population']:
-    results_list.sort(key=lambda r: r['sharpe'], reverse=True)
+    results_list.sort(key=lambda r: r['calmar'], reverse=True)
     state['population'] = [r['individual_config'] for r in results_list[:population_size]]
 
   def get_fitness(config):
@@ -93,7 +93,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     unique_cfgs = {}
     for key, val in ga_cache.items():
       cfg = val.get('individual_config')
-      fit = val.get('sharpe', -999)
+      fit = val.get('calmar', -999)
       if cfg is not None and fit > -900:
         unique_cfgs[key] = (cfg, fit)
     pool = sorted(unique_cfgs.values(), key=lambda x: x[1], reverse=True)
@@ -111,7 +111,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     population_with_fitness = [(ind, fit) for ind in state['population']
                                if (fit := get_fitness(ind)) is not None]
     if not population_with_fitness:
-      population_with_fitness = [(r['individual_config'], r['sharpe']) for r in results_list]
+      population_with_fitness = [(r['individual_config'], r['calmar']) for r in results_list]
     population_with_fitness.sort(key=lambda x: x[1], reverse=True)
     parents = [ind for ind, _ in population_with_fitness[:population_size]]
 
@@ -250,9 +250,9 @@ def _rebuild_from_jsonl(output_dir: Path) -> tuple[dict, int]:
         r = _json.loads(line)
         cfg = r['config']
         key = _config_key(cfg)
-        sharpe = r['sharpe']
-        if key not in ga_cache or sharpe > ga_cache[key].get('sharpe', -999):
-          ga_cache[key] = {'individual_config': cfg, 'sharpe': sharpe}
+        calmar = r['calmar']
+        if key not in ga_cache or calmar > ga_cache[key].get('calmar', -999):
+          ga_cache[key] = {'individual_config': cfg, 'calmar': calmar}
         if r['generation'] > last_gen:
           last_gen = r['generation']
   return ga_cache, last_gen
@@ -260,9 +260,9 @@ def _rebuild_from_jsonl(output_dir: Path) -> tuple[dict, int]:
 
 def _rebuild_ga_state(ga_cache: dict) -> dict:
   """从 ga_cache 重建 ga_state（population + hall_of_fame + fitness_cache）。"""
-  sorted_entries = sorted(ga_cache.values(), key=lambda v: v.get('sharpe', -999), reverse=True)
+  sorted_entries = sorted(ga_cache.values(), key=lambda v: v.get('calmar', -999), reverse=True)
   hall_of_fame = [v['individual_config'] for v in sorted_entries[:100]]
-  fitness_cache = {_config_key(v['individual_config']): v['sharpe'] for v in sorted_entries}
+  fitness_cache = {_config_key(v['individual_config']): v['calmar'] for v in sorted_entries}
   return {
     'population': [],
     'hall_of_fame': hall_of_fame,
@@ -353,7 +353,7 @@ def _worker_evaluate(args):
   hp = config.get('holding_period', 1)
   n_starts = hp if hp > 1 else 1
 
-  sharpe_list, ann_list, dd_list, tr_list = [], [], [], []
+  calmar_list, ann_list, dd_list, tr_list = [], [], [], []
   for offset in range(n_starts):
       od = valid_dates[offset:]
       oi = date_indices[offset:]
@@ -365,9 +365,10 @@ def _worker_evaluate(args):
           position_multipliers=om if om is not None and len(om) == len(od) else None,
           list_dates_map=list_dates_map,
           lightweight=True, limit_up_protection=config.get('limit_up_protection', False),
-          rebalance=config.get('rebalance', True))
+          rebalance=config.get('rebalance', True),
+          prefilter_n=config.get('prefilter_n'))
       m = compute_core_metrics(r['daily_returns'])
-      sharpe_list.append(m['sharpe'])
+      calmar_list.append(m['annualized'] / abs(m['max_drawdown']) if m['max_drawdown'] != 0 else 0.0)
       ann_list.append(m['annualized'])
       dd_list.append(m['max_drawdown'])
       tr_list.append(r['total_return'])
@@ -375,7 +376,7 @@ def _worker_evaluate(args):
   return {
     'individual_config': config,
     'total_return': float(np.mean(tr_list)),
-    'sharpe': float(np.mean(sharpe_list)),
+    'calmar': float(np.mean(calmar_list)),
     'annualized': float(np.mean(ann_list)),
     'max_drawdown': float(np.mean(dd_list)),
     'cleared_positions_count': r['cleared_positions_count'],
@@ -596,8 +597,8 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     if isinstance(cache_data, list):
       cache_data = {json_mod.dumps(_config_key(v['individual_config']), ensure_ascii=False): v for v in cache_data}
     for v in cache_data.values():
-      v.setdefault('sharpe', v.get('fitness', -999))
-    sorted_results = sorted(cache_data.values(), key=lambda v: v.get('sharpe', -999), reverse=True)
+      v.setdefault('calmar', v.get('fitness', -999))
+    sorted_results = sorted(cache_data.values(), key=lambda v: v.get('calmar', -999), reverse=True)
     next_configs = [v['individual_config'] for v in sorted_results[:2 * population_size]]
     testback_logger.info(f"热启动: 从 {args.warm_start} 加载 top {len(next_configs)} 个种子配置 (共 {len(cache_data)} 条缓存)")
   else:
@@ -629,21 +630,22 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
 
       if not is_debug:
         # 训练集统计
-        sharpes = [r['sharpe'] for r in results_list]
-        best_idx = max(range(len(results_list)), key=lambda i: sharpes[i])
+        calmars = [r['calmar'] for r in results_list]
+        best_idx = max(range(len(results_list)), key=lambda i: calmars[i])
         best = results_list[best_idx]
         best_cfg = best['individual_config']
-        best_m = {'sharpe': best['sharpe'],
+        best_m = {'calmar': best['calmar'],
                   'annualized': best['annualized'], 'max_drawdown': best['max_drawdown']}
-        avg_sharpe = sum(sharpes) / len(sharpes)
+        avg_calmar = sum(calmars) / len(calmars)
         avg_ann = sum(r['annualized'] for r in results_list) / len(results_list)
         avg_dd = sum(r['max_drawdown'] for r in results_list) / len(results_list)
 
-        # HS300 训练基线
+        # HS300 训练基线（价格指数 sh000300，不含分红，约低估年化 1.5-2%）
         hs300_vals = index_data['sh000300'].astype(float)
         hs300_daily = np.diff(hs300_vals) / hs300_vals[:-1] * 100.0
         hs300_daily = hs300_daily[np.isfinite(hs300_daily)]
         hs300_m = compute_core_metrics(list(hs300_daily))
+        hs300_calmar = hs300_m['annualized'] / abs(hs300_m['max_drawdown']) if hs300_m['max_drawdown'] != 0 else 0.0
 
         gen_time = time.time() - generation_start_ts
         sorted_w = sorted(best_cfg['weights'].items(), key=lambda x: -abs(x[1]))
@@ -664,12 +666,12 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
             ]
             val_res = []
             _eval_parallel(val_worker_args, val_res, {}, testback_logger, pool=ga_pool)
-            train_best_val_m = {'sharpe': val_res[0]['sharpe'], 'annualized': val_res[0]['annualized'], 'max_drawdown': val_res[0]['max_drawdown']} if val_res else {'sharpe': 0, 'annualized': 0, 'max_drawdown': 0}
+            train_best_val_m = {'calmar': val_res[0]['calmar'], 'annualized': val_res[0]['annualized'], 'max_drawdown': val_res[0]['max_drawdown']} if val_res else {'calmar': 0, 'annualized': 0, 'max_drawdown': 0}
             val_eval_cache[val_best_key] = dict(train_best_val_m)
             with open(val_cache_path, 'w', encoding='utf-8') as f:
               json_mod.dump(val_eval_cache, f, ensure_ascii=False)
           # 训练最优个体的 val metrics 写入 ga_cache
-          ga_cache[val_best_key]['val_sharpe'] = train_best_val_m['sharpe']
+          ga_cache[val_best_key]['val_calmar'] = train_best_val_m['calmar']
           ga_cache[val_best_key]['val_annualized'] = train_best_val_m['annualized']
           ga_cache[val_best_key]['val_max_drawdown'] = train_best_val_m['max_drawdown']
 
@@ -684,7 +686,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
             ]
             test_res = []
             _eval_parallel(test_worker_args, test_res, {}, testback_logger, pool=ga_pool)
-            _test_train_best_m = {'sharpe': test_res[0]['sharpe'], 'annualized': test_res[0]['annualized'], 'max_drawdown': test_res[0]['max_drawdown']} if test_res else {'sharpe': 0, 'annualized': 0, 'max_drawdown': 0}
+            _test_train_best_m = {'calmar': test_res[0]['calmar'], 'annualized': test_res[0]['annualized'], 'max_drawdown': test_res[0]['max_drawdown']} if test_res else {'calmar': 0, 'annualized': 0, 'max_drawdown': 0}
             test_eval_cache[best_test_key] = dict(_test_train_best_m)
             with open(test_cache_path, 'w', encoding='utf-8') as f:
               json_mod.dump(test_eval_cache, f, ensure_ascii=False)
@@ -692,22 +694,22 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
           # 实盘个体：全部历史中 (train+val)/2 最高者
           best_live_total = -999.0
           best_live_cfg = None
-          best_live_train_sharpe = 0.0
-          best_live_val_sharpe = 0.0
+          best_live_train_calmar = 0.0
+          best_live_val_calmar = 0.0
           for entry in ga_cache.values():
-            vs = entry.get('val_sharpe')
+            vs = entry.get('val_calmar')
             if vs is not None:
-              total = (entry['sharpe'] + vs) / 2.0
+              total = (entry['calmar'] + vs) / 2.0
               if total > best_live_total:
                 best_live_total = total
                 best_live_cfg = entry['individual_config']
-                best_live_train_sharpe = entry['sharpe']
-                best_live_val_sharpe = vs
-          live_test_sharpe = 0.0
+                best_live_train_calmar = entry['calmar']
+                best_live_val_calmar = vs
+          live_test_calmar = 0.0
           if best_live_cfg is not None:
             live_test_key = json_mod.dumps(_config_key(best_live_cfg), ensure_ascii=False)
             if live_test_key in test_eval_cache:
-              live_test_sharpe = test_eval_cache[live_test_key]['sharpe']
+              live_test_calmar = test_eval_cache[live_test_key]['calmar']
             else:
               live_test_args = [
                 (info, score_keys, test_valid_dates, test_date_indices, stock_indices,
@@ -715,21 +717,21 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
               ]
               live_test_res = []
               _eval_parallel(live_test_args, live_test_res, {}, testback_logger, pool=ga_pool)
-              live_test_sharpe = live_test_res[0]['sharpe'] if live_test_res else 0.0
-              test_eval_cache[live_test_key] = {'sharpe': live_test_sharpe, 'annualized': live_test_res[0].get('annualized', 0) if live_test_res else 0, 'max_drawdown': live_test_res[0].get('max_drawdown', 0) if live_test_res else 0}
+              live_test_calmar = live_test_res[0]['calmar'] if live_test_res else 0.0
+              test_eval_cache[live_test_key] = {'calmar': live_test_calmar, 'annualized': live_test_res[0].get('annualized', 0) if live_test_res else 0, 'max_drawdown': live_test_res[0].get('max_drawdown', 0) if live_test_res else 0}
               with open(test_cache_path, 'w', encoding='utf-8') as f:
                 json_mod.dump(test_eval_cache, f, ensure_ascii=False)
 
           testback_logger.info(
-            f"GA gen{generation + 1}: 训练Sharpe={best_m['sharpe']:.3f}/{avg_sharpe:.3f} | "
-            f"验证Sharpe={train_best_val_m['sharpe']:.3f} | "
-            f"测试Sharpe={_test_train_best_m['sharpe']:.3f} | "
+            f"GA gen{generation + 1}: 训练Calmar={best_m['calmar']:.3f}(HS300={hs300_calmar:.3f}) /均{avg_calmar:.3f} | "
+            f"验证Calmar={train_best_val_m['calmar']:.3f} | "
+            f"测试Calmar={_test_train_best_m['calmar']:.3f} | "
             f"{_format_pool(best_cfg.get('stock_pool'))}, hp={best_cfg.get('holding_period')}, buy={best_cfg['buy_n']},sell={best_cfg['sell_m']}{_format_timing(best_cfg)}{_format_filters(best_cfg)}, rebal={'ON' if best_cfg.get('rebalance') else 'OFF'} | "
             f"{', '.join(f'{k}={v:.1f}' for k, v in sorted_w)}")
           if best_live_cfg is not None:
             live_sorted_w = sorted(best_live_cfg['weights'].items(), key=lambda x: -abs(x[1]))
             testback_logger.info(
-              f"实盘: total={best_live_total:.3f}(train={best_live_train_sharpe:.3f}/val={best_live_val_sharpe:.3f}) test={live_test_sharpe:.3f} | "
+              f"实盘: total={best_live_total:.3f}(train={best_live_train_calmar:.3f}/val={best_live_val_calmar:.3f}) test={live_test_calmar:.3f} | "
               f"{_format_pool(best_live_cfg.get('stock_pool'))}, hp={best_live_cfg.get('holding_period')}, buy={best_live_cfg['buy_n']},sell={best_live_cfg['sell_m']}{_format_timing(best_live_cfg)}{_format_filters(best_live_cfg)}, rebal={'ON' if best_live_cfg.get('rebalance') else 'OFF'} | "
               f"{', '.join(f'{k}={v:.1f}' for k, v in live_sorted_w)}")
 
@@ -740,7 +742,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
       generation_time = time.time() - generation_start_ts
       for result in results_list:
         result['generation'] = generation
-        result['fitness'] = result['sharpe']
+        result['fitness'] = result['calmar']
 
 
       if not is_debug:
@@ -759,10 +761,10 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
         generation_stats['best_timing_base'] = best_in_gen['individual_config'].get('timing_base')
         generation_stats['best_timing_leverage'] = best_in_gen['individual_config'].get('timing_leverage')
         if report_gen:
-          generation_stats['val_best_sharpe'] = float(train_best_val_m['sharpe'])
+          generation_stats['val_best_calmar'] = float(train_best_val_m['calmar'])
           generation_stats['val_best_annualized'] = float(train_best_val_m['annualized'])
           generation_stats['val_best_mdd'] = float(train_best_val_m['max_drawdown'])
-          generation_stats['test_train_best_sharpe'] = float(_test_train_best_m['sharpe'])
+          generation_stats['test_train_best_calmar'] = float(_test_train_best_m['calmar'])
           generation_stats['test_train_best_annualized'] = float(_test_train_best_m['annualized'])
           generation_stats['test_train_best_mdd'] = float(_test_train_best_m['max_drawdown'])
         generation_results.append(generation_stats)
@@ -775,17 +777,17 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
           for _r in results_list:
             entry = {
               'generation': _r['generation'],
-              'sharpe': _r['sharpe'], 'annualized': _r['annualized'],
+              'calmar': _r['calmar'], 'annualized': _r['annualized'],
               'max_drawdown': _r['max_drawdown'], 'total_return': _r['total_return'],
-              'val_sharpe': _r.get('val_sharpe'), 'config': _r['individual_config'],
+              'val_calmar': _r.get('val_calmar'), 'config': _r['individual_config'],
             }
             if _config_key(_r['individual_config']) == best_key:
               if best_val:
-                entry['val_sharpe'] = best_val['sharpe']
+                entry['val_calmar'] = best_val['calmar']
                 entry['val_annualized'] = best_val['annualized']
                 entry['val_max_drawdown'] = best_val['max_drawdown']
               if best_test:
-                entry['test_sharpe'] = best_test['sharpe']
+                entry['test_calmar'] = best_test['calmar']
                 entry['test_annualized'] = best_test['annualized']
                 entry['test_max_drawdown'] = best_test['max_drawdown']
             _f.write(_json.dumps(entry, ensure_ascii=False) + '\n')
@@ -814,7 +816,13 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
       _eval_parallel(train_test_args, train_test_results, {}, testback_logger, pool=ga_pool)
       if train_test_results:
         tr = train_test_results[0]
-        testback_logger.info(f"  [训练最优] 测试夏普={tr['sharpe']:.3f}, 年化={tr['annualized']:.1f}%, 回撤={tr['max_drawdown']:.1f}%")
+        testback_logger.info(f"  [训练最优] 测试Calmar={tr['calmar']:.3f}, 年化={tr['annualized']:.1f}%, 回撤={tr['max_drawdown']:.1f}%")
+        hs300_test_vals = test_index_data['sh000300'].astype(float)
+        hs300_test_daily = np.diff(hs300_test_vals) / hs300_test_vals[:-1] * 100.0
+        hs300_test_daily = hs300_test_daily[np.isfinite(hs300_test_daily)]
+        hs300_test_m = compute_core_metrics(list(hs300_test_daily))
+        hs300_test_calmar = hs300_test_m['annualized'] / abs(hs300_test_m['max_drawdown']) if hs300_test_m['max_drawdown'] != 0 else 0.0
+        testback_logger.info(f"  [HS300基线] 测试Calmar={hs300_test_calmar:.3f}, 年化={hs300_test_m['annualized']:.1f}%, 回撤={hs300_test_m['max_drawdown']:.1f}%")
       testback_logger.info(f"{'=' * 60}")
 
   finally:
@@ -837,16 +845,16 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     timing_str = _format_timing(best_cfg)
     testback_logger.info(f"\n最优参数已保存:")
     testback_logger.info(f"  - {output_dir / 'best_individual_config.json'}")
-    testback_logger.info(f"最优夏普率: {best_fitness:.3f}, 参数: [{w_str}], pool={_format_pool(best_cfg.get('stock_pool'))}, buy={best_cfg['buy_n']},sell={best_cfg['sell_m']}{timing_str}, rebal={'ON' if best_cfg.get('rebalance') else 'OFF'}")
+    testback_logger.info(f"最优卡玛率: {best_fitness:.3f}, 参数: [{w_str}], pool={_format_pool(best_cfg.get('stock_pool'))}, buy={best_cfg['buy_n']},sell={best_cfg['sell_m']}{timing_str}, rebal={'ON' if best_cfg.get('rebalance') else 'OFF'}")
     testback_logger.info(f"最优buy_n: {best_config['buy_n']}, sell_m: {best_config['sell_m']}")
 
-    sharpes = [v['sharpe'] for v in ga_cache.values() if v.get('sharpe') is not None]
+    calmars = [v['calmar'] for v in ga_cache.values() if v.get('calmar') is not None]
     testback_logger.info(f"\n{'=' * 60}")
     testback_logger.info("回测执行完成")
     testback_logger.info(f"  总回测次数: {sum(g.get('population_size', len(g.get('best_weights', {}))) for g in generation_results)}")
     testback_logger.info(f"  唯一配置数: {len(ga_cache)}")
-    testback_logger.info(f"  平均夏普率: {sum(sharpes) / len(sharpes):.3f}")
-    testback_logger.info(f"  最大夏普率: {max(sharpes):.3f}")
+    testback_logger.info(f"  平均卡玛率: {sum(calmars) / len(calmars):.3f}")
+    testback_logger.info(f"  最大卡玛率: {max(calmars):.3f}")
     testback_logger.info(f"{'=' * 60}")
 
   testback_logger.info(f"\n{'调试' if is_debug else 'GA'}模式执行完成，结果目录: {output_dir}")
