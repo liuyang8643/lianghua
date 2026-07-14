@@ -59,7 +59,7 @@ def _load():
         return
     _loaded = True
 
-    cfg = yaml.safe_load((_get_yaml_path()).read_text())
+    cfg = yaml.safe_load((_get_yaml_path()).read_text(encoding='utf-8'))
     INTRINSIC_PARAMS = deepcopy(cfg['strategy_parameters'])
     DEFAULT_GA_PROFILE = cfg['default_profile']
     SEARCH_SPACE_VERSION = cfg['version']
@@ -75,9 +75,12 @@ def _load():
     for name, raw in cfg['profiles'].items():
         classes = [get_factor_class(n) for n in raw['factor_classes']]
         factor_names = [c.__name__ for c in classes]
+        filter_classes = [get_factor_class(n) for n in raw.get('filter_factor_classes', [])]
+        profile_overrides = raw.get('search_space_overrides', {})
         spaces = {}
         for k in raw['search_spaces']:
-            v = search_spaces.get(k)
+            override = profile_overrides.get(k)
+            v = _expand_space(override) if override is not None else search_spaces.get(k)
             if v is not None:
                 spaces[k] = v
             elif k == 'factor_choice':
@@ -86,11 +89,13 @@ def _load():
         profile = {
             'desc': raw['desc'],
             'factor_classes': classes,
+            'filter_factor_classes': filter_classes,
             'fixed_weights': {n: 1.0 for n in factor_names} if raw.get('factor_choice_space') is None else None,
             'search_spaces': spaces,
             'preload_start_date': raw['preload_start'],
             'preload_end_date': raw['preload_end'],
             'mode_configs': deepcopy(mode_configs),
+            'fixed_parameters': deepcopy(raw.get('fixed_parameters', {})),
         }
         if raw.get('factor_choice_space'):
             profile['factor_choice_space'] = raw['factor_choice_space']
@@ -140,6 +145,10 @@ def get_profile_factor_names(name: str | None = None) -> list[str]:
     return [c.__name__ for c in get_profile_factor_classes(name)]
 
 
+def get_profile_filter_factor_classes(name: str | None = None) -> list:
+    return list(get_profile(name).get('filter_factor_classes', []))
+
+
 def get_profile_fixed_weights(name: str | None = None) -> dict:
     p = get_profile(name)
     if p.get('fixed_weights'):
@@ -155,6 +164,10 @@ def get_profile_search_spaces(name: str | None = None) -> dict:
 
 def get_profile_weight_search_spaces(name: str | None = None) -> dict | None:
     return deepcopy(get_profile(name).get('weight_search_spaces'))
+
+
+def get_profile_fixed_parameters(name: str | None = None) -> dict:
+    return deepcopy(get_profile(name).get('fixed_parameters', {}))
 
 
 def get_profile_preload_range(name: str | None = None) -> tuple:

@@ -26,8 +26,6 @@ flowchart LR
 因子矩阵维度为 `[回测天数, 股票个数, 因子历史需要天数]`，单因子计算耗时在毫秒级。
 
 ### 2.2 红线规则
-
-- **Plan 先行红线**：**任何代码修改前必须先通过 EnterPlanMode 生成 plan 并获用户批准，方可执行修改。** 禁止未经 plan 直接改代码。纯查询/阅读/搜索类操作无需 plan。
 - **数据源红线（按是否联网判断）**：除 `data/update_*.py`、`data/kline_mootdx.py` 预下载入口、`trading/` 买卖模块（QMT/xtdata）外，**所有其它模块禁止任何形式的网络获取**（akshare / requests / xtdata / CNINFO 等）。NPZ + 预下载产物 parquet 均可读，因为它们不联网。mootdx（腾讯通达信）为 K 线唯一数据源，无需本地 QMT。
 - **T 日价格红线（最高优先级，防数据泄露）**：信号触发、买卖合法性检查、账户成交价 **只允许使用 `open[T]`**。当日的 `high[T] / low[T] / close[T] / volume[T] / amount[T]` 全部视为前视野泄露，禁止出现在选股 / 风控 / 估值路径。需要"前收"时统一使用 `close[T-1]`。
 - **因子 `calc_batch` 纯 numpy 向量化，禁止逐股票遍历**。5000+ 股票 × 20 年耗时应 < 1s，超过必有 bug。

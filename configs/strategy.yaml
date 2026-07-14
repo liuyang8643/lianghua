@@ -13,6 +13,10 @@ strategy_parameters:
   - {key: timing_index, config_key: timing_index, type: categorical, display: t_idx, default: null}
   - {key: amount_filter_pct, config_key: amount_filter_pct, type: int, display: amt%, default: 0}
   - {key: market_cap_filter_pct, config_key: market_cap_filter_pct, type: int, display: mcap%, default: 0}
+  - {key: prefilter_n, config_key: prefilter_n, type: int, display: prefilter, default: 0}
+  - {key: rebalance, config_key: rebalance, type: bool, display: rebal, default: true}
+  - {key: limit_up_protection, config_key: limit_up_protection, type: bool, display: limit, default: false}
+  - {key: filter_factors, config_key: filter_factors, type: categorical, display: filters, default: []}
 
 mode_configs:
   single:
@@ -38,12 +42,13 @@ search_spaces:
   buy_n: [20, 25, 30, 35, 40, 45, 50, 100]
   sell_m: {range: [20, 50, 5]}
   holding_period: [1, 7, 15, 30, 60]
+  prefilter_n: [0, 300]
   board_prefixes: ["60", "00", "30", "688"]
   timing_base: {range: [0.1, 1.0, 0.1]}
   timing_leverage: [0, 0.5, 1, 2, 3, 5, 8, 10, 12, 15, 20, 25, 30, 40, 50]
   timing_window: [2, 3, 5, 7, 10, 15, 20, 25, 30, 45, 60, 90, 120, 252]
   timing_direction: [1, -1]
-  timing_index: [sh000300, sh000905, sh000852]
+  timing_index: [sh000001, sh000905, sh000852]
 
 profiles:
   core:
@@ -134,6 +139,32 @@ profiles:
     weight_range: [-1.0, 1.0, 0.1]
     search_spaces: [buy_n, stock_pool]
     preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  config_sweep:
+    desc: 4因子配置搜索
+    factor_classes: [TrueMarketCap, AmountBasedSmallCap, AmihudIlliquidity, VolumeCV]
+    filter_factor_classes: [FilterST, FilterStarST, FilterLowPrice]
+    fixed_parameters:
+      cash_reserve_ratio: 0.25
+    weight_range: [-1.0, 1.0, 0.1]
+    search_spaces: [buy_n, sell_m, prefilter_n, rebalance, limit_up_protection, filter_factors]
+    search_space_overrides:
+      buy_n: {range: [10, 20, 10]}
+      sell_m: {range: [10, 20, 10]}
+      prefilter_n: {range: [100, 1200, 100]}
+      rebalance: [true, false]
+      limit_up_protection: [true, false]
+      filter_factors:
+        - {FilterST: false, FilterStarST: false, FilterLowPrice: false}
+        - {FilterST: true, FilterStarST: false, FilterLowPrice: false}
+        - {FilterST: false, FilterStarST: true, FilterLowPrice: false}
+        - {FilterST: false, FilterStarST: false, FilterLowPrice: true}
+        - {FilterST: true, FilterStarST: true, FilterLowPrice: false}
+        - {FilterST: true, FilterStarST: false, FilterLowPrice: true}
+        - {FilterST: false, FilterStarST: true, FilterLowPrice: true}
+        - {FilterST: true, FilterStarST: true, FilterLowPrice: true}
+    preload_start: 2000-01-01
     preload_end: 2018-12-31
 
   fin7:

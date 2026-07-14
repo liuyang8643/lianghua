@@ -6,6 +6,7 @@ import random
 from ._profiles import (
     get_profile, get_profile_search_spaces, get_profile_weight_search_spaces,
     get_profile_fixed_weights, get_intrinsic_params,
+    get_profile_fixed_parameters,
 )
 
 
@@ -66,6 +67,11 @@ def build_individual_config(
     timing_index: str | None = None,
     amount_filter_pct: int | None = None,
     market_cap_filter_pct: int | None = None,
+    rebalance: bool | None = None,
+    limit_up_protection: bool | None = None,
+    cash_reserve_ratio: float | None = None,
+    prefilter_n: int | None = None,
+    filter_factors: dict | None = None,
     profile_name: str | None = None,
 ) -> dict:
     if weights is None:
@@ -75,11 +81,14 @@ def build_individual_config(
     if factor_choice:
         weights = {k: (v if k == factor_choice else 0.0) for k, v in weights.items()}
 
+    if filter_factors is None:
+        filter_factors = _sample_space_key('filter_factors', profile_name)
     n = buy_n if buy_n is not None else sample_buy_n(profile_name=profile_name)
     cfg: dict = {
         'weights': weights,
         'buy_n': n,
         'sell_m': n,
+        'filter_factors': dict(filter_factors or {}),
     }
 
     # 内置参数：从注册表驱动（buy_n 已在上面处理，跳过）
@@ -103,7 +112,10 @@ def build_individual_config(
 
     # timing_enabled 特殊处理
     cfg['timing_enabled'] = cfg.get('timing_base') is not None
-    cfg['rebalance'] = True
+    # rebalance 兜底默认值（不在 search_spaces 时不会经过注册表采样循环）
+    if 'rebalance' not in cfg:
+        cfg['rebalance'] = True
+    cfg.update(get_profile_fixed_parameters(profile_name))
     return cfg
 
 
@@ -131,6 +143,14 @@ def repair_config(config: dict, profile_name: str | None = None) -> bool:
         ck = pdef['config_key']
         if space and ck in config and config[ck] not in space:
             config[ck] = random.choice(space)
+            changed = True
+
+    filters = config.get('filter_factors', {})
+    if isinstance(filters, dict):
+        filter_space = spaces.get('filter_factors')
+        if filter_space and filters not in filter_space:
+            replacement = random.choice(filter_space)
+            config['filter_factors'] = dict(replacement)
             changed = True
 
     # sell_m >= buy_n 约束
@@ -193,5 +213,10 @@ def generate_initial_configs(count: int, profile_name: str | None = None) -> lis
             timing_index=extra.get('timing_index'),
             amount_filter_pct=extra.get('amount_filter_pct'),
             market_cap_filter_pct=extra.get('market_cap_filter_pct'),
+            rebalance=extra.get('rebalance'),
+            limit_up_protection=extra.get('limit_up_protection'),
+            cash_reserve_ratio=extra.get('cash_reserve_ratio'),
+            prefilter_n=extra.get('prefilter_n'),
+            filter_factors=extra.get('filter_factors'),
             profile_name=profile_name))
     return configs

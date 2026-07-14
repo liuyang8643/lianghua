@@ -1,7 +1,12 @@
+from pathlib import Path
+
 from core import fees
 from core.rebalance import BUY_FEE_RATE, SELL_FEE_RATE, compute_rebalance_plan
 from core.sim.account import StockAccountMocker
 from utils.stock.info import floor_buy_shares, round_buy_shares
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_rebalance_fee_rates_use_core_fees():
@@ -57,3 +62,13 @@ def test_main_board_buy_lot_stays_round_hundred():
     assert floor_buy_shares(code, 150) == 100
     assert floor_buy_shares(code, 300) == 300
     assert round_buy_shares(code, 1) == 100
+
+
+def test_trading_uses_single_strategy_day_entrypoint():
+    main_source = (ROOT / 'trading' / 'main.py').read_text(encoding='utf-8')
+    post_close_source = (ROOT / 'trading' / 'post_close.py').read_text(encoding='utf-8')
+
+    assert 'build_strategy_day(' in main_source
+    assert 'build_strategy_day(' in post_close_source
+    assert 'build_rebalance_day(' not in main_source
+    assert '_compute_factor_scores(' not in main_source

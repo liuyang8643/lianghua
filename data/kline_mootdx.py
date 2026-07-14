@@ -27,6 +27,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 RAW_DIR = DATA_DIR / "k-line"
+PER_CODE_RETRIES = 3
 
 # 除权除息类别：1=除权除息 5=股本变化(不调价)。其他(9转配股/15等)标记为不可计算
 XD_CAT_STANDARD = 1       # 除权除息 — 可用公式
@@ -40,6 +41,54 @@ RECENT_BARS = 400          # 增量拉取条数上限
 
 def _log(msg: str):
     print(f"[{datetime.now():%H:%M:%S}] {msg}", flush=True)
+
+
+def _warn_failed_codes(stage: str, failures: list[tuple[str, Exception]]):
+    if not failures:
+        return
+    details = '; '.join(f'{code}: {exc}' for code, exc in failures[:20])
+    suffix = f' ...(+{len(failures) - 20})' if len(failures) > 20 else ''
+    message = f'[K线] {stage} 跳过 {len(failures)} 只失败股票: {details}{suffix}'
+    _log(f'WARNING {message}')
+    try:
+        from trading.lark.sender import LarkMsgLevel, lark_sender
+        lark_sender.send_notification_card(
+            content=message,
+            level=LarkMsgLevel.Warning,
+            title=f'⚠️ K线更新跳过失败股票 ({stage})',
+            sub_title=f'单股重试 {PER_CODE_RETRIES} 次后跳过，其他股票继续更新',
+        )
+    except Exception as exc:
+        _log(f'WARNING K线失败汇总飞书发送失败: {exc}')
+
+
+def _fetch_raw_with_retry(mdx, code: str, xdxr_df=None):
+    last_exc = None
+    for attempt in range(1, PER_CODE_RETRIES + 1):
+        try:
+            bars = _fetch_bars_all(mdx, code)
+            raw = _mootdx_bars_to_df(bars, xdxr_df=xdxr_df) if bars is not None else None
+            if raw is None:
+                raise RuntimeError('no usable bars')
+            return raw
+        except Exception as exc:
+            last_exc = exc
+    raise RuntimeError(f'{code} 重试 {PER_CODE_RETRIES} 次失败: {last_exc}') from last_exc
+
+
+def _fetch_recent_raw_with_retry(mdx, code: str, days: int):
+    last_exc = None
+    offset = min(days * 5, RECENT_BARS)
+    for attempt in range(1, PER_CODE_RETRIES + 1):
+        try:
+            bars = mdx.bars(symbol=code[:6], frequency=9, start=0, offset=offset, fq=0)
+            raw = _mootdx_bars_to_df(bars, xdxr_df=None) if bars is not None else None
+            if raw is None:
+                raise RuntimeError('no usable bars')
+            return raw
+        except Exception as exc:
+            last_exc = exc
+    raise RuntimeError(f'{code} 重试 {PER_CODE_RETRIES} 次失败: {last_exc}') from last_exc
 
 
 def _connect_mootdx():
@@ -210,22 +259,27 @@ def download(mdx, codes: list[str], start: str, end: str) -> dict[str, pd.DataFr
     out: dict = {}
 
     # 预拉取 xdxr 数据
-    xdxr_cache: dict[str, pd.DataFrame | None] = {}
+    xdxr_cache: dict[str, pd.DataFrame] = {}
+    xdxr_failures = []
     for code in codes:
         try:
             xdxr_cache[code] = mdx.xdxr(symbol=code[:6])
-        except Exception:
+        except Exception as exc:
             xdxr_cache[code] = None
+            xdxr_failures.append((code, exc))
+    _warn_failed_codes('xdxr 预取', xdxr_failures)
 
+    failures = []
     for i, code in enumerate(codes):
-        bars = _fetch_bars_all(mdx, code)
-        raw = _mootdx_bars_to_df(bars, xdxr_df=xdxr_cache.get(code)) if bars is not None else None
-        if raw is None:
+        try:
+            raw = _fetch_raw_with_retry(mdx, code, xdxr_cache.get(code))
+        except Exception as exc:
+            failures.append((code, exc))
             empty += 1
-        else:
-            raw.to_parquet(RAW_DIR / f'{code}.parquet', index=False)
-            out[code] = _combined_bar_dict(raw)
-            written += 1
+            continue
+        raw.to_parquet(RAW_DIR / f'{code}.parquet', index=False)
+        out[code] = _combined_bar_dict(raw)
+        written += 1
 
         if (i + 1) % 500 == 0 or i == total - 1:
             elapsed = time.time() - t0
@@ -234,6 +288,7 @@ def download(mdx, codes: list[str], start: str, end: str) -> dict[str, pd.DataFr
             _log(f"进度 {i+1}/{total} 写入 {written} 无数据 {empty} | {elapsed:.0f}s ETA {eta:.0f}s")
 
     _log(f"完成: 写入 {written} 无数据 {empty} 用时 {time.time() - t0:.0f}s")
+    _warn_failed_codes('全量下载', failures)
     return out
 
 
@@ -306,6 +361,7 @@ def update_recent(days: int, *, anchor_date: date | None = None, collect: bool =
          f"更新 {len(upd_codes)} 只, 新股全量 {len(new_codes)} 只")
 
     out = {}
+    failures = []
     if new_codes:
         _log(f"  处理新股 {len(new_codes)} 只...")
         out.update(download(mdx, new_codes, START_DEFAULT, end))
@@ -315,15 +371,11 @@ def update_recent(days: int, *, anchor_date: date | None = None, collect: bool =
         _log(f"  增量合并最近 {len(upd_codes)} 只...")
         t0 = time.time()
         written = empty = 0
-
         for i, code in enumerate(upd_codes):
             try:
-                bars = mdx.bars(symbol=code[:6], frequency=9, start=0, offset=min(days * 5, RECENT_BARS), fq=0)
-            except Exception:
-                empty += 1
-                continue
-            raw = _mootdx_bars_to_df(bars, xdxr_df=None)
-            if raw is None:
+                raw = _fetch_recent_raw_with_retry(mdx, code, days)
+            except Exception as exc:
+                failures.append((code, exc))
                 empty += 1
                 continue
             df_new = raw[raw['time'] >= int(pd.Timestamp(start).timestamp() * 1000)]
@@ -338,6 +390,7 @@ def update_recent(days: int, *, anchor_date: date | None = None, collect: bool =
                 _log(f"  增量 {i+1}/{len(upd_codes)} 写入 {written} | {time.time()-t0:.0f}s")
         _log(f"  增量完成: 写入 {written} 无数据 {empty} 用时 {time.time()-t0:.0f}s")
 
+    _warn_failed_codes('增量更新', failures)
     return out
 
 

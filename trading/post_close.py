@@ -143,50 +143,93 @@ def _load_latest_seed(trade_date: date):
     return None
 
 
-def _ensure_no_filter_factors(individual_config: dict):
-    if individual_config.get('filter_factors'):
-        raise ValueError("filter_factors 目前仅支持研究回测，盘后回放路径未启用，禁止静默忽略")
+def _load_or_rebuild_seed(trade_date: date, individual_config: dict,
+                          factor_classes: list, kline_data: dict | None = None):
+    """加载 T-1 种子；缺失时从最近真实快照回放到 T-1。"""
+    loaded = _load_seed(trade_date)
+    if loaded is not None:
+        return loaded
+
+    from datetime import timedelta
+    from utils.stock.time import get_last_trading_day
+
+    latest = _load_latest_seed(trade_date)
+    if latest is None:
+        return None
+    seed_date, seed_cash, seed_positions = latest
+    prev_date = get_last_trading_day(trade_date - timedelta(days=1))
+    if seed_date >= prev_date:
+        return None
+
+    rebuilt = _run_continuous_backtest(
+        seed_date + timedelta(days=1), prev_date,
+        individual_config, factor_classes,
+        kline_data=kline_data,
+        init_cash=seed_cash,
+        init_positions=seed_positions,
+    )
+    snaps = rebuilt.get('daily_snapshots') if rebuilt else None
+    if not snaps or snaps[-1].get('date') != prev_date.isoformat():
+        trading_logger.warning(
+            f"[PostClose] 无法重建 T-1 种子: {seed_date} -> {prev_date}")
+        return None
+
+    snap = snaps[-1]
+    y_positions_eod = snap.get('positions_eod') or []
+    rebuilt_positions = {
+        p['code']: {'volume': int(p['volume']), 'avg_price': float(p['avg_price'])}
+        for p in y_positions_eod if int(p.get('volume', 0)) > 0
+    }
+    if not rebuilt_positions:
+        return None
+    trading_logger.info(
+        f"[PostClose] 已由 {seed_date} 回放重建 T-1 种子 {prev_date}: "
+        f"现金={snap['cash']:,.0f}, 持仓={len(rebuilt_positions)} 只")
+    return prev_date, float(snap['cash']), rebuilt_positions, y_positions_eod
+
+
+def _get_filter_factor_classes(individual_config: dict) -> list:
+    from core.factors.registry import get_factor_class
+
+    return [
+        get_factor_class(name)
+        for name, enabled in individual_config.get('filter_factors', {}).items()
+        if enabled
+    ]
 
 
 def _seed_replay_core(*, prev_date: date, seed_cash: float, seed_positions: dict,
-                      y_positions_eod: list, data, all_scores, valid_dates, date_indices,
-                      valid_stocks, stock_indices, individual_config: dict) -> dict | None:
+                      y_positions_eod: list, decision,
+                      individual_config: dict) -> dict | None:
     """用 T-1 种子 + 已算好的因子分数跑单日回放，并合成 [y_snap, t_snap]。
 
     盘前（before_trade，复用实时分数）与盘后（run_post_close，重算分数）共用此核心，
     使「开盘 diff」与「收盘 diff」的回测口径完全一致。
     """
     from core.backtest import _backtest_direct
+    import numpy as np
 
     weights = individual_config['weights']
     buy_n = individual_config['buy_n']
     sell_m = individual_config.get('sell_m', buy_n)
 
     # 只保留 NPZ 覆盖到的种子持仓（其余无法估值/交易）。
-    seed_in_npz = {c: v for c, v in seed_positions.items() if c in stock_indices}
+    seed_in_npz = {c: v for c, v in seed_positions.items() if c in decision.stock_indices}
     dropped = sorted(set(seed_positions) - set(seed_in_npz))
     if dropped:
         trading_logger.warning(
             f"[SeedReplay] {len(dropped)} 只种子持仓不在 NPZ，回放忽略: {dropped[:5]}")
 
-    import numpy as np
-    empty_months = individual_config.get('empty_months')
-    cash_reserve = float(individual_config.get('cash_reserve_ratio', 0.0))
-    invest_ratio = 1.0 - cash_reserve
-    position_multipliers = None
-    t_date = valid_dates[0].date() if valid_dates else None
-    if t_date and empty_months and t_date.month in empty_months:
-        position_multipliers = np.array([0.0])
-    elif cash_reserve > 0:
-        position_multipliers = np.array([invest_ratio])
-
     bt_result = _backtest_direct(
-        data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices,
+        decision.data, decision.all_scores,
+        [datetime.combine(decision.trade_date, datetime.min.time())],
+        [decision.date_idx], decision.valid_stocks, decision.stock_indices,
         weights=weights, buy_n=buy_n, sell_m=sell_m,
         init_cash=seed_cash, init_positions=seed_in_npz,
-        position_multipliers=position_multipliers,
+        position_multipliers=np.array([decision.position_multiplier]),
         limit_up_protection=individual_config.get('limit_up_protection', False),
         rebalance=individual_config.get('rebalance', True),
+        filter_masks=decision.filter_masks,
     )
     snaps = bt_result.get('daily_snapshots') or []
     if not snaps:
@@ -220,32 +263,38 @@ def _run_seed_replay(trade_date: date, individual_config: dict,
     手数差只来自执行层（废单/部成/资金不足/min_lot），价格差只来自滑点。
     无 T-1 种子（首个交易日 / 缺快照）时返回 None，调用方回退连续回测。
     """
-    from core.backtest import _compute_factor_scores
+    from core.backtest import is_rebalance_day_index, stock_pool_prefixes
+    from core.strategy import build_strategy_day
+    from core.timing import compute_position_multiplier_for_date
+    from trading.persistence import get_live_rebalance_index
 
-    _ensure_no_filter_factors(individual_config)
-    loaded = _load_seed(trade_date)
+    loaded = _load_or_rebuild_seed(
+        trade_date, individual_config, factor_classes, kline_data=kline_data)
     if loaded is None:
-        trading_logger.info("[PostClose] 缺 T-1 种子(positions / daily_summary)，回退连续回测")
+        trading_logger.info("[PostClose] 缺 T-1 种子，无法构造单日回放")
         return None
     prev_date, seed_cash, seed_positions, y_positions_eod = loaded
 
-    all_stocks = allow_buy_stock_code_list(target_date=trade_date)
-    weights = individual_config['weights']
-
-    signal_dt = [datetime.combine(trade_date, datetime.min.time())]
-    scores_result = _compute_factor_scores(signal_dt, all_stocks, weights, factor_classes,
-                                            kline_data=kline_data)
-    if scores_result is None:
-        return None
-    data, all_scores, _, valid_dates, date_indices, valid_stocks, stock_indices = scores_result
-    if not valid_dates:
-        return None
+    boards = stock_pool_prefixes(individual_config.get('stock_pool'))
+    all_stocks = allow_buy_stock_code_list(target_date=trade_date, boards=boards)
+    filter_factor_classes = _get_filter_factor_classes(individual_config)
+    volumes = {code: int(info['volume']) for code, info in seed_positions.items()}
+    rebalance_idx = get_live_rebalance_index(trade_date)
+    decision = build_strategy_day(
+        trade_date=trade_date, all_stocks=all_stocks,
+        individual_config=individual_config, factor_classes=factor_classes,
+        filter_factor_classes=filter_factor_classes,
+        positions=volumes, sellable_volumes=volumes, cash=seed_cash,
+        kline_data=kline_data,
+        is_rebalance_day=is_rebalance_day_index(
+            rebalance_idx, individual_config.get('holding_period')),
+        position_multiplier=compute_position_multiplier_for_date(
+            individual_config, trade_date),
+    )
 
     bt_result = _seed_replay_core(
         prev_date=prev_date, seed_cash=seed_cash, seed_positions=seed_positions,
-        y_positions_eod=y_positions_eod, data=data, all_scores=all_scores,
-        valid_dates=valid_dates, date_indices=date_indices,
-        valid_stocks=valid_stocks, stock_indices=stock_indices,
+        y_positions_eod=y_positions_eod, decision=decision,
         individual_config=individual_config)
     if bt_result is None:
         return None
@@ -259,26 +308,22 @@ def _run_seed_replay(trade_date: date, individual_config: dict,
 
 
 def run_seed_replay_for_open(trade_date: date, individual_config: dict, *,
-                             data, all_scores, date_idx: int,
-                             valid_stocks, stock_indices) -> dict | None:
+                             decision, factor_classes: list | None = None) -> dict | None:
     """盘前/盘中：复用 before_trade 已算好的因子分数，跑 T-1 种子单日回放。
 
     供战报做「回测 vs 实盘」实时对账。回测端继承 T-1 实盘现金+持仓，与盘后口径一致；
     因子分数直接复用（不重算），几乎不增加盘前耗时。无 T-1 种子时返回 None（首日/缺快照）。
     """
-    _ensure_no_filter_factors(individual_config)
-    loaded = _load_seed(trade_date)
+    loaded = (_load_or_rebuild_seed(trade_date, individual_config, factor_classes)
+              if factor_classes is not None else _load_seed(trade_date))
     if loaded is None:
         trading_logger.info("[SeedReplay@open] 缺 T-1 种子，跳过盘中回测对账")
         return None
     prev_date, seed_cash, seed_positions, y_positions_eod = loaded
 
-    valid_dates = [datetime.combine(trade_date, datetime.min.time())]
     bt_result = _seed_replay_core(
         prev_date=prev_date, seed_cash=seed_cash, seed_positions=seed_positions,
-        y_positions_eod=y_positions_eod, data=data, all_scores=all_scores,
-        valid_dates=valid_dates, date_indices=[date_idx],
-        valid_stocks=valid_stocks, stock_indices=stock_indices,
+        y_positions_eod=y_positions_eod, decision=decision,
         individual_config=individual_config)
     if bt_result is None:
         return None
@@ -303,11 +348,13 @@ def _run_continuous_backtest(start_date: date, end_date: date,
     PostCloseReport._bt_snap() 默认取 [-1]，_rebuild_backtest_per_stock_pnl
     用 [-1] vs [-2] 算 T 日 daily_pnl。
     """
-    from core.backtest import _compute_factor_scores, _backtest_direct
+    from core.backtest import (
+        _compute_factor_scores, _backtest_direct, _compute_timing_multipliers,
+        build_list_dates_map,
+    )
     from core.runtime import load_runtime_stock_codes
     from utils.stock.time import get_trading_date_span
 
-    _ensure_no_filter_factors(individual_config)
     trading_days = get_trading_date_span(start_date, end_date)
     if not trading_days:
         trading_logger.warning(f"[PostClose] {start_date} → {end_date} 无交易日")
@@ -316,27 +363,37 @@ def _run_continuous_backtest(start_date: date, end_date: date,
     signal_datetimes = [datetime.combine(d, datetime.min.time()) for d in trading_days]
     all_stocks = load_runtime_stock_codes()
     weights = individual_config['weights']
+    filter_factor_classes = _get_filter_factor_classes(individual_config)
     buy_n = individual_config['buy_n']
     sell_m = individual_config.get('sell_m', buy_n)
 
     scores_result = _compute_factor_scores(
         signal_datetimes, all_stocks, weights, factor_classes,
-        kline_data=kline_data)
+        kline_data=kline_data,
+        filter_factor_classes=filter_factor_classes or None,
+    )
     if scores_result is None:
         return None
 
-    data, all_scores, _, valid_dates, date_indices, valid_stocks, stock_indices = scores_result
+    data, all_scores, filter_masks, valid_dates, date_indices, valid_stocks, stock_indices = scores_result
     if not valid_dates:
         return None
 
+    timing_multipliers = _compute_timing_multipliers(individual_config, valid_dates)
+    prefilter_n = individual_config.get('prefilter_n')
     seed_in_npz = ({c: v for c, v in init_positions.items() if c in stock_indices}
                    if init_positions else None)
     return _backtest_direct(
         data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices,
         weights=weights, buy_n=buy_n, sell_m=sell_m,
+        holding_period=individual_config.get('holding_period'),
+        position_multipliers=timing_multipliers,
+        list_dates_map=build_list_dates_map(data),
         lightweight=False, init_cash=init_cash, init_positions=seed_in_npz,
         limit_up_protection=individual_config.get('limit_up_protection', False),
         rebalance=individual_config.get('rebalance', True),
+        filter_masks=filter_masks,
+        prefilter_n=prefilter_n,
     )
 
 
@@ -382,30 +439,8 @@ def run_post_close(store) -> dict | None:
     #    使持仓/下单手数与实盘可比（手数差归因执行层、价格差归因滑点）。
     #    无 T-1 种子（首个交易日 / 缺快照）时回退到多日连续回测。
     recorder.mark("盘后回测")
-    bt_result = _run_seed_replay(trade_date, individual_config, factor_classes, kline_data=kline_data)
-    if bt_result is None:
-        # T-1 种子缺失：优先用「最近一个可用实盘快照」做真实资金种子，从该日演化到 T，
-        # 使目标持仓与实盘资金体量对齐；无任何历史快照时才从默认空仓起步。
-        from utils.stock.time import get_trading_date_span
-        seed = _load_latest_seed(trade_date)
-        if seed is not None:
-            seed_date, seed_cash, seed_positions = seed
-            span = get_trading_date_span(seed_date, trade_date)
-            bt_start = span[1] if len(span) >= 2 else trade_date
-            trading_logger.info(
-                f"[PostClose] 缺 T-1 种子，改用最近实盘快照 {seed_date} "
-                f"(现金¥{seed_cash:,.0f}+{len(seed_positions)}只) 连续演化 {bt_start} → {trade_date}")
-            bt_result = _run_continuous_backtest(
-                bt_start, trade_date, individual_config, factor_classes,
-                kline_data=kline_data, init_cash=seed_cash, init_positions=seed_positions)
-        else:
-            bt_start = _resolve_backtest_start(trade_date)
-            if bt_start < trade_date:
-                trading_logger.info(f"[PostClose] 回退连续回测窗口: {bt_start} → {trade_date}")
-            else:
-                trading_logger.info(f"[PostClose] 回退单日回测: {trade_date} (实盘尚无历史调仓)")
-            bt_result = _run_continuous_backtest(bt_start, trade_date,
-                                                  individual_config, factor_classes, kline_data=kline_data)
+    bt_result = _run_seed_replay(
+        trade_date, individual_config, factor_classes, kline_data=kline_data)
     if bt_result is None:
         trading_logger.warning("[PostClose] 回测失败")
         return None
@@ -528,6 +563,10 @@ def run_post_close(store) -> dict | None:
     # 6. 更新战报卡片 P&L 数据并锁定
     try:
         from trading.day_board import day_board, extract_bt_reference
+        if day_board._trade_date is None:
+            trading_logger.info(
+                "[PostClose] 战报会话未初始化（直接从盘后时间启动），跳过战报刷新")
+            return report_data
         # 6.1 用盘后回测结果回灌「目标」对账参考：盘前若缺 T-1 种子（sim / 首日），
         #     start_session 时 bt_ref 可能为空，导致目标/操作/diff 三列全为「-」。
         snaps = bt_result.get('daily_snapshots') or []
@@ -587,6 +626,7 @@ def run_update_all(store):
         return True
 
     import pandas as pd
+    target_date = store._now().date() if store is not None else date.today()
     from data.update_all import (
         _update_stock_list, _update_stock_name, _update_kline,
         _update_balance, _update_issue_price,
@@ -594,6 +634,15 @@ def run_update_all(store):
         _build_runtime,
         DATA_DIR, TODAY, YESTERDAY,
     )
+
+    if target_date != date.today():
+        trading_logger.info(
+            f"[UpdateAll] 历史模拟 {target_date}: 盘后 K 线已更新，仅重建 runtime")
+        _, runtime_ok = _retry_with_backoff(_build_runtime)
+        ok = runtime_ok
+        trading_logger.info(
+            f"[UpdateAll] 历史模拟 {target_date} {'完成' if ok else '失败'}")
+        return ok
 
     t0 = time.time()
     trading_logger.info("=" * 50)

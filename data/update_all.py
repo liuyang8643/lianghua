@@ -11,6 +11,8 @@ update_offline_toNow()  — 先删除昨日不完整数据，再全量拉取到�
 """
 import time
 import logging
+import queue
+import threading
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -74,6 +76,37 @@ YESTERDAY = TODAY - timedelta(days=1)
 # 16:00 全量更新时，K 线删除并重拉「最近 N 个交易日」，用收盘后的完整 OHLC
 # 覆盖开盘抓到的盘中快照（开盘只拉当天，不做覆盖）。
 REPULL_TRADING_DAYS = 3
+EXTERNAL_CALL_TIMEOUT = 10
+
+
+def _call_with_timeout(func, timeout=EXTERNAL_CALL_TIMEOUT):
+    """Run a potentially blocking third-party call and return after timeout."""
+    result = queue.Queue(maxsize=1)
+
+    def _run():
+        try:
+            result.put((True, func()))
+        except BaseException as exc:
+            result.put((False, exc))
+
+    worker = threading.Thread(target=_run, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        raise TimeoutError(f"external call exceeded {timeout}s")
+
+    ok, value = result.get_nowait()
+    if not ok:
+        raise value
+    return value
+
+INDEX_INFO = {
+    'sh000001': '上证指数',
+    'H00300': '沪深300全收益',
+    'sh000905': '中证500',
+    'sh000852': '中证1000',
+}
+INDEX_REQUIRED_COLUMNS = ('trade_date', 'open', 'close')
 
 
 # ============================================================
@@ -94,18 +127,47 @@ def _clean_parquet_by_date(path: Path, date_col: str, cutoff: date):
         logger.info("  清理 %s: 删除 %d 行 (>= %s)", path.name, removed, cutoff)
 
 
+def _is_valid_index_parquet(path: Path, min_trade_date: date | None = None) -> bool:
+    import pyarrow.parquet as pq
+
+    if not path.exists():
+        return False
+    parquet = pq.ParquetFile(path)
+    if parquet.metadata.num_rows == 0 or not set(INDEX_REQUIRED_COLUMNS) <= set(parquet.schema.names):
+        return False
+    trade_dates = pd.to_datetime(pd.read_parquet(path, columns=['trade_date'])['trade_date'], errors='coerce')
+    if trade_dates.isna().any():
+        return False
+    return min_trade_date is None or trade_dates.max().date() >= min_trade_date
+
+
+def _indices_ready_today(symbols=None) -> bool:
+    from datetime import datetime as _dt
+    from utils.stock.time import get_last_trading_day
+
+    target_symbols = tuple(symbols) if symbols is not None else tuple(INDEX_INFO)
+    min_trade_date = get_last_trading_day(TODAY - timedelta(days=1))
+    for symbol in target_symbols:
+        path = DATA_DIR / f"index_{symbol}_daily.parquet"
+        if not _is_valid_index_parquet(path, min_trade_date):
+            return False
+        if _dt.fromtimestamp(path.stat().st_mtime).date() != TODAY:
+            return False
+    return True
+
+
 # ============================================================
 # 1. K线日线 — mootdx 唯一源（不复权 k-line/ + preClose；复权由 build_runtime 自建）
 # ============================================================
 
-def _update_kline():
+def _update_kline(anchor_date: date | None = None):
     """mootdx 刷新：已有股票增量合并最近 REPULL_TRADING_DAYS 个交易日，新股全量补齐。
 
     退市股 parquet 缺失时仍只允许通过 mootdx 全量补齐，禁止混用其他 K 线源。
     """
     from data.kline_mootdx import update_recent
     logger.info("[K线] mootdx 重拉最近 %d 个交易日 + 新股全量", REPULL_TRADING_DAYS)
-    update_recent(REPULL_TRADING_DAYS)
+    update_recent(REPULL_TRADING_DAYS, anchor_date=anchor_date)
     _ensure_delist_kline_mootdx()
 
 
@@ -233,7 +295,7 @@ def _update_stock_name():
     # ===== ST 变更：全量一把拉（p_stock2117 支持不带 scode 返回全量） =====
     t0 = time.time()
     logger.info("[股票名称] 拉取 ST 变更 (CNINFO 全量)...")
-    r = requests.post(f"{CNINFO_BASE}/p_stock2117", headers=headers, timeout=30)
+    r = requests.post(f"{CNINFO_BASE}/p_stock2117", headers=headers, timeout=EXTERNAL_CALL_TIMEOUT)
     all_records = r.json().get("records", [])
     rows_st = []
     st_date_parse_fail = 0
@@ -275,8 +337,22 @@ def _update_stock_name():
         rows_name = []
         name_date_parse_fail = 0
         for i, bare in enumerate(name_pending, 1):
-            resp = _post_json_with_retry(f"{CNINFO_BASE}/p_stock2109",
-                                         params={"scode": bare}, headers=headers, timeout=15)
+            try:
+                resp = _call_with_timeout(
+                    lambda: _post_json_with_retry(
+                        f"{CNINFO_BASE}/p_stock2109",
+                        max_attempts=1,
+                        params={"scode": bare},
+                        headers=headers,
+                        timeout=EXTERNAL_CALL_TIMEOUT,
+                    )
+                )
+            except TimeoutError:
+                logger.warning("[股票名称] %s 请求超过 %ds，跳过", bare, EXTERNAL_CALL_TIMEOUT)
+                continue
+            except Exception as e:
+                logger.warning("[股票名称] %s 请求失败，跳过: %s", bare, e)
+                continue
             records = resp.get("records", [])
             for rec in records:
                 start_str = rec.get("STARTDATE")
@@ -363,94 +439,37 @@ def _update_current_names(codes: list[str]):
 
 
 # ============================================================
-# 4. 资产负债表（总股本）— CNINFO API
+# 4. 资产负债表（总股本）— akshare CNINFO
 # ============================================================
 
+def _derive_missing_total_share(deep: pd.DataFrame, known_codes: set[str]) -> pd.DataFrame:
+    deep = deep[~deep['stock_code'].isin(known_codes)].copy()
+    deep['cap_stk'] = pd.to_numeric(deep['net_profit'], errors='coerce') / pd.to_numeric(deep['eps'], errors='coerce') / 10_000
+    deep = deep[np.isfinite(deep['cap_stk']) & (deep['cap_stk'] > 0)]
+    deep['m_anntime'] = pd.to_datetime(deep['report_period'].astype(str), format='%Y%m%d') + pd.Timedelta(days=120)
+    return deep[['stock_code', 'm_anntime', 'cap_stk']]
+
+
 def _update_balance():
-    import requests
-    import py_mini_racer
-    from akshare.stock.stock_profile_cninfo import _get_file_content_ths
-
     OUT_PATH = DATA_DIR / "financial" / "balance.parquet"
-    STOCK_LIST_PATH = DATA_DIR / "stock_list" / "stock_list.parquet"
+    DERIVED_PATH = DATA_DIR / "financial" / "balance_derived.parquet"
+    DEEP_PATH = DATA_DIR / "financial" / "deep_indicators.parquet"
+    if not OUT_PATH.exists():
+        raise FileNotFoundError(f"[资产负债表] 缺少官方股本数据: {OUT_PATH}")
+    if not DEEP_PATH.exists():
+        raise FileNotFoundError(f"[资产负债表] 缺少深历史财务数据: {DEEP_PATH}")
 
-    if STOCK_LIST_PATH.exists():
-        codes = pd.read_parquet(STOCK_LIST_PATH)["stock_code"].tolist()
-    else:
-        from data.db.stock_list import get_all_stock_code_list
-        codes = get_all_stock_code_list()
-
-    bare_codes = sorted(set(c.split(".")[0] for c in codes))
-
-    # 跳过已有数据的股票
-    if OUT_PATH.exists():
-        df_existing = pd.read_parquet(OUT_PATH)
-        existing_full_codes = set(df_existing['stock_code'].unique())
-        bare_codes = [b for b in bare_codes
-                      if not any(b + s in existing_full_codes for s in ('.SH', '.SZ', '.BJ'))]
-    if not bare_codes:
-        logger.info("[资产负债表] 已是最新, 跳过")
-        return
-    logger.info("[资产负债表] 待获取: %d 只", len(bare_codes))
-    js = py_mini_racer.MiniRacer()
-    js.eval(_get_file_content_ths("cninfo.js"))
-    mcode = js.call("getResCode1")
-    headers = {
-        "Accept": "*/*",
-        "Accept-Enckey": mcode,
-        "Origin": "https://webapi.cninfo.com.cn",
-        "Referer": "https://webapi.cninfo.com.cn/",
-        "User-Agent": "Mozilla/5.0",
-        "X-Requested-With": "XMLHttpRequest",
-    }
-
-    MIN_DATE = "2009-07-01"
-
-    def _fetch(bare_code):
-        resp = _post_json_with_retry(
-            "https://webapi.cninfo.com.cn/api/stock/p_stock2300",
-            params={"scode": bare_code},
-            headers=headers,
-            timeout=30,
-        )
-        records = resp.get("records", [])
-        rows = []
-        for rec in records:
-            dd = rec.get("DECLAREDATE", "")
-            cap = rec.get("F062N")
-            if not dd or cap is None or dd < MIN_DATE:
-                continue
-            suffix = ".SH" if bare_code.startswith(("6", "9")) else ".SZ" if bare_code.startswith(("0", "3")) else ".BJ"
-            rows.append({"stock_code": bare_code + suffix, "m_anntime": dd, "cap_stk": float(cap)})
-        return rows
-
-    logger.info("[资产负债表] 下载 %d 只...", len(bare_codes))
-    t0 = time.time()
-    all_rows = []
-    for done, bare_code in enumerate(bare_codes, start=1):
-        all_rows.extend(_fetch(bare_code))
-        if done % 500 == 0:
-            logger.info("[资产负债表] %d/%d", done, len(bare_codes))
-
-    if not all_rows:
-        logger.warning("[资产负债表] 未下载到数据")
+    df_old = pd.read_parquet(OUT_PATH)
+    deep = pd.read_parquet(DEEP_PATH, columns=['stock_code', 'report_period', 'net_profit', 'eps'])
+    df_new = _derive_missing_total_share(deep, set(df_old['stock_code']))
+    if df_new.empty:
+        logger.info("[资产负债表] 无需补全")
         return
 
-    df_new = pd.DataFrame(all_rows)
-    df_new["m_anntime"] = pd.to_datetime(df_new["m_anntime"])
-    df_new["cap_stk"] = df_new["cap_stk"].astype(np.float64)
-
-    if OUT_PATH.exists():
-        df_old = pd.read_parquet(OUT_PATH)
-        df_merged = pd.concat([df_old, df_new], ignore_index=True)
-    else:
-        df_merged = df_new
-
-    df_merged = df_merged.drop_duplicates(subset=["stock_code", "m_anntime"], keep="last")
-    df_merged = df_merged.sort_values(["stock_code", "m_anntime"]).reset_index(drop=True)
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    df_merged.to_parquet(OUT_PATH, index=False)
-    logger.info("[资产负债表] 保存 %d 行, 耗时 %.0fs", len(df_merged), time.time() - t0)
+    DERIVED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    df_new.sort_values(['stock_code', 'm_anntime']).to_parquet(DERIVED_PATH, index=False)
+    logger.info("[资产负债表] 以深历史财务补全 %d 只、%d 条",
+                df_new['stock_code'].nunique(), len(df_new))
 
 
 # ============================================================
@@ -497,7 +516,7 @@ def _update_issue_price():
     rows = []
     for bare in remaining:
         try:
-            info = ak.stock_individual_info_em(symbol=bare)
+            info = _call_with_timeout(lambda: ak.stock_individual_info_em(symbol=bare))
             price = None
             list_date = None
             for _, row in info.iterrows():
@@ -526,52 +545,52 @@ def _update_issue_price():
 # 7. 大盘指数 — akshare
 # ============================================================
 
-def _update_indices():
+def _update_indices(symbols=None):
     import akshare as ak
     import pyarrow.parquet as pq
     import pyarrow as pa
 
-    INDEX_INFO = {
-        'sh000300': '沪深300',
-        'sh000905': '中证500',
-        'sh000852': '中证1000',
-    }
+    target_symbols = tuple(symbols) if symbols is not None else tuple(INDEX_INFO)
 
-    # 当天已落盘跳过（检查沪深300代表）
-    sample_path = DATA_DIR / "index_sh000300_daily.parquet"
-    if sample_path.exists():
-        from datetime import datetime as _dt
-        mtime = _dt.fromtimestamp(sample_path.stat().st_mtime).date()
-        if mtime == TODAY:
-            logger.info("[指数] 今日已更新, 跳过")
-            return
+    if symbols is None and _indices_ready_today():
+        logger.info("[指数] 今日已更新, 跳过")
+        return
 
-    for symbol, name in INDEX_INFO.items():
+    for symbol in target_symbols:
+        name = INDEX_INFO[symbol]
         path = DATA_DIR / f"index_{symbol}_daily.parquet"
-        try:
+        if symbol == 'H00300':
+            df_new = ak.stock_zh_index_hist_csindex(symbol='H00300', start_date='20050101', end_date='20991231')
+            dates = df_new['日期'].values
+            open_prices = np.full(len(dates), np.nan, dtype=np.float64)
+            close_prices = df_new['收盘'].values.astype(np.float64)
+        else:
             df_new = ak.stock_zh_index_daily(symbol=symbol)
             dates = df_new['date'].values
             open_prices = df_new['open'].values.astype(np.float64)
+            close_prices = df_new['close'].values.astype(np.float64)
 
-            if isinstance(dates[0], str) or isinstance(dates[0], np.str_):
-                dates_np = np.array([np.datetime64(d[:10], 'D') for d in dates])
-            else:
-                dates_np = np.asarray(dates).astype('datetime64[D]')
+        if isinstance(dates[0], str) or isinstance(dates[0], np.str_):
+            dates_np = np.array([np.datetime64(d[:10], 'D') for d in dates])
+        else:
+            dates_np = np.asarray(dates).astype('datetime64[D]')
 
-            sort_idx = np.argsort(dates_np)
-            dates_sorted = dates_np[sort_idx]
-            open_sorted = open_prices[sort_idx]
+        sort_idx = np.argsort(dates_np)
+        dates_sorted = dates_np[sort_idx]
+        open_sorted = open_prices[sort_idx]
+        close_sorted = close_prices[sort_idx]
 
-            table = pa.table({
-                'trade_date': pa.array(dates_sorted),
-                'open': pa.array(open_sorted),
-            })
-            path.parent.mkdir(parents=True, exist_ok=True)
-            pq.write_table(table, path)
-            logger.info("[指数] %s(%s): %d 天, %s ~ %s",
-                        name, symbol, len(dates_sorted), dates_sorted[0], dates_sorted[-1])
-        except Exception as e:
-            logger.warning("[指数] %s 失败: %s", symbol, e)
+        table = pa.table({
+            'trade_date': pa.array(dates_sorted),
+            'open': pa.array(open_sorted),
+            'close': pa.array(close_sorted),
+        })
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(table, path)
+        if not _is_valid_index_parquet(path):
+            raise RuntimeError(f"[指数] {symbol} 写出缺列文件: {path}")
+        logger.info("[指数] %s(%s): %d 天, %s ~ %s",
+                    name, symbol, len(dates_sorted), dates_sorted[0], dates_sorted[-1])
 
 
 # ============================================================
@@ -592,7 +611,14 @@ def _update_delist():
 
     rows = []
     for fetch_func, market in [(ak.stock_info_sh_delist, 'SH'), (ak.stock_info_sz_delist, 'SZ')]:
-        df = fetch_func()
+        try:
+            df = _call_with_timeout(fetch_func)
+        except TimeoutError:
+            logger.warning("[退市列表] %s 请求超过 %ds，跳过本次退市列表更新", market, EXTERNAL_CALL_TIMEOUT)
+            return
+        except Exception as e:
+            logger.warning("[退市列表] %s 请求失败，跳过本次退市列表更新: %s", market, e)
+            return
         if df is not None and not df.empty:
             df['exchange'] = market
             rows.append(df)

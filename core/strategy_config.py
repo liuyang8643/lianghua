@@ -19,8 +19,8 @@ def normalize_individual_config(config: dict) -> dict:
         cfg['rebalance'] = True
     if 'filter_factors' not in cfg:
         cfg['filter_factors'] = {}
-    elif isinstance(cfg['filter_factors'], list):
-        cfg['filter_factors'] = {name: True for name in cfg['filter_factors']}
+    elif not isinstance(cfg['filter_factors'], dict):
+        raise TypeError('filter_factors must be an explicit name -> enabled map')
     if 'empty_months' not in cfg:
         cfg['empty_months'] = None
     if 'cash_reserve_ratio' not in cfg:

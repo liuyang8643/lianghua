@@ -69,7 +69,7 @@ def test_calc_batch_uses_money_flow_on_next_trading_day(tmp_path, monkeypatch):
     assert np.isfinite(score[flow_idx + 1]).all()
 
 
-def test_select_topn_filter_exempts_existing_position():
+def test_select_topn_filter_excludes_existing_position():
     from core.scoring import select_topn
 
     all_scores = {"base": np.array([[0.9, 0.8, 0.7, 0.6]], dtype=np.float32)}
@@ -81,11 +81,4 @@ def test_select_topn_filter_exempts_existing_position():
         all_scores, 0, valid_stocks, valid_cols, {"base": 1.0}, 2,
         filter_mask=filter_mask,
     )
-    with_exempt, _ = select_topn(
-        all_scores, 0, valid_stocks, valid_cols, {"base": 1.0}, 2,
-        filter_mask=filter_mask,
-        filter_exempt_codes={"A"},
-    )
-
     assert without_exempt == ["B", "C"]
-    assert with_exempt == ["A", "B"]

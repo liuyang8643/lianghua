@@ -4,12 +4,13 @@
 """
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
+from typing import Callable
 
 import numpy as np
 
-from core.rebalance import compute_rebalance_plan, freeze_unit_price, select_tradable_buys
-from core.scoring import select_topn
+from core.rebalance import compute_rebalance_plan, freeze_unit_price
+from core.scoring import select_topn_legal
 from utils.stock.info import board_limit_ratio
 
 
@@ -30,6 +31,89 @@ class RebalanceDayPlan:
   sell_orders: list[tuple[str, int]]
   buy_orders: dict[str, int]
   skip_reasons: dict[str, str]
+  t1_ranking: list[str]
+
+
+@dataclass
+class StrategyDayResult:
+  trade_date: date
+  position_multiplier: float
+  plan: RebalanceDayPlan
+  data: dict
+  all_scores: dict
+  filter_masks: dict
+  date_idx: int
+  valid_stocks: list[str]
+  stock_indices: dict[str, int]
+  kline_data: dict | None
+
+
+def build_strategy_day(
+    *, trade_date: date, all_stocks: list[str], individual_config: dict,
+    factor_classes: list, filter_factor_classes: list,
+    positions: dict[str, int], sellable_volumes: dict[str, int], cash: float,
+    kline_loader: Callable[[list[str]], dict | None] | None = None,
+    kline_data: dict | None = None, target_cash: float | None = None,
+    target_positions: dict[str, int] | None = None,
+    is_rebalance_day: bool = True, position_multiplier: float = 1.0,
+) -> StrategyDayResult:
+  """Build the authoritative strategy target for one trading day."""
+  from core.backtest import _compute_factor_scores, apply_t1_prefilter_for_date, build_list_dates_map
+  from core.legality import LegalityChecker
+  from utils.stock.time import get_last_trading_day
+
+  weights = individual_config['weights']
+  prefilter_n = individual_config['prefilter_n']
+  data = None
+  if prefilter_n:
+    prev_date = get_last_trading_day(trade_date - timedelta(days=1))
+    all_stocks, data = apply_t1_prefilter_for_date(
+      prev_date, all_stocks, weights, factor_classes, prefilter_n,
+      filter_factor_classes=filter_factor_classes,
+    )
+  if kline_loader is not None:
+    if kline_data is not None:
+      raise ValueError('pass either kline_loader or kline_data')
+    kline_data = kline_loader(all_stocks)
+
+  scored = _compute_factor_scores(
+    [datetime.combine(trade_date, datetime.min.time())], all_stocks,
+    weights, factor_classes, data=data, kline_data=kline_data,
+    filter_factor_classes=filter_factor_classes or None,
+  )
+  if scored is None:
+    raise ValueError(f'signal date {trade_date} is outside runtime data')
+  data, all_scores, filter_masks, valid_dates, date_indices, valid_stocks, stock_indices = scored
+  date_idx = date_indices[0]
+  valid_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
+  buy_filter_mask = None
+  if filter_masks:
+    buy_filter_mask = np.logical_and.reduce(
+      [mask[date_idx][valid_cols] for mask in filter_masks.values()]
+    )
+  checker = LegalityChecker(
+    data, stock_indices, build_list_dates_map(data),
+    limit_up_protection=individual_config['limit_up_protection'],
+  )
+  plan = build_rebalance_day(
+    data=data, all_scores=all_scores, date_idx=date_idx, trade_idx=date_idx,
+    signal_date=trade_date, valid_stocks=valid_stocks, valid_cols=valid_cols,
+    stock_indices=stock_indices, weights=weights,
+    buy_n=individual_config['buy_n'], sell_m=individual_config['sell_m'],
+    checker=checker, positions=positions, sellable_volumes=sellable_volumes,
+    cash=cash, rebalance=individual_config['rebalance'],
+    is_rebalance_day=is_rebalance_day,
+    position_multiplier=position_multiplier,
+    target_cash=target_cash, target_positions=target_positions,
+    price_codes_extra=set(target_positions or {}),
+    buy_filter_mask=buy_filter_mask,
+  )
+  return StrategyDayResult(
+    trade_date=trade_date, position_multiplier=position_multiplier,
+    plan=plan, data=data, all_scores=all_scores, filter_masks=filter_masks,
+    date_idx=date_idx, valid_stocks=valid_stocks, stock_indices=stock_indices,
+    kline_data=kline_data,
+  )
 
 
 def _map_open_prices(data, stock_indices, trade_idx: int, price_codes) -> dict[str, float]:
@@ -96,12 +180,11 @@ def _freeze_prices(data, stock_indices, trade_idx: int, prices: dict[str, float]
                    market_order_freeze: bool) -> dict[str, float]:
   if not market_order_freeze:
     return {}
-  close_all = data['close']
-  prev_close_row = close_all[trade_idx - 1] if trade_idx >= 1 else data['open'][trade_idx]
+  preclose_row = data['preClose'][trade_idx]
   limit_prices: dict[str, float] = {}
   for code, price in prices.items():
     si = stock_indices[code]
-    pc = float(prev_close_row[si])
+    pc = float(preclose_row[si])
     if np.isnan(pc):
       pc = 0.0
     limit_prices[code] = freeze_unit_price(code, price, pc)
@@ -127,31 +210,28 @@ def build_rebalance_day(
     cash: float,
     rebalance: bool = True,
     is_rebalance_day: bool = True,
-    force_codes: list[str] | None = None,
     position_multiplier: float = 1.0,
     target_cash: float | None = None,
     target_positions: dict[str, int] | None = None,
     price_codes_extra=None,
     last_valid_close_prices: dict[str, float] | None = None,
     market_order_freeze: bool = True,
-    limit_up_protection: bool = False,
     buy_filter_mask: np.ndarray | None = None,
 ) -> RebalanceDayPlan:
   if is_rebalance_day:
-    n_target = max(buy_n, sell_m)
-    topn_max, final_score = select_topn(
+    day_open = data['open'][trade_idx]
+    buy_n_stocks, sell_m_stocks, final_score, t1_ranking = select_topn_legal(
       all_scores, date_idx, valid_stocks, valid_cols,
-      weights, n_target,
-      force_codes=force_codes if force_codes else None,
+      weights, buy_n, sell_m,
+      checker=checker, trade_idx=trade_idx, signal_date=signal_date,
+      day_open=day_open, stock_indices=stock_indices,
       filter_mask=buy_filter_mask,
-      filter_exempt_codes=set(positions) if buy_filter_mask is not None else None,
     )
-    buy_n_stocks = topn_max[:buy_n]
-    sell_m_stocks = topn_max[:sell_m]
   else:
     final_score = np.zeros(len(valid_stocks), dtype=np.float32)
     buy_n_stocks = []
     sell_m_stocks = []
+    t1_ranking = []
 
   extra = set(price_codes_extra or [])
   price_universe = set(positions) | set(sell_m_stocks) | set(buy_n_stocks) | extra
@@ -182,15 +262,7 @@ def build_rebalance_day(
                           trade_idx, signal_date, is_buy=False)
     sellable_ok = {c for c, o in zip(sell_check, ok) if o}
 
-  tradable_buy_stocks: list[str] = []
-  if is_rebalance_day and buy_n_stocks:
-    tradable_buy_stocks = select_tradable_buys(
-      checker, buy_n_stocks=buy_n_stocks, prices=prices,
-      stock_indices=stock_indices, trade_idx=trade_idx,
-      signal_date=signal_date, buy_n=buy_n,
-      limit_up_protection=limit_up_protection,
-      final_score_arr=final_score, valid_stocks=valid_stocks,
-    )
+  tradable_buy_stocks = buy_n_stocks
 
   sell_orders: list[tuple[str, int]] = []
   buy_orders: dict[str, int] = {}
@@ -201,7 +273,7 @@ def build_rebalance_day(
       pos_vals=pos_vals, cash=cash,
       buy_n_stocks=buy_n_stocks, tradable_buy_stocks=tradable_buy_stocks,
       sellable_ok=sellable_ok, prices=prices, limit_prices=limit_prices,
-      base_target=base_target, rebalance=rebalance,
+      base_target=base_target, keep_stocks=sell_m_stocks, rebalance=rebalance,
     )
 
   return RebalanceDayPlan(
@@ -220,4 +292,5 @@ def build_rebalance_day(
     sell_orders=sell_orders,
     buy_orders=buy_orders,
     skip_reasons=skip_reasons,
+    t1_ranking=t1_ranking,
   )

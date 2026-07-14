@@ -1,7 +1,6 @@
 {
   "ga_profile": "core6",
   "individual_config": {
-    "filter": false,
     "weights": {
       "TrueMarketCap": 0.9,
       "VolumeCV": 0.1,

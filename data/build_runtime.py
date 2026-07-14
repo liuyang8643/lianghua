@@ -30,6 +30,7 @@
   uv run python data/build_runtime.py --max-stocks 100  # 调试模式
 """
 import argparse
+import os
 import time
 import sys
 from datetime import date, datetime
@@ -37,6 +38,16 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+
+def save_runtime_npz_atomic(output_path: Path, **arrays) -> None:
+    temp_path = output_path.with_name(f'.{output_path.name}.{os.getpid()}.tmp.npz')
+    try:
+        np.savez_compressed(temp_path, **arrays)
+        temp_path.replace(output_path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
 
 DATA_DIR = Path(__file__).resolve().parent
 OUT_DIR = DATA_DIR / "runtime"
@@ -221,6 +232,7 @@ def build_financial_arrays(
 def build_total_share(
     stock_codes: np.ndarray,
     trade_dates: np.ndarray,
+    open_prices: np.ndarray,
 ) -> np.ndarray:
     """从 balance.parquet 的 cap_stk 构建历史总股本数组 (n_dates, n_stocks)。
 
@@ -228,15 +240,18 @@ def build_total_share(
     """
     n_dates = len(trade_dates)
     n_stocks = len(stock_codes)
-    result = np.zeros((n_dates, n_stocks), dtype=np.float64)
+    result = np.full((n_dates, n_stocks), np.nan, dtype=np.float64)
 
     balance_path = DATA_DIR / "financial" / "balance.parquet"
+    derived_path = DATA_DIR / "financial" / "balance_derived.parquet"
     if not balance_path.exists():
-        print("警告: balance.parquet 不存在，总股本全部为 0")
-        return result
+        raise FileNotFoundError(f"缺少股本数据: {balance_path}")
 
     trade_date_ts = trade_dates.astype('datetime64[ns]')
-    df_all = pd.read_parquet(balance_path)
+    frames = [pd.read_parquet(balance_path)]
+    if derived_path.exists():
+        frames.append(pd.read_parquet(derived_path))
+    df_all = pd.concat(frames, ignore_index=True).sort_values(['stock_code', 'm_anntime'])
 
     t0 = time.time()
     last_log = t0
@@ -255,7 +270,8 @@ def build_total_share(
         if not valid.any():
             continue
 
-        result[valid, j] = df_code['cap_stk'].values[indices[valid]]
+        cap_stk = df_code['cap_stk'].to_numpy(dtype=np.float64)
+        result[valid, j] = cap_stk[indices[valid]]
 
         now = time.time()
         if now - last_log >= 5 or j == n_stocks - 1:
@@ -266,8 +282,24 @@ def build_total_share(
                   f"(耗时 {elapsed:.0f}s, 速度 {speed:.0f}只/s, 预计剩余 {eta:.0f}s)")
             last_log = now
 
-    nonzero = (result > 0).sum()
-    print(f"总股本: {nonzero}/{result.size} 非零 ({nonzero/result.size*100:.1f}%)")
+    from data.db.delist import get_delist_stock_info
+    from utils.stock.info import is_b_stock
+
+    delist_info = get_delist_stock_info()
+    missing = []
+    for j, code in enumerate(stock_codes):
+        code = str(code)
+        info = delist_info.get(code)
+        if info is None or is_b_stock(code):
+            continue
+        delist_idx = np.searchsorted(trade_dates, np.datetime64(info.delist_date), side='right') - 1
+        if delist_idx >= 0 and np.any(open_prices[:delist_idx + 1, j] > 0) and not np.any(result[:delist_idx + 1, j] > 0):
+            missing.append(code)
+    if missing:
+        raise RuntimeError(f"退市股票缺少退市前股本: {', '.join(missing)}")
+
+    covered = np.isfinite(result).sum()
+    print(f"总股本: {covered}/{result.size} 有效 ({covered/result.size*100:.1f}%)")
     return result
 
 
@@ -397,7 +429,7 @@ def build_runtime(
     st_mask = build_st_mask(stock_codes, all_trade_dates)
 
     print(f"[{time.strftime('%H:%M:%S')}] ===== 4/7 构建总股本 =====")
-    total_share = build_total_share(stock_codes, all_trade_dates)
+    total_share = build_total_share(stock_codes, all_trade_dates, kline_arrays['open'])
 
     print(f"[{time.strftime('%H:%M:%S')}] ===== 5/7 构建财务面板 =====")
     fin_arrays = build_financial_arrays(stock_codes, all_trade_dates)
@@ -416,7 +448,7 @@ def build_runtime(
             old.unlink()
             print(f"  删除旧文件: {old.name}")
 
-    np.savez_compressed(
+    save_runtime_npz_atomic(
         output_path,
         stock_codes=stock_codes,
         trade_dates=all_trade_dates,

@@ -1,7 +1,11 @@
 {
   "ga_profile": "core6",
   "individual_config": {
-    "filter": false,
+    "filter_factors": {
+      "FilterST": true,
+      "FilterStarST": true,
+      "FilterLowPrice": true
+    },
     "weights": {
       "AmihudIlliquidity": 0.4,
       "TrueMarketCap": 0.9,
@@ -10,12 +14,12 @@
     },
     "buy_n": 20,
     "sell_m": 20,
+    "prefilter_n": 300,
     "timing_enabled": false,
     "rebalance": true,
     "limit_up_protection": true,
     "empty_months": [],
     "cash_reserve_ratio": 0.25,
-    "holding_period": 1,
-    "prefilter_n": 1200
+    "holding_period": 1
   }
 }

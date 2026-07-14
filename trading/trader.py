@@ -80,7 +80,6 @@ class Trader:
 
   def query_asset(self) -> Optional[XtAsset]:
     """查询证券资产"""
-    trading_logger.info("[QMT] query_stock_asset ...")
     try:
       return self.client.query_stock_asset(self.account)
     except Exception as e:
@@ -89,7 +88,6 @@ class Trader:
 
   def query_positions(self) -> Optional[List[XtPosition]]:
     """查询持仓"""
-    trading_logger.info("[QMT] query_stock_positions ...")
     try:
       return self.client.query_stock_positions(self.account)
     except Exception as e:

@@ -27,8 +27,6 @@ def main():
     parser.add_argument('--output-dir', type=str, default=None)
     parser.add_argument('--start-date', type=str, default='20240101')
     parser.add_argument('--end-date', type=str, default='20241231')
-    parser.add_argument('--filter', action='store_true', default=None, dest='filter_enabled', help='启用 NaN 并集过滤 (默认开启)')
-    parser.add_argument('--no-filter', action='store_false', dest='filter_enabled', help='禁用 NaN 并集过滤')
     args = parser.parse_args()
 
     loguru_logger.remove()

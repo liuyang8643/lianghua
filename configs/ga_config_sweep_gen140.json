@@ -1,0 +1,30 @@
+{
+  "ga_profile": "config_sweep",
+  "individual_config": {
+    "weights": {
+      "VolumeCV": 0.3,
+      "AmihudIlliquidity": 0.8,
+      "TrueMarketCap": 0.4,
+      "AmountBasedSmallCap": 0.4
+    },
+    "buy_n": 20,
+    "sell_m": 20,
+    "filter_factors": {
+      "FilterST": true,
+      "FilterStarST": true,
+      "FilterLowPrice": true
+    },
+    "stock_pool": [
+      "60",
+      "00",
+      "30",
+      "688"
+    ],
+    "holding_period": 1,
+    "prefilter_n": 200,
+    "rebalance": true,
+    "limit_up_protection": true,
+    "timing_enabled": false,
+    "cash_reserve_ratio": 0.25
+  }
+}

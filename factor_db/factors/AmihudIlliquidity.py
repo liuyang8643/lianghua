@@ -1,7 +1,5 @@
 import numpy as np
 
-MIN_RAW_PRICE = 2.0
-
 
 def _shift(arr):
     result = np.empty_like(arr)
@@ -17,8 +15,6 @@ class AmihudIlliquidity:
   def calc_batch(self, panel: dict) -> np.ndarray:
     close_known = _shift(panel["close"])
     amount_known = _shift(panel["amount"])
-    raw_open = panel["open"]
-    st_mask = panel["st_mask"]
 
     ret = np.empty_like(close_known)
     ret[0] = np.nan
@@ -35,10 +31,4 @@ class AmihudIlliquidity:
     avg_illiq[:w] = np.nan
     avg_illiq[w:] = (cum_sum[w:] - cum_sum[:-w]) / (n_valid[w:] - n_valid[:-w])
 
-    base_valid = (
-      ~np.isnan(raw_open)
-      & (raw_open >= MIN_RAW_PRICE)
-      & ~st_mask
-      & ~np.isnan(avg_illiq)
-    )
-    return np.where(base_valid, avg_illiq, np.nan)
+    return np.where(~np.isnan(avg_illiq), avg_illiq, np.nan)

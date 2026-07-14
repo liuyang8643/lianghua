@@ -119,11 +119,13 @@ def _patch_npz_incremental(kline_data: dict):
         _info("[NPZ增量] 无变更，跳过 1GB 级重写 → %s", npz_files[-1].name)
         return npz_files[-1]
 
-    for f in npz_files:
-        f.unlink()
     td = data['trade_dates']
     output_path = OUT_DIR / f"runtime_{str(td[0])}_{str(td[-1])}.npz"
-    np.savez_compressed(output_path, **data)
+    from data.build_runtime import save_runtime_npz_atomic
+    save_runtime_npz_atomic(output_path, **data)
+    for f in npz_files:
+        if f != output_path:
+            f.unlink()
     file_size_mb = output_path.stat().st_size / (1024 * 1024)
     _info("[NPZ增量] 保存: %s (%.1f MB, %.0fs)", output_path.name, file_size_mb, time.time() - t0)
     return output_path

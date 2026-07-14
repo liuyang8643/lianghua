@@ -89,6 +89,41 @@ function renderEquityChart() {
   });
 }
 
+function renderFactorMissingChart() {
+  const payload = REPORT_DATA.charts.factor_missing;
+  const chart = makeChart('factor-missing-chart');
+  const series = Object.entries(payload?.series || {});
+  if (!chart || !payload?.trade_dates?.length || !series.length) {
+    renderNoData(document.getElementById('factor-missing-chart'), '暂无因子缺失值数据');
+    return;
+  }
+
+  const recentWindow = Math.min(payload.trade_dates.length, 240);
+  const zoomStart = payload.trade_dates.length > recentWindow
+    ? Math.max(0, (payload.trade_dates.length - recentWindow) / payload.trade_dates.length * 100)
+    : 0;
+
+  chart.setOption({
+    animation: false,
+    color: ['#1976D2', '#D32F2F', '#388E3C', '#F57C00', '#7B1FA2', '#00838F'],
+    legend: { top: 0, type: 'scroll' },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    grid: { left: 60, right: 32, top: 52, bottom: 58 },
+    xAxis: { type: 'category', data: payload.trade_dates, boundaryGap: false, axisLabel: { hideOverlap: true } },
+    yAxis: { type: 'value', name: '缺失股票数', min: 0 },
+    dataZoom: [
+      { type: 'inside', start: zoomStart, end: 100 },
+      { type: 'slider', bottom: 8, start: zoomStart, end: 100 },
+    ],
+    series: series.map(([name, data]) => ({
+      name,
+      type: 'line',
+      showSymbol: false,
+      data,
+    })),
+  });
+}
+
 function renderDistributionChart() {
   const payload = REPORT_DATA.charts.distribution;
   const chart = makeChart('distribution-chart');
@@ -382,6 +417,7 @@ async function initTables() {
 }
 
 renderEquityChart();
+renderFactorMissingChart();
 renderDistributionChart();
 renderWinLossChart();
 initTables();

@@ -1,7 +1,5 @@
 import numpy as np
 
-MIN_RAW_PRICE = 2.0
-
 
 class AmountBasedSmallCap:
   """小盘股因子 - 基于成交额近似市值"""
@@ -9,9 +7,7 @@ class AmountBasedSmallCap:
   hist_days = 60
 
   def calc_batch(self, panel: dict) -> np.ndarray:
-    close = panel["open"]
     amount = panel["amount"]
-    st_mask = panel["st_mask"]
 
     amount_known = np.empty_like(amount)
     amount_known[0] = np.nan
@@ -26,12 +22,5 @@ class AmountBasedSmallCap:
     avg_amounts[w:] = (cum_amount[w:] - cum_amount[:-w]) / (cum_count[w:] - cum_count[:-w])
     avg_amounts /= 1e8
 
-    base_valid = (
-      ~np.isnan(close)
-      & (close >= MIN_RAW_PRICE)
-      & ~st_mask
-      & ~np.isnan(avg_amounts)
-    )
-
     score = 100 * np.exp(-(avg_amounts / 5))
-    return np.where(base_valid, score, np.nan)
+    return np.where(~np.isnan(avg_amounts), score, np.nan)

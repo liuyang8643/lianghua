@@ -26,10 +26,6 @@ _CYB_REG = date(2020, 8, 24)         # 创业板注册制：前5日不设限、�
 _MB_REG = date(2023, 4, 10)          # 主板全面注册制：前5日不设限
 _MB_ST_10_START = date(2026, 7, 6)   # 主板风险警示股涨跌幅 5%→10%
 
-# 临退禁买窗口（交易日）：覆盖退市整理期(主板/创业板15日、科创板30日)+停牌缓冲。
-# 宁严勿漏——临退期"首日不设涨跌幅"无法对齐实盘撮合，且有归零风险，一律禁买。
-_DELIST_BUY_BAN_DAYS = 35
-
 # 板块编码
 BOARD_MAIN = 0   # 主板（沪深，含原中小板 002/003）
 BOARD_CYB = 1    # 创业板 300/301
@@ -48,27 +44,77 @@ def _ceil_2(values):
     return np.ceil(values * 100.0 - 1e-9) / 100.0
 
 
+def compute_limit_up_matrix(data):
+    """Return historical daily limit-up prices for the full runtime panel."""
+    codes = np.asarray(data['stock_codes'], dtype='U12')
+    dates = np.asarray(data['trade_dates'], dtype='datetime64[D]')
+    preclose = np.asarray(data['preClose'], dtype=np.float64).copy()
+    st = np.asarray(data['st_mask'], dtype=bool)
+    open_ = np.asarray(data['open'], dtype=np.float64)
+    n_days, n_stocks = open_.shape
+
+    board = np.zeros(n_stocks, dtype=np.int8)
+    base = np.full(n_stocks, 0.10, dtype=np.float64)
+    cyb = np.char.startswith(codes, '300') | np.char.startswith(codes, '301')
+    kcb = np.char.startswith(codes, '688')
+    bj = (np.char.startswith(codes, '83') | np.char.startswith(codes, '87')
+          | np.char.startswith(codes, '43') | np.char.startswith(codes, '92'))
+    board[cyb] = BOARD_CYB; base[cyb] = 0.20
+    board[kcb] = BOARD_KCB; base[kcb] = 0.20
+    board[bj] = BOARD_BJ; base[bj] = 0.30
+
+    ratios = np.broadcast_to(base, (n_days, n_stocks)).copy()
+    ratios[(dates < np.datetime64(_CYB_REG))[:, None] & cyb[None, :]] = 0.10
+    main_st_ratio = np.where(dates < np.datetime64(_MB_ST_10_START), 0.05, 0.10)[:, None]
+    cyb_st_ratio = np.where(dates < np.datetime64(_CYB_REG), 0.05, 0.20)[:, None]
+    st_ratio = np.where(
+        cyb[None, :], cyb_st_ratio,
+        np.where(kcb[None, :], 0.20, np.where(bj[None, :], 0.30, main_st_ratio)),
+    )
+    ratios = np.where(st, st_ratio, ratios)
+
+    valid = np.isfinite(open_) & (open_ > 0)
+    has_listed = valid.any(axis=0)
+    list_idx = np.where(has_listed, valid.argmax(axis=0), -1)
+    day_idx = np.arange(n_days)[:, None]
+    days_since_list = day_idx - list_idx[None, :]
+    listed = (list_idx[None, :] >= 0) & (days_since_list >= 0)
+    first = listed & (days_since_list == 0)
+
+    exempt = bj[None, :] & first
+    exempt |= kcb[None, :] & listed & (days_since_list <= 4) & (dates >= np.datetime64(_KCB_OPEN))[:, None]
+    exempt |= cyb[None, :] & listed & (days_since_list <= 4) & (dates >= np.datetime64(_CYB_REG))[:, None]
+    exempt |= (board[None, :] == BOARD_MAIN) & listed & (days_since_list <= 4) & (dates >= np.datetime64(_MB_REG))[:, None]
+    pre_2014 = (dates < np.datetime64(_IPO_44_START))[:, None]
+    exempt |= first & pre_2014 & ~bj[None, :]
+
+    old_ipo_first = first & ~exempt & (dates >= np.datetime64(_IPO_44_START))[:, None]
+    issue = np.asarray(data['issue_price'], dtype=np.float64)
+    valid_issue = np.isfinite(issue) & (issue > 0)
+    preclose = np.where(first & valid_issue[None, :], issue[None, :], preclose)
+    ratios = np.where(old_ipo_first, 0.44, ratios)
+    result = _floor_2(preclose * (1.0 + ratios))
+    return np.where(np.isfinite(preclose) & (preclose > 0) & ~exempt, result, np.nan)
+
+
 class LegalityChecker:
     """A 股买卖合法性闸门。回测与实盘共用唯一实现，禁止出现第二份。
 
     用法：
-        checker = LegalityChecker(data, stock_indices, list_dates_map, delist_dates_map)
+        checker = LegalityChecker(data, stock_indices, list_dates_map)
         mask, reasons = checker.check(candidates_idx, trade_idx, signal_date, is_buy=True)
 
     其中 candidates_idx 是候选股在 NPZ 列空间的索引数组；mask[i] 为 True 表示第 i 只
-    候选股 T 日开盘可成交。一次性预计算（板块/上市日/退市日）在 __init__，每个调仓日
+    候选股 T 日开盘可成交。一次性预计算（板块/上市日）在 __init__，每个调仓日
     只做向量化布尔运算，无逐股票循环。
     """
 
-    def __init__(self, data, stock_indices, list_dates_map=None, delist_dates_map=None,
-                 limit_up_protection=False):
+    def __init__(self, data, stock_indices, list_dates_map=None, limit_up_protection=False):
         """
         Args:
             data: load_runtime_npz 返回的 dict（含 open/close/high/low/preClose/st_mask/issue_price 等）
             stock_indices: {code: col_idx}
             list_dates_map: {code: list_date} 可选；回测从 K 线首日推断
-            delist_dates_map: {code: delist_date} 可选；回测从 db.delist 传入，用于临退禁买。
-                              实盘不传（由 allow_buy 名单剔除退市股），delist_tidx 全 -1 不生效。
             limit_up_protection: 一字涨停保护——卖出侧也过滤涨停股，避免卖掉封板标的。
 
         涨跌停判定一律用「原始 OHLC + 官方 preClose（除权除息参考价）」：preClose 本身已吸收
@@ -78,24 +124,23 @@ class LegalityChecker:
         self.close_all = data['close']
         self.high_all = data['high']
         self.low_all = data['low']
+        self.volume_all = data['volume']
         self.preclose_all = data['preClose']
         self.st_all = data['st_mask']
         self.issue_price_all = data['issue_price']
         self.limit_up_protection = limit_up_protection
-        (self.board_type, self.base_ratio,
-         self.list_tidx, self.delist_tidx) = self._precompute(
-            data, stock_indices, list_dates_map, delist_dates_map)
+        self.board_type, self.base_ratio, self.list_tidx = self._precompute(
+            data, stock_indices, list_dates_map)
 
     # ---------- 一次性预计算（非热路径）----------
     @staticmethod
-    def _precompute(data, stock_indices, list_dates_map=None, delist_dates_map=None):
-        """预计算 board_type / base_ratio / list_tidx / delist_tidx（整个回测只跑一次）。
+    def _precompute(data, stock_indices, list_dates_map=None):
+        """预计算 board_type / base_ratio / list_tidx（整个回测只跑一次）。
 
         Returns:
             board_type (int8): 0主板 / 1创业板 / 2科创板 / 3北交所
             base_ratio (float64): 注册制后日常涨跌幅（主板10% / 双创20% / 北交所30%）
             list_tidx (int32): 上市日对应交易日索引，-1=无
-            delist_tidx (int32): 退市(摘牌/暂停)日对应交易日索引，-1=无
         """
         codes = np.asarray([str(s) for s in data['stock_codes']], dtype='U12')
         n = len(codes)
@@ -134,17 +179,17 @@ class LegalityChecker:
                         arr[si] = ti
             return arr
 
-        return bt, br, _build_tidx(list_dates_map), _build_tidx(delist_dates_map)
+        return bt, br, _build_tidx(list_dates_map)
 
     # ---------- 每个调仓日的合法性判定（热路径，全向量化）----------
     def check(self, candidates_idx, trade_idx, signal_date, is_buy):
-        """向量化涨跌停 / IPO 首日 / 临退检查（T 日开盘成交契约）。
+        """向量化涨跌停 / IPO 首日检查（T 日开盘成交契约）。
 
         Args:
             candidates_idx: 候选股在 NPZ 列空间的索引（list 或 ndarray）
             trade_idx: T 日在 NPZ 的行索引
             signal_date: T 日日期（datetime.date），用于板块/制度时段判定
-            is_buy: True=买入(查涨停+封板+临退)，False=卖出(查跌停)
+            is_buy: True=买入(查涨停+封板)，False=卖出(查跌停)
 
         Returns:
             (mask, reasons): mask[i]=True 表示可成交；reasons 含停牌计数
@@ -161,8 +206,11 @@ class LegalityChecker:
             return np.array([], dtype=bool), {}
 
         opens = self.open_all[trade_idx, idx].astype(np.float64)
+        volumes = self.volume_all[trade_idx, idx].astype(np.float64)
         valid_open = ~np.isnan(opens) & (opens > 0)
-        if not np.any(valid_open):
+        valid_volume = ~np.isnan(volumes) & (volumes > 0)
+        tradable_data = valid_open & valid_volume
+        if not np.any(tradable_data):
             return np.zeros(n, dtype=bool), {'suspended': n}
 
         # 前收 = preClose[T]（除权除息参考价），与原始 open 同口径判涨跌停
@@ -219,24 +267,24 @@ class LegalityChecker:
 
         if is_buy:
             tradable = self._check_buy(idx, trade_idx, opens, precloses, ratios,
-                                       valid_open, has_limit, is_ipo_first)
+                                       tradable_data, has_limit, is_ipo_first)
         else:
             down_limits = np.where(has_limit, _ceil_2(precloses * (1.0 - ratios)), np.nan)
-            limit_down = valid_open & has_limit & (opens <= down_limits + _EPS)
-            tradable = valid_open & ~limit_down
+            limit_down = tradable_data & has_limit & (opens <= down_limits + _EPS)
+            tradable = tradable_data & ~limit_down
             if self.limit_up_protection:
                 up_limits = np.where(has_limit, _floor_2(precloses * (1.0 + ratios)), np.nan)
-                limit_up = valid_open & has_limit & (opens >= up_limits - _EPS)
+                limit_up = tradable_data & has_limit & (opens >= up_limits - _EPS)
                 tradable = tradable & ~limit_up
 
         # preClose NaN（转配股等非标事件）→ 非豁免期股票无法判定涨跌停，当日跳过
         tradable = tradable & (valid_preclose | exempt)
 
-        suspended = int(np.sum(~valid_open))
+        suspended = int(np.sum(~tradable_data))
         reasons = {'suspended': suspended} if suspended > 0 else {}
         return tradable, reasons
 
-    # ---------- 买入侧：涨停 + IPO 首日封板 + 临退 ----------
+    # ---------- 买入侧：涨停 + IPO 首日封板 ----------
     def _check_buy(self, idx, trade_idx, opens, precloses, ratios,
                    valid_open, has_limit, is_ipo_first):
         # ===== 4. 涨停禁买（涨停价向下取整，偏严）=====
@@ -261,11 +309,5 @@ class LegalityChecker:
                       & (closes_t >= up_limits - _EPS)
                       & (lows >= opens - _EPS))
             tradable = tradable & ~sealed
-
-        # ===== 6. 临退禁买（退市整理期首日不设涨跌幅 + 归零风险，宁严勿买）=====
-        if self.delist_tidx is not None:
-            dlt = self.delist_tidx[idx]
-            delist_zone = (dlt >= 0) & (trade_idx >= dlt - _DELIST_BUY_BAN_DAYS)
-            tradable = tradable & ~delist_zone
 
         return tradable

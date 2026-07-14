@@ -1,7 +1,7 @@
 """真实 runtime 数据下的 LegalityChecker 边界场景验收。
 
 覆盖三类容易出错、且只能靠真实样本证伪的判定：
-  A. 临退禁买（退市日前 35 交易日窗口）——窗口内禁买、窗口外不受影响。
+  A. 未来退市日期不影响历史 T 日买入。
   B. 跳空突破涨停的"实际不设限"日（重组/复牌等）——open 远超理论涨停价，被涨停判定一并拦下。
   C. 涨跌停取整偏严——真实一字涨停禁买、一字跌停禁卖。
 
@@ -13,49 +13,21 @@ from datetime import date
 import pytest
 
 
-def test_临退禁买_窗口内禁买窗口外放行(market):
-    """A. 临退禁买：退市日前 35 交易日窗口内 buy==False，窗口之前正常交易日 buy==True。
-
-    样本1 600001.SH 邯郸钢铁，退市日 2009-12-29（吸收合并退市）：
-      - 窗口内 2009-12-15（距退市 10 个交易日）：open=5.29 < preclose=5.35（非涨停，
-        当日明显未触顶），buy 仍为 False，证明拦截来自临退禁买而非涨停。
-      - 窗口外 2009-08-03（距退市 100 个交易日）：open=preclose=7.45（平开非涨停），
-        buy==True，证明 35 日窗口之前不受临退影响。
-    样本2 600068.SH 葛洲坝，退市日 2021-09-13（换股吸收合并退市）：
-      - 窗口内 2021-08-30（距退市 10 个交易日）：open=9.28，preclose=9.23，buy==False。
-      - 窗口外 2021-04-20（距退市 100 个交易日）：open=7.39，preclose=7.37，buy==True。
-    """
-    # —— 样本1：600001.SH 邯郸钢铁 ——
+def test_未来退市日期不影响历史买入(market):
+    """A. 最终退市日前的普通非涨停交易日，仅按 T 日已知行情判断。"""
     if not market.has('600001.SH'):
         pytest.skip('当前 runtime 未包含历史退市样本 600001.SH')
-    assert market.delist_date('600001.SH') == date(2009, 12, 29)
 
-    d_in1 = date(2009, 12, 15)      # 退市前 10 个交易日，落在 35 日禁买窗口内
-    bar_in1 = market.bar('600001.SH', d_in1)
-    assert bar_in1['open'] == pytest.approx(5.29, abs=1e-2)
-    assert bar_in1['preclose'] == pytest.approx(5.35, abs=1e-2)
-    assert bar_in1['open'] < bar_in1['preclose']   # 当日下跌，绝非涨停，故禁买只能来自临退
-    assert market.buy('600001.SH', d_in1) is False
+    d1 = date(2009, 12, 15)
+    bar1 = market.bar('600001.SH', d1)
+    assert bar1['open'] == pytest.approx(5.29, abs=1e-2)
+    assert bar1['preclose'] == pytest.approx(5.35, abs=1e-2)
+    assert market.buy('600001.SH', d1) is True
 
-    d_out1 = date(2009, 8, 3)       # 退市前 100 个交易日，在 35 日窗口之外
-    bar_out1 = market.bar('600001.SH', d_out1)
-    assert bar_out1['open'] == pytest.approx(7.45, abs=1e-2)
-    assert bar_out1['preclose'] == pytest.approx(7.45, abs=1e-2)
-    assert market.buy('600001.SH', d_out1) is True
-
-    # —— 样本2：600068.SH 葛洲坝 ——
-    assert market.has('600068.SH')
-    assert market.delist_date('600068.SH') == date(2021, 9, 13)
-
-    d_in2 = date(2021, 8, 30)       # 退市前 10 个交易日，窗口内
-    bar_in2 = market.bar('600068.SH', d_in2)
-    assert bar_in2['open'] == pytest.approx(9.28, abs=1e-2)
-    assert market.buy('600068.SH', d_in2) is False
-
-    d_out2 = date(2021, 4, 20)      # 退市前 100 个交易日，窗口外
-    bar_out2 = market.bar('600068.SH', d_out2)
-    assert bar_out2['open'] == pytest.approx(7.39, abs=1e-2)
-    assert market.buy('600068.SH', d_out2) is True
+    d2 = date(2021, 8, 30)
+    bar2 = market.bar('600068.SH', d2)
+    assert bar2['open'] == pytest.approx(9.28, abs=1e-2)
+    assert market.buy('600068.SH', d2) is True
 
 
 def test_跳空突破涨停的实际不设限日被拦(market):

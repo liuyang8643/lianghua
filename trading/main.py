@@ -1,21 +1,17 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import argparse
 import os
 import sys
 import time
 from types import SimpleNamespace
 
-import numpy as np
 from xtquant import xtdata
 
 from configs import TRADE_ACCOUNT
 from data.db import allow_buy_stock_code_list
-from core.backtest import _compute_factor_scores
-from core.legality import LegalityChecker
-from core.prefilter import apply_prefilter
-from core.scoring import compute_weighted_scores
+from core.backtest import is_rebalance_day_index, stock_pool_prefixes
 from core.strategy_config import load_strategy_config
-from core.strategy import build_rebalance_day
+from core.strategy import build_strategy_day
 from core.timing import compute_position_multiplier_for_date
 from data.db.stock_name import get_stock_name_at_date
 from utils.stock.time import get_last_trading_day
@@ -67,7 +63,7 @@ from trading.logger import trading_logger
 from utils.recorder import recorder
 
 from .manual_confirm import build_manual_confirmation_text, is_manual_confirmation_approved
-from .persistence import _TRADE_DIR, live_trade_recorder
+from .persistence import _TRADE_DIR, get_live_rebalance_index, live_trade_recorder
 from .post_close import run_post_close, run_update_all
 from .scheduler import PREPARE_REBALANCE_START, TradingScheduler
 from .trader import Trader
@@ -146,15 +142,17 @@ if __name__ == '__main__':
 
     strategy_config = load_strategy_config(args.individual_config)
     factor_classes = strategy_config['factor_classes']
+    filter_factor_classes = strategy_config['filter_factor_classes']
     individual_config = strategy_config['individual_config']
-    if individual_config.get('filter_factors'):
-        raise ValueError("filter_factors 目前仅支持研究回测，实盘路径未启用，禁止静默忽略")
     weights = individual_config['weights']
     buy_n = individual_config['buy_n']
     sell_m = individual_config['sell_m'] if 'sell_m' in individual_config else buy_n
     trading_logger.info(f"加载Individual_config: {args.individual_config}")
     rebalance_enabled = individual_config['rebalance'] if 'rebalance' in individual_config else True
-    trading_logger.info(f"配置参数: buy_n={buy_n}, sell_m={sell_m}, rebalance={rebalance_enabled}, factors={sorted(weights.keys())}")
+    trading_logger.info(
+        f"配置参数: buy_n={buy_n}, sell_m={sell_m}, rebalance={rebalance_enabled}, "
+        f"factors={sorted(weights.keys())}, filters={strategy_config['filter_factor_names']}"
+    )
 
     if args.skip and len(args.skip) == 8:
         from datetime import datetime as _dt
@@ -195,7 +193,6 @@ if __name__ == '__main__':
         trade_now = store._now()
         trade_date = trade_now.date()
         signal_date = trade_date
-        signal_datetime = datetime.combine(signal_date, datetime.min.time())
 
         trading_logger.info(
             f"开始预计算调仓: signal_date={signal_date.isoformat()}, trade_date={trade_date.isoformat()}"
@@ -226,85 +223,42 @@ if __name__ == '__main__':
             stage_t = time.time()
 
         # ① 候选池
-        all_stocks = allow_buy_stock_code_list(target_date=trade_date)
+        boards = stock_pool_prefixes(individual_config.get('stock_pool'))
+        all_stocks = allow_buy_stock_code_list(target_date=trade_date, boards=boards)
         trading_logger.info(f"候选股票池: {len(all_stocks)} 只")
         trading_logger.info(f"[盘前耗时] 候选池加载: {time.time() - stage_t:.1f}s")
         stage_t = time.time()
 
-        # ② T-1 排名 → prefilter（NPZ 已有 T-1 完整 K 线，不叠加今日 overlay）
-        npz_data = None
-        prefilter_n = individual_config.get('prefilter_n', 0)
-        if prefilter_n > 0:
-            prev_date = get_last_trading_day(trade_date)
-            prev_dt = datetime.combine(prev_date, datetime.min.time())
-            t1 = _compute_factor_scores([prev_dt], all_stocks, weights, factor_classes)
-            if t1:
-                t1_data, t1_scores, _, _, t1_di, t1_stocks, t1_si = t1
-                t1_cols = np.array([t1_si[s] for s in t1_stocks], dtype=np.intp)
-                t1_w = compute_weighted_scores(t1_scores, t1_di[0], t1_cols, weights)
-                t1_ranking = [t1_stocks[i] for i in np.argsort(-t1_w)]
-                pos_codes = list(positions.keys()) if positions else []
-                all_stocks = apply_prefilter(t1_ranking, prefilter_n, all_stocks, pos_codes)
-                npz_data = t1_data
-                trading_logger.info(f"[Prefilter] → {len(all_stocks)} 只 (T-1 top {prefilter_n})")
-            else:
-                trading_logger.warning("[Prefilter] T-1 不在 NPZ 范围内，跳过")
-            trading_logger.info(f"[盘前耗时] T-1排名+prefilter: {time.time() - stage_t:.1f}s")
-            stage_t = time.time()
-
-        # ③ 拉 K 线（只拉 prefiltered 股票）
-        kline_overlay = None
-        if not no_data_fetch:
+        def load_open_kline(codes):
+            if no_data_fetch:
+                return None
             from data.update_live import update_live_quick
             anchor = skip_dt.date() if skip_update else None
-            kline_overlay = update_live_quick(patch_npz=False, anchor_date=anchor, codes=all_stocks)
-            trading_logger.info(f"[盘前耗时] 快速数据更新: {time.time() - stage_t:.1f}s")
-            stage_t = time.time()
-        store._kline_overlay = kline_overlay
-
-        if store.whole_sub_id is None and not skip_update:
-            store.whole_sub_id = xtdata.subscribe_whole_quote(['SH', 'SZ'])
-        trading_logger.info(f"[盘前耗时] 行情订阅: {time.time() - stage_t:.1f}s")
-        stage_t = time.time()
-
-        # ④ T 日因子（复用 npz_data + 叠加今日 K 线 overlay）
-        result = _compute_factor_scores(
-            [signal_datetime], all_stocks, weights, factor_classes,
-            kline_data=kline_overlay, data=npz_data)
-        if result is None:
-            raise ValueError(f"信号日期 {signal_datetime.date()} 不在 runtime npz 日期范围内")
-        data, all_scores, _, valid_dates, date_indices, valid_stocks, stock_indices = result
-        score_date_idx = date_indices[0]
-        trading_logger.info(f"[盘前耗时] runtime加载+因子计算: {time.time() - stage_t:.1f}s")
-        stage_t = time.time()
-
-        valid_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
-
-        # 合法性闸门（实盘不传退市日，由 allow_buy 名单剔除）
-        limit_up_protection = individual_config['limit_up_protection'] if 'limit_up_protection' in individual_config else False
-        checker = LegalityChecker(data, stock_indices, limit_up_protection=limit_up_protection)
-
-        # T 日开盘契约：signal_date == trade_date == score_date_idx → trade_idx=date_idx，与回测对齐。
-        # 实盘严禁缺 T 日开盘价时回退到历史价格；当天 K 线不完整应中止调仓。
-        trade_idx = score_date_idx
-        trade_dt64 = data['trade_dates'][trade_idx]
-        exec_date = trade_dt64.astype('datetime64[D]').item()
+            return update_live_quick(patch_npz=False, anchor_date=anchor, codes=codes)
 
         _cash = float(asset.cash) if not no_data_fetch else (prev_cash or prev_cash_qmt or 0)
         pos_volumes = {c: int(p.volume) for c, p in positions.items()}
         sellable_volumes = {c: int(p.can_use_volume) for c, p in positions.items()}
-        timing_mult = compute_position_multiplier_for_date(individual_config, exec_date)
-        day_plan = build_rebalance_day(
-            data=data, all_scores=all_scores, date_idx=score_date_idx, trade_idx=trade_idx,
-            signal_date=exec_date, valid_stocks=valid_stocks, valid_cols=valid_cols,
-            stock_indices=stock_indices, weights=weights, buy_n=buy_n, sell_m=sell_m,
-            checker=checker, positions=pos_volumes, sellable_volumes=sellable_volumes,
-            cash=_cash, rebalance=rebalance_enabled, position_multiplier=timing_mult,
+        timing_mult = compute_position_multiplier_for_date(individual_config, trade_date)
+        rebalance_idx = get_live_rebalance_index(trade_date)
+        is_rebalance_day = is_rebalance_day_index(rebalance_idx, individual_config.get('holding_period'))
+        decision = build_strategy_day(
+            trade_date=trade_date, all_stocks=all_stocks,
+            individual_config=individual_config, factor_classes=factor_classes,
+            filter_factor_classes=filter_factor_classes,
+            positions=pos_volumes, sellable_volumes=sellable_volumes, cash=_cash,
+            kline_loader=load_open_kline, is_rebalance_day=is_rebalance_day,
+            position_multiplier=timing_mult,
             target_cash=prev_cash if prev_cash is not None else None,
             target_positions=y_shares if prev_cash is not None else None,
-            price_codes_extra=set(y_shares or {}),
-            limit_up_protection=limit_up_protection,
         )
+        day_plan = decision.plan
+        valid_stocks, stock_indices = decision.valid_stocks, decision.stock_indices
+        kline_overlay = decision.kline_data
+        store._kline_overlay = kline_overlay
+
+        if store.whole_sub_id is None and not skip_update:
+            store.whole_sub_id = xtdata.subscribe_whole_quote(['SH', 'SZ'])
         buy_n_stocks = day_plan.buy_n_stocks
         final_score = day_plan.final_score
         prices = day_plan.prices
@@ -443,8 +397,7 @@ if __name__ == '__main__':
         from .day_board import extract_bt_reference
         bt_result = run_seed_replay_for_open(
             trade_date, individual_config,
-            data=data, all_scores=all_scores, date_idx=score_date_idx,
-            valid_stocks=valid_stocks, stock_indices=stock_indices)
+            decision=decision, factor_classes=factor_classes)
         bt_ref = extract_bt_reference(bt_result) if bt_result is not None else None
         snaps = bt_result['daily_snapshots'] if bt_result is not None else None
         bt_daily_return = snaps[-1]['daily_return_pct'] if snaps else None

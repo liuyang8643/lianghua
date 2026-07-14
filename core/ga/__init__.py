@@ -3,8 +3,10 @@ from ._profiles import (
     get_intrinsic_params,
     get_profile, resolve_profile_name, get_mode_configs,
     get_profile_factor_classes, get_profile_factor_names,
+    get_profile_filter_factor_classes,
     get_profile_fixed_weights,
     get_profile_search_spaces, get_profile_weight_search_spaces,
+    get_profile_fixed_parameters,
     get_profile_preload_range, get_profile_metadata,
 )
 from ._sampling import (

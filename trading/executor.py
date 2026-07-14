@@ -112,13 +112,19 @@ class OrderMonitor:
         self.orders_by_code: dict[str, list[int]] = {}
         self.handled_terminal: set[int] = set()
         self.retry_after: dict[str, float] = {}
+        self._local_inflight: dict[int, int] = {}
 
     # ── 主流程 ─────────────────────────────────────────────
 
     def run(self):
-        # Phase 1: 卖单一次性全提交
-        for code, shares in self.sell_targets.items():
-            self._submit('SELL', code, shares)
+        # Phase 1: 卖单一次性全提交（已有在途则跳过，等废单退避后重试）
+        for code in self.sell_targets:
+            if self._has_open_order(code):
+                continue
+            rem = self._sell_remaining(code)
+            if rem <= 0:
+                continue
+            self._submit('SELL', code, rem)
 
         # Phase 2+3: 主循环（买提交 + 买卖废单重试）
         if self.buy_seq or self.sell_targets:
@@ -155,6 +161,7 @@ class OrderMonitor:
         r['direction'] = direction
         self.submitted.append(r)
         self.orders_by_code.setdefault(code, []).append(r['order_id'])
+        self._local_inflight[r['order_id']] = shares
         amount = shares * self._unit_cost(code) if direction == 'BUY' else 0.0
         self.record_action(f'{direction.lower()}_submit', code=code, order_id=r['order_id'],
                            order_type=otype, shares=shares, amount=amount,
@@ -179,7 +186,9 @@ class OrderMonitor:
         for oid in self.orders_by_code.get(code, []):
             o = self.trader.query_order(oid)
             if not o:
+                inflight += self._local_inflight.get(oid, 0)
                 continue
+            self._local_inflight.pop(oid, None)
             traded = int(getattr(o, 'traded_volume', 0) or 0)
             filled += traded
             if o.order_status not in TERMINAL_STATUS:
@@ -195,6 +204,11 @@ class OrderMonitor:
         """卖单剩余未成交股数"""
         filled, inflight = self._filled_inflight(code)
         return max(0, self.sell_targets.get(code, 0) - filled - inflight)
+
+    def _has_open_order(self, code) -> bool:
+        """该标的已有在途委托（含 QMT 尚未登记的新单）。"""
+        _, inflight = self._filled_inflight(code)
+        return inflight > 0
 
     def _sells_pending(self) -> bool:
         """有卖单仍在途（未达终态）→ 回款还在路上"""
@@ -281,19 +295,22 @@ class OrderMonitor:
         """按 TopN 顺序提交当前现金买得起的买单"""
         progressed = False
         now = time.time()
+        cash = self._available_cash()
         for code in self.buy_seq:
             if now < self.retry_after.get(code, 0):
+                continue
+            if self._has_open_order(code):
                 continue
             rem = self._remaining(code)
             min_lot = min_buy_shares(code)
             if rem < min_lot:
                 continue
-            cash = self._available_cash()
             afford = floor_buy_shares(code, int(cash / self._unit_cost(code)))
             shares = floor_buy_shares(code, min(rem, afford))
             if shares < min_lot:
                 continue
             if self._submit('BUY', code, shares):
+                cash -= shares * self._unit_cost(code)
                 progressed = True
         return progressed
 
@@ -305,6 +322,8 @@ class OrderMonitor:
         now = time.time()
         for code in self.sell_targets:
             if now < self.retry_after.get(code, 0):
+                continue
+            if self._has_open_order(code):
                 continue
             rem = self._sell_remaining(code)
             if rem <= 0:
@@ -355,7 +374,7 @@ class OrderMonitor:
     def record_action(self, action: str, *, code: str = '', order_id: int = 0,
                       order_type: int | None = None, shares: int = 0,
                       amount: float = 0.0, msg: str = ''):
-        trading_logger.info(
+        trading_logger.debug(
             f"[ExecutorAction] action={action} code={code} order_id={order_id} "
             f"order_type={order_type} shares={shares} amount={amount:.2f} msg={msg}"
         )

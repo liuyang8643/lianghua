@@ -3,8 +3,18 @@ import os
 from typing import Any
 from loguru import logger as real_logger
 
+
+def configure_utf8_stdio():
+  """Keep Windows console output readable for Chinese, currency symbols and emoji."""
+  for stream in (sys.stdout, sys.stderr):
+    reconfigure = getattr(stream, "reconfigure", None)
+    if reconfigure is not None:
+      reconfigure(encoding="utf-8", errors="replace")
+
+
 class BaseLogger:
   def __init__(self, level="DEBUG"):
+    configure_utf8_stdio()
     self.real_logger = real_logger
     self.catch = self.real_logger.catch
     self.log_format = "<w>{time:YYYY-MM-DD HH:mm:ss}</w> | <level>{level}</level> | {function}@{module}:{line} | <level>{message}</level>"

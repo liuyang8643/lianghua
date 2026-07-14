@@ -57,7 +57,7 @@ def select_tradable_buys(checker, *, buy_n_stocks, prices, stock_indices,
 def compute_rebalance_plan(*, positions, sellable_volumes, pos_vals, cash,
                            buy_n_stocks, tradable_buy_stocks, sellable_ok,
                            prices, limit_prices, base_target,
-                           rebalance=True):
+                           keep_stocks=None, rebalance=True):
     """多退少补：每只持仓目标 = base_target，超出则卖、不足则补。
 
     Args:
@@ -71,7 +71,8 @@ def compute_rebalance_plan(*, positions, sellable_volumes, pos_vals, cash,
         prices: {code: open[T]}
         limit_prices: {code: 冻结单价}（freeze_unit_price 产出；缺失回退 open）
         base_target: 单只目标市值 = total_eq×timing/(buy_n+reserve_L)
-        rebalance: True=多退少补；False=仅替换（只清不在 topN 的持仓 +
+        keep_stocks: 保留不卖的名单（sell_m），持仓不动但不一定补到 target
+        rebalance: True=多退少补；False=仅替换（只清不在 keep_set 的持仓 +
                    现金均分买入 topN 中未持有的标的）
 
     Returns:
@@ -81,6 +82,7 @@ def compute_rebalance_plan(*, positions, sellable_volumes, pos_vals, cash,
         skip_reasons: {code: 原因}，topN 内未下买单的原因（已达标/未触发少补/冻结资金不足）
     """
     buy_n_set = set(buy_n_stocks)
+    keep_set = set(keep_stocks if keep_stocks is not None else buy_n_stocks)
     sell_orders: list[tuple[str, int]] = []
     cash_sim = cash
 
@@ -90,7 +92,7 @@ def compute_rebalance_plan(*, positions, sellable_volumes, pos_vals, cash,
             if code not in positions or code not in prices or code not in sellable_ok:
                 continue
             cv = pos_vals[code]
-            tgt = base_target if code in buy_n_set else 0.0
+            tgt = base_target if code in buy_n_set else (cv if code in keep_set else 0.0)
             if cv <= tgt * OVER_TARGET_TOLERANCE:
                 continue
             sellable = int(sellable_volumes[code])
@@ -109,7 +111,7 @@ def compute_rebalance_plan(*, positions, sellable_volumes, pos_vals, cash,
             cash_sim += sv * prices[code] * (1 - SELL_FEE_RATE)
     else:
         for code in positions:
-            if code in buy_n_set or code not in prices or code not in sellable_ok:
+            if code in keep_set or code not in prices or code not in sellable_ok:
                 continue
             if int(sellable_volumes[code]) <= 0:
                 continue

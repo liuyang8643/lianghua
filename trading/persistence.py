@@ -148,6 +148,35 @@ def _load_cash_flows() -> pd.DataFrame:
     return pd.DataFrame(columns=['date', 'amount', 'type', 'note'])
 
 
+def get_live_rebalance_index(trade_date: date) -> int:
+    from utils.stock.time import get_trading_date_span
+
+    summary_path = _TRADE_DIR / "daily_summary.parquet"
+    if not summary_path.exists():
+        return 0
+    sdf = pd.read_parquet(summary_path)
+    rows = sdf[sdf['date'] < trade_date]
+    if rows.empty:
+        return 0
+    start = rows['date'].min()
+    start = start if hasattr(start, 'year') else pd.Timestamp(start).date()
+    return len(get_trading_date_span(start, trade_date)) - 1
+
+
+def is_position_chain_broken(trade_date: date) -> bool:
+    from datetime import timedelta
+    from utils.stock.time import get_last_trading_day
+
+    yesterday = get_last_trading_day(trade_date - timedelta(days=1))
+    if (_TRADE_DIR / f"positions_{yesterday.isoformat()}.parquet").exists():
+        return False
+    for p in _TRADE_DIR.glob("positions_*.parquet"):
+        d = date.fromisoformat(p.stem.split('positions_')[1])
+        if d < trade_date:
+            return True
+    return False
+
+
 def _parse_qmt_date(v) -> date | None:
     """解析 QMT 流水里的日期字段（'YYYYMMDD' / 'YYYY-MM-DD' / date / datetime）。"""
     if v is None:
@@ -410,6 +439,7 @@ class LiveTradeRecorder:
     def plan_path(self, trade_date: date | None = None) -> Path:
         target_date = trade_date or date.today()
         return _TRADE_DIR / f"plan_{target_date.isoformat()}.parquet"
+
 
     def record_plan(self, plan_rows: list[dict], trade_date: date | None = None):
         """落地盘前调仓计划。plan_rows 应是已经组装好、列与 PLAN_COLS 对齐的字典列表。

@@ -1,7 +1,5 @@
 import numpy as np
 
-MIN_RAW_PRICE = 2.0
-
 
 def _shift(arr):
     result = np.empty_like(arr)
@@ -16,8 +14,6 @@ class VolumeCV:
 
   def calc_batch(self, panel: dict) -> np.ndarray:
     volume_known = _shift(panel["volume"])
-    raw_open = panel["open"]
-    st_mask = panel["st_mask"]
 
     w = self.hist_days
     n_valid = np.cumsum(~np.isnan(volume_known), axis=0).astype(float)
@@ -33,10 +29,4 @@ class VolumeCV:
     with np.errstate(divide='ignore', invalid='ignore'):
         cv[w:] = np.sqrt(np.maximum(var, 0.0)) / mean
 
-    base_valid = (
-      ~np.isnan(raw_open)
-      & (raw_open >= MIN_RAW_PRICE)
-      & ~st_mask
-      & ~np.isnan(cv)
-    )
-    return np.where(base_valid, -cv, np.nan)
+    return np.where(~np.isnan(cv), -cv, np.nan)

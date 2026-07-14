@@ -1,8 +1,8 @@
 """真实数据测试共用 fixture。
 
 加载生产 runtime NPZ（session 内只加载一次），构建与回测完全一致的 LegalityChecker
-（list_dates_map 取 K 线首个有效开盘日、delist_dates_map 取 db.delist 退市日），
-并提供按 (代码, 日期) 查询买卖合法性与原始 bar 的便捷 API，供 test_legality_realdata_*.py 使用。
+（list_dates_map 取 K 线首个有效开盘日），并提供按 (代码, 日期) 查询买卖合法性与
+原始 bar 的便捷 API，供 test_legality_realdata_*.py 使用。
 """
 from datetime import date
 from pathlib import Path
@@ -40,13 +40,8 @@ class RealMarket:
         list_map = {self.codes[i]: self.dates[first_idx[i]].item()
                     for i in range(len(self.codes)) if has_valid[i]}
 
-        # delist_dates_map：退市/暂停日（与回测一致）
-        from data.db.delist import get_delist_stock_info
-        delist_map = {c: info.delist_date for c, info in get_delist_stock_info().items()}
-
         self.list_map = list_map
-        self.delist_map = delist_map
-        self.checker = LegalityChecker(data, self.stock_indices, list_map, delist_map)
+        self.checker = LegalityChecker(data, self.stock_indices, list_map)
 
     def has(self, code):
         return code in self.stock_indices
@@ -60,9 +55,6 @@ class RealMarket:
 
     def list_date(self, code):
         return self.list_map.get(code)
-
-    def delist_date(self, code):
-        return self.delist_map.get(code)
 
     def buy(self, code, d):
         """该股 d 日开盘能否买入。"""

@@ -7,7 +7,6 @@ close/high/low/volume/amount 全部视为前视野泄露。需要"前收"统一�
 LegalityChecker 类，回测与实盘共用唯一实现。
 """
 import numpy as np
-from typing import Optional
 
 
 def compute_weighted_scores(
@@ -33,9 +32,7 @@ def select_topn(
     valid_cols: np.ndarray,
     weights: dict[str, float],
     top_n: int,
-    force_codes: Optional[list[str]] = None,
-    filter_mask: Optional[np.ndarray] = None,
-    filter_exempt_codes: Optional[set[str]] = None,
+    filter_mask: np.ndarray | None = None,
 ) -> tuple[list[str], np.ndarray]:
     """加权打分 + 截面排序 + 取前 N。回测和实盘必须共用此函数。
 
@@ -46,7 +43,6 @@ def select_topn(
         valid_cols: 候选股在 ranks_mat 中的列索引 np.intp 数组
         weights: {factor_name: weight}
         top_n: 取前 N 只
-        force_codes: 强制纳入的 codes（保留位次，前置）；None 表示不启用
         filter_mask: (n_valid_stocks,) bool 数组，True=保留；None 表示不过滤
 
     Returns:
@@ -57,28 +53,81 @@ def select_topn(
     final_score = compute_weighted_scores(all_scores, score_idx, valid_cols, weights)
 
     if filter_mask is not None:
-        if filter_exempt_codes:
-            exempt = np.array([s in filter_exempt_codes for s in valid_stocks], dtype=bool)
-            final_score[~filter_mask & ~exempt] = -np.inf
-        else:
-            final_score[~filter_mask] = -np.inf
+        final_score[~filter_mask] = -np.inf
 
-    top_idx = np.argsort(-final_score)
+    top_idx = np.flatnonzero(np.isfinite(final_score))[np.argsort(-final_score[np.isfinite(final_score)])]
     topn = [valid_stocks[i] for i in top_idx[:top_n]]
 
-    if force_codes:
-        ordered, seen = [], set()
-        for code in force_codes:
-            if code and code not in seen:
-                seen.add(code)
-                ordered.append(code)
-        for code in topn:
-            if code not in seen:
-                seen.add(code)
-                ordered.append(code)
-        topn = ordered[:top_n]
-
     return topn, final_score
+
+
+def select_topn_legal(
+    all_scores: dict,
+    score_idx: int,
+    valid_stocks: list[str],
+    valid_cols: np.ndarray,
+    weights: dict[str, float],
+    buy_n: int,
+    sell_m: int,
+    checker,
+    trade_idx: int,
+    signal_date,
+    day_open: np.ndarray,
+    stock_indices: dict[str, int],
+    filter_mask: np.ndarray | None = None,
+) -> tuple[list[str], list[str], np.ndarray]:
+    """合并排名 + 批量合法性检查 + 凑够 N 即停，替代 select_topn + select_tradable_buys。
+
+    1. compute_weighted_scores 排名所有候选股
+    2. np.argsort 降序排列
+    3. 从高到低遍历，每批 BATCH 只调 checker.check
+    4. 合法的加入 buy_n_stocks / sell_m_stocks，凑够即停
+    """
+    final_score = compute_weighted_scores(all_scores, score_idx, valid_cols, weights)
+
+    if filter_mask is not None:
+        final_score[~filter_mask] = -np.inf
+
+    ranked_idx = np.flatnonzero(np.isfinite(final_score))[np.argsort(-final_score[np.isfinite(final_score)])]
+    buy_n_stocks: list[str] = []
+    sell_m_stocks: list[str] = []
+
+    BATCH = 80
+    for start in range(0, len(ranked_idx), BATCH):
+        if len(buy_n_stocks) >= buy_n and len(sell_m_stocks) >= sell_m:
+            break
+        batch = ranked_idx[start:start + BATCH]
+        batch_cols = valid_cols[batch]
+        # 筛掉停牌（open 为 NaN 或 ≤0）
+        opens = day_open[batch_cols]
+        valid_price = ~np.isnan(opens) & (opens > 0)
+        if not np.any(valid_price):
+            continue
+        batch_idx = batch[valid_price]
+        batch_si = batch_cols[valid_price]
+        ok, _ = checker.check(batch_si, trade_idx, signal_date, is_buy=True)
+        for i, is_ok in enumerate(ok):
+            if is_ok:
+                s = valid_stocks[batch_idx[i]]
+                if len(buy_n_stocks) < buy_n:
+                    buy_n_stocks.append(s)
+                if len(sell_m_stocks) < sell_m:
+                    sell_m_stocks.append(s)
+            if len(buy_n_stocks) >= buy_n and len(sell_m_stocks) >= sell_m:
+                break
+
+    # sell_m 不足时用排名补（不检查合法性——卖出的合法性单独判断）
+    for idx_val in ranked_idx:
+        if len(sell_m_stocks) >= sell_m:
+            break
+        s = valid_stocks[idx_val]
+        if s not in buy_n_stocks and s not in sell_m_stocks:
+            sell_m_stocks.append(s)
+
+    # 全量排名供 T+1 prefilter 复用（零额外计算——就是用已经排好的 ranked_idx）
+    t1_ranking = [valid_stocks[i] for i in ranked_idx]
+
+    return buy_n_stocks, sell_m_stocks[:sell_m], final_score, t1_ranking
 
 
 def scores_to_ranks(scores: np.ndarray, total_n: int | None = None) -> np.ndarray:

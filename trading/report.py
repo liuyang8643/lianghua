@@ -136,6 +136,8 @@ class PostCloseReport:
         self._net_cash_flow: float = 0.0
         # code → name 映射（feed 数据时累积，飞书卡片只显示名称）
         self._code_to_name: dict[str, str] = {}
+        # 链断裂状态（由调用方注入，避免 report 自行读盘猜测）
+        self._chain_broken_state: bool | None = None
 
     def _harvest_names(self, df: pd.DataFrame):
         if df is None or df.empty or 'code' not in df.columns or 'name' not in df.columns:
@@ -175,6 +177,9 @@ class PostCloseReport:
 
     def feed_backtest(self, bt_result: dict):
         self._bt = bt_result
+
+    def feed_chain_broken(self, broken: bool):
+        self._chain_broken_state = broken
 
     def feed_asset(self, total_asset: Optional[float],
                    prev_asset: Optional[float], net_cash_flow: float = 0.0):
@@ -371,6 +376,7 @@ class PostCloseReport:
                         dp, dr = None, None
                 live_pnl[r['code']] = {
                     'volume': vol,
+                    'yesterday_volume': int(r.get('yesterday_volume', 0) or 0),
                     'mv': float(r['market_value']),
                     'daily_pnl': dp,
                     'daily_return_pct': dr,
@@ -400,7 +406,9 @@ class PostCloseReport:
             ret_diff = (l_ret_eff - b_ret_eff) if (l_ret_eff is not None and b_ret_eff is not None) else None
             rows.append({
                 'code': code, 'name': _name(code, self.trade_date),
-                'live_volume': l.get('volume', 0), 'bt_volume': b.get('volume', 0),
+                'live_volume': l.get('volume', 0),
+                'live_yesterday_volume': l.get('yesterday_volume', 0),
+                'bt_volume': b.get('volume', 0),
                 'live_mv': l.get('mv', 0.0), 'bt_mv': b.get('mv', 0.0),
                 'live_daily_pnl': l_pnl, 'bt_daily_pnl': b_pnl,
                 'live_daily_return_pct': l_ret, 'bt_daily_return_pct': b_ret,
@@ -456,7 +464,9 @@ class PostCloseReport:
         # 只把「实盘确实持有(volume>0)却算不出 P&L」的票算作无法对账;
         # 实盘根本没持有的票贡献为 0、可对账,不应计入。
         unrec = [r['code'] for r in dim5.get('rows', [])
-                 if r.get('live_daily_pnl') is None and int(r.get('live_volume', 0) or 0) > 0]
+                 if r.get('live_daily_pnl') is None and (
+                     int(r.get('live_volume', 0) or 0) > 0
+                     or int(r.get('live_yesterday_volume', 0) or 0) > 0)]
         tolerance = self._reconcile_tolerance(summary)
         diff = None
         within = True
@@ -486,6 +496,8 @@ class PostCloseReport:
         利润）；但**持有仓位**仍可用成本基线 (close-avg)×vol 算持仓盈亏，不受影响。
         真正首日（无任何更早快照）不算断裂——全是当日新开仓。
         """
+        if self._chain_broken_state is not None:
+            return self._chain_broken_state
         from datetime import timedelta
         from utils.stock.time import get_last_trading_day
         prev = get_last_trading_day(self.trade_date - timedelta(days=1))
@@ -524,7 +536,9 @@ class PostCloseReport:
         per_stock_pnl = None
         if dim5 is not None:
             unrec = [r for r in dim5.get('rows', [])
-                     if r.get('live_daily_pnl') is None and int(r.get('live_volume', 0) or 0) > 0]
+                     if r.get('live_daily_pnl') is None and (
+                         int(r.get('live_volume', 0) or 0) > 0
+                         or int(r.get('live_yesterday_volume', 0) or 0) > 0)]
             if not unrec:
                 per_stock_pnl = dim5.get('live_total_pnl')
 

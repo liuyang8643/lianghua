@@ -881,9 +881,6 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     weights = config.get('weights', {})
     buy_n = config.get('buy_n', 0)
     sell_m = config.get('sell_m', 0)
-    verify_config = report_data.get('verify_config', {}) or {}
-    report_metadata = report_data.get('report_metadata', {}) or {}
-
     init_cash = report_data.get('init_cash', 1_000_000.0)
     cumulative_returns = report_data.get('cumulative_returns', []) or []
     trade_dates = report_data.get('trade_dates', []) or []
@@ -908,6 +905,7 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     strategy_nav = _cumulative_returns_to_nav(cumulative_returns)
     hs300_returns = report_data.get('hs300_returns') or []
     hs300_nav = _cumulative_returns_to_nav(hs300_returns) if hs300_returns else []
+    factor_missing_counts = report_data.get('factor_missing_counts') or {}
 
     generated_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     metrics = dict(report_data.get('metrics', {}))
@@ -977,6 +975,10 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
             },
             'distribution': _build_histogram_payload(daily_returns_pct),
             'winloss': _build_winloss_payload(trade_log),
+            'factor_missing': {
+                'trade_dates': trade_dates,
+                'series': factor_missing_counts,
+            },
         },
         'live_simulation': None,
     }, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
@@ -1000,35 +1002,16 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
         config_rows.append(f'<span class="config-item"><strong>{html_escape(str(k))}:</strong> {html_escape(disp)}</span>')
     config_params_html = ' &nbsp;|&nbsp; '.join(config_rows) if config_rows else '<span class="muted">—</span>'
 
-    verify_notice_html = ''
-    if verify_config:
-        verify_parts = [
-            f'<strong>验证模式:</strong> {html_escape(verify_config.get("label") or "退市归零验证")}',
-            f'<strong>强制优先股票:</strong> {html_escape(verify_config.get("force_stock_code", ""))}',
-        ]
-        candidate_codes = verify_config.get('candidate_stock_codes') or []
-        if candidate_codes:
-            verify_parts.append(f'<strong>候选股票池:</strong> {html_escape(", ".join(candidate_codes))}')
-        stock_pool_size = report_metadata.get('stock_pool_size')
-        if stock_pool_size is not None:
-            verify_parts.append(f'<strong>实际 TopN 股票池:</strong> {stock_pool_size} 只')
-        config_path = report_metadata.get('config_path')
-        if config_path:
-            verify_parts.append(f'<strong>配置文件:</strong> {html_escape(config_path)}')
-        if verify_config.get('notes'):
-            verify_parts.append(f'<strong>备注:</strong> {html_escape(verify_config["notes"])}')
-        verify_notice_html = '<div class="verify-box">' + '<br>'.join(verify_parts) + '</div>'
-
     html_content = f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>回测报告 - {html_escape(period_str)}</title><link rel="icon" href="data:,"><link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css"><script src="https://unpkg.com/@popperjs/core@2/dist/umd/popper.min.js"></script><script src="https://unpkg.com/tippy.js@6/dist/tippy-bundle.umd.min.js"></script><script src="https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js"></script><style>{styles}</style></head>
 <body><div class="container">
 <div class="report-header"><div class="report-title">回测报告</div><div class="report-subtitle">WBR 量化交易系统 · T 日收盘信号 / 盘后执行 详细报告</div><div class="report-meta"><span>信号周期: {html_escape(signal_period_str)}</span><span>执行周期: {html_escape(trade_period_str or period_str)}</span><span>调仓日数: {trade_days}</span><span>初始资金: {_fmt_money(init_cash)}</span><span>最终资产: {_fmt_money(final_asset)}</span><span>生成时间: {html_escape(generated_time)}</span></div></div>
 <div class="config-box"><strong>因子权重:</strong> {weights_html}<br><strong>策略参数:</strong> {config_params_html}<br><strong>调仓规则:</strong> 信号={html_escape(signal_timing)} &nbsp;|&nbsp; 执行={html_escape(trade_timing)} &nbsp;|&nbsp; 价格字段={html_escape(price_field)}<br><strong>实际买入次数:</strong> {metrics.get('executed_buy_count', 0)} &nbsp;|&nbsp;<strong>实际卖出次数:</strong> {metrics.get('executed_sell_count', 0)} &nbsp;|&nbsp;<strong>完整 round-trip 数:</strong> {metrics.get('round_trip_count', 0)}</div>
-{verify_notice_html}
 <div class="card"><div class="card-title">核心指标</div><div class="metrics-grid">{metric_cards}</div></div>
 <div class="card"><div class="card-title">分年度指标</div>{_build_per_year_table(per_year_metrics)}</div>
 <div class="card"><div class="card-title">净值曲线</div><div id="equity-chart" class="chart-lg"></div></div>
+<div class="card"><div class="card-title">各因子缺失值</div><div id="factor-missing-chart" class="chart-lg"></div></div>
 <div class="charts-2col"><div class="card"><div class="card-title">每日收益率分布</div><div id="distribution-chart" class="chart"></div></div><div class="card"><div class="card-title">盈亏分布</div><div id="winloss-chart" class="chart"></div></div></div>
 <div class="card"><div class="card-title">月度收益</div><div id="monthly-host"></div></div>
 <h2>交易记录明细</h2><div class="card"><div id="trade-host"></div></div>

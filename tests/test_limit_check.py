@@ -5,7 +5,6 @@
   - 板块日常涨跌幅 + ST 按板块（主板5%/创业板20%/科创板20%/北交所30%；创业板注册制前ST5%；主板2026-07-06起ST10%）
   - 注册制免限期（前5日/北交所首日）可买、不参与涨跌停判定
   - 老规则 IPO 首日 +44% / 开盘+20% 封板（一字/秒封）禁买
-  - 临退禁买（退市整理期 + 归零风险窗口）
 
 真实数据样本测试见 tests/test_legality_realdata_*.py。
 """
@@ -22,24 +21,25 @@ TRADE_DATES = (np.datetime64('2000-01-01') + np.arange(N)).astype('datetime64[D]
 
 
 def _make_checker(board, *, trade_idx, open_t, preclose=np.nan, st=False,
-                  list_tidx=-1, delist_tidx=-1, high_t=np.nan, low_t=np.nan,
+                  volume_t=1.0, list_tidx=-1, high_t=np.nan, low_t=np.nan,
                   close_t=np.nan, issue_price=np.nan):
     code = BOARD_CODE[board]
     o = np.full((N, 1), np.nan); c = np.full((N, 1), np.nan)
+    v = np.zeros((N, 1))
     pc = np.full((N, 1), np.nan)
     h = np.full((N, 1), np.nan); l = np.full((N, 1), np.nan)
     o[trade_idx, 0] = open_t; h[trade_idx, 0] = high_t
     l[trade_idx, 0] = low_t; c[trade_idx, 0] = close_t
+    v[trade_idx, 0] = volume_t
     if trade_idx > 0 and not np.isnan(preclose):
         c[trade_idx - 1, 0] = preclose
         pc[trade_idx, 0] = preclose
     st_mask = np.zeros((N, 1), dtype=bool); st_mask[trade_idx, 0] = st
     data = dict(stock_codes=np.array([code]), trade_dates=TRADE_DATES,
-                open=o, close=c, high=h, low=l, preClose=pc, st_mask=st_mask,
+                open=o, close=c, high=h, low=l, volume=v, preClose=pc, st_mask=st_mask,
                 issue_price=np.array([issue_price]))
     list_map = {code: TRADE_DATES[list_tidx].item()} if list_tidx >= 0 else None
-    delist_map = {code: TRADE_DATES[delist_tidx].item()} if delist_tidx >= 0 else None
-    return LegalityChecker(data, {code: 0}, list_map, delist_map)
+    return LegalityChecker(data, {code: 0}, list_map)
 
 
 def _buy(board, signal_date, **kw):
@@ -65,6 +65,10 @@ def test_floor_ceil_helpers():
 
 
 # ---------- 涨停取整偏严 ----------
+def test_zero_volume_is_not_buyable_even_with_ohlc():
+    assert _buy(0, SIG, trade_idx=30, open_t=10.0, preclose=10.0, volume_t=0.0) is False
+
+
 def test_buy_uptick_floor_strict():
     # 主板 preclose=10.05 → 真实涨停 round(11.055)=11.06；严格 floor=11.05
     assert _buy(0, SIG, trade_idx=30, open_t=11.05, preclose=10.05) is False
@@ -128,16 +132,3 @@ def test_ipo_old_rule_not_sealed_buyable():
 def test_ipo_live_nan_hlc_buyable():
     assert _buy(0, date(2017, 1, 13), trade_idx=20, open_t=2.08,
                 list_tidx=20, issue_price=1.73) is True
-
-
-# ---------- 临退禁买 ----------
-def test_delist_zone_blocked():
-    assert _buy(0, SIG, trade_idx=10, open_t=10.0, preclose=10.0, delist_tidx=40) is False
-
-
-def test_outside_delist_zone_buyable():
-    assert _buy(0, SIG, trade_idx=10, open_t=10.0, preclose=10.0, delist_tidx=70) is True
-
-
-def test_no_delist_info_buyable():
-    assert _buy(0, SIG, trade_idx=10, open_t=10.0, preclose=10.0, delist_tidx=-1) is True
