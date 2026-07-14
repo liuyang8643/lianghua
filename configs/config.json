@@ -13,7 +13,7 @@
       "AmountBasedSmallCap": 0.6
     },
     "buy_n": 20,
-    "sell_m": 20,
+    "sell_m": 25,
     "prefilter_n": 300,
     "timing_enabled": false,
     "rebalance": true,
