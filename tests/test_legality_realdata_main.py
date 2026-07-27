@@ -125,8 +125,8 @@ def test_main_st_normal_buy_true(market):
 #   开盘上限=发行价×1.20、涨停=发行价×1.44；一字/秒封 → buy=False。
 # ====================================================================
 
-def test_main_ipo_firstday_sealed_known(market):
-    """老规则 IPO 首日一字/秒封禁买（已知样本）。
+def test_main_ipo_firstday_open_cap_is_not_buyable(market):
+    """开盘已顶发行价 120% 上限，不借用盘后 HLC 也应拒买。
 
     样本 603690.SH 2017-01-13：issue_price=1.73, open=2.08, low=2.08,
     high=2.49, close=2.49, board=0。
@@ -144,8 +144,8 @@ def test_main_ipo_firstday_sealed_known(market):
     assert market.buy(code, d) is False
 
 
-def test_main_ipo_firstday_sealed_2(market):
-    """老规则 IPO 首日一字/秒封禁买（第二个样本）。
+def test_main_ipo_firstday_open_cap_is_not_buyable_2(market):
+    """第二个样本同样只按开盘与发行价判断。
 
     样本 001208.SZ(华菱线缆) 2021-06-24：issue_price=3.67, open=4.40,
     low=4.40, high=5.28, close=5.28, board=0。

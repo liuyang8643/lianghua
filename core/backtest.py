@@ -37,24 +37,6 @@ def _count_holding_trading_days(start_date, end_date) -> int:
   return len(get_trading_date_span(start_date, end_date))
 
 
-def is_rebalance_day_index(day_index: int, holding_period) -> bool:
-  return not (holding_period and holding_period > 1) or day_index % holding_period == 0
-
-
-def stock_pool_prefixes(stock_pool=None):
-  pool = stock_pool or _ALL_A_SHARE_PREFIXES
-  return tuple(pool) if isinstance(pool, list) else pool
-
-
-def filter_stock_pool(stocks: list[str], stock_pool=None) -> list[str]:
-  prefixes = stock_pool_prefixes(stock_pool)
-  return [s for s in stocks if s.startswith(prefixes)]
-
-
-def build_list_dates_map(data) -> dict:
-  return _compute_list_dates(data['stock_codes'], data['open'], data['trade_dates'])
-
-
 def _get_stock_name_map(traded_codes: set[str], stock_names=None, stock_codes=None) -> Dict[str, str]:
   if stock_names is None or stock_codes is None:
     return {}
@@ -84,11 +66,118 @@ def _calc_holding_stats(current_positions: List[Dict], cleared_positions: List[D
   }
 
 
+def _compute_rebalance_funds_ratio(sells, buys, total_asset) -> float:
+  if total_asset <= 0:
+    return 0.0
+  sell_notional = sum(float(item['shares']) * float(item['price']) for item in sells)
+  buy_notional = sum(float(item['shares']) * float(item['price']) for item in buys)
+  return float(np.clip(max(sell_notional, buy_notional) / total_asset, 0.0, 1.0))
+
+
+def _parse_single_verify_config(config_data: Dict[str, Any]) -> Dict[str, Any]:
+  verify_config = config_data.get('verify_delist_case') or {}
+  if not verify_config:
+    return {}
+
+  force_stock_code = (verify_config.get('force_stock_code') or '').strip()
+  if not force_stock_code:
+    raise ValueError('verify_delist_case.force_stock_code 不能为空')
+
+  candidate_stock_codes = verify_config.get('candidate_stock_codes') or []
+  normalized_candidates = []
+  seen = set()
+  for code in [force_stock_code, *candidate_stock_codes]:
+    normalized = (code or '').strip()
+    if not normalized or normalized in seen:
+      continue
+    seen.add(normalized)
+    normalized_candidates.append(normalized)
+
+  sample_pool = verify_config.get('sample_pool')
+  if sample_pool is not None and not isinstance(sample_pool, list):
+    raise ValueError('verify_delist_case.sample_pool 必须是股票代码列表')
+
+  normalized_sample_pool = []
+  if sample_pool:
+    seen_sample = set()
+    for code in [*sample_pool, force_stock_code]:
+      normalized = (code or '').strip()
+      if not normalized or normalized in seen_sample:
+        continue
+      seen_sample.add(normalized)
+      normalized_sample_pool.append(normalized)
+
+  return {
+    'enabled': True,
+    'label': verify_config.get('label') or '退市归零验证',
+    'force_stock_code': force_stock_code,
+    'candidate_stock_codes': normalized_candidates,
+    'sample_pool': normalized_sample_pool,
+    'notes': verify_config.get('notes') or '',
+  }
+
+
+def _resolve_single_stock_pool(all_stocks: List[str], verify_config: Dict[str, Any]) -> List[str]:
+  sample_pool = verify_config.get('sample_pool') or []
+  if not sample_pool:
+    return all_stocks
+
+  available = set(all_stocks)
+  resolved = [code for code in sample_pool if code in available]
+  if verify_config['force_stock_code'] not in resolved and verify_config['force_stock_code'] in available:
+    resolved.append(verify_config['force_stock_code'])
+
+  if not resolved:
+    raise ValueError('verify_delist_case.sample_pool 中没有可用股票')
+
+  return resolved
+
+
+def _extend_verify_stock_pool_with_historical_codes(
+    all_stocks: List[str],
+    backtest_datetime_list: List[datetime],
+    verify_config: Dict[str, Any],
+) -> List[str]:
+  if not verify_config:
+    return all_stocks
+
+  requested_codes = []
+  seen = set()
+  for code in [
+    verify_config.get('force_stock_code'),
+    *(verify_config.get('candidate_stock_codes') or []),
+    *(verify_config.get('sample_pool') or []),
+  ]:
+    normalized = (code or '').strip()
+    if not normalized or normalized in seen:
+      continue
+    seen.add(normalized)
+    requested_codes.append(normalized)
+
+  missing_codes = [code for code in requested_codes if code not in all_stocks]
+  if not missing_codes or not backtest_datetime_list:
+    return all_stocks
+
+  from data.db import get_all_stock_code_list
+
+  historical_date = backtest_datetime_list[0].date()
+  historical_stocks = get_all_stock_code_list(historical_date)
+  historical_stocks = set(historical_stocks)
+  recovered_codes = [code for code in missing_codes if code in historical_stocks]
+  if not recovered_codes:
+    return all_stocks
+
+  testback_logger.info(
+    f"single 退市验证补充历史股票池: {', '.join(recovered_codes)} @ {historical_date}"
+  )
+  return list(dict.fromkeys([*all_stocks, *recovered_codes]))
+
+
 # ========== 核心回测 ==========
 
 def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_classes,
                            data=None, kline_data=None, filter_factor_classes=None,
-                           factor_missing_counts=None):
+                           enable_nan_filter=True, factor_missing_counts=None):
   """加载 NPZ 并批量计算因子分数，返回 (data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices)。
 
   data 可传入预加载面板（GA 整轮复用同一份 NPZ，避免每个因子重复加载 580MB 文件）。
@@ -96,8 +185,7 @@ def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_c
   """
   if data is None:
     all_factor_classes = list(factor_classes) + list(filter_factor_classes or [])
-    needs_full_history = any(getattr(c, 'requires_full_history', False) for c in all_factor_classes)
-    max_lookback = None if needs_full_history else (max((c.hist_days for c in all_factor_classes), default=0) or None)
+    max_lookback = max((c.hist_days for c in all_factor_classes), default=0) or None
     data = load_runtime_npz(backtest_datetime_list, max_lookback=max_lookback)
   if data is None:
     first_d = backtest_datetime_list[0].strftime('%Y%m%d')
@@ -146,80 +234,61 @@ def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_c
 
   py_dates = [d.astype('datetime64[D]').item() for d in npz_dates]
   factor_data = {**data, 'stock_codes': npz_stocks, 'trade_dates': py_dates}
+  valid_cols = np.asarray([stock_indices[s] for s in valid_stocks], dtype=np.intp)
+  requested_rows = np.asarray(date_indices, dtype=np.intp)
+  open_panel = data.get('open')
+  available_open = (
+    np.ones((len(npz_dates), len(npz_stocks)), dtype=bool)
+    if open_panel is None
+    else np.isfinite(np.asarray(open_panel)) & (np.asarray(open_panel) > 0)
+  )
+
+  def _record_missing(name, raw):
+    if factor_missing_counts is None:
+      return
+    selection = np.ix_(requested_rows, valid_cols)
+    missing = ~np.isfinite(np.asarray(raw)[selection]) | ~available_open[selection]
+    factor_missing_counts[name] = missing.sum(axis=1).astype(int).tolist()
+
   all_scores: dict[str, np.ndarray] = {}
   all_raw = []
-  valid_cols = np.array([stock_indices[code] for code in valid_stocks], dtype=np.intp)
   for name, f in factor_meta:
     raw = f.calc_batch(factor_data)
-    raw = raw.astype(np.float32, copy=False)
-    if getattr(f, 'pre_ranked', False):
-      all_scores[name] = raw
-    else:
-      candidate_raw = np.full_like(raw, np.nan)
-      candidate_raw[:, valid_cols] = raw[:, valid_cols]
-      all_scores[name] = scores_to_ranks(candidate_raw)
-    all_raw.append(raw)
-    if factor_missing_counts is not None:
-      factor_missing_counts[name] = np.isnan(raw[np.ix_(date_indices, valid_cols)]).sum(axis=1).astype(int).tolist()
+    ranks = np.zeros(raw.shape, dtype=np.float32)
+    ranks[:, valid_cols] = scores_to_ranks(
+      raw[:, valid_cols].astype(np.float32, copy=False)
+    )
+    all_scores[name] = ranks
+    all_raw.append(raw.astype(np.float32, copy=False))
+    _record_missing(name, raw)
 
   # 多因子 NaN 并集过滤：任一因子对某股票返回 NaN，该股票就该天排除
   filter_masks: dict[str, np.ndarray] = {}
-  if len(all_raw) > 1:
-    stacked = np.stack(all_raw, axis=0)
-    any_nan = np.any(np.isnan(stacked), axis=0)
-    filter_masks['_factor_intersection'] = ~any_nan
-  elif len(all_raw) == 1:
-    filter_masks['_factor_intersection'] = np.isfinite(all_raw[0])
-    if factor_meta and getattr(factor_meta[0][1], 'pre_ranked', False):
-      # A standalone sparse signal holds cash instead of filling Top-N with
-      # arbitrary zero-score stocks. In a multi-factor strategy zero remains
-      # neutral, so the regular factors still provide the fallback ranking.
-      filter_masks['_standalone_sparse_signal'] = all_raw[0] > 0
+  if enable_nan_filter:
+    if len(all_raw) > 1:
+      stacked = np.stack(all_raw, axis=0)
+      any_nan = np.any(np.isnan(stacked), axis=0)
+      filter_masks['_nan_union'] = ~any_nan
+    elif len(all_raw) == 1:
+      filter_masks['_nan_union'] = np.isfinite(all_raw[0])
 
   for f_cls in filter_factor_classes or []:
     f = f_cls()
     raw = f.calc_batch(factor_data)
-    if factor_missing_counts is not None:
-      factor_missing_counts[f.__class__.__name__] = np.isnan(
-        raw[np.ix_(date_indices, valid_cols)]
-      ).sum(axis=1).astype(int).tolist()
     filter_masks[f.__class__.__name__] = np.isfinite(raw) & (raw > 0)
+    _record_missing(f.__class__.__name__, raw)
 
   testback_logger.info(f"因子批量+预排名完成 ({time.time() - t0:.1f}s), {len(valid_dates)} 个调仓日")
   return data, all_scores, filter_masks, valid_dates, date_indices, valid_stocks, stock_indices
 
 
-def apply_t1_prefilter_for_date(prev_date, all_stocks, weights, factor_classes, prefilter_n,
-                                filter_factor_classes=None):
-  if not prefilter_n:
-    return all_stocks, None
-  prev_dt = datetime.combine(prev_date, datetime.min.time())
-  t1 = _compute_factor_scores(
-    [prev_dt], all_stocks, weights, factor_classes,
-    filter_factor_classes=filter_factor_classes,
-  )
-  if t1 is None:
-    raise ValueError(f"prefilter T-1 {prev_date} 不在 runtime npz 范围内")
-  t1_data, t1_scores, t1_filter_masks, _, t1_di, t1_stocks, t1_si = t1
-  t1_cols = np.array([t1_si[s] for s in t1_stocks], dtype=np.intp)
-  t1_w = compute_weighted_scores(t1_scores, t1_di[0], t1_cols, weights)
-  t1_valid = np.ones(len(t1_stocks), dtype=bool)
-  if t1_filter_masks:
-    t1_valid = np.logical_and.reduce(
-      [mask[t1_di[0]][t1_cols] for mask in t1_filter_masks.values()]
-    )
-  t1_ranking = [t1_stocks[i] for i in np.argsort(-t1_w) if t1_valid[i]]
-  return apply_prefilter(t1_ranking, prefilter_n, all_stocks), t1_data
-
-
 def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices,
                      weights, buy_n, sell_m, holding_period=None,
+                     verify_config=None,
                      position_multipliers=None, list_dates_map=None,
                      lightweight=False, init_cash=1_000_000.0, init_positions=None,
-                     init_total_asset=None,
                      market_order_freeze=True, limit_up_protection=False,
-                     rebalance=True, filter_masks=None, prefilter_n=None,
-                     rebalance_start_index=0):
+                     rebalance=True, filter_masks=None, prefilter_n=None):
   """直接 numpy 回测，不创建 TopN 对象。lightweight=True 跳过明细组装，仅返回收益序列。
 
   init_cash / init_positions: 种子参数，用于「单日回放」对账（盘后用实盘 T-1 真实
@@ -256,10 +325,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         'buy_date': seed_date, 'buy_signal_date': seed_date, 'buy_trade_date': seed_date,
         'avg_price': avg, 'price_field': 'open',
       }
-  initial_equity = float(init_total_asset) if init_total_asset is not None else account.init_cash
   delist_stock_info = get_delist_stock_info()
-  if list_dates_map is None:
-    list_dates_map = build_list_dates_map(data)
 
   daily_snapshots: List[Dict] = []
   prices: dict[str, float] = {}
@@ -267,9 +333,16 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
 
   full_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
 
+  # 临退禁买：把退市股摘牌/暂停日传入合法性闸门（实盘不传，由 allow_buy 名单剔除）
+  delist_dates_map = {c: info.delist_date for c, info in delist_stock_info.items()}
   # 合法性一律用原始 OHLC + 官方 preClose
-  checker = LegalityChecker(data, stock_indices, list_dates_map,
+  checker = LegalityChecker(data, stock_indices, list_dates_map, delist_dates_map,
                              limit_up_protection=limit_up_protection)
+  force_codes = []
+  if verify_config:
+    force_codes = [verify_config['force_stock_code']]
+    force_codes += [c for c in verify_config.get('candidate_stock_codes', []) if c != verify_config['force_stock_code']]
+
   def _write_off_delisted_positions(signal_date, trade_date):
     if not account.positions:
       return
@@ -297,7 +370,9 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
   if lightweight:
     _lw_daily_returns = []
     _lw_topn: List[List[str]] = []
-    _lw_last_asset = initial_equity
+    _lw_daily_assets = []
+    _lw_daily_exposures = []
+    _lw_last_asset = account.init_cash
 
   t1_ranking: list[str] = []
   for i, dt in enumerate(valid_dates):
@@ -308,14 +383,14 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
 
     _write_off_delisted_positions(signal_date, trade_date)
 
-    is_rebalance_day = is_rebalance_day_index(rebalance_start_index + i, holding_period)
+    is_rebalance_day = is_rebalance_day_index(i, holding_period)
 
     pos_volumes = {c: p['volume'] for c, p in account.positions.items()}
     timing_mult = position_multipliers[i] if (position_multipliers is not None and not np.isnan(position_multipliers[i])) else 1.0
 
-    # prefilter：首日全量，后续用 T-1 全量排名限制候选池。
+    # prefilter：首日全量，后续用 T-1 排名限制候选池
     if prefilter_n and i > 0 and t1_ranking:
-      day_stocks = apply_prefilter(t1_ranking, prefilter_n, valid_stocks)
+      day_stocks = apply_prefilter(t1_ranking, prefilter_n, valid_stocks, pos_volumes)
     else:
       day_stocks = valid_stocks
     day_cols = np.array([stock_indices[s] for s in day_stocks], dtype=np.intp)
@@ -331,9 +406,11 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         checker=checker, positions=pos_volumes, sellable_volumes=pos_volumes,
         cash=account.current_cash, rebalance=rebalance,
         is_rebalance_day=is_rebalance_day,
+        force_codes=force_codes if force_codes else None,
         position_multiplier=timing_mult,
         last_valid_close_prices=_last_valid_close_price,
         market_order_freeze=market_order_freeze,
+        limit_up_protection=limit_up_protection,
         buy_filter_mask=buy_filter_mask,
     )
     buy_n_stocks = day_plan.buy_n_stocks
@@ -341,10 +418,10 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
     prices = day_plan.prices
     close_prices = day_plan.close_prices
 
-    # 每日从完整股票池重新排名，不能复用已经 prefilter 的子池排名。
+    # 全量排名供 T+1 prefilter
     if prefilter_n:
       t_full = compute_weighted_scores(all_scores, date_idx, full_cols, weights)
-      t1_ranking = [valid_stocks[j] for j in np.argsort(-t_full)]
+      t1_ranking = [valid_stocks[i] for i in np.argsort(-t_full)]
     tradable_buy_stocks = day_plan.tradable_buy_stocks
 
     executed_sell_list: List[str] = []
@@ -388,11 +465,18 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         daily_ret = 0.0
       _lw_daily_returns.append(daily_ret)
       _lw_topn.append(list(buy_n_stocks))
+      _lw_daily_assets.append(total_asset)
+      exposure = mkt_val / total_asset if total_asset > 0 else 0.0
+      _lw_daily_exposures.append(float(np.clip(exposure, 0.0, 1.0)))
       _lw_last_asset = total_asset
     else:
       assets = account.calc_assets(close_prices)
-      prev_total_asset = daily_snapshots[-1]['total_asset'] if daily_snapshots else initial_equity
+      prev_total_asset = daily_snapshots[-1]['total_asset'] if daily_snapshots else account.init_cash
       daily_ret = (assets['total_asset'] - prev_total_asset) / prev_total_asset * 100 if prev_total_asset else 0.0
+      exposure = assets['market_value'] / assets['total_asset'] if assets['total_asset'] > 0 else 0.0
+      rebalance_funds_ratio = _compute_rebalance_funds_ratio(
+        executed_sell_details, executed_buy_records, prev_total_asset,
+      )
       # positions_eod: 当日收盘后持仓快照，用于多日回测的 T 日 daily_pnl 重建
       positions_eod = account.calc_position_values(close_prices)
       daily_snapshots.append({
@@ -402,6 +486,8 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         'price_field': 'open',
         'cash': assets['cash'], 'market_value': assets['market_value'],
         'total_asset': assets['total_asset'], 'daily_return_pct': daily_ret, 'cumulative_return_pct': 0.0,
+        'exposure': float(np.clip(exposure, 0.0, 1.0)),
+        'rebalance_funds_ratio': rebalance_funds_ratio,
         'sell_m_list': sell_m_stocks,
         'raw_buy_n_list': buy_n_stocks,
         'buy_n_list': tradable_buy_stocks,
@@ -418,12 +504,14 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
   if lightweight:
     mkt_val = sum(close_prices[c] * p['volume'] for c, p in account.positions.items() if c in close_prices)
     total_asset = account.current_cash + mkt_val
-    total_return = (total_asset - initial_equity) / initial_equity * 100
+    total_return = (total_asset - account.init_cash) / account.init_cash * 100
     return {
       'total_return': total_return,
       'cleared_positions_count': len(account.cleared_positions),
       'daily_returns': _lw_daily_returns,
       'daily_topn': _lw_topn,
+      'daily_assets': _lw_daily_assets,
+      'daily_exposures': _lw_daily_exposures,
       'daily_snapshots': [], 'cumulative_returns': [], 'trade_log': [],
       'positions': [], 'cleared_positions': [], 'delist_events': [],
       'stock_name_map': {}, 'holding_stats': {},
@@ -440,7 +528,7 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
   cumulative_returns = []
   if daily_snapshots:
     for snap in daily_snapshots:
-      cum = (snap['total_asset'] - initial_equity) / initial_equity * 100
+      cum = (snap['total_asset'] - account.init_cash) / account.init_cash * 100
       cumulative_returns.append(cum)
     for i, snap in enumerate(daily_snapshots):
       snap['cumulative_return_pct'] = cumulative_returns[i]
@@ -534,6 +622,29 @@ def _compute_list_dates(stock_codes_arr, open_arr, trade_dates_arr) -> dict:
   return result
 
 
+def is_rebalance_day_index(rebalance_idx: int, holding_period: int | None) -> bool:
+    """调仓日判断：holding_period=None/0/1 时每日调仓，否则按周期调仓。"""
+    if not holding_period or holding_period <= 1:
+        return True
+    return rebalance_idx % holding_period == 0
+
+
+def stock_pool_prefixes(stock_pool=None):
+  """Normalize a configured stock pool for ``str.startswith``.
+
+  JSON configs use a list, while callers may pass a tuple or one prefix.  A
+  single normalization point keeps the historical and minute-simulation paths
+  from accidentally passing the list itself to ``startswith``.
+  """
+  if stock_pool is None:
+    return _ALL_A_SHARE_PREFIXES
+  if isinstance(stock_pool, str):
+    return (stock_pool,)
+  if isinstance(stock_pool, (list, tuple, set)):
+    return tuple(str(prefix) for prefix in stock_pool)
+  raise TypeError(f"stock_pool must be a prefix string or sequence, got {type(stock_pool).__name__}")
+
+
 def _compute_timing_multipliers(config, valid_dates, index_data=None):
     from core.timing import load_index_open, compute_position_multiplier, compute_calendar_empty_mask, INDEX_INFO
 
@@ -545,7 +656,7 @@ def _compute_timing_multipliers(config, valid_dates, index_data=None):
 
     result = None
     if timing_enabled and timing_base is not None:
-        idx_symbol = config.get('timing_index', 'sh000001')
+        idx_symbol = config.get('timing_index', 'sh000852')
         if index_data is not None:
             idx_open = index_data.get(idx_symbol)
         else:
@@ -569,21 +680,139 @@ def _compute_timing_multipliers(config, valid_dates, index_data=None):
 
 
 def _load_all_index_data(valid_dates):
-    from core.timing import load_index_open, INDEX_INFO, _index_parquet_path
+    from core.timing import load_index_open, INDEX_INFO
     index_data = {}
     for sym in INDEX_INFO:
-        path = _index_parquet_path(sym)
-        if not path.exists():
-            continue
-        dates_arr, _ = load_index_open(sym)
-        if dates_arr[0].astype('datetime64[D]').item() > valid_dates[0].date():
-            continue
-        try:
-            _, index_data[sym] = load_index_open(sym, valid_dates)
-        except (ValueError, FileNotFoundError):
-            pass
+        _, index_data[sym] = load_index_open(sym, valid_dates)
     return index_data
 
+
+
+def _build_minute_lookup():
+    """data/minute/*.parquet → {code: {date_int: {"09:32": open, ...}}}"""
+    import pandas as pd
+    minute_dir = Path(__file__).resolve().parent.parent / 'data' / 'minute'
+    if not minute_dir.is_dir():
+        return {}
+    PRICE_MINUTES = ['09:32', '09:33', '09:34', '09:35']
+    lookup = {}
+    for f in minute_dir.glob('*.parquet'):
+        if f.stem == 'slippage_stats':
+            continue
+        df = pd.read_parquet(f)
+        code = f.stem
+        cm = {}
+        for _, row in df.iterrows():
+            d_int = int(row['time'].strftime('%Y%m%d'))
+            m = row['time'].strftime('%H:%M')
+            if m in PRICE_MINUTES:
+                cm.setdefault(d_int, {})[m] = float(row['open'])
+        if cm:
+            lookup[code] = cm
+    return lookup
+
+
+def run_live_simulation(data, all_scores, filter_masks, stock_codes, all_valid_stocks,
+                         individuals, list_dates_map, logger, max_hist=240,
+                         timing_multiplier_builder=None):
+    """实盘模拟：每个个体用5种买入价回测 2025-12-10~2026-06-08。
+
+    data/all_scores: 全量数据，内部自动切片到实盘时段(+max_hist缓冲)
+    Returns: [{'config': ..., 'prices': {'base': {sharpe,ann,dd}, '09:32': {...}, ...}}, ...]
+    """
+    LIVE_START = date(2025, 12, 10)
+    LIVE_END = date(2026, 6, 8)
+    PRICE_MINUTES = ['09:32', '09:33', '09:34', '09:35']
+
+    lookup = _build_minute_lookup()
+    n_lookup = len(lookup)
+
+    # 从全量数据中定位实盘时段
+    full_trade_dates = data['trade_dates']
+    full_py = [d.astype('datetime64[D]').item() for d in full_trade_dates]
+    n_full = len(full_py)
+
+    # 找实盘行范围 + 历史缓冲
+    abs_live_rows = [i for i, d in enumerate(full_py) if LIVE_START <= d <= LIVE_END]
+    if not abs_live_rows:
+        logger.warning(f'实盘模拟: 数据未覆盖 {LIVE_START}~{LIVE_END}，跳过')
+        return []
+    abs_start = max(0, abs_live_rows[0] - max_hist)
+    abs_end = min(n_full, abs_live_rows[-1] + 1)
+    abs_slice = slice(abs_start, abs_end)
+
+    # 切片
+    def _slice(arr):
+        return arr[abs_slice] if arr.ndim >= 2 else (arr[abs_slice] if arr.shape[0] == n_full else arr)
+
+    live_data = {k: _slice(v) if k not in ('stock_codes', 'issue_price') else v for k, v in data.items()}
+    live_data['stock_codes'] = stock_codes
+    live_scores = {k: _slice(v) for k, v in all_scores.items()}
+    live_filter_masks = {k: _slice(v) for k, v in filter_masks.items()}
+
+    trade_dates = live_data['trade_dates']
+    py_dates = [d.astype('datetime64[D]').item() for d in trade_dates]
+    d2r = {}
+    live_date_indices = []
+    for i, d in enumerate(py_dates):
+        if LIVE_START <= d <= LIVE_END:
+            d2r[d.strftime('%Y%m%d')] = i
+            live_date_indices.append(i)
+
+    live_valid_dates = [datetime.combine(py_dates[i], datetime.min.time()) for i in live_date_indices]
+    logger.info(f'实盘模拟: {LIVE_START}~{LIVE_END}, {len(live_valid_dates)}天, 分钟覆盖{n_lookup}只')
+
+    stock_indices_map = {c: i for i, c in enumerate([str(s) for s in stock_codes])}
+
+    base_open = live_data['open'].copy()
+    open_variants = {'base': base_open}
+    for minute in PRICE_MINUTES:
+        v = base_open.copy()
+        n = 0
+        for code, cm in lookup.items():
+            si = stock_indices_map.get(code)
+            if si is None:
+                continue
+            for d_int, mins in cm.items():
+                row = d2r.get(str(d_int))
+                if row is not None and minute in mins and mins[minute] > 0:
+                    v[row, si] = mins[minute]
+                    n += 1
+        open_variants[minute] = v
+
+    results = []
+    for idx, config in enumerate(individuals):
+        stock_pool = stock_pool_prefixes(config.get('stock_pool'))
+        pool_stocks = [str(s) for s in all_valid_stocks if str(s).startswith(stock_pool)]
+        timing = _compute_timing_multipliers(config, live_valid_dates)
+        if timing_multiplier_builder is not None:
+            timing = timing_multiplier_builder(
+                data=live_data, all_scores=live_scores,
+                valid_dates=live_valid_dates, date_indices=live_date_indices,
+                valid_stocks=pool_stocks, stock_indices=stock_indices_map,
+                config=config, filter_masks=live_filter_masks,
+                base_multipliers=timing,
+            )
+
+        price_results = {}
+        for label in ['base'] + PRICE_MINUTES:
+            d = dict(live_data)
+            d['open'] = open_variants[label]
+            r = _backtest_direct(
+                d, live_scores, live_valid_dates, live_date_indices,
+                pool_stocks, stock_indices_map,
+                weights=config['weights'], buy_n=config['buy_n'], sell_m=config['sell_m'],
+                holding_period=config.get('holding_period'),
+                position_multipliers=timing, list_dates_map=list_dates_map,
+                lightweight=True, limit_up_protection=config.get('limit_up_protection', False),
+                rebalance=config.get('rebalance', True),
+                filter_masks=live_filter_masks)
+            m = compute_core_metrics(r['daily_returns'])
+            price_results[label] = {'sharpe': m['sharpe'], 'annualized': m['annualized'], 'max_drawdown': m['max_drawdown']}
+
+        results.append({'config': config, 'prices': price_results})
+
+    return results
 
 
 def _format_pool(pool: tuple) -> str:
@@ -601,7 +830,7 @@ def _format_timing(config: dict) -> str:
   d_str = '顺势' if d == 1 else '逆势'
   leverage = config.get('timing_leverage', 10)
   window = config.get('timing_window', 20)
-  idx_val = config.get('timing_index', 'sh000001')
+  idx_val = config.get('timing_index', 'sh000852')
   from core.timing import INDEX_INFO as _IDX
   idx_name = _IDX.get(idx_val, idx_val)
   return f', timing={base}/{leverage}x({d_str}, win={window}, {idx_name})'
@@ -621,7 +850,8 @@ def _resolve_output_dir(output_dir_arg: str | None, mode: str) -> Path:
   return output_dir
 
 
-def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
+def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks, live_sim=True,
+                    timing_multiplier_builder=None):
   """单次回测模式：直接 numpy 回测，无 TopN 对象中间层"""
   if not args.individual_config:
     testback_logger.error('--individual-config 参数在 single 模式下必须指定')
@@ -633,17 +863,25 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
     'ga_profile': strategy_config['profile_name'],
     'individual_config': individual_config,
   }
+  verify_config = _parse_single_verify_config(config_data)
+
   output_dir = _resolve_output_dir(args.output_dir, 'single')
   testback_logger.add_file_sink(str(output_dir / 'single.log'))
   testback_logger.info(f"日志文件: {output_dir / 'single.log'}")
   testback_logger.info(f"从文件加载 Individual_config: {args.individual_config}")
 
-  stock_pool = individual_config.get('stock_pool') or _ALL_A_SHARE_PREFIXES
-  pool_tuple = stock_pool_prefixes(stock_pool)
-  all_stocks = filter_stock_pool(all_stocks, stock_pool)
+  pool_tuple = stock_pool_prefixes(individual_config.get('stock_pool'))
+  all_stocks = [s for s in all_stocks if s.startswith(pool_tuple)]
   testback_logger.info(f"stock_pool={_format_pool(pool_tuple)}: {len(all_stocks)} 只")
 
-  single_stock_pool = all_stocks
+  candidate_stock_pool = _extend_verify_stock_pool_with_historical_codes(
+    all_stocks, backtest_datetime_list, verify_config)
+  single_stock_pool = _resolve_single_stock_pool(candidate_stock_pool, verify_config)
+  if verify_config:
+    testback_logger.info(
+      f"启用 single 退市验证: {verify_config['force_stock_code']}, "
+      f"候选池={len(single_stock_pool)} 只"
+    )
 
   testback_logger.info(f"使用配置进行单次回测: buy_n={individual_config['buy_n']}, sell_m={individual_config['sell_m']}")
 
@@ -652,41 +890,33 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
   if filter_factor_classes:
     testback_logger.info(f"启用买入过滤器: {', '.join(strategy_config.get('filter_factor_names', []))}")
 
-  factor_missing_counts = {}
+  # NaN 并集过滤：config 默认 True，CLI --filter/--no-filter 可覆盖
+  enable_nan_filter = individual_config.get('filter', True)
+  if getattr(args, 'filter_enabled', None) is not None:
+    enable_nan_filter = args.filter_enabled
+  if not enable_nan_filter:
+    testback_logger.info("NaN 并集过滤已关闭 (--no-filter)，缺失数据因子不参与加权、不排除股票")
+
   scores_result = _compute_factor_scores(
     backtest_datetime_list, single_stock_pool,
     weights=individual_config['weights'], factor_classes=config_factor_classes,
     filter_factor_classes=filter_factor_classes if filter_factor_classes else None,
-    factor_missing_counts=factor_missing_counts,
+    enable_nan_filter=enable_nan_filter,
   )
   if scores_result is None:
     testback_logger.error("因子计算失败，无有效交易日")
     sys.exit(1)
   data, all_scores, filter_masks, valid_dates, date_indices, valid_stocks, stock_indices = scores_result
-  full_cols = np.array([stock_indices[code] for code in valid_stocks], dtype=np.intp)
-  factor_missing_counts['K线缺失'] = [
-    int(np.isnan(data['open'][date_idx, full_cols]).sum())
-    for date_idx in date_indices
-  ]
 
-  if '_factor_intersection' in filter_masks:
-    total_cells = filter_masks['_factor_intersection'].size
-    filtered_cells = int((~filter_masks['_factor_intersection']).sum())
+  if '_nan_union' in filter_masks:
+    total_cells = filter_masks['_nan_union'].size
+    filtered_cells = int((~filter_masks['_nan_union']).sum())
     avg_filtered = filtered_cells / max(len(valid_dates), 1)
     testback_logger.info(
       f"NaN并集过滤: {filtered_cells}/{total_cells} 个股票·日被排除 "
       f"({filtered_cells/total_cells*100:.1f}%, 日均 {avg_filtered:.0f} 只)")
-  for filter_name, mask in filter_masks.items():
-    if filter_name == '_factor_intersection':
-      continue
-    total_cells = mask.size
-    filtered_cells = int((~mask).sum())
-    avg_filtered = filtered_cells / max(len(valid_dates), 1)
-    testback_logger.info(
-      f"{filter_name}过滤: {filtered_cells}/{total_cells} 个股票·日被排除 "
-      f"({filtered_cells/total_cells*100:.1f}%, 日均 {avg_filtered:.0f} 只)")
 
-  list_dates_map = build_list_dates_map(data)
+  list_dates_map = _compute_list_dates(data['stock_codes'], data['open'], data['trade_dates'])
 
   signal_dates = [d.date() for d in valid_dates]
   trade_dates = list(signal_dates)
@@ -696,6 +926,13 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
   )
 
   timing_multipliers = _compute_timing_multipliers(individual_config, valid_dates)
+  if timing_multiplier_builder is not None:
+    timing_multipliers = timing_multiplier_builder(
+      data=data, all_scores=all_scores, valid_dates=valid_dates,
+      date_indices=date_indices, valid_stocks=valid_stocks,
+      stock_indices=stock_indices, config=individual_config,
+      filter_masks=filter_masks, base_multipliers=timing_multipliers,
+    )
   if timing_multipliers is not None:
     parts = []
     empty_months = individual_config.get('empty_months')
@@ -711,6 +948,8 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
     cash_reserve = individual_config.get('cash_reserve_ratio', 0.0)
     if cash_reserve > 0:
       parts.append(f"闲钱保留: {cash_reserve*100:.0f}%")
+    if not parts:
+      parts.append("配置仓位控制")
     testback_logger.info(f"{' + '.join(parts)}, multiplier范围=[{np.nanmin(timing_multipliers):.2f}, {np.nanmax(timing_multipliers):.2f}]")
 
   prefilter_n = individual_config.get('prefilter_n')
@@ -722,6 +961,7 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
     weights=individual_config['weights'],
     buy_n=individual_config['buy_n'], sell_m=individual_config['sell_m'],
     holding_period=individual_config.get('holding_period'),
+    verify_config=verify_config,
     position_multipliers=timing_multipliers,
     list_dates_map=list_dates_map,
     limit_up_protection=individual_config.get('limit_up_protection', False),
@@ -747,6 +987,21 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
     f"胜率={metrics['win_rate']:.1f}% 总成交={metrics['total_trades']}"
   )
 
+  # 实盘模拟
+  live_simulation_result = None
+  if live_sim:
+      max_hist = max(f().hist_days for f in config_factor_classes)
+      live_results = run_live_simulation(
+          data, all_scores, filter_masks, data['stock_codes'], valid_stocks,
+          [individual_config], list_dates_map, testback_logger, max_hist=max_hist,
+          timing_multiplier_builder=timing_multiplier_builder)
+      live_simulation_result = live_results[0]['prices'] if live_results else None
+      if live_simulation_result:
+          labels = ['base', '09:32', '09:33', '09:34', '09:35']
+          testback_logger.info(
+              f"实盘模拟: " + ' | '.join(
+                  f"{l} 夏普={live_simulation_result[l]['sharpe']:.3f}" for l in labels))
+
   report_data = {
     'individual_config': individual_config,
     'total_return': result['total_return'],
@@ -769,10 +1024,11 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks):
     'metrics': metrics,
     'per_year_metrics': per_year_metrics,
     'hs300_returns': hs300_returns,
-    'factor_missing_counts': factor_missing_counts,
     'cleared_positions_count': result['cleared_positions_count'],
     'current_positions_count': result['current_positions_count'],
+    'live_simulation': live_simulation_result,
     'init_cash': 1_000_000.0,
+    'verify_config': verify_config,
     'report_metadata': {
       'config_path': str(Path(args.individual_config).resolve()),
       'stock_pool_size': len(single_stock_pool),

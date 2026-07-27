@@ -3,8 +3,10 @@
 只验证 GA 算子行为，不触发回测、不读 runtime npz、不参与验证集。
 """
 from testback import run_ga
-from testback.run_ga import ga_optimizer, _config_key
-from core.ga import build_individual_config, get_profile_factor_names
+from testback.run_ga import ga_optimizer, _config_key, _seed_ga_randomness
+from core.ga import (
+    build_individual_config, generate_initial_configs, get_profile_factor_names,
+)
 
 PROFILE = 'core'
 _NAMES = get_profile_factor_names(PROFILE)
@@ -94,3 +96,33 @@ def test_small_cache_falls_back_without_crash():
                        hall_of_fame_size=pop, profile_name=PROFILE, ga_cache=None)
     # 父代上限 = 可用个体数(5)，子代补满 pop 个 → 共 n_results + pop
     assert len(nxt) == n_results + pop
+
+
+def test_fixed_seed_reproduces_initial_population():
+    _seed_ga_randomness(20260720)
+    first = generate_initial_configs(20, profile_name='v9_dual_shadow')
+    _seed_ga_randomness(20260720)
+    second = generate_initial_configs(20, profile_name='v9_dual_shadow')
+
+    assert [_config_key(config) for config in first] == [
+        _config_key(config) for config in second
+    ]
+
+
+def test_fixed_seed_reproduces_breeding():
+    pop = 20
+    cache = _ga_cache(2 * pop)
+    _seed_ga_randomness(1234)
+    first = ga_optimizer(
+        [], state=_empty_state(), population_size=pop,
+        hall_of_fame_size=pop, profile_name=PROFILE, ga_cache=cache,
+    )
+    _seed_ga_randomness(1234)
+    second = ga_optimizer(
+        [], state=_empty_state(), population_size=pop,
+        hall_of_fame_size=pop, profile_name=PROFILE, ga_cache=cache,
+    )
+
+    assert [_config_key(config) for config in first] == [
+        _config_key(config) for config in second
+    ]

@@ -171,8 +171,8 @@ def test_cyb_reg_after_new_listing_day2to5_buyable(market):
 
 # ===================== CASE 6：老规则 IPO 首日（2014~2020-08-23）=====================
 
-def test_cyb_old_ipo_first_day_sealed_reject(market):
-    """老规则创业板 IPO 首日一字/秒封 → 买不进。
+def test_cyb_old_ipo_first_day_open_cap_is_not_buyable(market):
+    """老规则创业板首日开盘顶发行价 120% 上限时拒买。
 
     样本 300357.SZ 上市首日 2014-01-21：发行价 20.05。
       开盘上限=floor(20.05×1.20)=24.06，盘中涨停=floor(20.05×1.44)=28.87。
@@ -191,13 +191,13 @@ def test_cyb_old_ipo_first_day_sealed_reject(market):
     assert market.buy(code, d) is False
 
 
-def test_cyb_old_ipo_first_day_unsealed_buyable(market):
-    """老规则创业板 IPO 首日非一字（盘中回落、未封涨停）→ 可买（对照）。
+def test_cyb_old_ipo_first_day_open_cap_still_not_reliably_buyable(market):
+    """盘中虽然后来打开，开盘顶 120% 上限时仍不能预知可成交。
 
     样本 300360.SZ 上市首日 2014-01-21：发行价 55.11。
       盘中涨停=floor(55.11×1.44)=79.35。
       open=66.13 close=65.40(未封 79.35 涨停) low=64.88(<open，盘中下探)
-      → 非一字，实盘可成交 → 可买。
+      盘中信息在开盘未知，不能据此把集合竞价上限成交记入回测。
     """
     code, d = '300360.SZ', date(2014, 1, 21)
     assert market.list_date(code) == d
@@ -206,4 +206,5 @@ def test_cyb_old_ipo_first_day_unsealed_buyable(market):
     ip = bar['issue_price']
     assert bar['close'] < _floor2(ip * 1.44) - 0.02              # 未封 +44% 涨停
     assert bar['low'] < bar['open'] - 0.02                       # 盘中曾下探，非一字
-    assert market.buy(code, d) is True
+    assert bar['open'] >= _floor2(ip * 1.20) - 1e-3
+    assert market.buy(code, d) is False

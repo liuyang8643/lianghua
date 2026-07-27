@@ -5,6 +5,7 @@ import numpy as np
 from core.backtest import _compute_factor_scores
 from core.prefilter import apply_prefilter
 from core.scoring import select_topn
+from testback.run_ga import _build_worker_filter_masks
 from factor_db.factors.AmihudIlliquidity import AmihudIlliquidity
 from factor_db.factors.AmountBasedSmallCap import AmountBasedSmallCap
 from factor_db.factors.TrueMarketCap import TrueMarketCap
@@ -89,6 +90,32 @@ def test_factor_missing_counts_follow_backtest_dates():
     assert counts == {'SparseScore': [1, 2]}
 
 
+def test_filter_valid_counts_require_an_available_t_day_open():
+    class DenseScore:
+        hist_days = 0
+
+        def calc_batch(self, panel):
+            return np.ones_like(panel['open'])
+
+    data = {
+        'stock_codes': np.array(['A', 'B', 'C']),
+        'trade_dates': np.array(['2000-01-04', '2000-01-05'], dtype='datetime64[D]'),
+        'open': np.array([[10.0, np.nan, np.nan], [10.0, 11.0, np.nan]]),
+        'st_mask': np.zeros((2, 3), dtype=bool),
+    }
+    counts = {}
+    _compute_factor_scores(
+        [datetime(2000, 1, 4), datetime(2000, 1, 5)], ['A', 'B', 'C'],
+        {'DenseScore': 1.0}, [DenseScore], data=data,
+        filter_factor_classes=[FilterStarST], factor_missing_counts=counts,
+    )
+
+    assert counts == {
+        'DenseScore': [2, 1],
+        'FilterStarST': [2, 1],
+    }
+
+
 def test_prefilter_uses_the_latest_full_ranking():
     universe = ['A', 'B', 'C', 'D']
     assert apply_prefilter(['D', 'C', 'B', 'A'], 2, universe) == ['C', 'D']
@@ -128,3 +155,22 @@ def test_filter_mask_never_backfills_filtered_stocks():
     )
 
     assert topn == []
+
+
+def test_ga_filter_masks_preserve_raw_filters_and_ignore_zero_weight_factors():
+    arrays = {
+        '_factor_valid_Active': np.array([[True, False]]),
+        '_factor_valid_Disabled': np.array([[False, False]]),
+        'FilterST': np.array([[True, False]]),
+    }
+    config = {
+        'weights': {'Active': 1.0, 'Disabled': 0.0},
+        'filter_factors': {'FilterST': True},
+    }
+
+    masks = _build_worker_filter_masks(
+        arrays, {'Active', 'Disabled'}, config,
+    )
+
+    assert masks['_active_factor_intersection'].tolist() == [[True, False]]
+    assert masks['FilterST'].tolist() == [[True, False]]

@@ -1,3 +1,4 @@
+import time
 from datetime import date
 from types import SimpleNamespace
 
@@ -117,8 +118,8 @@ def _inject_inflight_sell(trader, om, code='600000.SH', oid=9000, volume=100):
     om.sell_targets[code] = volume
 
 
-def test_sell_submit_registers_and_sells_pending():
-    """卖单提交后登记进 submitted，sells_pending 实时反映在途状态。"""
+def test_sell_submit_registers_and_tracks_pending_order():
+    """卖单提交后登记进 submitted，统一在途状态实时反映订单终态。"""
     trader = _FakeTrader()
     trader.on_order = lambda code, shares, oid: SimpleNamespace(
         stock_code=code, order_status=xtconstant.ORDER_REPORTED,
@@ -128,27 +129,27 @@ def test_sell_submit_registers_and_sells_pending():
     om = _make_order_monitor(ex, sell_orders=[('600000.SH', 700)])
     om._submit('SELL', '600000.SH', 700)
     assert len(om.submitted) == 1
-    assert om._sells_pending() is True
+    assert om._has_pending_orders() is True
     assert om._sell_remaining('600000.SH') == 0
 
     oid = om.submitted[0]['order_id']
     trader.orders[oid].order_status = xtconstant.ORDER_JUNK
-    assert om._sells_pending() is False
+    assert om._has_pending_orders() is False
     assert om._sell_remaining('600000.SH') == 700
 
 
-def test_sells_pending_reflects_order_terminal_state():
-    """回归 2026-06-11:回款在途与否必须实时查卖单终态,不能依赖标志位。"""
+def test_pending_orders_reflect_terminal_state():
+    """回归 2026-06-11:在途与否必须实时查订单终态,不能依赖标志位。"""
     trader = _FakeTrader()
     ex = RebalanceExecutor(trader)
     om = _make_order_monitor(ex, {'600000.SH': 100}, {'600000.SH': 10.0})
-    assert om._sells_pending() is False
+    assert om._has_pending_orders() is False
 
     _inject_inflight_sell(trader, om, '600000.SH', 9000, 100)
-    assert om._sells_pending() is True
+    assert om._has_pending_orders() is True
 
     trader.orders[9000].order_status = xtconstant.ORDER_SUCCEEDED
-    assert om._sells_pending() is False
+    assert om._has_pending_orders() is False
 
 
 def test_remaining_counts_filled_and_inflight():
@@ -192,6 +193,44 @@ def test_reject_retries_same_size_later_without_blocking_or_shrinking():
     om.retry_after[code] = 0
     assert om._submit_affordable_buys() is True
     assert [x[1] for x in trader.submitted] == [1000, 1000]
+
+
+def test_run_keeps_monitoring_reported_order_and_retries_late_reject():
+    """回归 2026-07-17:已报订单数分钟后才废单，主循环不能提前退出。"""
+    class _LateRejectTrader(_FakeTrader):
+        def order(self, order_type, code, shares, price, order_remark=''):
+            oid = super().order(order_type, code, shares, price, order_remark)
+            o = self.orders[oid]
+            o.order_type = order_type
+            if len(self.submitted) == 1:
+                o.order_status = xtconstant.ORDER_REPORTED
+                o.traded_volume = 0
+                o.reject_at = time.time() + 0.02
+            return oid
+
+        def query_order(self, oid):
+            o = super().query_order(oid)
+            if (o and getattr(o, 'reject_at', None)
+                    and time.time() >= o.reject_at):
+                o.order_status = xtconstant.ORDER_JUNK
+                o.status_msg = '订单价格超出范围'
+            return o
+
+    trader = _LateRejectTrader(cash=1e7)
+    ex = RebalanceExecutor(trader)
+    ex.BUY_MONITOR_DEADLINE_SEC = 0.2
+    ex.ORDER_REJECT_RETRY_SEC = 0.01
+    ex.MONITOR_POLL_SEC = 0.001
+    code = '688616.SH'
+    om = _make_order_monitor(
+        ex, {code: 3222}, {code: 10.23}, limit_prices={code: 12.25})
+
+    om.run()
+
+    assert [(shares, price) for _, shares, _, price in trader.submitted] == [
+        (3222, 10.23), (3222, 10.23),
+    ]
+    assert om._remaining(code) == 0
 
 
 def test_underfunded_reject_waits_for_cash_without_blocking():

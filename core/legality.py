@@ -5,11 +5,7 @@
 改革、ST 规则调整）变化，逻辑复杂，故独立成 `LegalityChecker` 类集中维护。
 
 红线：选股/合法性 **只允许使用 open[T] 与 close[T-1]**（前收）。T 日 high/low/close/
-volume/amount 一律视为前视野泄露。
-
-唯一例外：IPO 首日封板可行性判定借用 T 日 high/low/close 模拟"一字/秒封买不进"。
-该用法只会更保守地【拒绝】成交、绝不制造虚高收益，且实盘当天 HLC 为 NaN 时自动失效，
-故不属于污染收益的数据泄露（详见 LegalityChecker.check 文档）。
+volume/amount 一律视为前视野泄露，不设例外。
 
 取整偏严：涨停价向下取整、跌停价向上取整，使"触及涨跌停"更易成立、买卖更易被拒。
 偏严方向回测可与实盘对齐，宽松则无法对齐。
@@ -109,22 +105,20 @@ class LegalityChecker:
     只做向量化布尔运算，无逐股票循环。
     """
 
-    def __init__(self, data, stock_indices, list_dates_map=None, limit_up_protection=False):
+    def __init__(self, data, stock_indices, list_dates_map=None,
+                 delist_dates_map=None, limit_up_protection=False):
         """
         Args:
-            data: load_runtime_npz 返回的 dict（含 open/close/high/low/preClose/st_mask/issue_price 等）
+            data: load_runtime_npz 返回的 dict（含 open/preClose/st_mask/issue_price 等）
             stock_indices: {code: col_idx}
             list_dates_map: {code: list_date} 可选；回测从 K 线首日推断
+            delist_dates_map: 兼容通用回测旧接口；退市约束由当前股票池处理。
             limit_up_protection: 一字涨停保护——卖出侧也过滤涨停股，避免卖掉封板标的。
 
-        涨跌停判定一律用「原始 OHLC + 官方 preClose（除权除息参考价）」：preClose 本身已吸收
+        涨跌停判定一律用「原始 open + 官方 preClose（除权除息参考价）」：preClose 本身已吸收
         分红送转配股，除权日 open/preClose 天然不会假跳空——无需复权价、研究/对账口径完全一致。
         """
         self.open_all = data['open']
-        self.close_all = data['close']
-        self.high_all = data['high']
-        self.low_all = data['low']
-        self.volume_all = data['volume']
         self.preclose_all = data['preClose']
         self.st_all = data['st_mask']
         self.issue_price_all = data['issue_price']
@@ -179,11 +173,17 @@ class LegalityChecker:
                         arr[si] = ti
             return arr
 
+        if list_dates_map is None:
+            open_price = np.asarray(data['open'], dtype=np.float64)
+            valid = np.isfinite(open_price) & (open_price > 0)
+            has_valid = valid.any(axis=0)
+            inferred = np.where(has_valid, valid.argmax(axis=0), -1).astype(np.int32)
+            return bt, br, inferred
         return bt, br, _build_tidx(list_dates_map)
 
     # ---------- 每个调仓日的合法性判定（热路径，全向量化）----------
     def check(self, candidates_idx, trade_idx, signal_date, is_buy):
-        """向量化涨跌停 / IPO 首日检查（T 日开盘成交契约）。
+        """向量化涨跌停检查（T 日开盘成交契约）。
 
         Args:
             candidates_idx: 候选股在 NPZ 列空间的索引（list 或 ndarray）
@@ -195,7 +195,6 @@ class LegalityChecker:
             (mask, reasons): mask[i]=True 表示可成交；reasons 含停牌计数
 
         数据使用：open[T] / preClose[T]（官方前收）/ st_mask[T]（盘前已知）/ 发行价。
-        IPO 首日封板专项豁免借用 high/low/close[T]（仅拒绝成交、实盘 NaN 失效）。
 
         已知局限：重新上市/恢复上市/增发上市首日同属"不设涨跌幅"，runtime 暂无事件日期
         字段，无法单独识别其非跳空形态；跳空高开形态已被涨停判定一并拦下。
@@ -206,10 +205,8 @@ class LegalityChecker:
             return np.array([], dtype=bool), {}
 
         opens = self.open_all[trade_idx, idx].astype(np.float64)
-        volumes = self.volume_all[trade_idx, idx].astype(np.float64)
         valid_open = ~np.isnan(opens) & (opens > 0)
-        valid_volume = ~np.isnan(volumes) & (volumes > 0)
-        tradable_data = valid_open & valid_volume
+        tradable_data = valid_open
         if not np.any(tradable_data):
             return np.zeros(n, dtype=bool), {'suspended': n}
 
@@ -266,8 +263,10 @@ class LegalityChecker:
         has_limit = valid_preclose & ~exempt            # exempt(不设涨跌幅) 不参与涨跌停判定
 
         if is_buy:
-            tradable = self._check_buy(idx, trade_idx, opens, precloses, ratios,
-                                       tradable_data, has_limit, is_ipo_first)
+            tradable = self._check_buy(
+                opens, precloses, ratios, tradable_data, has_limit,
+                is_ipo_first,
+            )
         else:
             down_limits = np.where(has_limit, _ceil_2(precloses * (1.0 - ratios)), np.nan)
             limit_down = tradable_data & has_limit & (opens <= down_limits + _EPS)
@@ -284,9 +283,10 @@ class LegalityChecker:
         reasons = {'suspended': suspended} if suspended > 0 else {}
         return tradable, reasons
 
-    # ---------- 买入侧：涨停 + IPO 首日封板 ----------
-    def _check_buy(self, idx, trade_idx, opens, precloses, ratios,
-                   valid_open, has_limit, is_ipo_first):
+    # ---------- 买入侧：仅用开盘价判断涨停与老规则 IPO 开盘封单 ----------
+    @staticmethod
+    def _check_buy(opens, precloses, ratios, valid_open, has_limit,
+                   is_ipo_first):
         # ===== 4. 涨停禁买（涨停价向下取整，偏严）=====
         up_limits = np.where(has_limit, _floor_2(precloses * (1.0 + ratios)), np.nan)
         limit_up = valid_open & has_limit & (opens >= up_limits - _EPS)
@@ -294,20 +294,13 @@ class LegalityChecker:
         # 理论涨停价，会被本判定一并拦下；非跳空的此类首日因无事件数据无法识别（见模块说明）。
         tradable = valid_open & ~limit_up
 
-        # ===== 5. IPO 首日封板可行性（专项豁免借用 T 日 HLC）=====
-        #   主板/创业板老规则首日：开盘集合竞价上限=发行价×1.20、盘中涨停=发行价×1.44。
-        #   open 顶 +20% 且 收盘封 +44% 且 low==open → 一字/秒封，实盘 9:30 排不上买单。
-        #   实盘当天 HLC 为 NaN → 自动失效、照常下单（QMT 撮合决定），回测/实盘共用同一实现。
-        if self.high_all is not None and self.low_all is not None and np.any(is_ipo_first):
-            ceil20 = _floor_2(precloses * 1.20)
-            highs = self.high_all[trade_idx, idx].astype(np.float64)
-            lows = self.low_all[trade_idx, idx].astype(np.float64)
-            closes_t = self.close_all[trade_idx, idx].astype(np.float64)
-            sealed = (is_ipo_first & has_limit & valid_open
-                      & ~np.isnan(highs) & ~np.isnan(lows) & ~np.isnan(closes_t)
-                      & (opens >= ceil20 - _EPS)
-                      & (closes_t >= up_limits - _EPS)
-                      & (lows >= opens - _EPS))
-            tradable = tradable & ~sealed
+        # 老规则 IPO 首日集合竞价上限为发行价×1.20。开盘已顶到该
+        # 已知上限时，9:30 买单无法可靠成交；不借用当日 HLC。
+        ipo_open_limit = _floor_2(precloses * 1.20)
+        blocked_ipo_open = (
+            is_ipo_first & valid_open
+            & (opens >= ipo_open_limit - _EPS)
+        )
+        tradable &= ~blocked_ipo_open
 
         return tradable

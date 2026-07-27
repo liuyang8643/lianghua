@@ -13,7 +13,7 @@ WBR 回测可视化报告生成器
 9. 每日收益率分布
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from html import escape as html_escape
 from pathlib import Path
 import re
@@ -88,8 +88,15 @@ def _make_stock_text(code: str, stock_name_map: Dict[str, str]) -> str:
 
 
 
-def _make_stock_button(code: str, stock_name_map: Dict[str, str], class_name: str = 'code-btn') -> str:
+def _make_stock_button(code: str, stock_name_map: Dict[str, str], class_name: str = 'code-btn',
+                       kline_event_id: int | None = None) -> str:
     label = html_escape(_fmt_stock(code, stock_name_map))
+    if kline_event_id is not None:
+        return (
+            f'<button type="button" class="{class_name}" '
+            f'data-kline-code="{html_escape(code)}" data-kline-event="{kline_event_id}">'
+            f'{label}</button>'
+        )
     return f'<span class="{class_name}">{label}</span>'
 
 
@@ -207,6 +214,149 @@ def _get_stock_trades(trade_log: List[Dict], code: str) -> Dict:
         for t in trades if t.get('action') == 'sell'
     ]
     return {'buys': buys, 'sells': sells}
+
+
+def _build_trade_episodes(trade_log: List[Dict], report_end: str = '') -> Dict[str, Dict[str, Any]]:
+    """Reconstruct flat-position episodes so each trade can open its own K-line window."""
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for event_id, trade in enumerate(trade_log):
+        code = str(trade.get('code') or '')
+        trade_date = _get_trade_date(trade)
+        action = str(trade.get('action') or '')
+        if not code or not trade_date or action not in {'buy', 'sell'}:
+            continue
+        grouped.setdefault(code, []).append({
+            'id': event_id,
+            'date': trade_date,
+            'action': action,
+            'price': round(float(trade.get('price') or 0.0), 4),
+            'volume': int(trade.get('volume') or 0),
+        })
+
+    resolved_end = report_end or max(
+        (event['date'] for events in grouped.values() for event in events),
+        default=datetime.now().strftime('%Y-%m-%d'),
+    )
+    result: Dict[str, Dict[str, Any]] = {}
+    for code, events in grouped.items():
+        events.sort(key=lambda item: (item['date'], item['id']))
+        episodes: List[Dict[str, Any]] = []
+        current: Dict[str, Any] | None = None
+        position_volume = 0
+        for event in events:
+            if event['action'] == 'buy':
+                if current is None:
+                    current = {'id': len(episodes), 'start': event['date'], 'events': []}
+                position_volume += event['volume']
+            elif current is None:
+                continue
+
+            event['episode'] = current['id']
+            current['events'].append(event['id'])
+            if event['action'] == 'sell':
+                position_volume = max(0, position_volume - event['volume'])
+                if position_volume == 0:
+                    current['end'] = event['date']
+                    episodes.append(current)
+                    current = None
+
+        if current is not None:
+            current['end'] = resolved_end
+            current['open'] = True
+            episodes.append(current)
+
+        for episode in episodes:
+            start_dt = datetime.strptime(episode['start'], '%Y-%m-%d') - timedelta(days=183)
+            end_dt = datetime.strptime(episode['end'], '%Y-%m-%d') + timedelta(days=183)
+            episode['window_start'] = start_dt.strftime('%Y-%m-%d')
+            episode['window_end'] = end_dt.strftime('%Y-%m-%d')
+        result[code] = {'events': events, 'episodes': episodes}
+    return result
+
+
+def _collect_kline_payload(trade_log: List[Dict], stock_name_map: Dict[str, str],
+                           report_end: str = '') -> Dict[str, Any]:
+    """Collect only merged episode windows from local daily K-line parquet files."""
+    if not trade_log:
+        return {}
+    try:
+        import pandas as pd
+        from data.db.data import KLINE_DIR
+    except ImportError:
+        return {}
+
+    episode_map = _build_trade_episodes(trade_log, report_end)
+    payload: Dict[str, Any] = {}
+    for code, info in episode_map.items():
+        path = KLINE_DIR / f'{code}.parquet'
+        if not path.exists() or not info['episodes']:
+            continue
+        try:
+            frame = pd.read_parquet(
+                path, columns=['time', 'open', 'high', 'low', 'close', 'amount'],
+            )
+        except Exception:
+            continue
+        if frame.empty:
+            continue
+
+        ranges = sorted(
+            (episode['window_start'], episode['window_end'])
+            for episode in info['episodes']
+        )
+        merged: List[List[str]] = []
+        for start, end in ranges:
+            if not merged or start > merged[-1][1]:
+                merged.append([start, end])
+            elif end > merged[-1][1]:
+                merged[-1][1] = end
+
+        time_values = frame['time'].to_numpy()
+        mask = np.zeros(len(frame), dtype=bool)
+        for start, end in merged:
+            start_ms = int(datetime.strptime(start, '%Y-%m-%d').timestamp() * 1000)
+            end_ms = int((datetime.strptime(end, '%Y-%m-%d') + timedelta(days=1)).timestamp() * 1000)
+            mask |= (time_values >= start_ms) & (time_values < end_ms)
+        selected = frame.loc[mask].copy()
+        valid_ohlc = np.isfinite(
+            selected[['open', 'high', 'low', 'close']].to_numpy(dtype=np.float64)
+        ).all(axis=1)
+        selected = selected.loc[valid_ohlc]
+        if len(selected) < 5:
+            continue
+
+        timestamps = selected['time'].to_numpy()
+        payload[code] = {
+            'n': _get_stock_name(code, stock_name_map),
+            'd': [datetime.fromtimestamp(int(value) / 1000).strftime('%Y-%m-%d') for value in timestamps],
+            'o': [round(float(value), 4) for value in selected['open'].to_numpy()],
+            'h': [round(float(value), 4) for value in selected['high'].to_numpy()],
+            'l': [round(float(value), 4) for value in selected['low'].to_numpy()],
+            'c': [round(float(value), 4) for value in selected['close'].to_numpy()],
+            'a': [
+                round(float(value), 2) if np.isfinite(value) else 0.0
+                for value in selected['amount'].to_numpy(dtype=np.float64)
+            ],
+            'events': info['events'],
+            'episodes': info['episodes'],
+        }
+    return payload
+
+
+def _encode_kline_payload(payload: Dict[str, Any]) -> str:
+    if not payload:
+        return ''
+    import base64
+    import gzip
+    import json
+
+    raw = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    encoded = base64.b64encode(gzip.compress(raw, compresslevel=9)).decode('ascii')
+    testback_logger.info(
+        f'K线数据: {len(payload)} 只股票, 原始 {len(raw)/1024/1024:.1f} MB, '
+        f'压缩后 {len(encoded)/1024/1024:.1f} MB'
+    )
+    return encoded
 
 
 
@@ -539,7 +689,7 @@ def _make_trade_table(trade_log: List[Dict], stock_name_map: Dict[str, str]) -> 
         return _make_table(headers, [], 'trade-table', '暂无交易记录', row_height=60, max_height=540)
 
     rows = []
-    for t in trade_log:
+    for event_id, t in enumerate(trade_log):
         action = t.get('action', '')
         is_buy = action == 'buy'
         action_cls = 'buy-cell' if is_buy else 'sell-cell'
@@ -558,7 +708,12 @@ def _make_trade_table(trade_log: List[Dict], stock_name_map: Dict[str, str]) -> 
         rows.append([
             _make_cell(html_escape(signal_date), signal_date),
             _make_cell(html_escape(trade_date), trade_date),
-            _make_cell(_make_stock_button(t.get('code', ''), stock_name_map), _fmt_stock(t.get('code', ''), stock_name_map)),
+            _make_cell(
+                _make_stock_button(
+                    t.get('code', ''), stock_name_map, kline_event_id=event_id,
+                ),
+                _fmt_stock(t.get('code', ''), stock_name_map),
+            ),
             _make_cell(f'<span class="{action_cls}">{action_txt}</span>', action_txt),
             _make_cell(html_escape(execution_basis), execution_basis),
             _make_cell(f'{t.get("price", 0):.4f}', t.get('price', 0)),
@@ -781,6 +936,9 @@ def _build_metric_cards(metrics: Dict, holding_stats: Dict) -> str:
         ('夏普比率', f"{metrics.get('sharpe_ratio', 0):.2f}",
          'neutral',
          '使用日收益率均值和标准差按 252 交易日年化得到的夏普比率。'),
+        ('平均实际仓位', f"{metrics.get('average_exposure', 0.0) * 100:.2f}%",
+         'neutral',
+         '按每日收盘时持仓市值占总资产的平均比例。'),
         ('实际买入次数', str(metrics.get('executed_buy_count', 0)),
          'neutral',
          '本次回测实际成交的买入笔数。'),
@@ -859,6 +1017,38 @@ def _build_metric_cards(metrics: Dict, holding_stats: Dict) -> str:
     return grid
 
 
+def _build_primary_metric_cards(metrics: Dict, total_return: float,
+                                excess_return: float, init_cash: float,
+                                final_asset: float) -> str:
+    """Build the compact first-screen summary; the full metric set stays below."""
+    cards = [
+        ('总收益', _fmt_pct(total_return), 'pos' if total_return >= 0 else 'neg',
+         f'{_fmt_money(init_cash)} → {_fmt_money(final_asset)}'),
+        ('年化收益', _fmt_pct(metrics.get('annualized', 0)),
+         'pos' if metrics.get('annualized', 0) >= 0 else 'neg', '复利年化'),
+        ('相对沪深300', _fmt_pct(excess_return),
+         'pos' if excess_return >= 0 else 'neg', '策略累计收益 - 基准累计收益'),
+        ('Sharpe', f"{metrics.get('sharpe_ratio', 0):.2f}",
+         'neutral', '日收益年化'),
+        ('最大回撤', _fmt_pct(metrics.get('max_drawdown', 0), sign=False),
+         'neg', '从高点到低点'),
+        ('Calmar', f"{metrics.get('calmar_ratio', 0):.2f}",
+         'neutral', '年化收益 / 最大回撤'),
+        ('清仓胜率', f"{metrics.get('win_rate', 0):.1f}%",
+         'neutral', f"{metrics.get('wins', 0)} 盈利 / {metrics.get('losses', 0)} 亏损"),
+        ('平均仓位', f"{metrics.get('average_exposure', 0.0) * 100:.1f}%",
+         'neutral', '按日收盘持仓市值占比'),
+    ]
+    return ''.join(
+        f'<div class="primary-stat">'
+        f'<span class="primary-stat-label">{html_escape(label)}</span>'
+        f'<strong class="primary-stat-value {cls}">{html_escape(value)}</strong>'
+        f'<small class="primary-stat-context">{html_escape(context)}</small>'
+        f'</div>'
+        for label, value, cls, context in cards
+    )
+
+
 
 # ---------------------------------------------------------------------------
 # 主报告生成
@@ -894,6 +1084,7 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     per_year_metrics = report_data.get('per_year_metrics', []) or []
     period = report_data.get('period', {}) or {}
     rebalance_rule = report_data.get('rebalance_rule', {}) or {}
+    report_metadata = report_data.get('report_metadata', {}) or {}
     final_asset = report_data.get('final_asset', init_cash)
     signal_period_str = f"{period.get('signal_start', '')} ~ {period.get('signal_end', '')}" if period else ''
     trade_period_str = f"{period.get('trade_start', '')} ~ {period.get('trade_end', '')}" if period else ''
@@ -906,9 +1097,41 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     hs300_returns = report_data.get('hs300_returns') or []
     hs300_nav = _cumulative_returns_to_nav(hs300_returns) if hs300_returns else []
     factor_missing_counts = report_data.get('factor_missing_counts') or {}
+    stock_pool_size = int(report_metadata.get('stock_pool_size') or 0)
+    factor_valid_counts = {
+        name.replace('缺失', '有效'): [max(0, stock_pool_size - int(count)) for count in counts]
+        for name, counts in factor_missing_counts.items()
+    } if stock_pool_size > 0 else {}
+
+    drawdown_pct = []
+    peak_nav = 1.0
+    for nav in strategy_nav:
+        peak_nav = max(peak_nav, nav)
+        drawdown_pct.append(round((nav / peak_nav - 1.0) * 100.0, 6) if peak_nav else 0.0)
+    exposure_pct = [
+        round(float(snapshot.get('exposure', 0.0)) * 100.0, 6)
+        for snapshot in daily_snapshots
+    ]
+    rebalance_funds_pct = [
+        round(float(snapshot.get('rebalance_funds_ratio', 0.0)) * 100.0, 6)
+        for snapshot in daily_snapshots
+    ]
+    activity = [
+        {
+            'date': _get_trade_date(snapshot),
+            'buys': len(snapshot.get('executed_buy_list', []) or []),
+            'sells': len(snapshot.get('executed_sell_list', []) or []),
+        }
+        for snapshot in daily_snapshots
+    ]
 
     generated_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     metrics = dict(report_data.get('metrics', {}))
+    metrics['average_exposure'] = (
+        sum(float(snapshot.get('exposure', 0.0)) for snapshot in daily_snapshots)
+        / len(daily_snapshots)
+        if daily_snapshots else 0.0
+    )
     metrics.update({
         'executed_buy_count': report_data.get('executed_buy_count', metrics.get('buy_trades', 0)),
         'executed_sell_count': report_data.get('executed_sell_count', metrics.get('sell_trades', 0)),
@@ -924,11 +1147,24 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     signal_timing = rebalance_rule.get('signal_timing', 'T-1')
     trade_timing = rebalance_rule.get('trade_timing', 'T open')
     price_field = rebalance_rule.get('price_field', 'open')
+    total_return = float(report_data.get('total_return', cumulative_returns[-1] if cumulative_returns else 0.0) or 0.0)
+    benchmark_return = float(hs300_returns[-1]) if hs300_returns else 0.0
+    excess_return = round(total_return - benchmark_return, 6)
+    kline_payload = _collect_kline_payload(
+        trade_log, stock_name_map,
+        period.get('trade_end') or (trade_dates[-1] if trade_dates else ''),
+    )
+    kline_b64 = _encode_kline_payload(kline_payload)
 
     report_json = json.dumps({
         'summary': {
             'annualized_return_pct': metrics.get('annualized', 0),
+            'total_return_pct': total_return,
+            'benchmark_return_pct': benchmark_return,
+            'excess_return_pct': excess_return,
             'max_drawdown_pct': metrics.get('max_drawdown', 0),
+            'max_drawdown_start': metrics.get('max_drawdown_start', ''),
+            'max_drawdown_end': metrics.get('max_drawdown_end', ''),
             'sharpe_ratio': metrics.get('sharpe_ratio', 0),
             'calmar_ratio': metrics.get('calmar_ratio', 0),
             'win_rate_pct': metrics.get('win_rate', 0),
@@ -957,6 +1193,7 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
             'trade_timing': trade_timing,
             'price_field': price_field,
             'generated_time': generated_time,
+            'stock_pool_size': stock_pool_size,
         },
         'tables': {
             'monthly': _make_monthly_table(monthly_stats),
@@ -972,18 +1209,28 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
                 'strategy_nav': strategy_nav,
                 'benchmark_nav': hs300_nav,
                 'daily_returns_pct': daily_returns_pct,
+                'drawdown_pct': drawdown_pct,
+                'exposure_pct': exposure_pct,
+                'rebalance_funds_pct': rebalance_funds_pct,
+                'activity': activity,
             },
             'distribution': _build_histogram_payload(daily_returns_pct),
             'winloss': _build_winloss_payload(trade_log),
-            'factor_missing': {
+            'factor_valid': {
                 'trade_dates': trade_dates,
-                'series': factor_missing_counts,
+                'series': factor_valid_counts,
+                'stock_pool_size': stock_pool_size,
             },
+            'monthly': monthly_stats,
         },
+        'kline_b64': kline_b64,
         'live_simulation': None,
     }, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
 
     metric_cards = _build_metric_cards(metrics, holding_stats)
+    primary_metric_cards = _build_primary_metric_cards(
+        metrics, total_return, excess_return, init_cash, final_asset,
+    )
     weights_html = ' '.join(
         f'<span class="weight-tag">{"+" if value > 0 else ""}{value:.2f} {html_escape(name)}</span>'
         for name, value in sorted(weights.items(), key=lambda item: abs(item[1]), reverse=True) if value != 0
@@ -1005,21 +1252,18 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     html_content = f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>回测报告 - {html_escape(period_str)}</title><link rel="icon" href="data:,"><link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css"><script src="https://unpkg.com/@popperjs/core@2/dist/umd/popper.min.js"></script><script src="https://unpkg.com/tippy.js@6/dist/tippy-bundle.umd.min.js"></script><script src="https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js"></script><style>{styles}</style></head>
-<body><div class="container">
-<div class="report-header"><div class="report-title">回测报告</div><div class="report-subtitle">WBR 量化交易系统 · T 日收盘信号 / 盘后执行 详细报告</div><div class="report-meta"><span>信号周期: {html_escape(signal_period_str)}</span><span>执行周期: {html_escape(trade_period_str or period_str)}</span><span>调仓日数: {trade_days}</span><span>初始资金: {_fmt_money(init_cash)}</span><span>最终资产: {_fmt_money(final_asset)}</span><span>生成时间: {html_escape(generated_time)}</span></div></div>
-<div class="config-box"><strong>因子权重:</strong> {weights_html}<br><strong>策略参数:</strong> {config_params_html}<br><strong>调仓规则:</strong> 信号={html_escape(signal_timing)} &nbsp;|&nbsp; 执行={html_escape(trade_timing)} &nbsp;|&nbsp; 价格字段={html_escape(price_field)}<br><strong>实际买入次数:</strong> {metrics.get('executed_buy_count', 0)} &nbsp;|&nbsp;<strong>实际卖出次数:</strong> {metrics.get('executed_sell_count', 0)} &nbsp;|&nbsp;<strong>完整 round-trip 数:</strong> {metrics.get('round_trip_count', 0)}</div>
-<div class="card"><div class="card-title">核心指标</div><div class="metrics-grid">{metric_cards}</div></div>
-<div class="card"><div class="card-title">分年度指标</div>{_build_per_year_table(per_year_metrics)}</div>
-<div class="card"><div class="card-title">净值曲线</div><div id="equity-chart" class="chart-lg"></div></div>
-<div class="card"><div class="card-title">各因子缺失值</div><div id="factor-missing-chart" class="chart-lg"></div></div>
-<div class="charts-2col"><div class="card"><div class="card-title">每日收益率分布</div><div id="distribution-chart" class="chart"></div></div><div class="card"><div class="card-title">盈亏分布</div><div id="winloss-chart" class="chart"></div></div></div>
-<div class="card"><div class="card-title">月度收益</div><div id="monthly-host"></div></div>
-<h2>交易记录明细</h2><div class="card"><div id="trade-host"></div></div>
-<h2>当前持仓明细 ({len(positions)} 只)</h2><div class="card"><div id="holdings-host"></div></div>
-<h2>已清仓持仓明细 ({len(cleared_positions)} 只)</h2><div class="card"><div id="cleared-host"></div></div>
-<h2>每日资金快照</h2><div class="card"><div id="daily-host"></div></div>
-<h2>退市归零事件 ({len(delist_events)} 只)</h2><div class="card"><div id="delist-host"></div></div>
-<div class="footer">WBR 量化交易系统 · 回测报告 · 实际成交 {len(trade_log)} 笔 · {trade_days} 个交易日</div></div>
+<body><div class="container report-shell">
+<div class="kline-overlay" id="klineOverlay"></div><section class="kline-panel" id="klinePanel" role="dialog" aria-modal="true" aria-labelledby="klineTitle"><header class="kline-panel-header"><div><div id="klineTitle">交易 K 线</div><div id="klineMeta" class="kline-meta"></div></div><button type="button" class="panel-close" id="klineClose" aria-label="关闭 K 线">×</button></header><div class="kline-charts-area"><div class="kline-placeholder" id="klinePlaceholder">正在加载 K 线数据</div><div id="klineRenderArea" role="img" aria-label="包含买卖点的股票日 K 线图"></div></div></section>
+<header class="report-header">
+  <div class="header-main"><div><div class="report-kicker">WBR / SINGLE BACKTEST</div><div class="report-title">策略回测总览</div><div class="report-subtitle">T-1 收盘信号 · T 日开盘执行 · {_fmt_pct(total_return)} 累计收益</div></div><a class="header-link" href="#detail-tabs">查看明细 <span aria-hidden="true">↓</span></a></div>
+  <div class="report-meta"><span>{html_escape(trade_period_str or period_str)}</span><span>{trade_days:,} 个调仓日</span><span>初始 {_fmt_money(init_cash)}</span><span>期末 {_fmt_money(final_asset)}</span><span>生成于 {html_escape(generated_time)}</span></div>
+</header>
+<details class="config-details"><summary><span class="summary-label">策略配置</span><span class="summary-preview">{weights_html}</span><span class="summary-caret" aria-hidden="true">⌄</span></summary><div class="config-content"><div><strong>因子权重</strong><div class="weight-list">{weights_html}</div></div><div><strong>策略参数</strong><div class="config-params">{config_params_html}</div></div><div><strong>执行口径</strong><div class="config-params">信号 {html_escape(signal_timing)} · 执行 {html_escape(trade_timing)} · 价格 {html_escape(price_field)} · 买入 {metrics.get('executed_buy_count', 0):,} · 卖出 {metrics.get('executed_sell_count', 0):,}</div></div></div></details>
+<section class="summary-section" aria-labelledby="summary-title"><div class="section-heading"><div><span class="section-eyebrow">PERFORMANCE SNAPSHOT</span><h2 id="summary-title">核心表现</h2></div><span class="section-note">策略累计 {_fmt_pct(total_return)} · 沪深300 {_fmt_pct(benchmark_return)}</span></div><div class="primary-metrics">{primary_metric_cards}</div></section>
+<section class="performance-section card" aria-labelledby="performance-title"><div class="section-heading"><div><span class="section-eyebrow">EQUITY CURVE</span><h2 id="performance-title">资金、回撤、仓位与调仓</h2></div><span class="section-note">单图叠加 · 曲线与柱状可在图例中开关</span></div><div id="equity-chart" class="chart-equity" role="img" aria-label="策略净值、沪深300基准、回撤、实际仓位、当日调仓资金占比与日收益率叠加组合图"></div></section>
+<section class="analysis-grid" aria-label="收益与风险分析"><div class="card analysis-panel panel-wide"><div class="section-heading"><div><span class="section-eyebrow">MONTHLY MAP</span><h2>月度收益热力图</h2></div><span class="section-note">颜色越深代表绝对收益越大</span></div><div id="monthly-heatmap" class="chart-heatmap" role="img" aria-label="月度收益热力图"></div></div><div class="card analysis-panel"><div class="section-heading"><div><span class="section-eyebrow">RETURN DISTRIBUTION</span><h2>日收益分布</h2></div></div><div id="distribution-chart" class="chart-analysis" role="img" aria-label="每日收益率分布"></div></div><div class="card analysis-panel"><div class="section-heading"><div><span class="section-eyebrow">TRADE OUTCOMES</span><h2>清仓盈亏</h2></div></div><div id="winloss-chart" class="chart-analysis" role="img" aria-label="清仓盈亏分布"></div></div><div class="card analysis-panel panel-wide"><div class="section-heading"><div><span class="section-eyebrow">DATA HEALTH</span><h2>因子有效股票数</h2></div><span class="section-note">完整股票池 {stock_pool_size:,} 只 · 按交易日观察</span></div><div id="factor-valid-chart" class="chart-factor" role="img" aria-label="各因子有效股票数量趋势"></div></div><div class="card analysis-panel panel-wide"><div class="section-heading"><div><span class="section-eyebrow">YEARLY SCORECARD</span><h2>分年度指标</h2></div></div>{_build_per_year_table(per_year_metrics)}</div></section>
+<section id="detail-tabs" class="detail-section" aria-labelledby="detail-title"><div class="section-heading"><div><span class="section-eyebrow">RESEARCH TABLES</span><h2 id="detail-title">明细工作区</h2></div><span class="section-note">共 {len(trade_log):,} 笔实际成交 · {len(positions)} 只当前持仓</span></div><div class="tab-list" role="tablist" aria-label="回测明细分类"><button class="tab-button is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-monthly" data-tab="monthly">月度</button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-trades" data-tab="trades">交易记录 <span>{len(trade_log):,}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-holdings" data-tab="holdings">当前持仓 <span>{len(positions)}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-cleared" data-tab="cleared">已清仓 <span>{len(cleared_positions)}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-daily" data-tab="daily">每日快照 <span>{trade_days:,}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-delist" data-tab="delist">退市归零 <span>{len(delist_events)}</span></button></div><div class="tab-panels"><div class="tab-panel is-active" id="panel-monthly" role="tabpanel"><div id="monthly-host"></div></div><div class="tab-panel" id="panel-trades" role="tabpanel" hidden><div id="trade-host"></div></div><div class="tab-panel" id="panel-holdings" role="tabpanel" hidden><div id="holdings-host"></div></div><div class="tab-panel" id="panel-cleared" role="tabpanel" hidden><div id="cleared-host"></div></div><div class="tab-panel" id="panel-daily" role="tabpanel" hidden><div id="daily-host"></div></div><div class="tab-panel" id="panel-delist" role="tabpanel" hidden><div id="delist-host"></div></div></div></section>
+<div class="footer">WBR 量化交易系统 · {trade_days:,} 个交易日 · {len(trade_log):,} 笔实际成交</div></div>
 <script id="report-data" type="application/json">{report_json}</script><script type="module">{module_js}</script></body></html>"""
 
     minified_html = _minify_html_document(html_content)

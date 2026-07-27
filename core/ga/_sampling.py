@@ -7,6 +7,7 @@ from ._profiles import (
     get_profile, get_profile_search_spaces, get_profile_weight_search_spaces,
     get_profile_fixed_weights, get_intrinsic_params,
     get_profile_fixed_parameters,
+    get_config_param,
 )
 
 
@@ -70,9 +71,9 @@ def build_individual_config(
     rebalance: bool | None = None,
     limit_up_protection: bool | None = None,
     cash_reserve_ratio: float | None = None,
-    prefilter_n: int | None = None,
     filter_factors: dict | None = None,
     profile_name: str | None = None,
+    **search_values,
 ) -> dict:
     if weights is None:
         weights = get_profile_fixed_weights(profile_name)
@@ -98,13 +99,17 @@ def build_individual_config(
         if key == 'buy_n':
             continue
         ck = pdef['config_key']
-        val = kwargs[key]
+        val = search_values.get(key, kwargs.get(key))
         if val is None and key in _sample_registry:
             val = _sample_space_key(key, profile_name)
         if val is not None:
             if pdef['type'] == 'int' and val == 0:
                 continue  # 零值不写入 config, 视为关闭
-            cfg[ck] = val
+            group = pdef.get('config_group')
+            if group:
+                cfg.setdefault(group, {})[ck] = val
+            else:
+                cfg[ck] = val
 
     # sell_m >= buy_n 约束
     if cfg['sell_m'] < cfg['buy_n']:
@@ -115,7 +120,14 @@ def build_individual_config(
     # rebalance 兜底默认值（不在 search_spaces 时不会经过注册表采样循环）
     if 'rebalance' not in cfg:
         cfg['rebalance'] = True
-    cfg.update(get_profile_fixed_parameters(profile_name))
+    fixed = get_profile_fixed_parameters(profile_name)
+    for key, value in fixed.items():
+        if isinstance(value, dict) and isinstance(cfg.get(key), dict):
+            cfg[key] = {**cfg[key], **value}
+        else:
+            cfg[key] = value
+    if get_profile(profile_name).get('constraints', {}).get('sell_m_equals_buy_n'):
+        cfg['sell_m'] = cfg['buy_n']
     return cfg
 
 
@@ -140,9 +152,14 @@ def repair_config(config: dict, profile_name: str | None = None) -> bool:
         if pdef['key'] == 'buy_n':
             continue  # 上面已处理
         space = spaces.get(pdef['key'])
-        ck = pdef['config_key']
-        if space and ck in config and config[ck] not in space:
-            config[ck] = random.choice(space)
+        value = get_config_param(config, pdef)
+        if space and value not in space:
+            replacement = random.choice(space)
+            group = pdef.get('config_group')
+            if group:
+                config.setdefault(group, {})[pdef['config_key']] = replacement
+            else:
+                config[pdef['config_key']] = replacement
             changed = True
 
     filters = config.get('filter_factors', {})
@@ -155,6 +172,10 @@ def repair_config(config: dict, profile_name: str | None = None) -> bool:
 
     # sell_m >= buy_n 约束
     if config['sell_m'] < config['buy_n']:
+        config['sell_m'] = config['buy_n']
+        changed = True
+    if (get_profile(profile_name).get('constraints', {}).get('sell_m_equals_buy_n')
+            and config['sell_m'] != config['buy_n']):
         config['sell_m'] = config['buy_n']
         changed = True
 
@@ -203,20 +224,6 @@ def generate_initial_configs(count: int, profile_name: str | None = None) -> lis
 
         w = sample_weights(profile_name=profile_name) if has_weight else None
         configs.append(build_individual_config(
-            buy_n_val, sell_m=extra.get('sell_m'), weights=w, factor_choice=fc,
-            stock_pool=extra.get('stock_pool'),
-            holding_period=extra.get('holding_period'),
-            timing_base=extra.get('timing_base'),
-            timing_leverage=extra.get('timing_leverage'),
-            timing_direction=extra.get('timing_direction'),
-            timing_window=extra.get('timing_window'),
-            timing_index=extra.get('timing_index'),
-            amount_filter_pct=extra.get('amount_filter_pct'),
-            market_cap_filter_pct=extra.get('market_cap_filter_pct'),
-            rebalance=extra.get('rebalance'),
-            limit_up_protection=extra.get('limit_up_protection'),
-            cash_reserve_ratio=extra.get('cash_reserve_ratio'),
-            prefilter_n=extra.get('prefilter_n'),
-            filter_factors=extra.get('filter_factors'),
-            profile_name=profile_name))
+            buy_n=buy_n_val, weights=w, factor_choice=fc,
+            profile_name=profile_name, **extra))
     return configs

@@ -1,160 +1,220 @@
-"""Breadth-gated, risk-adjusted V3 of the open-auction trend signal."""
+"""Pure price-path trend signal for open-auction selection."""
 
 import numpy as np
 
 from factor_db.factors.TrendOpenSignal import (
-    _buy_signal,
+    _cross_confirm,
     _lag,
     _lag_bool,
+    _ratio,
+    _rolling_extreme_with_age,
     _rolling_mean,
+    _rolling_sum,
 )
-from factor_db.factors.TrendOpenSignalV2 import _quality_score, _sell_signal_v2
+from factor_db.factors.TrendOpenSignalV2 import _sell_signal_v2
 
 
 MIN_RAW_OPEN = 2.0
 MIN_ACTIVE_STOCKS = 20
-BREADTH20_ON_FLOOR = 0.43
-BREADTH20_OFF_FLOOR = 0.36
-BREADTH60_FLOOR = 0.35
-BREADTH20_CHANGE5_FLOOR = -0.05
-SCORE_WEIGHTS = (0.0, 0.0, 0.0, 0.0)
+CROSS_DAYS = (2, 3, 4, 5)
+MARKET_MOMENTUM_FLOOR = -0.01375
+MARKET_MA200_FLOOR = 0.987
+STOP_LOSS = -0.14
+TRAILING_DRAWDOWN = -0.22
+MA_BREAK_MARGIN = -0.035
+REVERSAL_WEIGHT = 0.25
 
 
 class TrendOpenSignalV3:
-    """Trend state ranked by momentum quality and gated by T-1 breadth."""
+    """Source-style trend state with a completed price-path ranking."""
 
-    hist_days = 71
+    hist_days = 201
     pre_ranked = True
     requires_full_history = True
 
     def calc_batch(self, panel: dict) -> np.ndarray:
-        components = _build_v3_components(panel)
-        return _compose_v3_scores(
-            components,
-            min_active_stocks=MIN_ACTIVE_STOCKS,
-            breadth20_on_floor=BREADTH20_ON_FLOOR,
-            breadth20_off_floor=BREADTH20_OFF_FLOOR,
-            breadth60_floor=BREADTH60_FLOOR,
-            breadth20_change5_floor=BREADTH20_CHANGE5_FLOOR,
-            score_weights=SCORE_WEIGHTS,
+        open_ = np.asarray(panel["open"], dtype=np.float64)
+        high = np.asarray(panel["high"], dtype=np.float64)
+        low = np.asarray(panel["low"], dtype=np.float64)
+        close = np.asarray(panel["close"], dtype=np.float64)
+        amount = np.asarray(panel["amount"], dtype=np.float64)
+        st_mask = np.asarray(panel["st_mask"], dtype=bool)
+
+        maw5 = _rolling_mean(close * amount, 5) / _rolling_mean(amount, 5)
+        maw20 = _rolling_mean(close * amount, 20) / _rolling_mean(amount, 20)
+        buy_at_close = _buy_signal_v3(
+            panel, open_, high, low, close, amount, maw5, maw20
+        )
+        buy_at_open = _lag_bool(buy_at_close, 1) & np.isfinite(open_) & (open_ > 0)
+        base_sell_at_open = _sell_signal_v2(
+            panel, open_, high, low, close, amount, maw20
+        )
+
+        rows = np.arange(open_.shape[0], dtype=np.int32)[:, None]
+        last_buy = np.maximum.accumulate(np.where(buy_at_open, rows, -1), axis=0)
+        sell_at_open = base_sell_at_open | _extra_sell_signal_v3(
+            open_, high, close, maw20, last_buy, rows
+        )
+        last_sell = np.maximum.accumulate(np.where(sell_at_open, rows, -1), axis=0)
+        holding = (last_buy > last_sell) & (last_buy >= 0)
+        eligible = (
+            holding & np.isfinite(open_) & (open_ >= MIN_RAW_OPEN) & ~st_mask
+        )
+        active = np.sum(eligible, axis=1) >= MIN_ACTIVE_STOCKS
+        eligible &= active[:, None]
+
+        completed_close = _lag(close, 1)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            momentum120 = completed_close / _lag(close, 121) - 1.0
+            completed_return = completed_close / _lag(close, 2) - 1.0
+        volatility20 = np.sqrt(
+            _rolling_mean(completed_return * completed_return, 20)
+        )
+        reversal120 = np.clip((0.40 - momentum120) / 0.80, 0.0, 1.0)
+        low_vol20 = np.clip((0.06 - volatility20) / 0.05, 0.0, 1.0)
+        score = (
+            REVERSAL_WEIGHT * reversal120
+            + (1.0 - REVERSAL_WEIGHT) * low_vol20
+            + 0.01
+        )
+
+        pre_close = np.asarray(panel["preClose"], dtype=np.float64)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            stock_return = close / pre_close - 1.0
+        market_universe = (
+            np.isfinite(stock_return) & np.isfinite(close) & ~st_mask
+        )
+        clipped_return = np.where(
+            market_universe, np.clip(stock_return, -0.20, 0.20), 0.0
+        )
+        market_count = np.sum(market_universe, axis=1)
+        market_return = np.divide(
+            np.sum(clipped_return, axis=1),
+            market_count,
+            out=np.zeros(market_count.shape, dtype=np.float64),
+            where=market_count > 0,
+        )
+        market_index = np.cumprod(1.0 + market_return)
+        completed_market_index = _lag(market_index, 1)
+        market_ma200 = _rolling_mean(market_index[:, None], 200)[:, 0]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            market_momentum20 = (
+                completed_market_index / _lag(market_index, 21) - 1.0
+            )
+            market_ma200_ratio = (
+                completed_market_index / _lag(market_ma200, 1)
+            )
+        market_good = (
+            np.isfinite(market_momentum20)
+            & np.isfinite(market_ma200_ratio)
+            & (market_momentum20 >= MARKET_MOMENTUM_FLOOR)
+            & (market_ma200_ratio >= MARKET_MA200_FLOOR)
+        )
+
+        score = np.nan_to_num(score, nan=0.0, posinf=0.0, neginf=0.0)
+        return np.where(eligible & market_good[:, None], score, 0.0).astype(
+            np.float32
         )
 
 
-def _build_v3_components(panel: dict) -> dict:
-    open_ = np.asarray(panel["open"], dtype=np.float64)
-    high = np.asarray(panel["high"], dtype=np.float64)
-    low = np.asarray(panel["low"], dtype=np.float64)
-    close = np.asarray(panel["close"], dtype=np.float64)
-    amount = np.asarray(panel["amount"], dtype=np.float64)
-    st_mask = np.asarray(panel["st_mask"], dtype=bool)
+def _extra_sell_signal_v3(open_, high, close, maw20, last_buy, rows):
+    safe_buy_rows = np.clip(last_buy, 0, open_.shape[0] - 1)
+    entry_price = np.take_along_axis(open_, safe_buy_rows, axis=0)
+    entry_price = np.where(last_buy >= 0, entry_price, np.nan)
+    age = rows - last_buy
 
-    maw5 = _rolling_mean(close * amount, 5) / _rolling_mean(amount, 5)
-    maw20 = _rolling_mean(close * amount, 20) / _rolling_mean(amount, 20)
-    buy_at_close = _buy_signal(panel, open_, high, low, close, amount, maw5, maw20)
-    buy_at_open = _lag_bool(buy_at_close, 1) & np.isfinite(open_) & (open_ > 0)
-    sell_at_open = _sell_signal_v2(panel, open_, high, low, close, amount, maw20)
-
-    rows = np.arange(open_.shape[0], dtype=np.int32)[:, None]
-    last_buy = np.maximum.accumulate(np.where(buy_at_open, rows, -1), axis=0)
-    last_sell = np.maximum.accumulate(np.where(sell_at_open, rows, -1), axis=0)
-    holding = (last_buy > last_sell) & (last_buy >= 0)
-    eligible = holding & np.isfinite(open_) & (open_ >= MIN_RAW_OPEN) & ~st_mask
-
+    completed_high = _lag(high, 1)
     completed_close = _lag(close, 1)
+    completed_maw20 = _lag(maw20, 1)
+    previous_maw20 = _lag(maw20, 2)
+    peak, peak_age = _rolling_extreme_with_age(completed_high, 30, "max")
     with np.errstate(divide="ignore", invalid="ignore"):
-        momentum20 = completed_close / _lag(close, 21) - 1.0
-        momentum60 = completed_close / _lag(close, 61) - 1.0
-        daily_change = close / _lag(close, 1) - 1.0
-    volatility20 = np.sqrt(_lag(_rolling_mean(daily_change * daily_change, 20), 1))
+        entry_return = open_ / entry_price - 1.0
+        trailing_drawdown = open_ / peak - 1.0
 
-    quality = _quality_score(open_, high, close, maw20)
-    quality = np.where(np.isfinite(quality), quality, 0.0)
-    momentum20_q = np.clip((momentum20 + 0.05) / 0.35, 0.0, 1.0)
-    momentum60_q = np.clip((momentum60 + 0.10) / 0.70, 0.0, 1.0)
-    stability_q = np.clip((0.055 - volatility20) / 0.045, 0.0, 1.0)
+    stop_loss = (age >= 1) & (entry_return <= STOP_LOSS)
+    trailing_exit = (
+        (age >= 2) & (peak_age + 1 >= 2)
+        & (trailing_drawdown <= TRAILING_DRAWDOWN)
+    )
+    ma_break = (
+        (completed_maw20 < previous_maw20)
+        & (open_ < completed_maw20 * (1.0 + MA_BREAK_MARGIN))
+        & (completed_close < completed_maw20 * (1.0 + MA_BREAK_MARGIN))
+    )
+    return np.isfinite(open_) & (open_ > 0) & (
+        stop_loss | trailing_exit | ma_break
+    )
 
-    valid20 = np.isfinite(close) & np.isfinite(maw20) & ~st_mask
-    ma60 = _rolling_mean(close, 60)
-    valid60 = np.isfinite(close) & np.isfinite(ma60) & ~st_mask
-    breadth20_completed = _cross_section_ratio(valid20 & (close >= maw20), valid20)
-    breadth60_completed = _cross_section_ratio(valid60 & (close >= ma60), valid60)
-    breadth20 = _lag_1d(breadth20_completed, 1)
-    breadth60 = _lag_1d(breadth60_completed, 1)
-    breadth20_smoothed = _rolling_mean(breadth20_completed[:, None], 3)[:, 0]
-    breadth20_smoothed = _lag_1d(breadth20_smoothed, 1)
-    breadth20_change5 = breadth20 - _lag_1d(breadth20, 5)
 
-    return {
-        "eligible": eligible,
-        "active_count": np.sum(eligible, axis=1),
-        "quality": quality.astype(np.float32),
-        "momentum20": np.nan_to_num(momentum20_q, nan=0.0).astype(np.float32),
-        "momentum60": np.nan_to_num(momentum60_q, nan=0.0).astype(np.float32),
-        "stability": np.nan_to_num(stability_q, nan=0.0).astype(np.float32),
-        "breadth20": breadth20,
-        "breadth20_smoothed": breadth20_smoothed,
-        "breadth60": breadth60,
-        "breadth20_change5": breadth20_change5,
+def _buy_signal_v3(
+    panel, open_, high, low, close, amount, maw5, maw20,
+    *, max_avg_amount=2.5e8,
+):
+    with np.errstate(divide="ignore", invalid="ignore"):
+        close_position = (close - low) / (high - low)
+        amount_ratio = (_ratio(amount, 1) + _ratio(amount, 2)) / 2.0
+        ret10 = close / _lag(close, 10) - 1.0
+        body = (close - open_) / (high - low)
+
+    valid20 = np.isfinite(maw20) & np.isfinite(close)
+    universe = valid20 & ~np.asarray(panel["st_mask"], dtype=bool)
+    breadth_num = np.sum(universe & (close >= maw20), axis=1)
+    breadth_den = np.sum(universe, axis=1)
+    breadth = np.divide(
+        breadth_num,
+        breadth_den,
+        out=np.zeros_like(breadth_num, dtype=np.float64),
+        where=breadth_den > 0,
+    )[:, None]
+
+    price_valid = (
+        np.isfinite(open_)
+        & np.isfinite(high)
+        & np.isfinite(low)
+        & np.isfinite(close)
+        & np.isfinite(amount)
+        & (open_ > 0)
+        & (high > 0)
+        & (low > 0)
+        & (close > 0)
+        & (amount > 0)
+        & (high >= low)
+    )
+    amount_cap_ok = (
+        True
+        if max_avg_amount is None
+        else _rolling_mean(amount, 3) <= max_avg_amount
+    )
+    common = (
+        (_rolling_sum(price_valid.astype(float), 25) == 25)
+        & amount_cap_ok
+        & (close_position <= 0.98)
+        & (breadth >= 0.43)
+        & ~((ret10 <= 0.09) & (body <= -0.40))
+        & (amount_ratio > 1.5)
+        & (amount_ratio <= 1.825)
+        & (_rolling_sum((high == low).astype(float), 3) == 0)
+    )
+    crosses = {
+        days: _cross_confirm(close, high, low, maw5, maw20, days)
+        for days in CROSS_DAYS
     }
-
-
-def _compose_v3_scores(
-    components: dict,
-    *,
-    min_active_stocks: int,
-    breadth20_on_floor: float,
-    breadth20_off_floor: float,
-    breadth60_floor: float,
-    breadth20_change5_floor: float,
-    score_weights: tuple[float, float, float, float],
-) -> np.ndarray:
-    quality_w, momentum20_w, momentum60_w, stability_w = score_weights
-    score = (
-        quality_w * components["quality"]
-        + momentum20_w * components["momentum20"]
-        + momentum60_w * components["momentum60"]
-        + stability_w * components["stability"]
+    cross = np.logical_or.reduce(list(crosses.values()))
+    changes = close - _lag(close, 1)
+    path10 = _rolling_sum(np.abs(changes), 10)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        efficiency = np.abs(close - _lag(close, 10)) / path10
+        positive_ratio = _rolling_sum((changes > 0).astype(float), 10) / 10.0
+        slope = maw20 / _lag(maw20, 5) - 1.0
+        distance = close / maw20 - 1.0
+    early_quality = (
+        (path10 > 0)
+        & (efficiency >= 0.60)
+        & (positive_ratio >= 0.70)
+        & (slope >= 0.0)
+        & (distance >= 0.0)
+        & (distance <= 0.08)
     )
-    market_on = _hysteresis_state(
-        components["breadth20_smoothed"],
-        on_floor=breadth20_on_floor,
-        off_floor=breadth20_off_floor,
-    )
-    regime = (
-        (components["active_count"] >= min_active_stocks)
-        & market_on
-        & (components["breadth60"] >= breadth60_floor)
-        & (components["breadth20_change5"] >= breadth20_change5_floor)
-    )
-    bounded_score = np.clip(0.05 + 0.95 * score, 0.05, 1.0)
-    return np.where(
-        components["eligible"] & regime[:, None], bounded_score, 0.0
-    ).astype(np.float32)
-
-
-def _hysteresis_state(
-    values: np.ndarray, *, on_floor: float, off_floor: float
-) -> np.ndarray:
-    if on_floor <= 0.0:
-        return np.ones(values.shape, dtype=bool)
-    rows = np.arange(values.shape[0], dtype=np.int32)
-    last_on = np.maximum.accumulate(np.where(values >= on_floor, rows, -1))
-    last_off = np.maximum.accumulate(np.where(values <= off_floor, rows, -1))
-    return (last_on > last_off) & (last_on >= 0)
-
-
-def _cross_section_ratio(condition: np.ndarray, universe: np.ndarray) -> np.ndarray:
-    numerator = np.sum(condition, axis=1)
-    denominator = np.sum(universe, axis=1)
-    return np.divide(
-        numerator,
-        denominator,
-        out=np.full(numerator.shape, np.nan, dtype=np.float64),
-        where=denominator > 0,
-    )
-
-
-def _lag_1d(values: np.ndarray, periods: int) -> np.ndarray:
-    result = np.full(values.shape, np.nan, dtype=np.float64)
-    result[periods:] = values[:-periods]
-    return result
+    enough_history = np.arange(close.shape[0])[:, None] >= 39
+    return enough_history & common & cross & (~crosses[4] | early_quality)

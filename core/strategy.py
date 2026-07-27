@@ -4,7 +4,7 @@
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Callable
 
 import numpy as np
@@ -58,33 +58,95 @@ def build_strategy_day(
     is_rebalance_day: bool = True, position_multiplier: float = 1.0,
 ) -> StrategyDayResult:
   """Build the authoritative strategy target for one trading day."""
-  from core.backtest import _compute_factor_scores, apply_t1_prefilter_for_date, build_list_dates_map
+  from core.backtest import _compute_factor_scores, _compute_list_dates
   from core.legality import LegalityChecker
-  from utils.stock.time import get_last_trading_day
 
   weights = individual_config['weights']
-  prefilter_n = individual_config['prefilter_n']
-  data = None
-  if prefilter_n:
-    prev_date = get_last_trading_day(trade_date - timedelta(days=1))
-    all_stocks, data = apply_t1_prefilter_for_date(
-      prev_date, all_stocks, weights, factor_classes, prefilter_n,
-      filter_factor_classes=filter_factor_classes,
-    )
+  overlay_settings = individual_config.get('trend_risk_overlay') or {}
+  overlay_mode = str(overlay_settings.get('mode', '')).lower()
   if kline_loader is not None:
     if kline_data is not None:
       raise ValueError('pass either kline_loader or kline_data')
     kline_data = kline_loader(all_stocks)
 
+  score_data = None
+  completed_factor_history = 0
+  completed_timing_history = 0
+  if overlay_settings.get('enabled') and overlay_mode == 'dual_completed':
+    from core.runtime import load_runtime_npz
+
+    active_factor_classes = [
+      factor_class for factor_class in factor_classes
+      if weights.get(factor_class.__name__, 0) != 0
+    ]
+    history_classes = active_factor_classes + list(filter_factor_classes or [])
+    completed_factor_history = max(
+      (int(factor_class.hist_days) for factor_class in history_classes),
+      default=0,
+    )
+    completed_timing_history = max(
+      int(overlay_settings.get('momentum_window', 20)),
+      int(overlay_settings.get('ma_window', 20)),
+      int(overlay_settings.get('strategy_momentum_window', 3)),
+      int(overlay_settings.get('strategy_ma_window', 20)),
+    )
+    preload_lookback = (
+      completed_factor_history + completed_timing_history + 10
+    )
+    score_data = load_runtime_npz(
+      [datetime.combine(trade_date, datetime.min.time())],
+      max_lookback=preload_lookback,
+    )
+
   scored = _compute_factor_scores(
     [datetime.combine(trade_date, datetime.min.time())], all_stocks,
-    weights, factor_classes, data=data, kline_data=kline_data,
+    weights, factor_classes, data=score_data, kline_data=kline_data,
     filter_factor_classes=filter_factor_classes or None,
   )
   if scored is None:
     raise ValueError(f'signal date {trade_date} is outside runtime data')
   data, all_scores, filter_masks, valid_dates, date_indices, valid_stocks, stock_indices = scored
   date_idx = date_indices[0]
+  if overlay_settings.get('enabled') and overlay_mode in {
+      'dual_strategy', 'dual_completed',
+  }:
+    if overlay_mode == 'dual_completed':
+      from core.trend_timing import compute_dual_completed_trend_multipliers
+
+      compute_dual_multiplier = compute_dual_completed_trend_multipliers
+    else:
+      from core.trend_timing import compute_dual_trend_multipliers
+
+      compute_dual_multiplier = compute_dual_trend_multipliers
+
+    history_start = 0
+    if overlay_mode == 'dual_completed':
+      history_start = date_idx - completed_timing_history
+      if history_start < completed_factor_history:
+        raise ValueError(
+          'dual_completed runtime history is shorter than factor and timing '
+          'warmup requirements'
+        )
+    history_indices = list(range(history_start, date_idx + 1))
+    history_dates = [
+      datetime.combine(value.astype('datetime64[D]').item(), datetime.min.time())
+      for value in np.asarray(data['trade_dates'])[history_start:date_idx + 1]
+    ]
+    dual = compute_dual_multiplier(
+      data=data, all_scores=all_scores,
+      valid_dates=history_dates, date_indices=history_indices,
+      valid_stocks=valid_stocks, stock_indices=stock_indices,
+      weights=weights, buy_n=individual_config['buy_n'],
+      settings=overlay_settings,
+      limit_up_protection=individual_config.get('limit_up_protection', False),
+      filter_masks=filter_masks,
+    )
+    position_multiplier *= float(dual[-1])
+  else:
+    from core.trend_timing import trend_overlay_multiplier_for_row
+    position_multiplier *= trend_overlay_multiplier_for_row(
+      data, date_idx, individual_config
+    )
   valid_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
   buy_filter_mask = None
   if filter_masks:
@@ -92,7 +154,8 @@ def build_strategy_day(
       [mask[date_idx][valid_cols] for mask in filter_masks.values()]
     )
   checker = LegalityChecker(
-    data, stock_indices, build_list_dates_map(data),
+    data, stock_indices,
+    _compute_list_dates(data['stock_codes'], data['open'], data['trade_dates']),
     limit_up_protection=individual_config['limit_up_protection'],
   )
   plan = build_rebalance_day(
@@ -107,6 +170,9 @@ def build_strategy_day(
     target_cash=target_cash, target_positions=target_positions,
     price_codes_extra=set(target_positions or {}),
     buy_filter_mask=buy_filter_mask,
+    enforce_position_multiplier_on_sell_m=individual_config.get(
+      'enforce_position_multiplier_on_sell_m', False
+    ),
   )
   return StrategyDayResult(
     trade_date=trade_date, position_multiplier=position_multiplier,
@@ -210,23 +276,45 @@ def build_rebalance_day(
     cash: float,
     rebalance: bool = True,
     is_rebalance_day: bool = True,
+    force_codes: list[str] | None = None,
     position_multiplier: float = 1.0,
     target_cash: float | None = None,
     target_positions: dict[str, int] | None = None,
     price_codes_extra=None,
     last_valid_close_prices: dict[str, float] | None = None,
     market_order_freeze: bool = True,
+    limit_up_protection: bool = False,
     buy_filter_mask: np.ndarray | None = None,
+    sell_all_scores: dict[str, np.ndarray] | None = None,
+    sell_weights: dict[str, float] | None = None,
+    sell_filter_mask: np.ndarray | None = None,
+    enforce_position_multiplier_on_sell_m: bool = False,
 ) -> RebalanceDayPlan:
   if is_rebalance_day:
     day_open = data['open'][trade_idx]
-    buy_n_stocks, sell_m_stocks, final_score, t1_ranking = select_topn_legal(
-      all_scores, date_idx, valid_stocks, valid_cols,
-      weights, buy_n, sell_m,
-      checker=checker, trade_idx=trade_idx, signal_date=signal_date,
-      day_open=day_open, stock_indices=stock_indices,
-      filter_mask=buy_filter_mask,
-    )
+    if sell_all_scores is None:
+      buy_n_stocks, sell_m_stocks, final_score, t1_ranking = select_topn_legal(
+        all_scores, date_idx, valid_stocks, valid_cols,
+        weights, buy_n, sell_m,
+        checker=checker, trade_idx=trade_idx, signal_date=signal_date,
+        day_open=day_open, stock_indices=stock_indices,
+        filter_mask=buy_filter_mask,
+      )
+    else:
+      buy_n_stocks, _, final_score, t1_ranking = select_topn_legal(
+        all_scores, date_idx, valid_stocks, valid_cols,
+        weights, buy_n, 0,
+        checker=checker, trade_idx=trade_idx, signal_date=signal_date,
+        day_open=day_open, stock_indices=stock_indices,
+        filter_mask=buy_filter_mask,
+      )
+      _, sell_m_stocks, _, _ = select_topn_legal(
+        sell_all_scores, date_idx, valid_stocks, valid_cols,
+        sell_weights or {}, 0, sell_m,
+        checker=checker, trade_idx=trade_idx, signal_date=signal_date,
+        day_open=day_open, stock_indices=stock_indices,
+        filter_mask=sell_filter_mask,
+      )
   else:
     final_score = np.zeros(len(valid_stocks), dtype=np.float32)
     buy_n_stocks = []
@@ -268,12 +356,17 @@ def build_rebalance_day(
   buy_orders: dict[str, int] = {}
   skip_reasons: dict[str, str] = {}
   if is_rebalance_day and (positions or buy_n_stocks):
+    position_control_active = (
+      enforce_position_multiplier_on_sell_m and position_multiplier < 1.0
+    )
     sell_orders, buy_orders, skip_reasons = compute_rebalance_plan(
       positions=positions, sellable_volumes=sellable_volumes,
       pos_vals=pos_vals, cash=cash,
       buy_n_stocks=buy_n_stocks, tradable_buy_stocks=tradable_buy_stocks,
       sellable_ok=sellable_ok, prices=prices, limit_prices=limit_prices,
-      base_target=base_target, keep_stocks=sell_m_stocks, rebalance=rebalance,
+      base_target=base_target,
+      keep_stocks=buy_n_stocks if position_control_active else sell_m_stocks,
+      rebalance=rebalance or position_control_active,
     )
 
   return RebalanceDayPlan(

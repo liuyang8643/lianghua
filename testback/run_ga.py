@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 import warnings
 from pathlib import Path
@@ -7,6 +8,12 @@ from typing import Any, Dict, List
 import numpy as np
 
 warnings.filterwarnings('ignore', category=RuntimeWarning)
+
+DEFAULT_GA_SEED = 20260720
+_HOLDOUT_RESULT_FIELDS = (
+    'val_calmar', 'val_sharpe', 'val_annualized', 'val_max_drawdown',
+    'test_calmar', 'test_sharpe', 'test_annualized', 'test_max_drawdown',
+)
 
 
 from core.scoring import scores_to_ranks
@@ -27,6 +34,7 @@ from core.ga import (
     resolve_profile_name,
     sample_factor_choice,
     get_profile_filter_factor_classes,
+    get_config_param,
 )
 
 from datetime import date, datetime
@@ -34,7 +42,6 @@ from testback.logger import testback_logger
 from core.backtest import (
   _backtest_direct,
   _compute_list_dates, _compute_timing_multipliers,
-  _load_all_index_data,
   _format_pool, _format_timing,
   _resolve_output_dir,
 )
@@ -45,20 +52,221 @@ from core.strategy_config import strategy_config_payload
 
 # ========== GA 核心函数 ==========
 
+def _seed_ga_randomness(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+
+
+def _seed_ga_generation(seed: int, generation: int) -> None:
+    """Seed breeding after a generation so resume rebuilds the same children."""
+    _seed_ga_randomness(seed + generation + 1)
+
+
+def _validate_resume_metadata(
+    metadata: dict, *, profile_name: str, seed: int,
+    sealed_holdout: bool, split_period_results: bool,
+    training_objective: dict,
+) -> None:
+    """Reject resumes that change the experiment identity or holdout contract."""
+    if metadata.get('profile') != profile_name:
+        raise ValueError(
+            f"恢复目录 profile={metadata.get('profile')}，当前 profile={profile_name}，禁止混用"
+        )
+    if metadata.get('seed') != seed:
+        raise ValueError(
+            f"恢复目录随机种子={metadata.get('seed')}，当前 --seed={seed}，禁止混用"
+        )
+    if metadata.get('training_objective') != training_objective:
+        raise ValueError('恢复目录 training_objective 与当前 profile 不一致')
+    if bool(metadata.get('sealed_holdout')) != bool(sealed_holdout):
+        raise ValueError(
+            '恢复目录 sealed_holdout 与当前 --sealed-holdout 状态不一致'
+        )
+    if bool(metadata.get('split_period_results')) != bool(split_period_results):
+        raise ValueError(
+            '恢复目录 split_period_results 与当前 --split-period-results 状态不一致'
+        )
+
 def _config_key(config: dict) -> tuple:
     def freeze(value):
         if isinstance(value, dict):
             return tuple(sorted((k, freeze(v)) for k, v in value.items()))
-        if isinstance(value, list):
+        if isinstance(value, (list, tuple)):
             return tuple(freeze(v) for v in value)
         return value
 
-    parts = []
-    for pdef in get_intrinsic_params():
-        val = config.get(pdef['config_key'])
-        parts.append(freeze(val))
-    parts.append(tuple(sorted(config['weights'].items())))
-    return tuple(parts)
+    semantic_config = {
+        key: value for key, value in config.items()
+        if key != 'neighborhood_change'
+    }
+    return freeze(semantic_config)
+
+
+def _select_training_candidate(ga_cache: dict) -> dict | None:
+    """Select the deployable candidate strictly by training fitness."""
+    eligible = [
+        entry for entry in ga_cache.values()
+        if entry.get('fitness', entry.get('calmar')) is not None
+    ]
+    return max(
+        eligible, key=lambda entry: entry.get('fitness', entry['calmar'])
+    ) if eligible else None
+
+
+def _period_result_entry(generation: int, result: dict) -> dict:
+    """Return one diagnostics-only validation/test JSONL row."""
+    required = (
+        'calmar', 'sharpe', 'annualized', 'max_drawdown', 'total_return',
+        'individual_config',
+    )
+    missing = [name for name in required if name not in result]
+    if missing:
+        raise ValueError(f'周期结果缺少字段: {missing}')
+    return {
+        'generation': int(generation),
+        'calmar': result['calmar'],
+        'sharpe': result['sharpe'],
+        'annualized': result['annualized'],
+        'max_drawdown': result['max_drawdown'],
+        'total_return': result['total_return'],
+        'average_exposure': result.get('average_exposure'),
+        'config': result['individual_config'],
+    }
+
+
+def _append_jsonl_rows(path: Path, rows: list[dict]) -> None:
+    """Append JSONL rows without mixing metrics from different periods."""
+    import json as json_mod
+
+    with open(path, 'a', encoding='utf-8') as stream:
+        for row in rows:
+            stream.write(json_mod.dumps(row, ensure_ascii=False) + '\n')
+
+
+def _validate_split_result_files(output_dir: Path) -> None:
+    """Fail if the three period JSONLs are absent or misaligned in part."""
+    import json as json_mod
+
+    paths = [
+        Path(output_dir) / 'training_results.jsonl',
+        Path(output_dir) / 'validation_results.jsonl',
+        Path(output_dir) / 'test_results.jsonl',
+    ]
+    exists = [path.exists() for path in paths]
+    if not any(exists):
+        return
+    if not all(exists):
+        raise ValueError('训练/验证/测试结果文件必须同时存在')
+
+    identities = []
+    for path in paths:
+        rows = [
+            json_mod.loads(line)
+            for line in path.read_text(encoding='utf-8').splitlines()
+            if line.strip()
+        ]
+        current = []
+        for row in rows:
+            if set(('generation', 'config')) - set(row):
+                raise ValueError(f'{path.name} 缺少 generation/config')
+            current.append((int(row['generation']), _config_key(row['config'])))
+        identities.append(current)
+    if not (identities[0] == identities[1] == identities[2]):
+        raise ValueError('训练/验证/测试结果未按 generation/config 一一对齐')
+
+
+def _period_results_for_configs(
+    configs: list[dict], *, evaluation_cache: dict,
+    info: dict, score_keys: set, valid_dates: list,
+    date_indices: list, stock_indices: dict, all_valid_stocks: list,
+    index_data: dict, list_dates_full: dict, logger, pool,
+) -> list[dict]:
+    """Evaluate and return one diagnostics row per config in input order."""
+    import json as json_mod
+
+    missing_configs = []
+    for config in configs:
+        key = json_mod.dumps(_config_key(config), ensure_ascii=False)
+        if key not in evaluation_cache:
+            missing_configs.append(config)
+
+    if missing_configs:
+        worker_args = [
+            (
+                info, score_keys, valid_dates, date_indices, stock_indices,
+                all_valid_stocks, config, index_data, list_dates_full, {},
+            )
+            for config in missing_configs
+        ]
+        evaluated = []
+        evaluated_cache = {}
+        _eval_parallel(
+            worker_args, evaluated, evaluated_cache, logger, pool=pool,
+        )
+        for result in evaluated:
+            key = json_mod.dumps(
+                _config_key(result['individual_config']), ensure_ascii=False,
+            )
+            evaluation_cache[key] = result
+
+    ordered = []
+    for config in configs:
+        key = json_mod.dumps(_config_key(config), ensure_ascii=False)
+        if key not in evaluation_cache:
+            raise RuntimeError('周期诊断结果未与配置一一对应')
+        ordered.append(evaluation_cache[key])
+    return ordered
+
+
+def _load_candidate_configs(path: str | Path) -> list[dict]:
+    payload = __import__('json').loads(Path(path).read_text(encoding='utf-8'))
+    if isinstance(payload, dict):
+        payload = payload.get('configs')
+    if not isinstance(payload, list) or not payload:
+        raise ValueError('--candidate-configs 必须是非空配置列表或包含 configs 的对象')
+    configs = []
+    for item in payload:
+        config = item.get('individual_config') if isinstance(item, dict) else None
+        configs.append(config if config is not None else item)
+    if any(not isinstance(config, dict) or 'weights' not in config for config in configs):
+        raise ValueError('--candidate-configs 存在无效 individual_config')
+    return configs
+
+
+def _calmar_from_returns(daily_returns) -> tuple[float, dict]:
+    metrics = compute_core_metrics(daily_returns)
+    drawdown = abs(metrics['max_drawdown'])
+    calmar = metrics['annualized'] / drawdown if drawdown != 0 else 0.0
+    return float(calmar), metrics
+
+
+def _training_fitness(daily_returns, objective: dict | None = None) -> tuple[float, float, list[float]]:
+    """Return full Calmar and a train-only robustness score."""
+    daily = np.asarray(daily_returns, dtype=float)
+    full_calmar, _ = _calmar_from_returns(daily)
+    settings = objective or {}
+    if settings.get('mode') != 'robust_calmar':
+        return full_calmar, full_calmar, []
+
+    folds = max(2, int(settings.get('folds', 3)))
+    fold_calmars = [
+        _calmar_from_returns(chunk)[0]
+        for chunk in np.array_split(daily, folds)
+        if len(chunk) >= 2
+    ]
+    worst_fold = min(fold_calmars) if fold_calmars else full_calmar
+    full_weight = float(settings.get('full_weight', 0.5))
+    if not 0.0 <= full_weight <= 1.0:
+        raise ValueError('training objective full_weight must be in [0, 1]')
+    fitness = full_weight * full_calmar + (1.0 - full_weight) * worst_fold
+    return float(full_calmar), float(fitness), [float(value) for value in fold_calmars]
+
+
+def _apply_exposure_constraint(raw_fitness, average_exposure, objective):
+    minimum = (objective or {}).get('min_average_exposure')
+    if minimum is None or average_exposure >= float(minimum):
+        return float(raw_fitness), True
+    return float(-1000.0 + average_exposure), False
 
 
 def _format_config_params(config: dict, profile_name: str) -> str:
@@ -69,7 +277,7 @@ def _format_config_params(config: dict, profile_name: str) -> str:
         key = pdef['key']
         if key not in spaces:
             continue
-        val = config.get(pdef['config_key'])
+        val = get_config_param(config, pdef)
         if val is None or (pdef['type'] == 'int' and val == 0):
             continue
         display = pdef['display']
@@ -84,13 +292,11 @@ def _format_config_params(config: dict, profile_name: str) -> str:
     return ', '.join(parts)
 
 def _format_best_log(best_cfg: dict, profile_name: str, prefix: str, train_fitness: float, avg_fitness: float,
-                     sharpe=None, val_sharpe=None, test_sharpe=None, live_total=None, live_test=None,
-                     benchmark_calmar=None):
+                     sharpe=None, val_sharpe=None, test_sharpe=None, live_total=None, live_test=None):
     sorted_w = sorted(best_cfg['weights'].items(), key=lambda x: -abs(x[1]))
     w_str = ', '.join(f'{k}={v:.1f}' for k, v in sorted_w)
     params_str = _format_config_params(best_cfg, profile_name)
-    benchmark_str = f'(上证指数={benchmark_calmar:.3f})' if benchmark_calmar is not None else ''
-    msg = f"{prefix}: 训练Calmar={train_fitness:.3f}{benchmark_str}/{avg_fitness:.3f}"
+    msg = f"{prefix}: 训练Calmar={train_fitness:.3f}/{avg_fitness:.3f}"
     if sharpe is not None:
         msg += f" S={sharpe:.2f}"
     if val_sharpe is not None:
@@ -112,7 +318,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
 
   for r in results_list:
     key = _config_key(r['individual_config'])
-    state['fitness_cache'][key] = r.get('calmar', r.get('sharpe', -1000.0))
+    state['fitness_cache'][key] = r.get('fitness', r.get('calmar', r.get('sharpe', -1000.0)))
 
   if not state['population']:
     results_list.sort(key=lambda r: r.get('calmar', r.get('sharpe', -1000.0)), reverse=True)
@@ -132,7 +338,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     unique_cfgs = {}
     for key, val in ga_cache.items():
       cfg = val.get('individual_config')
-      fit = val.get('calmar', val.get('sharpe', -1000.0))
+      fit = val.get('fitness', val.get('calmar', val.get('sharpe', -1000.0)))
       if cfg is not None and fit > -900:
         unique_cfgs[key] = (cfg, fit)
     pool = sorted(unique_cfgs.values(), key=lambda x: x[1], reverse=True)
@@ -151,7 +357,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
                                if (fit := get_fitness(ind)) is not None]
     if not population_with_fitness:
       population_with_fitness = [
-        (r['individual_config'], r.get('calmar', r.get('sharpe', -1000.0)))
+        (r['individual_config'], r.get('fitness', r.get('calmar', r.get('sharpe', -1000.0))))
         for r in results_list
       ]
     population_with_fitness.sort(key=lambda x: x[1], reverse=True)
@@ -182,13 +388,15 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     for pdef in get_intrinsic_params():
         key = pdef['key']
         if key in search_spaces:
-            kwargs[key] = _crossover_field(p1, p2, pdef['config_key'])
+            left = get_config_param(p1, pdef)
+            right = get_config_param(p2, pdef)
+            kwargs[key] = left if random.random() < 0.5 else right
     if has_factor_choice:
         kwargs['factor_choice'] = _crossover_field(p1, p2, 'factor_choice')
     crossed_weights = None
     if has_weight_search:
       crossed_weights = {}
-      all_keys = set(p1.get('weights', {})) | set(p2.get('weights', {}))
+      all_keys = sorted(set(p1.get('weights', {})) | set(p2.get('weights', {})))
       for k in all_keys:
         w1 = p1['weights'].get(k, 0.0)
         w2 = p2['weights'].get(k, 0.0)
@@ -225,7 +433,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
             space = search_spaces.get(key)
             kwargs[key] = random.choice(space) if space else config.get(pdef['config_key'])
         else:
-            kwargs[key] = config.get(pdef['config_key'])
+            kwargs[key] = get_config_param(config, pdef)
     if has_factor_choice:
         kwargs['factor_choice'] = sample_factor_choice(profile_name=profile_name) if 'factor_choice' in mutate_dims else config.get('factor_choice')
     mutated_weights = dict(config.get('weights', {}))
@@ -278,7 +486,69 @@ def _find_latest_ga_dir() -> Path | None:
   return candidates[0][1]
 
 
-def _rebuild_from_jsonl(output_dir: Path) -> tuple[dict, int]:
+def _load_ga_index_data(valid_dates, profile_name: str) -> dict:
+  """Load only benchmark/timing indexes that exist for the requested period."""
+  from core.timing import load_index_open
+
+  symbols = {'sh000001'}
+  spaces = get_profile_search_spaces(profile_name)
+  if 'timing_index' in spaces:
+    symbols.update(spaces['timing_index'])
+  result = {}
+  for symbol in symbols:
+    try:
+      _, result[symbol] = load_index_open(symbol, valid_dates)
+    except ValueError as exc:
+      testback_logger.warning(f"跳过区间不完整的指数 {symbol}: {exc}")
+  return result
+
+
+_GA_BENCHMARKS = ('sh000905', 'sh000852')
+
+
+def _compute_benchmark_metric(symbol: str, valid_dates) -> dict | None:
+  """Compute an Open-to-Open Calmar diagnostic over available overlap."""
+  from core.timing import load_index_open
+
+  index_dates, index_open = load_index_open(symbol)
+  requested = {np.datetime64(d.date(), 'D') for d in valid_dates}
+  mask = np.array([d in requested for d in index_dates], dtype=bool)
+  mask &= np.isfinite(index_open)
+  values = index_open[mask].astype(float)
+  dates = index_dates[mask]
+  if len(values) < 2:
+    return None
+  daily = np.diff(values) / values[:-1] * 100.0
+  calmar, _ = _calmar_from_returns(daily[np.isfinite(daily)])
+  return {
+    'calmar': calmar,
+    'available_days': len(values),
+    'requested_days': len(valid_dates),
+    'start': str(dates[0]),
+    'end': str(dates[-1]),
+  }
+
+
+def _log_benchmark_metrics(period_dates: dict[str, list]) -> None:
+  """Log diagnostics once; benchmark values never enter GA selection."""
+  from core.timing import INDEX_INFO
+
+  testback_logger.info('同期指数 Calmar（Open-to-Open，仅展示，不参与 GA 适应度或候选选择）')
+  for symbol in _GA_BENCHMARKS:
+    period_parts = []
+    for period_name, dates in period_dates.items():
+      metric = _compute_benchmark_metric(symbol, dates)
+      if metric is None:
+        period_parts.append(f'{period_name}=N/A')
+        continue
+      coverage = f"{metric['available_days']}/{metric['requested_days']}天"
+      if metric['available_days'] < metric['requested_days']:
+        coverage += f", {metric['start']}~{metric['end']}"
+      period_parts.append(f"{period_name}={metric['calmar']:.3f}({coverage})")
+    testback_logger.info(f"  {INDEX_INFO[symbol]}: " + ' | '.join(period_parts))
+
+
+def _rebuild_from_jsonl(output_dir: Path, require_train_fitness: bool = False) -> tuple[dict, int]:
   import json as _json
   ga_cache = {}
   last_gen = -1
@@ -290,11 +560,36 @@ def _rebuild_from_jsonl(output_dir: Path) -> tuple[dict, int]:
         if not line:
           continue
         r = _json.loads(line)
+        if require_train_fitness and ('fitness' not in r or 'fold_calmars' not in r):
+          raise ValueError(
+            f'恢复目录使用旧适应度口径，不能恢复到训练稳健目标: {output_dir}'
+          )
+        if require_train_fitness:
+          contaminated = [
+            field for field in _HOLDOUT_RESULT_FIELDS
+            if r.get(field) is not None
+          ]
+          if contaminated:
+            raise ValueError(
+              f"恢复训练记录包含 holdout 结果: {', '.join(contaminated)}"
+            )
         cfg = r['config']
         key = _config_key(cfg)
-        fitness = r.get('calmar', r['sharpe'])  # 兼容旧 JSONL（只有 sharpe）
-        if key not in ga_cache or fitness > ga_cache[key]['calmar']:
-          ga_cache[key] = {'individual_config': cfg, 'calmar': fitness, 'sharpe': r['sharpe']}
+        fitness = r.get('fitness', r.get('calmar', r['sharpe']))
+        previous = ga_cache.get(key)
+        if previous is None or fitness > previous.get('fitness', previous['calmar']):
+          ga_cache[key] = {
+            'individual_config': cfg,
+            'calmar': r.get('calmar', fitness),
+            'fitness': fitness,
+            'raw_fitness': r.get('raw_fitness', fitness),
+            'average_exposure': r.get('average_exposure'),
+            'exposure_constraint_passed': r.get('exposure_constraint_passed'),
+            'fold_calmars': r.get('fold_calmars', []),
+            'sharpe': r['sharpe'],
+            'annualized': r.get('annualized', 0.0),
+            'max_drawdown': r.get('max_drawdown', 0.0),
+          }
         if r['generation'] > last_gen:
           last_gen = r['generation']
   return ga_cache, last_gen
@@ -302,9 +597,16 @@ def _rebuild_from_jsonl(output_dir: Path) -> tuple[dict, int]:
 
 def _rebuild_ga_state(ga_cache: dict) -> dict:
   """从 ga_cache 重建 ga_state（population + hall_of_fame + fitness_cache）。"""
-  sorted_entries = sorted(ga_cache.values(), key=lambda v: v['calmar'], reverse=True)
+  sorted_entries = sorted(
+    ga_cache.values(),
+    key=lambda v: v.get('fitness', v['calmar']),
+    reverse=True,
+  )
   hall_of_fame = [v['individual_config'] for v in sorted_entries[:100]]
-  fitness_cache = {_config_key(v['individual_config']): v['calmar'] for v in sorted_entries}
+  fitness_cache = {
+    _config_key(v['individual_config']): v.get('fitness', v['calmar'])
+    for v in sorted_entries
+  }
   return {
     'population': [],
     'hall_of_fame': hall_of_fame,
@@ -353,8 +655,8 @@ def _cleanup_shm():
 
 
 def _factor_worker(args):
-  """Compute single factor → rank + NaN mask → memmap. Module-level for spawn pickle."""
-  factor_cls, base_info, stock_codes, trade_dates, tmpdir, row_slice = args
+  """Compute one score matrix or one boolean filter mask into a memmap."""
+  factor_cls, base_info, stock_codes, trade_dates, tmpdir, row_slice, is_filter, rank_cols = args
   data = _arrays_from_memmap(base_info)
   n_full = len(trade_dates)
   if row_slice is not None:
@@ -367,51 +669,86 @@ def _factor_worker(args):
   name = f.__class__.__name__
   with np.errstate(all='ignore'):
       raw = f.calc_batch(data)
-  raw_nan = np.isnan(raw)
-  scores = scores_to_ranks(raw.astype(np.float32, copy=False))
+  raw_valid = ~np.isnan(raw)
+  if is_filter:
+      values = np.isfinite(raw) & (raw > 0)
+  else:
+      values = np.zeros(raw.shape, dtype=np.float32)
+      values[:, rank_cols] = scores_to_ranks(
+          raw[:, rank_cols].astype(np.float32, copy=False)
+      )
   if row_slice is not None:
-    full = np.full((n_full, scores.shape[1]), np.nan, dtype=scores.dtype)
-    full[r0:r1] = scores
-    scores = full
-    full_nan = np.ones((n_full, raw_nan.shape[1]), dtype=bool)
-    full_nan[r0:r1] = raw_nan
-    raw_nan = full_nan
+    fill_value = False if is_filter else np.nan
+    full = np.full((n_full, values.shape[1]), fill_value, dtype=values.dtype)
+    full[r0:r1] = values
+    values = full
+    full_valid = np.zeros((n_full, raw_valid.shape[1]), dtype=bool)
+    full_valid[r0:r1] = raw_valid
+    raw_valid = full_valid
   filepath = Path(tmpdir) / f'factor_{name}.bin'
-  scores.tofile(str(filepath))
-  return name, (str(filepath), scores.shape, str(scores.dtype)), raw_nan
+  values.tofile(str(filepath))
+  return name, (str(filepath), values.shape, str(values.dtype)), raw_valid
+
+
+def _build_worker_filter_masks(all_arrays, score_keys, config):
+  active_validity = [
+      all_arrays[f'_factor_valid_{name}']
+      for name in score_keys
+      if config['weights'].get(name, 0.0) != 0.0
+      and f'_factor_valid_{name}' in all_arrays
+  ]
+  result = {}
+  if active_validity:
+      result['_active_factor_intersection'] = np.logical_and.reduce(active_validity)
+  for name, enabled in config.get('filter_factors', {}).items():
+    if enabled and name in all_arrays:
+      result[name] = np.asarray(all_arrays[name], dtype=bool)
+  return result
 
 
 def _worker_evaluate(args):
   global _worker_shm_cache
   train_info, score_keys, valid_dates, date_indices, stock_indices, \
-      all_stocks_list, config, index_data, list_dates_map = args
+      all_stocks_list, config, index_data, list_dates_map, training_objective = args
 
-  needed = score_keys | {'open', 'close', 'high', 'low', 'preClose', 'volume', 'amount', 'total_share', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates', '_factor_intersection'}
+  factor_validity_keys = {f'_factor_valid_{name}' for name in score_keys}
+  needed = score_keys | factor_validity_keys | set(config.get('filter_factors', {})) | {'open', 'close', 'high', 'low', 'preClose', 'volume', 'amount', 'total_share', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates', '_market_open_index'}
   all_arrays = {k: arr for k, (shm, arr) in _worker_shm_cache.items() if k in needed}
-  data = {k: v for k, v in all_arrays.items() if k not in score_keys and k != '_factor_intersection'}
+  data = {
+      k: v for k, v in all_arrays.items()
+      if k not in score_keys
+      and k not in factor_validity_keys
+      and k not in config.get('filter_factors', {})
+  }
   all_scores = {k: v for k, v in all_arrays.items() if k in score_keys}
-  # 加权因子缺失集合固定取交集
-  intersection = all_arrays.get('_factor_intersection')
-  filter_masks = {'_factor_intersection': intersection} if intersection is not None else {}
-  for name, enabled in config.get('filter_factors', {}).items():
-    if enabled and name in all_arrays:
-      filter_masks[name] = np.isfinite(all_arrays[name])
+  filter_masks = _build_worker_filter_masks(all_arrays, score_keys, config)
 
   stock_pool = config.get('stock_pool') or ('60', '00', '30', '688')
   if isinstance(stock_pool, list):
       stock_pool = tuple(stock_pool)
   pool_stocks = [s for s in all_stocks_list if s.startswith(stock_pool)]
 
-  timing_multipliers = _compute_timing_multipliers(config, valid_dates, index_data)
+  def _timing_for(dates, indices):
+      base = _compute_timing_multipliers(config, dates, index_data)
+      from core.trend_timing import compute_configured_timing_multipliers
+      return compute_configured_timing_multipliers(
+          data=data, all_scores=all_scores, valid_dates=dates,
+          date_indices=indices, valid_stocks=pool_stocks,
+          stock_indices=stock_indices, config=config,
+          filter_masks=filter_masks,
+          base_multipliers=base,
+      )
 
   hp = config.get('holding_period', 1)
   n_starts = hp if hp > 1 else 1
 
-  calmar_list, sharpe_list, ann_list, dd_list, tr_list = [], [], [], [], []
+  calmar_list, raw_fitness_list, fold_lists = [], [], []
+  sharpe_list, ann_list, dd_list, tr_list = [], [], [], []
+  exposure_list = []
   for offset in range(n_starts):
       od = valid_dates[offset:]
       oi = date_indices[offset:]
-      om = _compute_timing_multipliers(config, od, index_data) if index_data else None
+      om = _timing_for(od, oi)
       r = _backtest_direct(
           data, all_scores, od, oi, pool_stocks, stock_indices,
           weights=config['weights'], buy_n=config['buy_n'], sell_m=config['sell_m'],
@@ -420,19 +757,38 @@ def _worker_evaluate(args):
           list_dates_map=list_dates_map,
           lightweight=True, limit_up_protection=config.get('limit_up_protection', False),
           rebalance=config.get('rebalance', True),
-          prefilter_n=config.get('prefilter_n'),
           filter_masks=filter_masks)
+      calmar, fitness, fold_calmars = _training_fitness(
+          r['daily_returns'], training_objective,
+      )
       m = compute_core_metrics(r['daily_returns'])
-      calmar_list.append(abs(m['annualized']) / abs(m['max_drawdown']) if m['max_drawdown'] != 0 else 0.0)
+      calmar_list.append(calmar)
+      raw_fitness_list.append(fitness)
+      fold_lists.append(fold_calmars)
       sharpe_list.append(m['sharpe'])
       ann_list.append(m['annualized'])
       dd_list.append(m['max_drawdown'])
       tr_list.append(r['total_return'])
+      exposure_list.append(float(np.mean(r['daily_exposures'])))
+
+  raw_fitness = float(np.mean(raw_fitness_list))
+  average_exposure = float(np.mean(exposure_list))
+  constrained_fitness, exposure_constraint_passed = _apply_exposure_constraint(
+      raw_fitness, average_exposure, training_objective,
+  )
 
   return {
     'individual_config': config,
     'total_return': float(np.mean(tr_list)),
     'calmar': float(np.mean(calmar_list)),
+    'fitness': constrained_fitness,
+    'raw_fitness': raw_fitness,
+    'average_exposure': average_exposure,
+    'exposure_constraint_passed': exposure_constraint_passed,
+    'fold_calmars': (
+      np.mean(np.asarray(fold_lists), axis=0).astype(float).tolist()
+      if fold_lists and fold_lists[0] else []
+    ),
     'sharpe': float(np.mean(sharpe_list)),
     'annualized': float(np.mean(ann_list)),
     'max_drawdown': float(np.mean(dd_list)),
@@ -468,13 +824,58 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
 
   mode_name = 'debug' if is_debug else 'ga'
   output_dir = resume_dir or _resolve_output_dir(args.output_dir, mode_name)
+  seed = int(getattr(args, 'seed', DEFAULT_GA_SEED))
+  split_period_results = bool(
+    getattr(args, 'split_period_results', False)
+  )
+  _seed_ga_randomness(seed)
   factor_classes = get_profile_factor_classes(profile_name)
   filter_factor_classes = get_profile_filter_factor_classes(profile_name)
+  profile = get_profile(profile_name)
+  training_objective = profile.get('training_objective', {})
 
   # 添加文件日志 sink，将所有控制台日志同步写入 log 文件
   log_path = output_dir / 'ga.log'
   testback_logger.add_file_sink(str(log_path))
   testback_logger.info(f"日志文件: {log_path}")
+  testback_logger.info(f"GA 随机种子: {seed}")
+
+  metadata_path = output_dir / 'run_metadata.json'
+  if resume_dir and metadata_path.exists():
+    metadata = json_mod.loads(metadata_path.read_text(encoding='utf-8'))
+    _validate_resume_metadata(
+      metadata, profile_name=profile_name, seed=seed,
+      sealed_holdout=bool(getattr(args, 'sealed_holdout', False)),
+      split_period_results=split_period_results,
+      training_objective=training_objective,
+    )
+  else:
+    metadata = {
+      'profile': profile_name,
+      'seed': seed,
+      'sealed_holdout': bool(getattr(args, 'sealed_holdout', False)),
+      'split_period_results': split_period_results,
+      'period_result_files': (
+        {
+          'training': 'training_results.jsonl',
+          'validation': 'validation_results.jsonl',
+          'test': 'test_results.jsonl',
+        }
+        if split_period_results else None
+      ),
+      'selection_uses_training_only': True,
+      'test_period_is_strictly_sealed': not split_period_results,
+      'training_objective': training_objective,
+      'legacy_resume_without_seed': bool(resume_dir),
+    }
+    metadata_path.write_text(
+      json_mod.dumps(metadata, ensure_ascii=False, indent=2), encoding='utf-8',
+    )
+    if resume_dir:
+      testback_logger.warning('恢复旧版无种子目录：后续可复现，但无法还原恢复前的随机路径')
+
+  if split_period_results:
+    _validate_split_result_files(output_dir)
 
   from multiprocessing import get_context
 
@@ -567,7 +968,6 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   testback_logger.info(f"因子计算范围: [{row_start}:{row_end}] = {n_needed} 天 (全量 {len(npz_dates)} 天, 截断 {len(npz_dates)-n_needed} 天)")
 
   # 统一打印当前 profile 搜索空间
-  profile = get_profile(profile_name)
   spaces = get_profile_search_spaces(profile_name)
   weight_spaces = get_profile_weight_search_spaces(profile_name)
   search_info = []
@@ -588,34 +988,44 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   base_info = {k: v for k, v in info.items() if k not in ('stock_codes', 'trade_dates')}
   row_slice = (row_start, row_end)
   all_worker_args = [
-    (f_cls, base_info, npz_stocks, py_dates, str(scores_dir), row_slice)
+    (
+      f_cls, base_info, npz_stocks, py_dates, str(scores_dir), row_slice,
+      f_cls in filter_factor_classes,
+      np.asarray([stock_indices[s] for s in all_valid_stocks], dtype=np.intp),
+    )
     for f_cls in [*factor_classes, *filter_factor_classes]
   ]
-  _factor_intersection = None
   factor_names = {f.__name__ for f in factor_classes}
   for wargs in all_worker_args:
-    name, entry, raw_nan = _factor_worker(wargs)
+    name, entry, raw_valid = _factor_worker(wargs)
     info[name] = entry
     if name in factor_names:
       score_keys.add(name)
-      if _factor_intersection is None:
-        _factor_intersection = ~raw_nan
-      else:
-        _factor_intersection = _factor_intersection & ~raw_nan
-  if _factor_intersection is not None:
-    intersection_path = scores_dir / '_factor_intersection.bin'
-    _factor_intersection.astype(bool).tofile(str(intersection_path))
-    info['_factor_intersection'] = (str(intersection_path), _factor_intersection.shape, str(_factor_intersection.dtype))
+      validity_path = scores_dir / f'_factor_valid_{name}.bin'
+      raw_valid.astype(bool, copy=False).tofile(str(validity_path))
+      info[f'_factor_valid_{name}'] = (
+        str(validity_path), raw_valid.shape, str(raw_valid.dtype),
+      )
   testback_logger.info(f"{len(factor_classes)} 因子计算完成 ({time.time() - t_f_all:.1f}s)")
 
   # 共用 list_dates
   list_dates_full = _compute_list_dates(npz_stocks, data['open'], npz_dates)
+  from core.trend_timing import market_open_index
+  market_index = market_open_index(data)
+  market_index_path = Path(tmpdir) / '_market_open_index.bin'
+  market_index.tofile(str(market_index_path))
+  info['_market_open_index'] = (
+    str(market_index_path), market_index.shape, str(market_index.dtype),
+  )
   del data
 
   # === 构建 SharedMemory 供 worker 高速访问（替代 memmap 磁盘 I/O）===
   from multiprocessing.shared_memory import SharedMemory
-  filter_mask_keys = {'_factor_intersection', *(f.__name__ for f in filter_factor_classes)}
-  needed_shm = score_keys | filter_mask_keys | {'open', 'close', 'high', 'low', 'preClose', 'volume', 'amount', 'total_share', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates'}
+  filter_mask_keys = {
+    *(f.__name__ for f in filter_factor_classes),
+    *(f'_factor_valid_{name}' for name in score_keys),
+  }
+  needed_shm = score_keys | filter_mask_keys | {'open', 'close', 'high', 'low', 'preClose', 'volume', 'amount', 'total_share', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates', '_market_open_index'}
   shm_entries = []
   for name in needed_shm:
     if name not in info:
@@ -633,7 +1043,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
 
   testback_logger.info(f"训练集就绪 ({time.time() - t0:.1f}s), {len(all_valid_stocks)} 只, {len(valid_dates)} 天")
 
-  index_data = _load_all_index_data(valid_dates)
+  index_data = _load_ga_index_data(valid_dates, profile_name)
 
   import gc
   gc.collect()
@@ -643,25 +1053,41 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   ga_pool = ctx.Pool(processes=n_workers, initializer=_worker_initializer, initargs=(shm_entries,))
   testback_logger.info(f"多进程池已创建: {n_workers} workers")
 
-  val_index_data = _load_all_index_data(val_valid_dates)
+  val_index_data = _load_ga_index_data(val_valid_dates, profile_name)
   testback_logger.info(f"验证集就绪: {val_start} - {val_end}, {len(val_valid_dates)} 天")
 
-  test_index_data = _load_all_index_data(test_valid_dates)
+  test_index_data = _load_ga_index_data(test_valid_dates, profile_name)
+  _log_benchmark_metrics({
+    '训练': valid_dates,
+    '验证': val_valid_dates,
+    '测试': test_valid_dates,
+  })
   testback_logger.info(f"测试集就绪: {test_start} - {test_end}, {len(test_valid_dates)} 天")
 
   generation_results = []
-  if resume_dir:
-    ga_cache, last_gen = _rebuild_from_jsonl(resume_dir)
+  candidate_config_path = getattr(args, 'candidate_configs', None)
+  if candidate_config_path:
+    next_configs = _load_candidate_configs(candidate_config_path)
+    generations = 1
+    testback_logger.info(f"训练候选批量评估: {len(next_configs)} 个配置")
+  elif resume_dir:
+    ga_cache, last_gen = _rebuild_from_jsonl(
+      resume_dir,
+      require_train_fitness=training_objective.get('mode') == 'robust_calmar',
+    )
     gr_path = resume_dir / 'generation_results.pkl'
     if gr_path.exists():
       generation_results = pickle.loads(gr_path.read_bytes())
     ga_state = _rebuild_ga_state(ga_cache)
+    _seed_ga_generation(seed, last_gen)
     next_configs = ga_optimizer([], state=ga_state, population_size=population_size,
                                 hall_of_fame_size=population_size, profile_name=profile_name,
                                 ga_cache=ga_cache, gen=last_gen)
     start_generation = last_gen + 1
     testback_logger.info(f"从 JSONL 恢复: {len(ga_cache)} 个唯一配置, 第 {start_generation} 代开始")
   elif args.warm_start:
+    if training_objective.get('mode') == 'robust_calmar':
+      raise ValueError('训练稳健目标禁止信任外部 warm-start 分数，请使用新运行或同口径 --resume')
     with open(args.warm_start, 'r', encoding='utf-8') as f:
       cache_data = json_mod.load(f)
     if isinstance(cache_data, list):
@@ -690,7 +1116,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
 
       worker_args = [
         (info, score_keys, valid_dates, date_indices, stock_indices,
-         all_valid_stocks, config, index_data, list_dates_full)
+         all_valid_stocks, config, index_data, list_dates_full, training_objective)
         for config in uncached_configs
       ]
 
@@ -698,33 +1124,75 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
       if worker_args:
         _eval_parallel(worker_args, results_list, ga_cache, testback_logger, pool=ga_pool)
 
+      split_validation_results = []
+      split_test_results = []
+      if split_period_results:
+        period_configs = [result['individual_config'] for result in results_list]
+        split_validation_results = _period_results_for_configs(
+          period_configs,
+          evaluation_cache=val_eval_cache,
+          info=info,
+          score_keys=score_keys,
+          valid_dates=val_valid_dates,
+          date_indices=val_date_indices,
+          stock_indices=stock_indices,
+          all_valid_stocks=all_valid_stocks,
+          index_data=val_index_data,
+          list_dates_full=list_dates_full,
+          logger=testback_logger,
+          pool=ga_pool,
+        )
+        split_test_results = _period_results_for_configs(
+          period_configs,
+          evaluation_cache=test_eval_cache,
+          info=info,
+          score_keys=score_keys,
+          valid_dates=test_valid_dates,
+          date_indices=test_date_indices,
+          stock_indices=stock_indices,
+          all_valid_stocks=all_valid_stocks,
+          index_data=test_index_data,
+          list_dates_full=list_dates_full,
+          logger=testback_logger,
+          pool=ga_pool,
+        )
+        val_cache_path.write_text(
+          json_mod.dumps(val_eval_cache, ensure_ascii=False), encoding='utf-8',
+        )
+        test_cache_path.write_text(
+          json_mod.dumps(test_eval_cache, ensure_ascii=False), encoding='utf-8',
+        )
+
       if not is_debug:
         # 训练集统计
         calmars = [r['calmar'] for r in results_list]
-        best_idx = max(range(len(results_list)), key=lambda i: calmars[i])
+        fitnesses = [r.get('fitness', r['calmar']) for r in results_list]
+        best_idx = max(range(len(results_list)), key=lambda i: fitnesses[i])
         best = results_list[best_idx]
         best_cfg = best['individual_config']
         best_m = {'calmar': best['calmar'],
+                  'fitness': best.get('fitness', best['calmar']),
+                  'fold_calmars': best.get('fold_calmars', []),
                   'sharpe': best['sharpe'],
-                  'annualized': best['annualized'], 'max_drawdown': best['max_drawdown']}
+                  'annualized': best['annualized'], 'max_drawdown': best['max_drawdown'],
+                  'average_exposure': best.get('average_exposure', float('nan'))}
         avg_calmar = sum(calmars) / len(calmars)
         avg_ann = sum(r['annualized'] for r in results_list) / len(results_list)
         avg_dd = sum(r['max_drawdown'] for r in results_list) / len(results_list)
 
         # 上证指数训练基线
-        benchmark_vals = index_data['sh000001'].astype(float)
-        benchmark_daily = np.diff(benchmark_vals) / benchmark_vals[:-1] * 100.0
-        benchmark_daily = benchmark_daily[np.isfinite(benchmark_daily)]
-        benchmark_m = compute_core_metrics(list(benchmark_daily))
-        benchmark_calmar = abs(benchmark_m['annualized']) / abs(benchmark_m['max_drawdown']) if benchmark_m['max_drawdown'] != 0 else 0.0
-
         gen_time = time.time() - generation_start_ts
         sorted_w = sorted(best_cfg['weights'].items(), key=lambda x: -abs(x[1]))
         w_str = ', '.join(f'{k}={v:.2f}' for k, v in sorted_w)
         timing_str = _format_timing(best_cfg)
 
         # 验证集+测试集评估：第1代 + 每10代，仅评估训练最优个体
-        report_gen = (generation == 0 or (generation + 1) % 10 == 0)
+        base_report_gen = (generation == 0 or (generation + 1) % 10 == 0)
+        report_gen = (
+          base_report_gen
+          and not args.sealed_holdout
+          and not split_period_results
+        )
         if report_gen:
           # 验证集评估训练最优个体
           val_best_key = json_mod.dumps(_config_key(best_cfg), ensure_ascii=False)
@@ -733,7 +1201,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
           else:
             val_worker_args = [
               (info, score_keys, val_valid_dates, val_date_indices, stock_indices,
-               all_valid_stocks, best_cfg, val_index_data, list_dates_full)
+               all_valid_stocks, best_cfg, val_index_data, list_dates_full, {})
             ]
             val_res = []
             _eval_parallel(val_worker_args, val_res, {}, testback_logger, pool=ga_pool)
@@ -754,7 +1222,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
           else:
             test_worker_args = [
               (info, score_keys, test_valid_dates, test_date_indices, stock_indices,
-               all_valid_stocks, best_cfg, test_index_data, list_dates_full)
+               all_valid_stocks, best_cfg, test_index_data, list_dates_full, {})
             ]
             test_res = []
             _eval_parallel(test_worker_args, test_res, {}, testback_logger, pool=ga_pool)
@@ -763,52 +1231,54 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
             with open(test_cache_path, 'w', encoding='utf-8') as f:
               json_mod.dump(test_eval_cache, f, ensure_ascii=False)
 
-          # 实盘个体：全部历史中 (train_calmar+val_calmar)/2 最高者
-          best_live_total = -999.0
-          best_live_cfg = None
-          best_live_train_calmar = 0.0
-          best_live_val_calmar = 0.0
-          for entry in ga_cache.values():
-            vs = entry.get('val_calmar')
-            if vs is not None:
-              total = (entry['calmar'] + vs) / 2.0
-              if total > best_live_total:
-                best_live_total = total
-                best_live_cfg = entry['individual_config']
-                best_live_train_calmar = entry['calmar']
-                best_live_val_calmar = vs
-          live_test_calmar = 0.0
-          if best_live_cfg is not None:
-            live_test_key = json_mod.dumps(_config_key(best_live_cfg), ensure_ascii=False)
-            if live_test_key in test_eval_cache:
-              live_test_calmar = test_eval_cache[live_test_key]['calmar']
-            else:
-              live_test_args = [
-                (info, score_keys, test_valid_dates, test_date_indices, stock_indices,
-                 all_valid_stocks, best_live_cfg, test_index_data, list_dates_full)
-              ]
-              live_test_res = []
-              _eval_parallel(live_test_args, live_test_res, {}, testback_logger, pool=ga_pool)
-              if live_test_res:
-                lt = live_test_res[0]
-                live_test_calmar = lt['calmar']
-                test_eval_cache[live_test_key] = {'calmar': lt['calmar'], 'sharpe': lt['sharpe'], 'annualized': lt['annualized'], 'max_drawdown': lt['max_drawdown']}
-              with open(test_cache_path, 'w', encoding='utf-8') as f:
-                json_mod.dump(test_eval_cache, f, ensure_ascii=False)
-
           sorted_w = sorted(best_cfg['weights'].items(), key=lambda x: -abs(x[1]))
+          fold_text = ','.join(f'{value:.2f}' for value in best_m['fold_calmars'])
           testback_logger.info(
-            f"GA gen{generation + 1}: 训练Calmar={best_m['calmar']:.3f}(上证指数={benchmark_calmar:.3f})/{avg_calmar:.3f} S={best_m['sharpe']:.2f} | "
+            f"GA gen{generation + 1}: 训练Calmar={best_m['calmar']:.3f}/{avg_calmar:.3f} "
+            f"稳健适应度={best_m['fitness']:.3f} folds=[{fold_text}] S={best_m['sharpe']:.2f} "
+            f"E={best_m['average_exposure']:.1%} | "
             f"验证Calmar={train_best_val_m['calmar']:.3f} | "
             f"测试Calmar={_test_train_best_m['calmar']:.3f} | "
             f"{_format_config_params(best_cfg, profile_name)} | "
             f"{', '.join(f'{k}={v:.1f}' for k, v in sorted_w)}")
-          if best_live_cfg is not None:
+          training_candidate = _select_training_candidate(ga_cache)
+          if training_candidate is not None:
+            candidate_cfg = training_candidate['individual_config']
+            candidate_key = json_mod.dumps(_config_key(candidate_cfg), ensure_ascii=False)
+            candidate_val = val_eval_cache.get(candidate_key, {}).get('calmar')
+            candidate_test = test_eval_cache.get(candidate_key, {}).get('calmar')
+            val_text = f'{candidate_val:.3f}' if candidate_val is not None else 'N/A'
+            test_text = f'{candidate_test:.3f}' if candidate_test is not None else 'N/A'
             testback_logger.info(
-              f"实盘: total={best_live_total:.3f}(train={best_live_train_calmar:.3f}/val={best_live_val_calmar:.3f}) test={live_test_calmar:.3f} | "
-              f"{_format_config_params(best_live_cfg, profile_name)} | "
-              f"{', '.join(f'{k}={v:.1f}' for k, v in sorted(best_live_cfg['weights'].items(), key=lambda x: -abs(x[1])))}")
-            best_result = strategy_config_payload(profile_name, best_live_cfg)
+              f"实盘候选(仅训练选择): train={training_candidate['calmar']:.3f} "
+              f"fitness={training_candidate.get('fitness', training_candidate['calmar']):.3f} "
+              f"E={training_candidate.get('average_exposure', float('nan')):.1%} "
+              f"val={val_text} test={test_text} | "
+              f"{_format_config_params(candidate_cfg, profile_name)} | "
+              f"{', '.join(f'{k}={v:.1f}' for k, v in sorted(candidate_cfg['weights'].items(), key=lambda x: -abs(x[1])))}")
+            best_result = strategy_config_payload(profile_name, candidate_cfg)
+            with open(output_dir / 'best_individual_config.json', 'w', encoding='utf-8') as f:
+              json_mod.dump(best_result, f, indent=2, ensure_ascii=False)
+
+        if base_report_gen and args.sealed_holdout:
+          fold_text = ','.join(f'{value:.2f}' for value in best_m['fold_calmars'])
+          testback_logger.info(
+            f"GA gen{generation + 1}: 训练Calmar={best_m['calmar']:.3f}/{avg_calmar:.3f} "
+            f"稳健适应度={best_m['fitness']:.3f} folds=[{fold_text}] S={best_m['sharpe']:.2f} "
+            f"E={best_m['average_exposure']:.1%} | "
+            f"{_format_config_params(best_cfg, profile_name)} | "
+            f"{', '.join(f'{k}={v:.1f}' for k, v in sorted_w)}")
+          training_candidate = _select_training_candidate(ga_cache)
+          if training_candidate is not None:
+            candidate_cfg = training_candidate['individual_config']
+            testback_logger.info(
+              f"实盘候选(仅训练选择, holdout封存): "
+              f"train={training_candidate['calmar']:.3f} "
+              f"fitness={training_candidate.get('fitness', training_candidate['calmar']):.3f} "
+              f"E={training_candidate.get('average_exposure', float('nan')):.1%} | "
+              f"{_format_config_params(candidate_cfg, profile_name)} | "
+              f"{', '.join(f'{k}={v:.1f}' for k, v in sorted(candidate_cfg['weights'].items(), key=lambda x: -abs(x[1])))}")
+            best_result = strategy_config_payload(profile_name, candidate_cfg)
             with open(output_dir / 'best_individual_config.json', 'w', encoding='utf-8') as f:
               json_mod.dump(best_result, f, indent=2, ensure_ascii=False)
 
@@ -819,7 +1289,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
       generation_time = time.time() - generation_start_ts
       for result in results_list:
         result['generation'] = generation
-        result['fitness'] = result['calmar']
+        result.setdefault('fitness', result['calmar'])
 
 
       best_in_gen = max(results_list, key=lambda x: x['fitness'])
@@ -834,6 +1304,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
         }
         generation_stats['best_weights'] = dict(best_in_gen['individual_config']['weights'])
         generation_stats['best_buy_n'] = best_in_gen['individual_config']['buy_n']
+        generation_stats['best_average_exposure'] = best_in_gen.get('average_exposure')
         generation_stats['best_stock_pool'] = best_in_gen['individual_config'].get('stock_pool')
         generation_stats['best_timing_enabled'] = best_in_gen['individual_config'].get('timing_enabled')
         generation_stats['best_timing_base'] = best_in_gen['individual_config'].get('timing_base')
@@ -851,10 +1322,15 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
 
       import json as _json
       best_key = _config_key(best_in_gen['individual_config'])
+      training_entries = []
       with open(output_dir / 'all_results.jsonl', 'a', encoding='utf-8') as _f:
         for _r in results_list:
           entry = {
             'generation': _r['generation'],
+            'fitness': _r['fitness'], 'fold_calmars': _r.get('fold_calmars', []),
+            'raw_fitness': _r.get('raw_fitness', _r['fitness']),
+            'average_exposure': _r.get('average_exposure'),
+            'exposure_constraint_passed': _r.get('exposure_constraint_passed'),
             'calmar': _r['calmar'], 'sharpe': _r['sharpe'],
             'annualized': _r['annualized'],
             'max_drawdown': _r['max_drawdown'], 'total_return': _r['total_return'],
@@ -870,7 +1346,33 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
               entry['test_sharpe'] = _test_train_best_m['sharpe']
               entry['test_annualized'] = _test_train_best_m['annualized']
               entry['test_max_drawdown'] = _test_train_best_m['max_drawdown']
+          if split_period_results:
+            entry = {
+              key: value for key, value in entry.items()
+              if key not in _HOLDOUT_RESULT_FIELDS
+            }
           _f.write(_json.dumps(entry, ensure_ascii=False) + '\n')
+          training_entries.append(entry)
+
+      if split_period_results:
+        _append_jsonl_rows(
+          output_dir / 'training_results.jsonl', training_entries,
+        )
+        _append_jsonl_rows(
+          output_dir / 'validation_results.jsonl',
+          [
+            _period_result_entry(generation, result)
+            for result in split_validation_results
+          ],
+        )
+        _append_jsonl_rows(
+          output_dir / 'test_results.jsonl',
+          [
+            _period_result_entry(generation, result)
+            for result in split_test_results
+          ],
+        )
+        _validate_split_result_files(output_dir)
 
       if is_debug:
         best_result = strategy_config_payload(profile_name, best_in_gen['individual_config'])
@@ -881,24 +1383,60 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
         with open(output_dir / 'generation_results.pkl', 'wb') as f:
           pickle.dump(generation_results, f)
 
+      _seed_ga_generation(seed, generation)
       next_configs = ga_optimizer(results_list, state=ga_state, population_size=population_size,
                                   hall_of_fame_size=population_size, profile_name=profile_name,
                                   ga_cache=ga_cache, gen=generation)
 
-    # 最终测试集评估必须在 Pool terminate 前完成（共用 ga_pool）
-    if not is_debug:
+    # Freeze the train-only candidate before touching either holdout period.
+    if not is_debug and not split_period_results:
+      frozen_entry = _select_training_candidate(ga_cache)
+      if frozen_entry is None:
+        raise RuntimeError('训练结束后没有可冻结候选')
+      train_best_config = frozen_entry['individual_config']
+      frozen_result = strategy_config_payload(profile_name, train_best_config)
+      with open(output_dir / 'best_individual_config.json', 'w', encoding='utf-8') as f:
+        json_mod.dump(frozen_result, f, indent=2, ensure_ascii=False)
       testback_logger.info(f"\n{'=' * 60}")
-      testback_logger.info(f"最终测试集评估 ({test_start} - {test_end})")
-      train_best_config = ga_state['hall_of_fame'][0]
+      testback_logger.info('训练候选已冻结，开始一次性 holdout 诊断')
+      frozen_val_args = [(
+        info, score_keys, val_valid_dates, val_date_indices, stock_indices,
+        all_valid_stocks, train_best_config, val_index_data, list_dates_full, {}
+      )]
+      frozen_val_results = []
+      _eval_parallel(frozen_val_args, frozen_val_results, {}, testback_logger, pool=ga_pool)
       train_test_args = [(
         info, score_keys, test_valid_dates, test_date_indices, stock_indices,
-        all_valid_stocks, train_best_config, test_index_data, list_dates_full
+        all_valid_stocks, train_best_config, test_index_data, list_dates_full, {}
       )]
       train_test_results = []
       _eval_parallel(train_test_args, train_test_results, {}, testback_logger, pool=ga_pool)
+      if frozen_val_results:
+        vr = frozen_val_results[0]
+        testback_logger.info(
+          f"  [冻结训练候选] 验证Calmar={vr['calmar']:.3f}, "
+          f"夏普={vr['sharpe']:.3f}, 年化={vr['annualized']:.1f}%, 回撤={vr['max_drawdown']:.1f}%")
       if train_test_results:
         tr = train_test_results[0]
-        testback_logger.info(f"  [训练最优] 测试夏普={tr['sharpe']:.3f}, 年化={tr['annualized']:.1f}%, 回撤={tr['max_drawdown']:.1f}%")
+        testback_logger.info(
+          f"  [冻结训练候选] 测试Calmar={tr['calmar']:.3f}, "
+          f"夏普={tr['sharpe']:.3f}, 年化={tr['annualized']:.1f}%, 回撤={tr['max_drawdown']:.1f}%")
+      holdout_payload = {
+        'selection_scope': 'train_only',
+        'training_fitness': frozen_entry.get('fitness', frozen_entry['calmar']),
+        'training_calmar': frozen_entry['calmar'],
+        'fold_calmars': frozen_entry.get('fold_calmars', []),
+        'validation': frozen_val_results[0] if frozen_val_results else None,
+        'test': train_test_results[0] if train_test_results else None,
+      }
+      for period in ('validation', 'test'):
+        if holdout_payload[period] is not None:
+          holdout_payload[period] = {
+            key: value for key, value in holdout_payload[period].items()
+            if key != 'individual_config'
+          }
+      with open(output_dir / 'holdout_diagnostics.json', 'w', encoding='utf-8') as f:
+        json_mod.dump(holdout_payload, f, indent=2, ensure_ascii=False)
       testback_logger.info(f"{'=' * 60}")
 
   finally:
@@ -908,28 +1446,20 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     _cleanup_memmap()
 
   if not is_debug:
-    # 实盘个体：全部历史中 (train_calmar+val_calmar)/2 最高者
-    best_live_total = -999.0
-    best_live_cfg = None
-    for entry in ga_cache.values():
-      vs = entry.get('val_calmar')
-      if vs is not None:
-        total = (entry['calmar'] + vs) / 2.0
-        if total > best_live_total:
-          best_live_total = total
-          best_live_cfg = entry['individual_config']
-    if best_live_cfg is not None:
-      best_result = strategy_config_payload(profile_name, best_live_cfg)
+    training_candidate = _select_training_candidate(ga_cache)
+    if training_candidate is not None:
+      best_cfg = training_candidate['individual_config']
+      best_result = strategy_config_payload(profile_name, best_cfg)
       with open(output_dir / 'best_individual_config.json', 'w', encoding='utf-8') as f:
         json_mod.dump(best_result, f, indent=2, ensure_ascii=False)
-      best_cfg = best_live_cfg
       w_str = ', '.join(f'{k}={v:.2f}' for k, v in best_cfg['weights'].items())
-      timing_str = _format_timing(best_cfg)
+      overlay_enabled = bool((best_cfg.get('trend_risk_overlay') or {}).get('enabled'))
+      timing_str = ', trend_overlay=ON' if overlay_enabled else _format_timing(best_cfg)
       testback_logger.info(f"\n最优参数已保存:")
       testback_logger.info(f"  - {output_dir / 'best_individual_config.json'}")
-      testback_logger.info(f"实盘最优 (train_calmar+val_calmar)/2={best_live_total:.3f}: [{w_str}], pool={_format_pool(best_cfg.get('stock_pool'))}, buy={best_cfg['buy_n']},sell={best_cfg['sell_m']}{timing_str}, rebal={'ON' if best_cfg.get('rebalance') else 'OFF'}")
+      testback_logger.info(f"实盘候选仅按训练稳健适应度={training_candidate.get('fitness', training_candidate['calmar']):.3f}, 全训练Calmar={training_candidate['calmar']:.3f}: [{w_str}], pool={_format_pool(best_cfg.get('stock_pool'))}, buy={best_cfg['buy_n']},sell={best_cfg['sell_m']}{timing_str}, rebal={'ON' if best_cfg.get('rebalance') else 'OFF'}")
     else:
-      testback_logger.warning("无实盘最优个体（缺少验证集评估结果），回退到训练最优")
+      testback_logger.warning("无可用训练候选，回退到训练 hall-of-fame")
       best_config = ga_state['hall_of_fame'][0]
       best_result = strategy_config_payload(profile_name, best_config)
       with open(output_dir / 'best_individual_config.json', 'w', encoding='utf-8') as f:
@@ -966,12 +1496,49 @@ def main():
   parser.add_argument('--resume', type=str, nargs='?', const='auto', default=None,
                       help='从 JSONL 恢复: 不传则自动找最新, 或指定目录路径')
   parser.add_argument('--profile', type=str, default=None)
+  parser.add_argument('--generations', type=int, default=None,
+                      help='覆盖当前模式的代数，仅影响本次运行')
+  parser.add_argument('--population-size', type=int, default=None,
+                      help='覆盖当前模式的种群大小，仅影响本次运行')
+  parser.add_argument('--sealed-holdout', action='store_true',
+                      help='代内不评估验证/测试，训练候选冻结后各评估一次')
+  parser.add_argument(
+      '--split-period-results', action='store_true',
+      help=(
+          '逐个体评估训练/验证/测试并分别写入三个 JSONL；'
+          '验证/测试不参与遗传选择'
+      ),
+  )
+  parser.add_argument('--seed', type=int, default=DEFAULT_GA_SEED,
+                      help=f'GA 随机种子（默认 {DEFAULT_GA_SEED}）')
+  parser.add_argument('--candidate-configs', type=str,
+                      help='debug模式下批量评估训练候选JSON，不运行遗传或holdout')
   parser.add_argument('--live-sim', action='store_true', default=True, help='启用实盘模拟 (默认开启)')
   args = parser.parse_args()
+  _seed_ga_randomness(args.seed)
+  if args.candidate_configs and args.mode != 'debug':
+    parser.error('--candidate-configs 只能与 --mode debug 一起使用')
+  if args.candidate_configs and (args.resume or args.warm_start):
+    parser.error('--candidate-configs 不能与 --resume/--warm-start 同时使用')
+  if args.split_period_results and args.sealed_holdout:
+    parser.error(
+      '--split-period-results 会逐个体观察验证/测试，不能与 '
+      '--sealed-holdout 同时使用'
+    )
+  if args.split_period_results and args.mode != 'ga':
+    parser.error('--split-period-results 只能用于 --mode ga')
 
   profile_name = args.profile or DEFAULT_GA_PROFILE
   mode_configs = get_mode_configs(profile_name)
   mode_config = mode_configs[args.mode].copy()
+  if args.generations is not None:
+    if args.generations < 1:
+      parser.error('--generations 必须大于0')
+    mode_config['generations'] = args.generations
+  if args.population_size is not None:
+    if args.population_size < 2:
+      parser.error('--population-size 必须至少为2')
+    mode_config['population_size'] = args.population_size
 
   loguru_logger.remove()
   loguru_logger.add(sys.stderr, level=mode_config['log_level'])

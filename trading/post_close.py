@@ -379,8 +379,10 @@ def _run_continuous_backtest(start_date: date, end_date: date,
     if not valid_dates:
         return None
 
-    timing_multipliers = _compute_timing_multipliers(individual_config, valid_dates)
-    prefilter_n = individual_config.get('prefilter_n')
+    timing_multipliers = _compute_timing_multipliers(
+        individual_config, valid_dates,
+        runtime_data=data, date_indices=date_indices,
+    )
     seed_in_npz = ({c: v for c, v in init_positions.items() if c in stock_indices}
                    if init_positions else None)
     return _backtest_direct(
@@ -393,7 +395,9 @@ def _run_continuous_backtest(start_date: date, end_date: date,
         limit_up_protection=individual_config.get('limit_up_protection', False),
         rebalance=individual_config.get('rebalance', True),
         filter_masks=filter_masks,
-        prefilter_n=prefilter_n,
+        enforce_position_multiplier_on_sell_m=individual_config.get(
+            'enforce_position_multiplier_on_sell_m', False
+        ),
     )
 
 

@@ -18,8 +18,12 @@ class AmountBasedSmallCap:
     cum_count = np.cumsum(~np.isnan(amount_known), axis=0).astype(float)
     w = self.hist_days
     avg_amounts = np.empty_like(amount, dtype=float)
-    avg_amounts[:w] = cum_amount[:w] / cum_count[:w]
-    avg_amounts[w:] = (cum_amount[w:] - cum_amount[:-w]) / (cum_count[w:] - cum_count[:-w])
+    with np.errstate(divide="ignore", invalid="ignore"):
+      avg_amounts[:w] = cum_amount[:w] / cum_count[:w]
+      avg_amounts[w:] = (
+        (cum_amount[w:] - cum_amount[:-w])
+        / (cum_count[w:] - cum_count[:-w])
+      )
     avg_amounts /= 1e8
 
     score = 100 * np.exp(-(avg_amounts / 5))

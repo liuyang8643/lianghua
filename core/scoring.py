@@ -9,6 +9,36 @@ LegalityChecker 类，回测与实盘共用唯一实现。
 import numpy as np
 
 
+class FactorScoreMatrices(dict):
+    """Rank matrices with optional raw values for candidate-local reranking."""
+
+    def __init__(self, *args, raw_scores=None, pre_ranked_names=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.raw_scores = raw_scores
+        self.pre_ranked_names = frozenset(pre_ranked_names)
+
+
+def candidate_local_score_matrices(all_scores, score_idx, candidate_cols):
+    """Re-rank regular factors inside the fixed T-day candidate pool."""
+    raw_scores = getattr(all_scores, 'raw_scores', None)
+    if raw_scores is None:
+        return all_scores, score_idx
+
+    candidate_cols = np.asarray(candidate_cols, dtype=np.intp)
+    width = next(iter(all_scores.values())).shape[1]
+    local_scores = {}
+    for name, ranked in all_scores.items():
+        if name in all_scores.pre_ranked_names:
+            values = ranked[score_idx, candidate_cols]
+        else:
+            raw = raw_scores[name][score_idx, candidate_cols]
+            values = scores_to_ranks(raw[None, :])[0]
+        matrix = np.zeros((1, width), dtype=np.float32)
+        matrix[0, candidate_cols] = values
+        local_scores[name] = matrix
+    return local_scores, 0
+
+
 def compute_weighted_scores(
     all_scores: dict,
     score_idx: int,
@@ -23,6 +53,24 @@ def compute_weighted_scores(
             continue
         final_score += ranks_mat[score_idx][valid_cols] * w
     return final_score
+
+
+def compute_weighted_score_matrix(
+    all_scores: dict,
+    date_indices: np.ndarray,
+    valid_cols: np.ndarray,
+    weights: dict[str, float],
+) -> np.ndarray:
+    """Vectorized weighted scores for multiple dates and stocks."""
+    rows = np.asarray(date_indices, dtype=np.intp)
+    cols = np.asarray(valid_cols, dtype=np.intp)
+    result = np.zeros((len(rows), len(cols)), dtype=np.float64)
+    selection = np.ix_(rows, cols)
+    for name, ranks_mat in all_scores.items():
+        weight = float(weights[name])
+        if weight != 0.0:
+            result += np.asarray(ranks_mat[selection], dtype=np.float64) * weight
+    return result
 
 
 def select_topn(
@@ -75,7 +123,7 @@ def select_topn_legal(
     day_open: np.ndarray,
     stock_indices: dict[str, int],
     filter_mask: np.ndarray | None = None,
-) -> tuple[list[str], list[str], np.ndarray]:
+) -> tuple[list[str], list[str], np.ndarray, list[str]]:
     """合并排名 + 批量合法性检查 + 凑够 N 即停，替代 select_topn + select_tradable_buys。
 
     1. compute_weighted_scores 排名所有候选股
@@ -87,6 +135,26 @@ def select_topn_legal(
 
     if filter_mask is not None:
         final_score[~filter_mask] = -np.inf
+
+    buy, sell, ranking = select_topn_legal_from_scores(
+        final_score, valid_stocks, valid_cols, buy_n, sell_m,
+        checker, trade_idx, signal_date, day_open,
+    )
+    return buy, sell, final_score, ranking
+
+
+def select_topn_legal_from_scores(
+    final_score: np.ndarray,
+    valid_stocks: list[str],
+    valid_cols: np.ndarray,
+    buy_n: int,
+    sell_m: int,
+    checker,
+    trade_idx: int,
+    signal_date,
+    day_open: np.ndarray,
+) -> tuple[list[str], list[str], list[str]]:
+    """Select legal TopN from an already-combined score row."""
 
     ranked_idx = np.flatnonzero(np.isfinite(final_score))[np.argsort(-final_score[np.isfinite(final_score)])]
     buy_n_stocks: list[str] = []
@@ -127,7 +195,7 @@ def select_topn_legal(
     # 全量排名供 T+1 prefilter 复用（零额外计算——就是用已经排好的 ranked_idx）
     t1_ranking = [valid_stocks[i] for i in ranked_idx]
 
-    return buy_n_stocks, sell_m_stocks[:sell_m], final_score, t1_ranking
+    return buy_n_stocks, sell_m_stocks[:sell_m], t1_ranking
 
 
 def scores_to_ranks(scores: np.ndarray, total_n: int | None = None) -> np.ndarray:

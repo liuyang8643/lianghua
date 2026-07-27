@@ -6,11 +6,15 @@ import json
 from pathlib import Path
 
 from core.factors.registry import get_factor_class
-from core.ga import resolve_profile_name
+from core.ga import get_profile, resolve_profile_name
 
 
-def normalize_individual_config(config: dict) -> dict:
+def normalize_individual_config(config: dict, profile_name: str | None = None) -> dict:
     cfg = dict(config)
+    # Candidate prefiltering is not a strategy parameter.  Older saved configs
+    # may still contain it; discard it so every strategy entry point ranks the
+    # complete stock universe.
+    cfg.pop('prefilter_n', None)
     if 'sell_m' not in cfg:
         cfg['sell_m'] = cfg['buy_n']
     if 'timing_enabled' not in cfg:
@@ -25,20 +29,23 @@ def normalize_individual_config(config: dict) -> dict:
         cfg['empty_months'] = None
     if 'cash_reserve_ratio' not in cfg:
         cfg['cash_reserve_ratio'] = 0.0
+    if (profile_name is not None
+            and get_profile(profile_name).get('constraints', {}).get('sell_m_equals_buy_n')):
+        cfg['sell_m'] = cfg['buy_n']
     return cfg
 
 
 def strategy_config_payload(profile_name: str, individual_config: dict) -> dict:
     return {
         'ga_profile': profile_name,
-        'individual_config': normalize_individual_config(individual_config),
+        'individual_config': normalize_individual_config(individual_config, profile_name),
     }
 
 
 def load_strategy_config(path: str | Path) -> dict:
     config_data = json.loads(Path(path).read_text(encoding='utf-8'))
     profile_name = resolve_profile_name(config_data)
-    individual_config = normalize_individual_config(config_data['individual_config'])
+    individual_config = normalize_individual_config(config_data['individual_config'], profile_name)
     factor_names = list(individual_config['weights'])
     filter_factor_names = [name for name, enabled in individual_config.get('filter_factors', {}).items() if enabled]
     return {

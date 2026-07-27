@@ -30,6 +30,14 @@ def get_intrinsic_params() -> list[dict]:
     return deepcopy(INTRINSIC_PARAMS)
 
 
+def get_config_param(config: dict, definition: dict):
+    """Read a registered parameter, including nested timing parameters."""
+    group = definition.get('config_group')
+    if group:
+        return config.get(group, {}).get(definition['config_key'])
+    return config.get(definition['config_key'])
+
+
 def set_yaml_path(path: Path):
     global _YAML_PATH
     _YAML_PATH = path
@@ -96,6 +104,8 @@ def _load():
             'preload_end_date': raw['preload_end'],
             'mode_configs': deepcopy(mode_configs),
             'fixed_parameters': deepcopy(raw.get('fixed_parameters', {})),
+            'constraints': deepcopy(raw.get('constraints', {})),
+            'training_objective': deepcopy(raw.get('training_objective', {})),
         }
         if raw.get('factor_choice_space'):
             profile['factor_choice_space'] = raw['factor_choice_space']

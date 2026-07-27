@@ -210,14 +210,9 @@ class OrderMonitor:
         _, inflight = self._filled_inflight(code)
         return inflight > 0
 
-    def _sells_pending(self) -> bool:
-        """有卖单仍在途（未达终态）→ 回款还在路上"""
-        for code in self.sell_targets:
-            for oid in self.orders_by_code.get(code, []):
-                o = self.trader.query_order(oid)
-                if o and o.order_status not in TERMINAL_STATUS:
-                    return True
-        return False
+    def _has_pending_orders(self) -> bool:
+        """任一买卖委托仍在途；新单尚未被 QMT 查询到时也视为在途。"""
+        return any(self._has_open_order(code) for code in self.orders_by_code)
 
     # ── 退出条件 ─────────────────────────────────────────────
 
@@ -227,7 +222,9 @@ class OrderMonitor:
                 return False
         return True
 
-    def _all_done_or_blocked(self):
+    def _all_targets_resolved(self):
+        if self._has_pending_orders():
+            return False
         if not self._all_buys_done():
             return False
         for code in self.sell_targets:
@@ -348,14 +345,14 @@ class OrderMonitor:
             if time.time() - last_log >= 30:
                 trading_logger.info(
                     f"[OrderMonitor] 监控中: 已提交 {len(self.submitted)} 笔, "
-                    f"卖单在途={self._sells_pending()}")
+                    f"委托在途={self._has_pending_orders()}")
                 last_log = time.time()
 
             buy_progress = self._submit_affordable_buys()
             sell_progress = self._retry_sells()
             progressed = buy_progress or sell_progress
 
-            if self._all_done_or_blocked():
+            if self._all_targets_resolved():
                 return
 
             if not progressed:
@@ -363,7 +360,7 @@ class OrderMonitor:
                     time.sleep(self.executor.MONITOR_POLL_SEC)
                     continue
                 cash = self._available_cash()
-                if not self._sells_pending() and not self._can_afford_any(cash):
+                if not self._has_pending_orders() and not self._can_afford_any(cash):
                     trading_logger.warning(
                         f"[OrderMonitor] 可用资金 {cash:.2f} 不足以买入任何剩余标的, 结束")
                     return

@@ -8,6 +8,7 @@ from ._profiles import (
     get_profile_search_spaces, get_profile_weight_search_spaces,
     get_profile_fixed_parameters,
     get_profile_preload_range, get_profile_metadata,
+    get_config_param,
 )
 from ._sampling import (
     sample_weights, sample_buy_n, sample_sell_m, sample_stock_pool,

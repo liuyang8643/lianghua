@@ -27,6 +27,8 @@ def main():
     parser.add_argument('--output-dir', type=str, default=None)
     parser.add_argument('--start-date', type=str, default='20240101')
     parser.add_argument('--end-date', type=str, default='20241231')
+    parser.add_argument('--no-live-sim', action='store_true',
+                        help='跳过分钟价格实盘模拟，仅运行历史回测和报告')
     args = parser.parse_args()
 
     loguru_logger.remove()
@@ -44,7 +46,12 @@ def main():
     testback_logger.info(f"股票池(runtime历史全集): {len(all_stocks)} 只, 区间: {start_date} ~ {end_date}")
 
     mode_config = {'desc': '单回测', 'log_level': 'INFO', 'save_charts': True}
-    return run_single_mode(args, mode_config, backtest_datetime_list, all_stocks)
+    from core.trend_timing import compute_configured_timing_multipliers
+    return run_single_mode(
+        args, mode_config, backtest_datetime_list, all_stocks,
+        live_sim=not args.no_live_sim,
+        timing_multiplier_builder=compute_configured_timing_multipliers,
+    )
 
 
 if __name__ == '__main__':

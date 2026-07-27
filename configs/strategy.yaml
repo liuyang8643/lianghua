@@ -1,4 +1,4 @@
-version: "2026-06-19"
+version: "2026-07-22-v11-strict-volume-low-dim-stability"
 default_profile: ga7_clean
 
 strategy_parameters:
@@ -13,10 +13,28 @@ strategy_parameters:
   - {key: timing_index, config_key: timing_index, type: categorical, display: t_idx, default: null}
   - {key: amount_filter_pct, config_key: amount_filter_pct, type: int, display: amt%, default: 0}
   - {key: market_cap_filter_pct, config_key: market_cap_filter_pct, type: int, display: mcap%, default: 0}
-  - {key: prefilter_n, config_key: prefilter_n, type: int, display: prefilter, default: 0}
   - {key: rebalance, config_key: rebalance, type: bool, display: rebal, default: true}
   - {key: limit_up_protection, config_key: limit_up_protection, type: bool, display: limit, default: false}
   - {key: filter_factors, config_key: filter_factors, type: categorical, display: filters, default: []}
+  - {key: trend_floor, config_group: trend_risk_overlay, config_key: floor, type: float, display: tr_floor, default: 0.03}
+  - {key: trend_ceiling, config_group: trend_risk_overlay, config_key: ceiling, type: float, display: tr_ceil, default: 1.0}
+  - {key: trend_momentum_center, config_group: trend_risk_overlay, config_key: momentum_center, type: float, display: tr_mom_c, default: -0.055}
+  - {key: trend_momentum_scale, config_group: trend_risk_overlay, config_key: momentum_scale, type: float, display: tr_mom_s, default: 0.012}
+  - {key: trend_ma_center, config_group: trend_risk_overlay, config_key: ma_center, type: float, display: tr_ma_c, default: 1.0}
+  - {key: trend_ma_scale, config_group: trend_risk_overlay, config_key: ma_scale, type: float, display: tr_ma_s, default: 0.012}
+  - {key: trend_softmin_sharpness, config_group: trend_risk_overlay, config_key: softmin_sharpness, type: float, display: tr_softmin, default: 4.0}
+  - {key: trend_slope, config_group: trend_risk_overlay, config_key: slope, type: float, display: tr_slope, default: 2.0}
+  - {key: trend_momentum_window, config_group: trend_risk_overlay, config_key: momentum_window, type: int, display: tr_mom_w, default: 5}
+  - {key: trend_ma_window, config_group: trend_risk_overlay, config_key: ma_window, type: int, display: tr_ma_w, default: 20}
+  - {key: strategy_weight, config_group: trend_risk_overlay, config_key: strategy_weight, type: float, display: st_w, default: 0.6}
+  - {key: strategy_momentum_window, config_group: trend_risk_overlay, config_key: strategy_momentum_window, type: int, display: st_mom_w, default: 3}
+  - {key: strategy_momentum_center, config_group: trend_risk_overlay, config_key: strategy_momentum_center, type: float, display: st_mom_c, default: -0.044}
+  - {key: strategy_momentum_scale, config_group: trend_risk_overlay, config_key: strategy_momentum_scale, type: float, display: st_mom_s, default: 0.0075}
+  - {key: strategy_ma_window, config_group: trend_risk_overlay, config_key: strategy_ma_window, type: int, display: st_ma_w, default: 20}
+  - {key: strategy_ma_center, config_group: trend_risk_overlay, config_key: strategy_ma_center, type: float, display: st_ma_c, default: 1.014}
+  - {key: strategy_ma_scale, config_group: trend_risk_overlay, config_key: strategy_ma_scale, type: float, display: st_ma_s, default: 0.009}
+  - {key: strategy_softmin_sharpness, config_group: trend_risk_overlay, config_key: strategy_softmin_sharpness, type: float, display: st_softmin, default: 4.0}
+  - {key: strategy_slope, config_group: trend_risk_overlay, config_key: strategy_slope, type: float, display: st_slope, default: 2.0}
 
 mode_configs:
   single:
@@ -42,13 +60,31 @@ search_spaces:
   buy_n: [20, 25, 30, 35, 40, 45, 50, 100]
   sell_m: {range: [20, 50, 5]}
   holding_period: [1, 7, 15, 30, 60]
-  prefilter_n: [0, 300]
   board_prefixes: ["60", "00", "30", "688"]
   timing_base: {range: [0.1, 1.0, 0.1]}
   timing_leverage: [0, 0.5, 1, 2, 3, 5, 8, 10, 12, 15, 20, 25, 30, 40, 50]
   timing_window: [2, 3, 5, 7, 10, 15, 20, 25, 30, 45, 60, 90, 120, 252]
   timing_direction: [1, -1]
   timing_index: [sh000001, sh000905, sh000852]
+  trend_floor: [0.0, 0.03, 0.05, 0.1, 0.15]
+  trend_ceiling: [0.8, 0.9, 1.0]
+  trend_momentum_center: [-0.08, -0.065, -0.055, -0.045, -0.03]
+  trend_momentum_scale: [0.005, 0.008, 0.012, 0.016, 0.02]
+  trend_ma_center: [0.98, 0.99, 1.0, 1.01, 1.02]
+  trend_ma_scale: [0.005, 0.009, 0.012, 0.016, 0.02]
+  trend_softmin_sharpness: [2.0, 4.0, 6.0, 8.0]
+  trend_slope: [1.0, 2.0, 3.0, 4.0]
+  trend_momentum_window: [3, 5, 7, 10, 15]
+  trend_ma_window: [10, 15, 20, 30, 60]
+  strategy_weight: [0.0, 0.25, 0.5, 0.6, 0.75, 1.0]
+  strategy_momentum_window: [2, 3, 5, 7, 10]
+  strategy_momentum_center: [-0.07, -0.055, -0.044, -0.035, -0.02]
+  strategy_momentum_scale: [0.004, 0.0075, 0.01, 0.015, 0.02]
+  strategy_ma_window: [10, 15, 20, 30, 60]
+  strategy_ma_center: [0.99, 1.0, 1.007, 1.014, 1.02]
+  strategy_ma_scale: [0.004, 0.007, 0.009, 0.012, 0.016]
+  strategy_softmin_sharpness: [2.0, 4.0, 6.0, 8.0]
+  strategy_slope: [1.0, 2.0, 3.0, 4.0]
 
 profiles:
   core:
@@ -148,11 +184,10 @@ profiles:
     fixed_parameters:
       cash_reserve_ratio: 0.25
     weight_range: [-1.0, 1.0, 0.1]
-    search_spaces: [buy_n, sell_m, prefilter_n, rebalance, limit_up_protection, filter_factors]
+    search_spaces: [buy_n, sell_m, rebalance, limit_up_protection, filter_factors]
     search_space_overrides:
       buy_n: {range: [10, 20, 10]}
       sell_m: {range: [10, 20, 10]}
-      prefilter_n: {range: [100, 1200, 100]}
       rebalance: [true, false]
       limit_up_protection: [true, false]
       filter_factors:
@@ -264,3 +299,598 @@ profiles:
     preload_start: 2010-01-01
     preload_end: 2018-12-31
 
+  v9_dual_shadow: &v9_dual_strategy_base
+    desc: V9五因子全量排名 + 市场/策略目标双趋势T日开盘择时
+    factor_classes: [
+      AmihudIlliquidity, TrueMarketCap, VolumeCV,
+      AmountBasedSmallCap, TrendReversalV7,
+    ]
+    filter_factor_classes: [FilterST, FilterStarST, FilterLowPrice]
+    fixed_parameters:
+      rebalance: true
+      limit_up_protection: true
+      cash_reserve_ratio: 0.0
+      holding_period: 1
+      filter_factors: {FilterST: true, FilterStarST: true, FilterLowPrice: true}
+      trend_risk_overlay:
+        enabled: true
+        mode: dual_strategy
+        floor: 0.0
+        ceiling: 1.0
+        softmin_sharpness: 4.0
+        slope: 2.0
+        strategy_softmin_sharpness: 4.0
+        strategy_slope: 2.0
+    constraints:
+      sell_m_equals_buy_n: true
+    training_objective:
+      mode: robust_calmar
+      folds: 3
+      full_weight: 0.5
+      min_average_exposure: 0.45
+    weight_range: [0.0, 1.0, 0.1]
+    search_spaces: [
+      buy_n,
+      trend_momentum_center, trend_momentum_scale,
+      trend_ma_center, trend_ma_scale,
+      trend_momentum_window, trend_ma_window,
+      strategy_weight, strategy_momentum_window,
+      strategy_momentum_center, strategy_momentum_scale,
+      strategy_ma_window, strategy_ma_center, strategy_ma_scale,
+    ]
+    search_space_overrides:
+      buy_n: [20, 30, 40, 50]
+      trend_momentum_center: [-0.055, -0.03]
+      trend_momentum_scale: [0.008, 0.012]
+      trend_ma_center: [1.0, 1.01]
+      trend_ma_scale: [0.009, 0.012]
+      trend_momentum_window: [3, 5, 10]
+      trend_ma_window: [20, 60]
+      strategy_weight: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      strategy_momentum_window: [3, 5]
+      strategy_momentum_center: [-0.044, -0.02]
+      strategy_momentum_scale: [0.0075, 0.015]
+      strategy_ma_window: [20, 60]
+      strategy_ma_center: [1.0, 1.014]
+      strategy_ma_scale: [0.009, 0.015]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  v10_intermediate_momentum:
+    <<: *v9_dual_strategy_base
+    desc: V9基线 + 固定12-1中期动量训练消融
+    factor_classes: [
+      AmihudIlliquidity, TrueMarketCap, VolumeCV,
+      AmountBasedSmallCap, TrendReversalV7,
+      IntermediateMomentum12Minus1,
+    ]
+
+  v11_strict_volume_low_dim: &v11_strict_volume_low_dim_base
+    desc: V11严格完整成交量窗口 + 冻结V9双趋势的低自由度训练搜索
+    factor_classes: [
+      AmihudIlliquidity, TrueMarketCap, VolumeCVStrict,
+      AmountBasedSmallCap, TrendReversalV7,
+    ]
+    filter_factor_classes: [FilterST, FilterStarST, FilterLowPrice]
+    fixed_weights:
+      TrueMarketCap: 1.0
+    fixed_parameters:
+      stock_pool: ["60", "00", "30", "688"]
+      rebalance: true
+      limit_up_protection: true
+      cash_reserve_ratio: 0.0
+      holding_period: 1
+      timing_enabled: false
+      filter_factors: {FilterST: true, FilterStarST: true, FilterLowPrice: true}
+      trend_risk_overlay:
+        enabled: true
+        mode: dual_strategy
+        floor: 0.0
+        ceiling: 1.0
+        momentum_center: -0.055
+        momentum_scale: 0.012
+        ma_center: 1.01
+        ma_scale: 0.009
+        softmin_sharpness: 4.0
+        slope: 2.0
+        momentum_window: 10
+        ma_window: 20
+        strategy_weight: 0.8
+        strategy_momentum_window: 5
+        strategy_momentum_center: -0.044
+        strategy_momentum_scale: 0.015
+        strategy_ma_window: 20
+        strategy_ma_center: 1.014
+        strategy_ma_scale: 0.009
+        strategy_softmin_sharpness: 4.0
+        strategy_slope: 2.0
+    constraints:
+      sell_m_equals_buy_n: true
+    training_objective:
+      mode: robust_calmar
+      folds: 3
+      full_weight: 0.5
+      min_average_exposure: 0.45
+    weight_range: [0.0, 0.5, 0.1]
+    search_spaces: [buy_n]
+    search_space_overrides:
+      buy_n: [20, 30, 40, 50]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  v11_strict_volume_low_dim_9fold:
+    <<: *v11_strict_volume_low_dim_base
+    desc: V11低自由度三折训练前沿的九段训练内稳定性诊断
+    training_objective:
+      mode: robust_calmar
+      folds: 9
+      full_weight: 0.5
+      min_average_exposure: 0.45
+
+  v21_preclose_strict_volume_low_dim:
+    desc: V21 official-preClose size rank, strict completed volume, low-dimensional sealed training search
+    factor_classes: [
+      AmihudIlliquidity, PreCloseMarketCap, VolumeCVStrict,
+      AmountBasedSmallCap, TrendReversalV7,
+    ]
+    filter_factor_classes: [FilterST, FilterStarST, FilterLowPrice]
+    fixed_weights:
+      PreCloseMarketCap: 1.0
+    fixed_parameters:
+      stock_pool: ["60", "00", "30"]
+      rebalance: true
+      limit_up_protection: true
+      cash_reserve_ratio: 0.0
+      holding_period: 1
+      timing_enabled: false
+      filter_factors: {FilterST: true, FilterStarST: true, FilterLowPrice: true}
+      trend_risk_overlay:
+        enabled: true
+        mode: dual_strategy
+        floor: 0.0
+        ceiling: 1.0
+        momentum_center: -0.055
+        momentum_scale: 0.012
+        ma_center: 1.01
+        ma_scale: 0.009
+        softmin_sharpness: 4.0
+        slope: 2.0
+        momentum_window: 10
+        ma_window: 20
+        strategy_weight: 0.8
+        strategy_momentum_window: 5
+        strategy_momentum_center: -0.044
+        strategy_momentum_scale: 0.015
+        strategy_ma_window: 20
+        strategy_ma_center: 1.014
+        strategy_ma_scale: 0.009
+        strategy_softmin_sharpness: 4.0
+        strategy_slope: 2.0
+    constraints:
+      sell_m_equals_buy_n: true
+    training_objective:
+      mode: robust_calmar
+      folds: 3
+      full_weight: 0.5
+      min_average_exposure: 0.45
+    weight_range: [0.0, 0.5, 0.1]
+    search_spaces: [buy_n]
+    search_space_overrides:
+      buy_n: [20, 30, 40, 50]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  v22_preclose_official_strict_control:
+    desc: V22 fixed semantic repair using official completed-day returns and strict history
+    factor_classes: [
+      PreCloseMarketCap, AmihudIlliquidityStrict,
+      TrendReversalPreCloseStrict, VolumeCVStrict,
+    ]
+    filter_factor_classes: [FilterST, FilterStarST, FilterLowPrice]
+    fixed_weights:
+      PreCloseMarketCap: 1.0
+    fixed_parameters:
+      stock_pool: ["60", "00", "30"]
+      rebalance: true
+      limit_up_protection: true
+      cash_reserve_ratio: 0.0
+      holding_period: 1
+      timing_enabled: false
+      filter_factors: {FilterST: true, FilterStarST: true, FilterLowPrice: true}
+      trend_risk_overlay:
+        enabled: true
+        mode: dual_strategy
+        floor: 0.0
+        ceiling: 1.0
+        momentum_center: -0.055
+        momentum_scale: 0.012
+        ma_center: 1.01
+        ma_scale: 0.009
+        softmin_sharpness: 4.0
+        slope: 2.0
+        momentum_window: 10
+        ma_window: 20
+        strategy_weight: 0.8
+        strategy_momentum_window: 5
+        strategy_momentum_center: -0.044
+        strategy_momentum_scale: 0.015
+        strategy_ma_window: 20
+        strategy_ma_center: 1.014
+        strategy_ma_scale: 0.009
+        strategy_softmin_sharpness: 4.0
+        strategy_slope: 2.0
+    constraints:
+      sell_m_equals_buy_n: true
+    training_objective:
+      mode: robust_calmar
+      folds: 3
+      full_weight: 0.5
+      min_average_exposure: 0.45
+    weight_range: [0.0, 0.5, 0.1]
+    search_spaces: [buy_n]
+    search_space_overrides:
+      buy_n: [40]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  v23_preclose_official_strict_gross_margin:
+    desc: V23 V22 semantic baseline plus one fixed lagged gross-margin quality factor
+    factor_classes: [
+      PreCloseMarketCap, AmihudIlliquidityStrict,
+      TrendReversalPreCloseStrict, VolumeCVStrict, GrossMarginQuality,
+    ]
+    filter_factor_classes: [FilterST, FilterStarST, FilterLowPrice]
+    fixed_weights:
+      PreCloseMarketCap: 1.0
+    fixed_parameters:
+      stock_pool: ["60", "00", "30"]
+      rebalance: true
+      limit_up_protection: true
+      cash_reserve_ratio: 0.0
+      holding_period: 1
+      timing_enabled: false
+      filter_factors: {FilterST: true, FilterStarST: true, FilterLowPrice: true}
+      trend_risk_overlay:
+        enabled: true
+        mode: dual_strategy
+        floor: 0.0
+        ceiling: 1.0
+        momentum_center: -0.055
+        momentum_scale: 0.012
+        ma_center: 1.01
+        ma_scale: 0.009
+        softmin_sharpness: 4.0
+        slope: 2.0
+        momentum_window: 10
+        ma_window: 20
+        strategy_weight: 0.8
+        strategy_momentum_window: 5
+        strategy_momentum_center: -0.044
+        strategy_momentum_scale: 0.015
+        strategy_ma_window: 20
+        strategy_ma_center: 1.014
+        strategy_ma_scale: 0.009
+        strategy_softmin_sharpness: 4.0
+        strategy_slope: 2.0
+    constraints:
+      sell_m_equals_buy_n: true
+    training_objective:
+      mode: robust_calmar
+      folds: 3
+      full_weight: 0.5
+      min_average_exposure: 0.45
+    weight_range: [0.0, 0.5, 0.1]
+    search_spaces: [buy_n]
+    search_space_overrides:
+      buy_n: [40]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  v24_preclose_official_strict_downside_impact:
+    desc: V24 V22 semantic baseline plus one fixed completed downside-impact factor
+    factor_classes: [
+      PreCloseMarketCap, AmihudIlliquidityStrict,
+      TrendReversalPreCloseStrict, VolumeCVStrict,
+      DownsideAmihudIlliquidityStrict,
+    ]
+    filter_factor_classes: [FilterST, FilterStarST, FilterLowPrice]
+    fixed_weights:
+      PreCloseMarketCap: 1.0
+    fixed_parameters:
+      stock_pool: ["60", "00", "30"]
+      rebalance: true
+      limit_up_protection: true
+      cash_reserve_ratio: 0.0
+      holding_period: 1
+      timing_enabled: false
+      filter_factors: {FilterST: true, FilterStarST: true, FilterLowPrice: true}
+      trend_risk_overlay:
+        enabled: true
+        mode: dual_strategy
+        floor: 0.0
+        ceiling: 1.0
+        momentum_center: -0.055
+        momentum_scale: 0.012
+        ma_center: 1.01
+        ma_scale: 0.009
+        softmin_sharpness: 4.0
+        slope: 2.0
+        momentum_window: 10
+        ma_window: 20
+        strategy_weight: 0.8
+        strategy_momentum_window: 5
+        strategy_momentum_center: -0.044
+        strategy_momentum_scale: 0.015
+        strategy_ma_window: 20
+        strategy_ma_center: 1.014
+        strategy_ma_scale: 0.009
+        strategy_softmin_sharpness: 4.0
+        strategy_slope: 2.0
+    constraints:
+      sell_m_equals_buy_n: true
+    training_objective:
+      mode: robust_calmar
+      folds: 3
+      full_weight: 0.5
+      min_average_exposure: 0.45
+    weight_range: [0.0, 0.5, 0.1]
+    search_spaces: [buy_n]
+    search_space_overrides:
+      buy_n: [40]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  v25_preclose_official_strict_completed_timing:
+    desc: V25 fully pre-open control with strict official factors and completed-only dual timing
+    factor_classes: [
+      PreCloseMarketCap, AmihudIlliquidityStrict,
+      TrendReversalPreCloseStrict, VolumeCVStrict,
+    ]
+    filter_factor_classes: [FilterST, FilterStarST, FilterLowPrice]
+    fixed_weights:
+      PreCloseMarketCap: 1.0
+    fixed_parameters:
+      stock_pool: ["60", "00", "30"]
+      rebalance: true
+      limit_up_protection: true
+      cash_reserve_ratio: 0.0
+      holding_period: 1
+      timing_enabled: false
+      filter_factors: {FilterST: true, FilterStarST: true, FilterLowPrice: true}
+      trend_risk_overlay:
+        enabled: true
+        mode: dual_completed
+        strict_history: true
+        strict_warmup_multiplier: 1.0
+        floor: 0.0
+        ceiling: 1.0
+        momentum_center: -0.055
+        momentum_scale: 0.012
+        ma_center: 1.01
+        ma_scale: 0.009
+        softmin_sharpness: 4.0
+        slope: 2.0
+        momentum_window: 10
+        ma_window: 20
+        strategy_weight: 0.8
+        strategy_momentum_window: 5
+        strategy_momentum_center: -0.044
+        strategy_momentum_scale: 0.015
+        strategy_ma_window: 20
+        strategy_ma_center: 1.014
+        strategy_ma_scale: 0.009
+        strategy_softmin_sharpness: 4.0
+        strategy_slope: 2.0
+    constraints:
+      sell_m_equals_buy_n: true
+    training_objective:
+      mode: robust_calmar
+      folds: 3
+      full_weight: 0.5
+      min_average_exposure: 0.45
+    weight_range: [0.0, 0.5, 0.1]
+    search_spaces: [buy_n]
+    search_space_overrides:
+      buy_n: [40]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  v27_preclose_official_short_reversal20:
+    desc: V27 fixed single-variable official 20-day reversal ablation on V25
+    factor_classes: [
+      PreCloseMarketCap, AmihudIlliquidityStrict,
+      TrendReversalPreCloseStrict, VolumeCVStrict,
+      ShortTermReversal20Strict,
+    ]
+    filter_factor_classes: [FilterST, FilterStarST, FilterLowPrice]
+    fixed_weights:
+      PreCloseMarketCap: 1.0
+      AmihudIlliquidityStrict: 0.2
+      TrendReversalPreCloseStrict: 0.1
+      VolumeCVStrict: 0.1
+      ShortTermReversal20Strict: 0.1
+    fixed_parameters:
+      stock_pool: ["60", "00", "30"]
+      rebalance: true
+      limit_up_protection: true
+      cash_reserve_ratio: 0.0
+      holding_period: 1
+      timing_enabled: false
+      filter_factors: {FilterST: true, FilterStarST: true, FilterLowPrice: true}
+      trend_risk_overlay:
+        enabled: true
+        mode: dual_completed
+        strict_history: true
+        strict_warmup_multiplier: 1.0
+        floor: 0.0
+        ceiling: 1.0
+        momentum_center: -0.055
+        momentum_scale: 0.012
+        ma_center: 1.01
+        ma_scale: 0.009
+        softmin_sharpness: 4.0
+        slope: 2.0
+        momentum_window: 10
+        ma_window: 20
+        strategy_weight: 0.8
+        strategy_momentum_window: 5
+        strategy_momentum_center: -0.044
+        strategy_momentum_scale: 0.015
+        strategy_ma_window: 20
+        strategy_ma_center: 1.014
+        strategy_ma_scale: 0.009
+        strategy_softmin_sharpness: 4.0
+        strategy_slope: 2.0
+    constraints:
+      sell_m_equals_buy_n: true
+    training_objective:
+      mode: robust_calmar
+      folds: 3
+      full_weight: 0.5
+      min_average_exposure: 0.45
+    weight_range: [0.0, 0.5, 0.1]
+    search_spaces: [buy_n]
+    search_space_overrides:
+      buy_n: [40]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  v28_preclose_official_strict_low_dim:
+    desc: V28 V25-compliant factors with low-dimensional train-only reweighting
+    factor_classes: [
+      PreCloseMarketCap, AmihudIlliquidityStrict,
+      TrendReversalPreCloseStrict, VolumeCVStrict,
+    ]
+    filter_factor_classes: [FilterST, FilterStarST, FilterLowPrice]
+    fixed_weights:
+      PreCloseMarketCap: 1.0
+    fixed_parameters:
+      stock_pool: ["60", "00", "30"]
+      rebalance: true
+      limit_up_protection: true
+      cash_reserve_ratio: 0.0
+      holding_period: 1
+      timing_enabled: false
+      filter_factors: {FilterST: true, FilterStarST: true, FilterLowPrice: true}
+      trend_risk_overlay:
+        enabled: true
+        mode: dual_completed
+        strict_history: true
+        strict_warmup_multiplier: 1.0
+        floor: 0.0
+        ceiling: 1.0
+        momentum_center: -0.055
+        momentum_scale: 0.012
+        ma_center: 1.01
+        ma_scale: 0.009
+        softmin_sharpness: 4.0
+        slope: 2.0
+        momentum_window: 10
+        ma_window: 20
+        strategy_weight: 0.8
+        strategy_momentum_window: 5
+        strategy_momentum_center: -0.044
+        strategy_momentum_scale: 0.015
+        strategy_ma_window: 20
+        strategy_ma_center: 1.014
+        strategy_ma_scale: 0.009
+        strategy_softmin_sharpness: 4.0
+        strategy_slope: 2.0
+    constraints:
+      sell_m_equals_buy_n: true
+    training_objective:
+      mode: robust_calmar
+      folds: 3
+      full_weight: 0.5
+      min_average_exposure: 0.45
+    weight_range: [0.0, 0.5, 0.1]
+    search_spaces: [buy_n]
+    search_space_overrides:
+      buy_n: [30, 40, 50]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31
+
+  v35_fixed_period_diagnostic:
+    desc: Fixed V31/V35 train-validation-test diagnostics; no GA selection
+    factor_classes: [
+      PreCloseMarketCap, AmihudIlliquidityStrict,
+      TrendReversalPreCloseStrict, VolumeCVStrict,
+      CompletedPriorMonthTurnoverStrict,
+    ]
+    filter_factor_classes: [FilterST, FilterStarST, FilterLowPrice]
+    fixed_weights:
+      PreCloseMarketCap: 1.0
+    fixed_parameters:
+      stock_pool: ["60", "00", "30"]
+      rebalance: true
+      limit_up_protection: true
+      cash_reserve_ratio: 0.0
+      holding_period: 1
+      timing_enabled: false
+      filter_factors: {FilterST: true, FilterStarST: true, FilterLowPrice: true}
+    constraints:
+      sell_m_equals_buy_n: true
+    weight_range: [0.0, 0.5, 0.1]
+    search_spaces: [buy_n]
+    search_space_overrides:
+      buy_n: [30]
+    preload_start: 2010-01-01
+    preload_end: 2026-07-22
+
+  v28_completed_timing_grid:
+    desc: V28 fixed V25 selection with a preregistered coupled completed-timing grid
+    factor_classes: [
+      PreCloseMarketCap, AmihudIlliquidityStrict,
+      TrendReversalPreCloseStrict, VolumeCVStrict,
+    ]
+    filter_factor_classes: [FilterST, FilterStarST, FilterLowPrice]
+    fixed_weights:
+      PreCloseMarketCap: 1.0
+      AmihudIlliquidityStrict: 0.2
+      TrendReversalPreCloseStrict: 0.1
+      VolumeCVStrict: 0.1
+    fixed_parameters:
+      stock_pool: ["60", "00", "30"]
+      rebalance: true
+      limit_up_protection: true
+      cash_reserve_ratio: 0.0
+      holding_period: 1
+      timing_enabled: false
+      filter_factors: {FilterST: true, FilterStarST: true, FilterLowPrice: true}
+      trend_risk_overlay:
+        enabled: true
+        mode: dual_completed
+        strict_history: true
+        strict_warmup_multiplier: 1.0
+        floor: 0.0
+        ceiling: 1.0
+        momentum_center: -0.055
+        momentum_scale: 0.012
+        ma_center: 1.01
+        ma_scale: 0.009
+        softmin_sharpness: 4.0
+        slope: 2.0
+        momentum_window: 10
+        ma_window: 20
+        strategy_weight: 0.8
+        strategy_momentum_window: 5
+        strategy_momentum_center: -0.044
+        strategy_momentum_scale: 0.015
+        strategy_ma_window: 20
+        strategy_ma_center: 1.014
+        strategy_ma_scale: 0.009
+        strategy_softmin_sharpness: 4.0
+        strategy_slope: 2.0
+    constraints:
+      sell_m_equals_buy_n: true
+    training_objective:
+      mode: robust_calmar
+      folds: 3
+      full_weight: 0.5
+      min_average_exposure: 0.45
+    weight_range: [0.0, 0.5, 0.1]
+    search_spaces: [buy_n]
+    search_space_overrides:
+      buy_n: [40]
+    preload_start: 2010-01-01
+    preload_end: 2018-12-31

@@ -2,6 +2,10 @@ const REPORT_DATA = JSON.parse(document.getElementById('report-data').textConten
 const CHARTS = [];
 const TOOLTIP_INSTANCES = [];
 const TABLE_INSTANCES = [];
+const COLORS = {
+  strategy: '#2563EB', benchmark: '#B45309', positive: '#15803D',
+  negative: '#C2413D', teal: '#0F766E', turnover: '#7C3AED', muted: '#647180', grid: '#E4E9EF',
+};
 
 function renderNoData(root, message) {
   if (!root) return;
@@ -38,82 +42,167 @@ function initTooltips(scope = document) {
   });
 }
 
-function renderEquityChart() {
+function renderPerformanceCharts() {
   const payload = REPORT_DATA.charts.equity;
   const chart = makeChart('equity-chart');
-  if (!chart || !payload || !payload.trade_dates?.length) {
+  if (!chart || !payload?.trade_dates?.length) {
     renderNoData(document.getElementById('equity-chart'), '暂无净值数据');
     return;
   }
 
-  const recentWindow = Math.min(payload.trade_dates.length, 240);
-  const zoomStart = payload.trade_dates.length > recentWindow
-    ? Math.max(0, (payload.trade_dates.length - recentWindow) / payload.trade_dates.length * 100)
-    : 0;
+  const zoomStart = 0;
+  const navValues = [...(payload.strategy_nav || []), ...(payload.benchmark_nav || [])]
+    .map(Number).filter((value) => Number.isFinite(value) && value > 0);
+  const navMin = Math.min(...navValues);
+  const navMax = Math.max(...navValues);
+  const useLogAxis = navValues.length > 0 && navMax / navMin > 20;
+
+  const dateAxis = {
+    type: 'category', data: payload.trade_dates, boundaryGap: false,
+    axisLine: { lineStyle: { color: COLORS.grid } }, axisTick: { show: false },
+    axisLabel: { hideOverlap: true, color: COLORS.muted, fontSize: 10 },
+  };
+  const valueAxis = {
+    type: 'value', scale: true,
+    splitLine: { lineStyle: { color: COLORS.grid } },
+    axisLabel: { color: COLORS.muted, fontSize: 10 },
+  };
+  const maxDrawdownArea = REPORT_DATA.summary.max_drawdown_start && REPORT_DATA.summary.max_drawdown_end
+    ? [[{ xAxis: REPORT_DATA.summary.max_drawdown_start }, { xAxis: REPORT_DATA.summary.max_drawdown_end }]]
+    : [];
 
   chart.setOption({
     animation: false,
-    color: ['#1976D2', '#FF9800', '#42A5F5'],
-    legend: { top: 0 },
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    axisPointer: { link: [{ xAxisIndex: [0, 1] }] },
-    grid: [
-      { left: 60, right: 32, top: 44, height: '58%' },
-      { left: 60, right: 32, top: '76%', height: '14%' },
-    ],
-    xAxis: [
-      { type: 'category', data: payload.trade_dates, boundaryGap: false, axisLabel: { hideOverlap: true } },
-      { type: 'category', gridIndex: 1, data: payload.trade_dates, boundaryGap: false, axisLabel: { hideOverlap: true } },
-    ],
+    color: [COLORS.strategy, COLORS.benchmark, COLORS.negative, COLORS.teal, COLORS.muted],
+    legend: { top: 0, right: 8, textStyle: { color: COLORS.muted } },
+    tooltip: {
+      trigger: 'axis', axisPointer: { type: 'cross' },
+      formatter: (params) => {
+        const index = params[0]?.dataIndex ?? 0;
+        const activity = payload.activity?.[index] || {};
+        const dailyReturn = Number(payload.daily_returns_pct?.[index] || 0);
+        const strategyNav = Number(payload.strategy_nav?.[index] || 0);
+        const benchmarkNav = Number(payload.benchmark_nav?.[index] || 0);
+        const drawdown = Number(payload.drawdown_pct?.[index] || 0);
+        const exposure = Number(payload.exposure_pct?.[index] || 0);
+        const rebalanceFunds = Number(payload.rebalance_funds_pct?.[index] || 0);
+        const rows = [
+          `<span style="color:${COLORS.strategy}">●</span> 策略净值: <b>${strategyNav.toFixed(4)}</b>`,
+          `<span style="color:${COLORS.benchmark}">●</span> 沪深300: <b>${benchmarkNav.toFixed(4)}</b>`,
+          `<span style="color:${COLORS.negative}">●</span> 回撤: <b>${drawdown.toFixed(2)}%</b>`,
+          `<span style="color:${COLORS.teal}">●</span> 实际仓位: <b>${exposure.toFixed(1)}%</b>`,
+          `<span style="color:${COLORS.turnover}">●</span> 当日调仓资金: <b>${rebalanceFunds.toFixed(1)}%</b>`,
+        ];
+        rows.push(`日收益: <b style="color:${dailyReturn >= 0 ? COLORS.positive : COLORS.negative}">${dailyReturn >= 0 ? '+' : ''}${dailyReturn.toFixed(2)}%</b>`);
+        if ((activity.buys || 0) + (activity.sells || 0) > 0) rows.push(`成交: 买 ${activity.buys || 0} / 卖 ${activity.sells || 0}`);
+        return `<b>${payload.trade_dates[index]}</b><br>${rows.join('<br>')}`;
+      },
+    },
+    grid: { left: 60, right: 66, top: 48, bottom: 54 },
+    xAxis: dateAxis,
     yAxis: [
-      { type: 'value', name: '净值', scale: true, axisLabel: { formatter: (v) => v.toFixed(2) } },
-      { type: 'value', gridIndex: 1, name: '日收益率 (%)', scale: true, axisLabel: { formatter: (v) => `${v.toFixed(2)}%` } },
+      {
+        ...valueAxis,
+        type: useLogAxis ? 'log' : 'value',
+        name: useLogAxis ? '净值（对数）' : '净值',
+        logBase: 10,
+        axisLabel: {
+          ...valueAxis.axisLabel,
+          formatter: (v) => {
+            const value = Number(v);
+            if (useLogAxis && value >= 10000) return `${(value / 10000).toFixed(0)}万`;
+            if (useLogAxis && value >= 1000) return `${(value / 1000).toFixed(0)}k`;
+            return value >= 10 ? value.toFixed(0) : value.toFixed(2);
+          },
+        },
+      },
+      {
+        ...valueAxis,
+        name: '仓位 / 回撤 / 日收益',
+        position: 'right',
+        min: (value) => Math.min(-10, Math.floor(value.min / 10) * 10),
+        max: 100,
+        axisLabel: { ...valueAxis.axisLabel, formatter: (v) => `${Number(v).toFixed(0)}%` },
+      },
     ],
     dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 1], start: zoomStart, end: 100 },
-      { type: 'slider', xAxisIndex: [0, 1], top: '92%', start: zoomStart, end: 100 },
+      { type: 'inside', start: zoomStart, end: 100 },
+      { type: 'slider', bottom: 4, height: 20, start: zoomStart, end: 100, borderColor: COLORS.grid },
     ],
     series: [
-      { name: '策略净值', type: 'line', showSymbol: false, data: payload.strategy_nav },
-      { name: '沪深300净值', type: 'line', showSymbol: false, lineStyle: { type: 'dashed' }, data: payload.benchmark_nav || [] },
       {
-        name: '日收益率',
-        type: 'bar',
-        xAxisIndex: 1,
-        yAxisIndex: 1,
-        data: payload.daily_returns_pct,
-        tooltip: { valueFormatter: (v) => `${Number(v).toFixed(2)}%` },
-        itemStyle: { color: (params) => params.value >= 0 ? '#2E7D32' : '#C62828' },
+        name: '策略净值', type: 'line', showSymbol: false, data: payload.strategy_nav,
+        lineStyle: { width: 2.2 }, z: 5,
+        markArea: { silent: true, itemStyle: { color: 'rgba(194,65,61,.07)' }, data: maxDrawdownArea },
+      },
+      { name: '沪深300', type: 'line', showSymbol: false, lineStyle: { type: 'dashed', width: 1.5 }, data: payload.benchmark_nav || [], z: 4 },
+      { name: '回撤', type: 'line', yAxisIndex: 1, showSymbol: false, data: payload.drawdown_pct || [], lineStyle: { color: COLORS.negative, width: 1.4 }, z: 3 },
+      {
+        name: '实际仓位', type: 'bar', yAxisIndex: 1, data: payload.exposure_pct || [],
+        barGap: '-100%', barMaxWidth: 9, z: 0,
+        itemStyle: { color: COLORS.teal, opacity: .1 },
+      },
+      {
+        name: '当日调仓资金占比', type: 'line', yAxisIndex: 1,
+        showSymbol: false, data: payload.rebalance_funds_pct || [],
+        lineStyle: { color: COLORS.turnover, width: 1.3 }, z: 3,
+      },
+      {
+        name: '日收益率', type: 'bar', yAxisIndex: 1, data: payload.daily_returns_pct || [],
+        barGap: '-100%', barMaxWidth: 7, z: 1,
+        itemStyle: { color: (item) => item.value >= 0 ? COLORS.positive : COLORS.negative, opacity: .35 },
       },
     ],
   });
 }
 
-function renderFactorMissingChart() {
-  const payload = REPORT_DATA.charts.factor_missing;
-  const chart = makeChart('factor-missing-chart');
+function renderMonthlyHeatmap() {
+  const payload = REPORT_DATA.charts.monthly || [];
+  const chart = makeChart('monthly-heatmap');
+  if (!chart || !payload.length) {
+    renderNoData(document.getElementById('monthly-heatmap'), '暂无月度收益数据');
+    return;
+  }
+  const years = [...new Set(payload.map((item) => item.month.slice(0, 4)))].sort().reverse();
+  const yearIndex = new Map(years.map((year, index) => [year, index]));
+  const values = payload.map((item) => Math.abs(Number(item.monthly_return))).sort((a, b) => a - b);
+  const cap = Math.max(1, values[Math.floor(values.length * 0.9)] || values[values.length - 1] || 1);
+  const data = payload.map((item) => [Number(item.month.slice(5, 7)) - 1, yearIndex.get(item.month.slice(0, 4)), item.monthly_return]);
+  chart.getDom().style.height = `${Math.max(270, years.length * 16 + 90)}px`;
+  chart.resize();
+  chart.setOption({
+    animation: false,
+    tooltip: { formatter: (item) => `${years[item.value[1]]}-${String(item.value[0] + 1).padStart(2, '0')}<br><b>${Number(item.value[2]) >= 0 ? '+' : ''}${Number(item.value[2]).toFixed(2)}%</b>` },
+    grid: { left: 52, right: 20, top: 8, bottom: 44 },
+    xAxis: { type: 'category', data: ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'], splitArea: { show: true }, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: COLORS.muted, fontSize: 10 } },
+    yAxis: { type: 'category', data: years, splitArea: { show: true }, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: COLORS.muted, fontSize: 10 } },
+    visualMap: { min: -cap, max: cap, calculable: false, orient: 'horizontal', left: 'center', bottom: 0, itemWidth: 12, itemHeight: 100, text: ['盈利', '亏损'], textStyle: { color: COLORS.muted, fontSize: 10 }, inRange: { color: ['#B94A48', '#F4F6F8', '#2F855A'] } },
+    series: [{ type: 'heatmap', data, label: { show: true, fontSize: 9, formatter: (item) => `${Number(item.value[2]) > 0 ? '+' : ''}${Number(item.value[2]).toFixed(1)}` }, itemStyle: { borderColor: '#FFFFFF', borderWidth: 1 }, emphasis: { itemStyle: { borderColor: COLORS.strategy, borderWidth: 1 } } }],
+  });
+}
+
+function renderFactorValidChart() {
+  const payload = REPORT_DATA.charts.factor_valid;
+  const chart = makeChart('factor-valid-chart');
   const series = Object.entries(payload?.series || {});
   if (!chart || !payload?.trade_dates?.length || !series.length) {
-    renderNoData(document.getElementById('factor-missing-chart'), '暂无因子缺失值数据');
+    renderNoData(document.getElementById('factor-valid-chart'), '暂无因子有效值数据');
     return;
   }
 
-  const recentWindow = Math.min(payload.trade_dates.length, 240);
-  const zoomStart = payload.trade_dates.length > recentWindow
-    ? Math.max(0, (payload.trade_dates.length - recentWindow) / payload.trade_dates.length * 100)
-    : 0;
+  const zoomStart = 0;
 
   chart.setOption({
     animation: false,
-    color: ['#1976D2', '#D32F2F', '#388E3C', '#F57C00', '#7B1FA2', '#00838F'],
-    legend: { top: 0, type: 'scroll' },
+    color: ['#2563EB', '#C2413D', '#15803D', '#B45309', '#7C3AED', '#0F766E'],
+    legend: { top: 0, type: 'scroll', textStyle: { color: COLORS.muted, fontSize: 10 } },
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    grid: { left: 60, right: 32, top: 52, bottom: 58 },
-    xAxis: { type: 'category', data: payload.trade_dates, boundaryGap: false, axisLabel: { hideOverlap: true } },
-    yAxis: { type: 'value', name: '缺失股票数', min: 0 },
+    grid: { left: 58, right: 22, top: 48, bottom: 48 },
+    xAxis: { type: 'category', data: payload.trade_dates, boundaryGap: false, axisLabel: { hideOverlap: true, color: COLORS.muted, fontSize: 10 }, axisLine: { lineStyle: { color: COLORS.grid } } },
+    yAxis: { type: 'value', name: '有效股票数', min: (value) => Math.max(0, Math.floor(value.min / 500) * 500), max: payload.stock_pool_size || null, axisLabel: { color: COLORS.muted, fontSize: 10 }, splitLine: { lineStyle: { color: COLORS.grid } } },
     dataZoom: [
       { type: 'inside', start: zoomStart, end: 100 },
-      { type: 'slider', bottom: 8, start: zoomStart, end: 100 },
+      { type: 'slider', bottom: 4, height: 18, start: zoomStart, end: 100, borderColor: COLORS.grid },
     ],
     series: series.map(([name, data]) => ({
       name,
@@ -135,13 +224,8 @@ function renderDistributionChart() {
   chart.setOption({
     animation: false,
     tooltip: { trigger: 'axis' },
-    title: {
-      text: `均值 ${payload.mean.toFixed(3)}% · σ ${payload.std.toFixed(3)}%`,
-      left: 'center',
-      top: 8,
-      textStyle: { fontSize: 13, fontWeight: 500 },
-    },
-    grid: { left: 48, right: 18, top: 48, bottom: 54 },
+    title: { text: `均值 ${payload.mean.toFixed(3)}%   σ ${payload.std.toFixed(3)}%`, left: 8, top: 0, textStyle: { fontSize: 11, fontWeight: 500, color: COLORS.muted } },
+    grid: { left: 44, right: 14, top: 38, bottom: 48 },
     xAxis: {
       type: 'category',
       data: payload.labels,
@@ -151,8 +235,8 @@ function renderDistributionChart() {
         interval: Math.max(0, Math.floor(payload.labels.length / 12)),
       },
     },
-    yAxis: { type: 'value', name: '频次' },
-    series: [{ type: 'bar', data: payload.counts, itemStyle: { color: '#42A5F5' }, barMaxWidth: 28 }],
+    yAxis: { type: 'value', name: '频次', axisLabel: { color: COLORS.muted, fontSize: 10 }, splitLine: { lineStyle: { color: COLORS.grid } } },
+    series: [{ type: 'bar', data: payload.counts, itemStyle: { color: (item) => parseFloat(payload.labels[item.dataIndex]) >= 0 ? COLORS.positive : COLORS.negative, opacity: .82 }, barMaxWidth: 28 }],
   });
 }
 
@@ -164,21 +248,163 @@ function renderWinLossChart() {
     return;
   }
 
+  const total = payload.wins + payload.losses;
+  const winRate = total ? payload.wins / total * 100 : 0;
   chart.setOption({
     animation: false,
     tooltip: { trigger: 'item' },
-    legend: { bottom: 0 },
+    title: { text: `${winRate.toFixed(1)}%`, subtext: '清仓胜率', left: 'center', top: '37%', textStyle: { fontSize: 24, fontWeight: 700, color: COLORS.positive }, subtextStyle: { fontSize: 11, color: COLORS.muted } },
+    legend: { bottom: 0, textStyle: { color: COLORS.muted } },
     series: [{
       type: 'pie',
-      radius: ['42%', '68%'],
-      label: { formatter: '{b}\n{d}%' },
+      radius: ['48%', '72%'], center: ['50%', '45%'],
+      label: { formatter: '{b}  {c}\n{d}%', color: COLORS.muted, fontSize: 11 },
       data: [
-        { name: '盈利清仓', value: payload.wins, itemStyle: { color: '#2E7D32' } },
-        { name: '亏损清仓', value: payload.losses, itemStyle: { color: '#C62828' } },
+        { name: '盈利清仓', value: payload.wins, itemStyle: { color: COLORS.positive } },
+        { name: '亏损清仓', value: payload.losses, itemStyle: { color: COLORS.negative } },
       ],
     }],
   });
 }
+
+let KLINE_CACHE = null;
+
+async function loadKlineData() {
+  if (KLINE_CACHE) return KLINE_CACHE;
+  const encoded = REPORT_DATA.kline_b64;
+  if (!encoded) return {};
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('当前浏览器不支持 K 线数据解压');
+  }
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  KLINE_CACHE = JSON.parse(await new Response(stream).text());
+  REPORT_DATA.kline_b64 = '';
+  return KLINE_CACHE;
+}
+
+function movingAverage(values, windowSize) {
+  let sum = 0;
+  return values.map((value, index) => {
+    sum += Number(value);
+    if (index >= windowSize) sum -= Number(values[index - windowSize]);
+    return index + 1 < windowSize ? null : Number((sum / windowSize).toFixed(4));
+  });
+}
+
+function closeKline() {
+  document.getElementById('klineOverlay')?.classList.remove('active');
+  document.getElementById('klinePanel')?.classList.remove('active');
+}
+
+async function showKline(code, eventId) {
+  const overlay = document.getElementById('klineOverlay');
+  const panel = document.getElementById('klinePanel');
+  const placeholder = document.getElementById('klinePlaceholder');
+  const renderArea = document.getElementById('klineRenderArea');
+  if (!overlay || !panel || !placeholder || !renderArea) return;
+  overlay.classList.add('active');
+  panel.classList.add('active');
+  placeholder.style.display = 'flex';
+  placeholder.textContent = '正在加载 K 线数据';
+  renderArea.style.display = 'none';
+
+  try {
+    const allData = await loadKlineData();
+    const stock = allData[code];
+    if (!stock) throw new Error('该股票没有可用的本地日线数据');
+    const selectedEvent = stock.events.find((event) => Number(event.id) === Number(eventId));
+    if (!selectedEvent) throw new Error('未找到对应交易事件');
+    const episode = stock.episodes.find((item) => Number(item.id) === Number(selectedEvent.episode));
+    if (!episode) throw new Error('未找到对应持仓周期');
+
+    const indices = [];
+    stock.d.forEach((date, index) => {
+      if (date >= episode.window_start && date <= episode.window_end) indices.push(index);
+    });
+    if (indices.length < 5) throw new Error('该持仓周期的 K 线数据不足');
+    const pick = (values) => indices.map((index) => values[index]);
+    const dates = pick(stock.d);
+    const opens = pick(stock.o);
+    const highs = pick(stock.h);
+    const lows = pick(stock.l);
+    const closes = pick(stock.c);
+    const amounts = pick(stock.a);
+    const episodeEvents = stock.events.filter((event) => Number(event.episode) === Number(episode.id));
+    const buyEvents = episodeEvents.filter((event) => event.action === 'buy');
+    const sellEvents = episodeEvents.filter((event) => event.action === 'sell');
+
+    document.getElementById('klineTitle').textContent = `${code} ${stock.n || ''}`.trim();
+    document.getElementById('klineMeta').textContent =
+      `持仓周期 ${episode.start} → ${episode.open ? '仍持有' : episode.end} · K线 ${episode.window_start} → ${episode.window_end}`;
+    placeholder.style.display = 'none';
+    renderArea.style.display = 'block';
+    if (window._klineChart) window._klineChart.dispose();
+    const chart = echarts.init(renderArea);
+    window._klineChart = chart;
+    const selectedDate = selectedEvent.date;
+    chart.setOption({
+      animation: false,
+      legend: { top: 0, right: 12, data: ['日K', 'MA20', 'MA60', '买入', '卖出'], textStyle: { color: COLORS.muted } },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+      axisPointer: { link: [{ xAxisIndex: [0, 1] }] },
+      grid: [
+        { left: 66, right: 24, top: 42, height: '66%' },
+        { left: 66, right: 24, top: '76%', height: '13%' },
+      ],
+      xAxis: [
+        { type: 'category', data: dates, boundaryGap: true, axisLabel: { show: false }, axisLine: { lineStyle: { color: COLORS.grid } } },
+        { type: 'category', gridIndex: 1, data: dates, boundaryGap: true, axisLabel: { hideOverlap: true, color: COLORS.muted, fontSize: 10 }, axisLine: { lineStyle: { color: COLORS.grid } } },
+      ],
+      yAxis: [
+        { type: 'value', scale: true, name: '价格', axisLabel: { color: COLORS.muted }, splitLine: { lineStyle: { color: COLORS.grid } } },
+        { type: 'value', gridIndex: 1, name: '成交额', axisLabel: { color: COLORS.muted, formatter: (value) => value >= 1e8 ? `${(value / 1e8).toFixed(1)}亿` : `${(value / 1e4).toFixed(0)}万` }, splitLine: { show: false } },
+      ],
+      dataZoom: [
+        { type: 'inside', xAxisIndex: [0, 1], start: 0, end: 100 },
+        { type: 'slider', xAxisIndex: [0, 1], bottom: 4, height: 20, start: 0, end: 100 },
+      ],
+      series: [
+        {
+          name: '日K', type: 'candlestick', data: dates.map((_, index) => [opens[index], closes[index], lows[index], highs[index]]),
+          itemStyle: { color: COLORS.negative, color0: COLORS.positive, borderColor: COLORS.negative, borderColor0: COLORS.positive },
+          markLine: { silent: true, symbol: 'none', label: { formatter: '当前交易', color: COLORS.muted }, lineStyle: { color: COLORS.strategy, type: 'dashed' }, data: [{ xAxis: selectedDate }] },
+        },
+        { name: 'MA20', type: 'line', data: movingAverage(closes, 20), showSymbol: false, smooth: false, lineStyle: { width: 1.2, color: COLORS.benchmark } },
+        { name: 'MA60', type: 'line', data: movingAverage(closes, 60), showSymbol: false, smooth: false, lineStyle: { width: 1.2, color: '#7C3AED' } },
+        {
+          name: '买入', type: 'scatter', symbol: 'triangle', symbolSize: (value, params) => Number(params.data.eventId) === Number(eventId) ? 18 : 13,
+          data: buyEvents.map((event) => ({ value: [event.date, event.price], eventId: event.id, itemStyle: { color: COLORS.strategy, borderColor: '#FFFFFF', borderWidth: 1 } })),
+          tooltip: { valueFormatter: (value) => Number(value).toFixed(4) }, z: 10,
+        },
+        {
+          name: '卖出', type: 'scatter', symbol: 'triangle', symbolRotate: 180, symbolSize: (value, params) => Number(params.data.eventId) === Number(eventId) ? 18 : 13,
+          data: sellEvents.map((event) => ({ value: [event.date, event.price], eventId: event.id, itemStyle: { color: '#7C3AED', borderColor: '#FFFFFF', borderWidth: 1 } })),
+          tooltip: { valueFormatter: (value) => Number(value).toFixed(4) }, z: 10,
+        },
+        {
+          name: '成交额', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: amounts,
+          itemStyle: { color: (item) => closes[item.dataIndex] >= opens[item.dataIndex] ? COLORS.negative : COLORS.positive, opacity: .55 },
+        },
+      ],
+    });
+  } catch (error) {
+    placeholder.style.display = 'flex';
+    placeholder.textContent = error?.message || 'K 线加载失败';
+  }
+}
+
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-kline-code][data-kline-event]');
+  if (button) showKline(button.dataset.klineCode, button.dataset.klineEvent);
+});
+document.getElementById('klineClose')?.addEventListener('click', closeKline);
+document.getElementById('klineOverlay')?.addEventListener('click', closeKline);
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeKline();
+});
 
 function parseSortValue(value, sortType) {
   if (sortType === 'number') {
@@ -416,10 +642,49 @@ async function initTables() {
   }
 }
 
-renderEquityChart();
-renderFactorMissingChart();
+function initTabs() {
+  const buttons = [...document.querySelectorAll('.tab-button[data-tab]')];
+  const panels = [...document.querySelectorAll('.tab-panel')];
+  const activate = (button) => {
+    const panelId = `panel-${button.dataset.tab}`;
+    buttons.forEach((item) => {
+      const selected = item === button;
+      item.classList.toggle('is-active', selected);
+      item.setAttribute('aria-selected', String(selected));
+    });
+    panels.forEach((panel) => {
+      const selected = panel.id === panelId;
+      panel.hidden = !selected;
+      panel.classList.toggle('is-active', selected);
+    });
+    requestAnimationFrame(() => {
+      TABLE_INSTANCES.forEach((table) => {
+        if (!table.root.closest('[hidden]')) {
+          table.syncHeaderPadding();
+          table.renderBody();
+        }
+      });
+    });
+  };
+  buttons.forEach((button, index) => {
+    button.addEventListener('click', () => activate(button));
+    button.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      const offset = event.key === 'ArrowRight' ? 1 : -1;
+      const next = buttons[(index + offset + buttons.length) % buttons.length];
+      next.focus();
+      activate(next);
+    });
+  });
+}
+
+renderPerformanceCharts();
+renderMonthlyHeatmap();
+renderFactorValidChart();
 renderDistributionChart();
 renderWinLossChart();
+initTabs();
 initTables();
 initTooltips(document);
 

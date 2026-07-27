@@ -38,7 +38,8 @@ def _make_checker(board, *, trade_idx, open_t, preclose=np.nan, st=False,
     data = dict(stock_codes=np.array([code]), trade_dates=TRADE_DATES,
                 open=o, close=c, high=h, low=l, volume=v, preClose=pc, st_mask=st_mask,
                 issue_price=np.array([issue_price]))
-    list_map = {code: TRADE_DATES[list_tidx].item()} if list_tidx >= 0 else None
+    effective_list_tidx = list_tidx if list_tidx >= 0 else 0
+    list_map = {code: TRADE_DATES[effective_list_tidx].item()}
     return LegalityChecker(data, {code: 0}, list_map)
 
 
@@ -64,9 +65,34 @@ def test_floor_ceil_helpers():
     assert abs(_ceil_2(np.array([9.032]))[0] - 9.04) < 1e-9      # 跌停向上
 
 
+def test_legality_requires_no_current_hlcv_or_amount_fields():
+    code = BOARD_CODE[0]
+    open_price = np.full((N, 1), np.nan)
+    pre_close = np.full((N, 1), np.nan)
+    open_price[30, 0] = 10.0
+    pre_close[30, 0] = 10.0
+    data = {
+        'stock_codes': np.array([code]),
+        'trade_dates': TRADE_DATES,
+        'open': open_price,
+        'preClose': pre_close,
+        'st_mask': np.zeros((N, 1), dtype=bool),
+        'issue_price': np.array([np.nan]),
+    }
+    checker = LegalityChecker(
+        data, {code: 0}, {code: TRADE_DATES[0].item()},
+    )
+
+    buy_ok, _ = checker.check([0], 30, SIG, is_buy=True)
+    sell_ok, _ = checker.check([0], 30, SIG, is_buy=False)
+
+    assert buy_ok.tolist() == [True]
+    assert sell_ok.tolist() == [True]
+
+
 # ---------- 涨停取整偏严 ----------
-def test_zero_volume_is_not_buyable_even_with_ohlc():
-    assert _buy(0, SIG, trade_idx=30, open_t=10.0, preclose=10.0, volume_t=0.0) is False
+def test_zero_volume_does_not_change_open_legality():
+    assert _buy(0, SIG, trade_idx=30, open_t=10.0, preclose=10.0, volume_t=0.0) is True
 
 
 def test_buy_uptick_floor_strict():
@@ -118,8 +144,8 @@ def test_bj_first_day_exempt_buyable():
     assert _buy(3, date(2022, 1, 5), trade_idx=20, open_t=50.0, list_tidx=20, issue_price=10.0) is True
 
 
-# ---------- 老规则 IPO 首日封板 ----------
-def test_ipo_old_rule_sealed_blocked():
+# ---------- 老规则 IPO 首日：开盘顶发行价 120% 时无法成交 ----------
+def test_ipo_old_rule_open_cap_is_blocked_without_using_hlc():
     assert _buy(0, date(2017, 1, 13), trade_idx=20, open_t=2.08, low_t=2.08,
                 high_t=2.49, close_t=2.49, list_tidx=20, issue_price=1.73) is False
 
@@ -129,6 +155,6 @@ def test_ipo_old_rule_not_sealed_buyable():
                 high_t=2.49, close_t=2.49, list_tidx=20, issue_price=1.73) is True
 
 
-def test_ipo_live_nan_hlc_buyable():
+def test_ipo_open_cap_is_blocked_when_current_hlc_is_unknown():
     assert _buy(0, date(2017, 1, 13), trade_idx=20, open_t=2.08,
-                list_tidx=20, issue_price=1.73) is True
+                list_tidx=20, issue_price=1.73) is False

@@ -21,7 +21,6 @@
       "688"
     ],
     "holding_period": 1,
-    "prefilter_n": 200,
     "rebalance": true,
     "limit_up_protection": true,
     "timing_enabled": false,
