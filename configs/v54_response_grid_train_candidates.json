@@ -1,0 +1,14 @@
+{
+  "inherit_profile_defaults": true,
+  "configs": [
+    {"holding_period": 1, "retention_rank_n": 30, "rebalance_band_pct": 0.15},
+    {"holding_period": 1, "retention_rank_n": 45, "rebalance_band_pct": 0.15},
+    {"holding_period": 1, "retention_rank_n": 60, "rebalance_band_pct": 0.15},
+    {"holding_period": 2, "retention_rank_n": 30, "rebalance_band_pct": 0.15},
+    {"holding_period": 2, "retention_rank_n": 45, "rebalance_band_pct": 0.15},
+    {"holding_period": 2, "retention_rank_n": 60, "rebalance_band_pct": 0.15},
+    {"holding_period": 3, "retention_rank_n": 30, "rebalance_band_pct": 0.15},
+    {"holding_period": 3, "retention_rank_n": 45, "rebalance_band_pct": 0.15},
+    {"holding_period": 3, "retention_rank_n": 60, "rebalance_band_pct": 0.15}
+  ]
+}

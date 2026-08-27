@@ -39,6 +39,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from data.financial_pit import (
+    build_pit_source_indices,
+    materialize_pit_field,
+)
+
 
 def save_runtime_npz_atomic(output_path: Path, **arrays) -> None:
     temp_path = output_path.with_name(f'.{output_path.name}.{os.getpid()}.tmp.npz')
@@ -156,30 +161,14 @@ def build_st_mask(
     return result
 
 
-# 报告期末 -> 生效日的滞后天数（防前视野泄露：报告期末后约 120 天财报才公开披露，
-# 年报 12-31 通常次年 4-30 才披露；与 build_deep_fin_runtime 口径一致）。
-_FIN_LAG_DAYS = 120
-
-
-def _ffill_axis0(mat: np.ndarray) -> np.ndarray:
-    """沿时间轴(行)向前填充：每个生效值持续到下一期覆盖；首个有效值之前保持 NaN。"""
-    n_dates = mat.shape[0]
-    mask = ~np.isnan(mat)
-    idx = np.where(mask, np.arange(n_dates)[:, None], 0)
-    np.maximum.accumulate(idx, axis=0, out=idx)
-    out = np.take_along_axis(mat, idx, axis=0)
-    out[np.cumsum(mask, axis=0) == 0] = np.nan
-    return out
-
-
 def build_financial_arrays(
     stock_codes: np.ndarray,
     trade_dates: np.ndarray,
 ) -> dict[str, np.ndarray]:
     """从 deep_indicators.parquet（同花顺深历史，唯一财务源）构建财务指标数组。
 
-    PIT：报告期末 + _FIN_LAG_DAYS 天才生效（防前视野泄露），生效后向前填充至下一期覆盖。
-    单一数据源、无兜底/无合并——有数据用数据，无数据为 NaN。
+    PIT：使用法定最晚披露日后的首个交易日生效，持续至下一份报告披露。
+    单一数据源、无兜底/无合并；所有字段绑定同一报告期，源报告缺失即为 NaN。
     """
     n_dates = len(trade_dates)
     n_stocks = len(stock_codes)
@@ -202,30 +191,21 @@ def build_financial_arrays(
         return results
 
     df = pd.read_parquet(deep_path)
-    code_to_col = {str(c): i for i, c in enumerate(stock_codes)}
     td = trade_dates.astype('datetime64[D]')
 
-    period_end = pd.to_datetime(df['report_period'].astype(int).astype(str), format='%Y%m%d')
-    eff_date = (period_end + pd.Timedelta(days=_FIN_LAG_DAYS)).values.astype('datetime64[D]')
-    eff_row = np.searchsorted(td, eff_date, side='left')
-    col = df['stock_code'].map(code_to_col).to_numpy()
-
-    valid = np.isfinite(col.astype(np.float64)) & (eff_row < n_dates)
-    order = np.argsort(df['report_period'].to_numpy()[valid], kind='stable')  # 升序，后期覆盖前期
-    eff_row_v = eff_row[valid][order]
-    col_v = col[valid][order].astype(np.intp)
+    source_indices = build_pit_source_indices(df, stock_codes, td)
 
     for out_name, src_col in colmap.items():
         if src_col not in df.columns:
             continue
-        vals = pd.to_numeric(df[src_col], errors='coerce').to_numpy()[valid][order]
-        mat = results[out_name]
-        place = np.isfinite(vals)
-        mat[eff_row_v[place], col_v[place]] = vals[place]
-        results[out_name] = _ffill_axis0(mat)
+        results[out_name] = materialize_pit_field(
+            df,
+            source_indices,
+            src_col,
+        )
 
     cov = {k: int(np.isfinite(v).any(axis=0).sum()) for k, v in results.items()}
-    print(f"财务面板完成（deep_indicators, 报告期+{_FIN_LAG_DAYS}d PIT, 单一源）: 覆盖股票 {cov}")
+    print(f"财务面板完成（deep_indicators, 法定披露日后 PIT, 单一源）: 覆盖股票 {cov}")
     return results
 
 
@@ -442,12 +422,6 @@ def build_runtime(
     output_path = OUT_DIR / output_name
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 删除旧的全量 NPZ 文件，避免堆积（与 _patch_npz_incremental 口径一致）
-    for old in OUT_DIR.glob("runtime_*.npz"):
-        if old.name != output_name:
-            old.unlink()
-            print(f"  删除旧文件: {old.name}")
-
     save_runtime_npz_atomic(
         output_path,
         stock_codes=stock_codes,
@@ -471,6 +445,13 @@ def build_runtime(
         operating_cf_ps=fin_arrays['operating_cf_ps'],
         gross_margin=fin_arrays['gross_margin'],
     )
+
+    # 新 runtime 原子落盘成功后才清理旧文件。构建失败或被中断时，
+    # 盘前进程仍可继续读取上一份完整 runtime。
+    for old in OUT_DIR.glob("runtime_*.npz"):
+        if old.name != output_name:
+            old.unlink()
+            print(f"  删除旧文件: {old.name}")
 
     file_size_mb = output_path.stat().st_size / (1024 * 1024)
     elapsed = time.time() - overall_t0

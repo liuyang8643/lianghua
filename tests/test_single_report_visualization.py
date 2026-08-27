@@ -81,6 +81,8 @@ def test_single_report_renders_research_workspace(tmp_path):
     payload_text = html.split(marker, 1)[1].split('</script>', 1)[0]
     payload = json.loads(payload_text)
     assert payload['summary']['excess_return_pct'] == 0.9
+    assert payload['summary']['avg_daily_buys'] == 0.33
+    assert payload['summary']['avg_daily_sells'] == 0.0
     assert payload['charts']['equity']['drawdown_pct'] == [0.0, -0.49505, 0.0]
     assert payload['charts']['equity']['rebalance_funds_pct'] == [40.0, 0.0, 25.0]
     assert payload['charts']['factor_valid']['series']['DemoFactor'] == [8, 7, 9]

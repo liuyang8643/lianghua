@@ -1,0 +1,167 @@
+{
+  "experiment": "v38_smallcap_trend_consistency_train_grid",
+  "selection_scope": "training_only_2010_2018",
+  "inherit_profile_defaults": true,
+  "configs": [
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.0,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.0
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.0,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.05
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.0,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.1
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.0,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.15
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.0,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.2
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.0,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.3
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.0,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.4
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.0,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.5
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.0
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.05
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.1
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.15
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.2
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.3
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.4
+      },
+      "buy_n": 30
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "CompletedSmallCapTrendConsistency60Strict": 0.5
+      },
+      "buy_n": 30
+    }
+  ]
+}

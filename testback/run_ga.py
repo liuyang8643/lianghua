@@ -10,13 +10,27 @@ import numpy as np
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 DEFAULT_GA_SEED = 20260720
+TRAIN_METRIC_VERSION = 'initial_nav_1_calendar_folds_v2'
+FACTOR_RANKING_VERSION = 'strategy_pool_v1'
+SELECTION_SLEEVES_VERSION = 'ordered_fixed_slots_v1'
+EXECUTION_COST_VERSION = 'simulated_slippage_bps_v1'
+EXECUTION_SEMANTIC_DEFAULTS = {
+    'slippage_bps': 10.0,
+    'rebalance_band_pct': 0.01,
+}
+CANDIDATE_SEMANTIC_FIELDS = list(EXECUTION_SEMANTIC_DEFAULTS)
 _HOLDOUT_RESULT_FIELDS = (
     'val_calmar', 'val_sharpe', 'val_annualized', 'val_max_drawdown',
     'test_calmar', 'test_sharpe', 'test_annualized', 'test_max_drawdown',
 )
 
 
-from core.scoring import scores_to_ranks
+from core.scoring import (
+    FactorScoreMatrices,
+    factor_scores_to_rank_matrix,
+    scores_to_ranks,
+    top_level_factor_filter_masks,
+)
 from core.runtime import load_runtime_npz
 from utils.stock.time import get_trading_date_span
 from utils.windows_awake import keep_windows_awake
@@ -44,6 +58,7 @@ from core.backtest import (
   _compute_list_dates, _compute_timing_multipliers,
   _format_pool, _format_timing,
   _resolve_output_dir,
+  stock_pool_prefixes,
 )
 from core.metrics import compute_core_metrics
 from core.runtime import load_runtime_stock_codes
@@ -66,6 +81,8 @@ def _validate_resume_metadata(
     metadata: dict, *, profile_name: str, seed: int,
     sealed_holdout: bool, split_period_results: bool,
     training_objective: dict,
+    ranking_pool: tuple[str, ...] | None = None,
+    selection_sleeves: list[dict] | None = None,
 ) -> None:
     """Reject resumes that change the experiment identity or holdout contract."""
     if metadata.get('profile') != profile_name:
@@ -78,14 +95,53 @@ def _validate_resume_metadata(
         )
     if metadata.get('training_objective') != training_objective:
         raise ValueError('恢复目录 training_objective 与当前 profile 不一致')
-    if bool(metadata.get('sealed_holdout')) != bool(sealed_holdout):
+    if metadata.get('sealed_holdout') != bool(sealed_holdout):
         raise ValueError(
             '恢复目录 sealed_holdout 与当前 --sealed-holdout 状态不一致'
         )
-    if bool(metadata.get('split_period_results')) != bool(split_period_results):
+    if (
+        metadata.get('test_period_is_strictly_sealed')
+        != bool(sealed_holdout)
+    ):
+        raise ValueError(
+            '恢复目录 test_period_is_strictly_sealed 与 sealed_holdout 不一致'
+        )
+    if metadata.get('split_period_results') != bool(split_period_results):
         raise ValueError(
             '恢复目录 split_period_results 与当前 --split-period-results 状态不一致'
         )
+    if metadata.get('train_metric_version') != TRAIN_METRIC_VERSION:
+        raise ValueError(
+            '恢复目录训练指标口径不是 initial-NAV-1 当前版本，禁止混用'
+        )
+    if metadata.get('execution_cost_version') != EXECUTION_COST_VERSION:
+        raise ValueError('恢复目录模拟滑点成本口径不是当前版本，禁止混用')
+    if metadata.get('candidate_semantic_fields') != CANDIDATE_SEMANTIC_FIELDS:
+        raise ValueError('恢复目录候选回测语义字段与当前版本不一致')
+    if metadata.get('semantic_defaults') != EXECUTION_SEMANTIC_DEFAULTS:
+        raise ValueError('恢复目录候选回测语义默认值与当前版本不一致')
+    if ranking_pool is not None:
+        if metadata.get('factor_ranking_version') != FACTOR_RANKING_VERSION:
+            raise ValueError(
+                '恢复目录因子排名口径不是当前策略股票池版本，禁止混用'
+            )
+        metadata_pool = metadata.get('factor_ranking_pool')
+        if metadata_pool is None:
+            raise ValueError('恢复目录缺少 factor_ranking_pool，禁止混用')
+        if _normalize_ranking_pool(metadata_pool) != _normalize_ranking_pool(
+            ranking_pool
+        ):
+            raise ValueError(
+                '恢复目录 factor_ranking_pool 与当前 profile 不一致'
+            )
+    if selection_sleeves is not None:
+        if (
+            metadata.get('selection_sleeves_version')
+            != SELECTION_SLEEVES_VERSION
+        ):
+            raise ValueError('恢复目录选股袖套口径不是当前固定槽位版本')
+        if metadata.get('selection_sleeves') != selection_sleeves:
+            raise ValueError('恢复目录 selection_sleeves 与当前 profile 不一致')
 
 def _config_key(config: dict) -> tuple:
     def freeze(value):
@@ -99,18 +155,302 @@ def _config_key(config: dict) -> tuple:
         key: value for key, value in config.items()
         if key != 'neighborhood_change'
     }
+    for key, default in EXECUTION_SEMANTIC_DEFAULTS.items():
+        value = semantic_config.get(key, default)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            value = float(value)
+        semantic_config[key] = value
     return freeze(semantic_config)
 
 
+def _ga_cache_key(config: dict) -> str:
+    """Return the canonical key used by live and resumed GA caches."""
+    import json as json_mod
+
+    return json_mod.dumps(_config_key(config), ensure_ascii=False)
+
+
+def _without_holdout_results(entry: dict) -> dict:
+    """Keep a training result free of validation/test diagnostics."""
+    return {
+        key: value for key, value in entry.items()
+        if key not in _HOLDOUT_RESULT_FIELDS
+    }
+
+
+def _training_jsonl_entry(
+    entry: dict, *, training_objective: dict,
+    split_period_results: bool,
+) -> dict:
+    """Enforce that robust/split training rows contain training metrics only."""
+    if (
+        training_objective.get('mode') == 'robust_calmar'
+        or split_period_results
+    ):
+        return _without_holdout_results(entry)
+    return entry
+
+
+def _build_run_metadata(
+    *, profile_name: str, seed: int, sealed_holdout: bool,
+    split_period_results: bool, training_objective: dict,
+    ranking_pool: tuple[str, ...] | None = None,
+    selection_sleeves: list[dict] | None = None,
+) -> dict:
+    metadata = {
+        'profile': profile_name,
+        'seed': seed,
+        'sealed_holdout': sealed_holdout,
+        'split_period_results': split_period_results,
+        'period_result_files': (
+            {
+                'training': 'training_results.jsonl',
+                'validation': 'validation_results.jsonl',
+                'test': 'test_results.jsonl',
+            }
+            if split_period_results else None
+        ),
+        'final_candidate_diagnostic_files': (
+            None
+            if split_period_results
+            else {
+                'training': 'training_diagnostics.json',
+                'validation': 'validation_diagnostics.json',
+                'test': 'test_diagnostics.json',
+            }
+        ),
+        'selection_uses_training_only': True,
+        'test_period_is_strictly_sealed': sealed_holdout,
+        'train_metric_version': TRAIN_METRIC_VERSION,
+        'execution_cost_version': EXECUTION_COST_VERSION,
+        'candidate_semantic_fields': list(CANDIDATE_SEMANTIC_FIELDS),
+        'semantic_defaults': dict(EXECUTION_SEMANTIC_DEFAULTS),
+        'execution_cost_semantics': {
+            'slippage_bps': (
+                'total simulated slippage charged independently on each '
+                'buy and sell side; 10 means 10 bps per side'
+            ),
+            'rebalance_band_pct': (
+                'relative no-trade band around each target position; '
+                '0.01 means a 1% band'
+            ),
+            'candidate_values_source': (
+                'each candidate config; semantic_defaults apply when absent'
+            ),
+        },
+        'training_objective': training_objective,
+        'legacy_resume_without_seed': False,
+    }
+    if ranking_pool is not None:
+        metadata['factor_ranking_version'] = FACTOR_RANKING_VERSION
+        metadata['factor_ranking_pool'] = list(
+            _normalize_ranking_pool(ranking_pool)
+        )
+    if selection_sleeves is not None:
+        metadata['selection_sleeves_version'] = SELECTION_SLEEVES_VERSION
+        metadata['selection_sleeves'] = selection_sleeves
+    return metadata
+
+
+def _load_resume_metadata(
+    output_dir: Path, *, profile_name: str, seed: int,
+    sealed_holdout: bool, split_period_results: bool,
+    training_objective: dict,
+    ranking_pool: tuple[str, ...] | None = None,
+    selection_sleeves: list[dict] | None = None,
+) -> dict:
+    """Load and validate experiment identity before any JSONL is restored."""
+    import json as json_mod
+
+    metadata_path = Path(output_dir) / 'run_metadata.json'
+    if not metadata_path.is_file():
+        raise ValueError(
+            f'恢复目录缺少 run_metadata.json，禁止恢复: {output_dir}'
+        )
+    metadata = json_mod.loads(metadata_path.read_text(encoding='utf-8'))
+    _validate_resume_metadata(
+        metadata,
+        profile_name=profile_name,
+        seed=seed,
+        sealed_holdout=sealed_holdout,
+        split_period_results=split_period_results,
+        training_objective=training_objective,
+        ranking_pool=ranking_pool,
+        selection_sleeves=selection_sleeves,
+    )
+    return metadata
+
+
+def _write_frozen_candidate_diagnostics(
+    output_dir: Path, *, frozen_entry: dict,
+    validation_result: dict | None, test_result: dict | None,
+) -> None:
+    """Persist one train-selected candidate in three period-specific files."""
+    import json as json_mod
+
+    candidate_id = _ga_cache_key(frozen_entry['individual_config'])
+    metric_fields = (
+        'fitness', 'raw_fitness', 'calmar', 'fold_calmars', 'sharpe',
+        'annualized', 'max_drawdown', 'total_return', 'average_exposure',
+        'exposure_constraint_passed',
+    )
+
+    def payload(period: str, result: dict | None) -> dict:
+        metrics = None
+        if result is not None:
+            metrics = {
+                field: result[field]
+                for field in metric_fields
+                if field in result
+            }
+        return {
+            'period': period,
+            'candidate_id': candidate_id,
+            'metrics': metrics,
+        }
+
+    period_results = {
+        'training': frozen_entry,
+        'validation': validation_result,
+        'test': test_result,
+    }
+    for period, result in period_results.items():
+        path = Path(output_dir) / f'{period}_diagnostics.json'
+        path.write_text(
+            json_mod.dumps(
+                payload(period, result), ensure_ascii=False, indent=2,
+            ),
+            encoding='utf-8',
+        )
+
+
+def _run_frozen_holdout_reports(
+    output_dir: Path,
+    config_path: Path,
+    individual_config: dict,
+) -> dict[str, dict]:
+    """Run the two holdout periods only after the train candidate is fixed."""
+    import json as json_mod
+    import subprocess
+    import sys
+
+    from core.runtime import latest_runtime_npz_path
+
+    with np.load(latest_runtime_npz_path(), allow_pickle=False) as runtime:
+        runtime_dates = runtime['trade_dates']
+        if runtime_dates.ndim != 1 or runtime_dates.size == 0:
+            raise ValueError('runtime 缺少测试集末日')
+        test_end = str(runtime_dates[-1].astype('datetime64[D]'))
+
+    periods = {
+        'validation': ('2019-01-01', '2022-12-31'),
+        'test': ('2023-01-01', test_end),
+    }
+    results = {}
+    for period, (start_date, end_date) in periods.items():
+        period_dir = Path(output_dir) / f'{period}_report'
+        command = [
+            sys.executable,
+            '-u',
+            '-m',
+            'testback.run_backtest',
+            '--individual-config',
+            str(config_path),
+            '--start-date',
+            start_date,
+            '--end-date',
+            end_date,
+            '--no-live-sim',
+            '--output-dir',
+            str(period_dir),
+        ]
+        subprocess.run(command, check=True)
+        record_path = period_dir / 'record.json'
+        if not record_path.is_file():
+            raise FileNotFoundError(
+                f'{period} 单回测未生成 record.json: {record_path}'
+            )
+        record = json_mod.loads(record_path.read_text(encoding='utf-8'))
+        daily_returns = np.asarray(record.get('daily_returns', []), dtype=float)
+        if daily_returns.size < 2 or not np.all(np.isfinite(daily_returns)):
+            raise ValueError(f'{period} 单回测日收益为空或包含非有限值')
+        calmar, metrics = _calmar_from_returns(daily_returns)
+        total_return = (
+            float(np.prod(1.0 + daily_returns / 100.0) - 1.0) * 100.0
+        )
+        results[period] = {
+            'calmar': calmar,
+            'sharpe': float(metrics['sharpe']),
+            'annualized': float(metrics['annualized']),
+            'max_drawdown': float(metrics['max_drawdown']),
+            'total_return': total_return,
+            'individual_config': individual_config,
+            'artifact': str(period_dir),
+            'start': record['period']['start'],
+            'end': record['period']['end'],
+            'trading_days': int(daily_returns.size),
+        }
+    return results
+
+
+def _training_candidate_rank_key(entry: dict) -> tuple:
+    """Rank candidates using training metrics and canonical config only."""
+    fitness = entry.get('fitness')
+    if fitness is None:
+        fitness = entry.get('calmar')
+    if fitness is None:
+        fitness = entry.get('sharpe')
+    if fitness is None:
+        raise ValueError('训练候选缺少 fitness/calmar/sharpe')
+    fold_calmars = entry.get('fold_calmars') or ()
+    worst_fold = min(fold_calmars) if fold_calmars else float('-inf')
+
+    def metric(name: str) -> float:
+        value = entry.get(name)
+        return float(value) if value is not None else float('-inf')
+
+    return (
+        float(fitness),
+        float(worst_fold),
+        metric('calmar'),
+        metric('sharpe'),
+        metric('annualized'),
+        metric('max_drawdown'),
+        _ga_cache_key(entry['individual_config']),
+    )
+
+
 def _select_training_candidate(ga_cache: dict) -> dict | None:
-    """Select the deployable candidate strictly by training fitness."""
+    """Select one deterministic deployable candidate from training only."""
     eligible = [
         entry for entry in ga_cache.values()
         if entry.get('fitness', entry.get('calmar')) is not None
     ]
-    return max(
-        eligible, key=lambda entry: entry.get('fitness', entry['calmar'])
-    ) if eligible else None
+    return max(eligible, key=_training_candidate_rank_key) if eligible else None
+
+
+def _save_training_candidate(
+    output_dir: Path,
+    profile_name: str,
+    ga_cache: dict,
+) -> dict | None:
+    """Persist the deterministic global training winner."""
+    import json as json_mod
+
+    training_candidate = _select_training_candidate(ga_cache)
+    if training_candidate is None:
+        return None
+    best_result = strategy_config_payload(
+        profile_name,
+        training_candidate['individual_config'],
+    )
+    with open(
+        Path(output_dir) / 'best_individual_config.json',
+        'w',
+        encoding='utf-8',
+    ) as f:
+        json_mod.dump(best_result, f, indent=2, ensure_ascii=False)
+    return training_candidate
 
 
 def _period_result_entry(generation: int, result: dict) -> dict:
@@ -182,11 +522,9 @@ def _period_results_for_configs(
     index_data: dict, list_dates_full: dict, logger, pool,
 ) -> list[dict]:
     """Evaluate and return one diagnostics row per config in input order."""
-    import json as json_mod
-
     missing_configs = []
     for config in configs:
-        key = json_mod.dumps(_config_key(config), ensure_ascii=False)
+        key = _ga_cache_key(config)
         if key not in evaluation_cache:
             missing_configs.append(config)
 
@@ -204,30 +542,43 @@ def _period_results_for_configs(
             worker_args, evaluated, evaluated_cache, logger, pool=pool,
         )
         for result in evaluated:
-            key = json_mod.dumps(
-                _config_key(result['individual_config']), ensure_ascii=False,
-            )
+            key = _ga_cache_key(result['individual_config'])
             evaluation_cache[key] = result
 
     ordered = []
     for config in configs:
-        key = json_mod.dumps(_config_key(config), ensure_ascii=False)
+        key = _ga_cache_key(config)
         if key not in evaluation_cache:
             raise RuntimeError('周期诊断结果未与配置一一对应')
         ordered.append(evaluation_cache[key])
     return ordered
 
 
-def _load_candidate_configs(path: str | Path) -> list[dict]:
+def _load_candidate_configs(
+    path: str | Path,
+    profile_name: str | None = None,
+) -> list[dict]:
     payload = __import__('json').loads(Path(path).read_text(encoding='utf-8'))
+    inherit_profile_defaults = False
     if isinstance(payload, dict):
+        inherit_profile_defaults = bool(
+            payload.get('inherit_profile_defaults', False)
+        )
         payload = payload.get('configs')
     if not isinstance(payload, list) or not payload:
         raise ValueError('--candidate-configs 必须是非空配置列表或包含 configs 的对象')
     configs = []
     for item in payload:
         config = item.get('individual_config') if isinstance(item, dict) else None
-        configs.append(config if config is not None else item)
+        config = config if config is not None else item
+        if inherit_profile_defaults:
+            if profile_name is None:
+                raise ValueError('继承 profile 默认值时必须指定 profile')
+            config = build_individual_config(
+                profile_name=profile_name,
+                **config,
+            )
+        configs.append(config)
     if any(not isinstance(config, dict) or 'weights' not in config for config in configs):
         raise ValueError('--candidate-configs 存在无效 individual_config')
     return configs
@@ -240,7 +591,11 @@ def _calmar_from_returns(daily_returns) -> tuple[float, dict]:
     return float(calmar), metrics
 
 
-def _training_fitness(daily_returns, objective: dict | None = None) -> tuple[float, float, list[float]]:
+def _training_fitness(
+    daily_returns,
+    objective: dict | None = None,
+    dates=None,
+) -> tuple[float, float, list[float]]:
     """Return full Calmar and a train-only robustness score."""
     daily = np.asarray(daily_returns, dtype=float)
     full_calmar, _ = _calmar_from_returns(daily)
@@ -248,12 +603,38 @@ def _training_fitness(daily_returns, objective: dict | None = None) -> tuple[flo
     if settings.get('mode') != 'robust_calmar':
         return full_calmar, full_calmar, []
 
-    folds = max(2, int(settings.get('folds', 3)))
-    fold_calmars = [
-        _calmar_from_returns(chunk)[0]
-        for chunk in np.array_split(daily, folds)
-        if len(chunk) >= 2
-    ]
+    calendar_folds = settings.get('calendar_folds')
+    if calendar_folds is not None:
+        if dates is None:
+            raise ValueError('calendar_folds requires training dates')
+        date_values = np.asarray(
+            [
+                np.datetime64(value.date() if hasattr(value, 'date') else value, 'D')
+                for value in dates
+            ],
+            dtype='datetime64[D]',
+        )
+        if date_values.shape != daily.shape:
+            raise ValueError('training dates must align one-to-one with daily returns')
+        fold_chunks = []
+        for bounds in calendar_folds:
+            if not isinstance(bounds, (list, tuple)) or len(bounds) != 2:
+                raise ValueError('each calendar fold must contain [start, end]')
+            start, end = (np.datetime64(value, 'D') for value in bounds)
+            if start > end:
+                raise ValueError('calendar fold start must not exceed end')
+            mask = (date_values >= start) & (date_values <= end)
+            if int(mask.sum()) < 2:
+                raise ValueError(
+                    f'calendar fold {start}..{end} has fewer than two training days'
+                )
+            fold_chunks.append(daily[mask])
+    else:
+        folds = max(2, int(settings.get('folds', 3)))
+        fold_chunks = [
+            chunk for chunk in np.array_split(daily, folds) if len(chunk) >= 2
+        ]
+    fold_calmars = [_calmar_from_returns(chunk)[0] for chunk in fold_chunks]
     worst_fold = min(fold_calmars) if fold_calmars else full_calmar
     full_weight = float(settings.get('full_weight', 0.5))
     if not 0.0 <= full_weight <= 1.0:
@@ -321,7 +702,7 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     state['fitness_cache'][key] = r.get('fitness', r.get('calmar', r.get('sharpe', -1000.0)))
 
   if not state['population']:
-    results_list.sort(key=lambda r: r.get('calmar', r.get('sharpe', -1000.0)), reverse=True)
+    results_list.sort(key=_training_candidate_rank_key, reverse=True)
     state['population'] = [r['individual_config'] for r in results_list[:population_size]]
 
   def get_fitness(config):
@@ -341,7 +722,11 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
       fit = val.get('fitness', val.get('calmar', val.get('sharpe', -1000.0)))
       if cfg is not None and fit > -900:
         unique_cfgs[key] = (cfg, fit)
-    pool = sorted(unique_cfgs.values(), key=lambda x: x[1], reverse=True)
+    pool = sorted(
+      unique_cfgs.values(),
+      key=lambda x: (x[1], _ga_cache_key(x[0])),
+      reverse=True,
+    )
     total = len(pool)
     n_elite = min(max(2, int(round(elite_frac * population_size))), total)
     elite_cfgs = [cfg for cfg, _ in pool[:n_elite]]
@@ -350,7 +735,10 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
     selected = []
     for _ in range(n_tournament):
       aspirants = random.sample(pool, min(tournament_k, total))
-      selected.append(max(aspirants, key=lambda x: x[1])[0])
+      selected.append(max(
+        aspirants,
+        key=lambda x: (x[1], _ga_cache_key(x[0])),
+      )[0])
     parents = elite_cfgs + selected
   else:
     population_with_fitness = [(ind, fit) for ind in state['population']
@@ -360,7 +748,10 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
         (r['individual_config'], r.get('fitness', r.get('calmar', r.get('sharpe', -1000.0))))
         for r in results_list
       ]
-    population_with_fitness.sort(key=lambda x: x[1], reverse=True)
+    population_with_fitness.sort(
+      key=lambda x: (x[1], _ga_cache_key(x[0])),
+      reverse=True,
+    )
     parents = [ind for ind, _ in population_with_fitness[:population_size]]
 
   all_individuals = state['hall_of_fame'] + parents
@@ -372,7 +763,11 @@ def ga_optimizer(results, state, population_size=24, hall_of_fame_size=24, profi
       continue
     if key not in unique_dict or fitness > unique_dict[key][1]:
       unique_dict[key] = (ind, fitness)
-  sorted_hof = sorted(unique_dict.values(), key=lambda x: x[1], reverse=True)
+  sorted_hof = sorted(
+    unique_dict.values(),
+    key=lambda x: (x[1], _ga_cache_key(x[0])),
+    reverse=True,
+  )
   state['hall_of_fame'] = [ind for ind, _ in sorted_hof[:hall_of_fame_size]]
 
   has_weight_search = get_profile_weight_search_spaces(profile_name) is not None
@@ -486,6 +881,42 @@ def _find_latest_ga_dir() -> Path | None:
   return candidates[0][1]
 
 
+def _trim_runtime_to_training_end(
+  data: dict,
+  training_end: np.datetime64,
+) -> dict:
+  """Remove every runtime row after the sealed training endpoint."""
+  runtime_dates = np.asarray(data['trade_dates'])
+  if runtime_dates.ndim != 1 or runtime_dates.size == 0:
+    raise ValueError('training-only debug 的 runtime 交易日为空或不是一维')
+  strict_end = np.datetime64(training_end, 'D')
+  strict_end_index = int(np.searchsorted(
+    runtime_dates,
+    strict_end,
+    side='right',
+  ))
+  if strict_end_index <= 0:
+    raise ValueError('training-only debug 的 runtime 不包含训练日期')
+  original_rows = len(runtime_dates)
+  protected_stock_fields = {'stock_codes', 'stock_names', 'issue_price'}
+  trimmed = {
+    key: (
+      value[:strict_end_index].copy()
+      if (
+        isinstance(value, np.ndarray)
+        and value.ndim >= 1
+        and value.shape[0] == original_rows
+        and key not in protected_stock_fields
+      )
+      else value
+    )
+    for key, value in data.items()
+  }
+  if np.any(trimmed['trade_dates'] > strict_end):
+    raise RuntimeError('training-only debug runtime 仍包含 holdout 日期')
+  return trimmed
+
+
 def _load_ga_index_data(valid_dates, profile_name: str) -> dict:
   """Load only benchmark/timing indexes that exist for the requested period."""
   from core.timing import load_index_open
@@ -574,7 +1005,7 @@ def _rebuild_from_jsonl(output_dir: Path, require_train_fitness: bool = False) -
               f"恢复训练记录包含 holdout 结果: {', '.join(contaminated)}"
             )
         cfg = r['config']
-        key = _config_key(cfg)
+        key = _ga_cache_key(cfg)
         fitness = r.get('fitness', r.get('calmar', r['sharpe']))
         previous = ga_cache.get(key)
         if previous is None or fitness > previous.get('fitness', previous['calmar']):
@@ -599,7 +1030,7 @@ def _rebuild_ga_state(ga_cache: dict) -> dict:
   """从 ga_cache 重建 ga_state（population + hall_of_fame + fitness_cache）。"""
   sorted_entries = sorted(
     ga_cache.values(),
-    key=lambda v: v.get('fitness', v['calmar']),
+    key=_training_candidate_rank_key,
     reverse=True,
   )
   hall_of_fame = [v['individual_config'] for v in sorted_entries[:100]]
@@ -633,25 +1064,104 @@ def _worker_initializer(shm_entries):
     arr = np.ndarray(shape, dtype=np.dtype(dtype_str), buffer=shm.buf)
     _worker_shm_cache[name] = (shm, arr)
 
+
+def _normalize_ranking_pool(stock_pool) -> tuple[str, ...]:
+  """Return a canonical, non-empty stock-pool prefix tuple."""
+  prefixes = stock_pool_prefixes(stock_pool)
+  normalized = tuple(sorted({str(prefix) for prefix in prefixes}))
+  if not normalized or any(not prefix for prefix in normalized):
+    raise ValueError('stock_pool 必须包含至少一个非空代码前缀')
+  return normalized
+
+
+def _resolve_profile_ranking_pool(profile_name: str) -> tuple[str, ...]:
+  """Resolve the one pool for which GA may safely pre-rank factor scores."""
+  profile = get_profile(profile_name)
+  fixed_pool = profile.get('fixed_parameters', {}).get('stock_pool')
+  if fixed_pool is not None:
+    return _normalize_ranking_pool(fixed_pool)
+
+  pool_space = profile.get('search_spaces', {}).get('stock_pool')
+  if pool_space:
+    distinct_pools = {
+      _normalize_ranking_pool(candidate) for candidate in pool_space
+    }
+    if len(distinct_pools) != 1:
+      raise ValueError(
+        f'GA profile {profile_name} 会搜索多个 stock_pool，'
+        'pool-aware 多池预排名尚未实现；请拆成 '
+        'fixed_parameters.stock_pool 固定池 profile，禁止复用错误排名'
+      )
+    return next(iter(distinct_pools))
+
+  return _normalize_ranking_pool(None)
+
+
+def _validate_config_ranking_pool(
+    config: dict, ranking_pool: tuple[str, ...],
+) -> None:
+  """Reject a candidate that does not match the shared pre-ranked pool."""
+  candidate_pool = _normalize_ranking_pool(config.get('stock_pool'))
+  expected_pool = _normalize_ranking_pool(ranking_pool)
+  if candidate_pool != expected_pool:
+    raise ValueError(
+      f'候选 stock_pool={candidate_pool} 与 GA 共享预排名池='
+      f'{expected_pool} 不一致，禁止复用错误因子排名'
+    )
+
 def _arrays_from_memmap(info: dict) -> dict:
   return {name: np.memmap(filepath, dtype=np.dtype(dtype_str), mode='r', shape=shape)
           for name, (filepath, shape, dtype_str) in info.items()}
 
 def _cleanup_memmap():
   import shutil
-  for d in _MEMMAP_DIRS:
-    shutil.rmtree(d, ignore_errors=True)
-  _MEMMAP_DIRS.clear()
+  failures = []
+  for d in list(_MEMMAP_DIRS):
+    try:
+      shutil.rmtree(d)
+    except Exception as error:
+      failures.append((d, error))
+  _MEMMAP_DIRS[:] = [path for path, _ in failures]
+  if failures:
+    details = '; '.join(f'{path}: {error}' for path, error in failures)
+    raise RuntimeError(f'GA memmap 临时目录清理失败: {details}')
 
 def _cleanup_shm():
-  """清理所有 SharedMemory 块（主进程调用）"""
-  for shm, _ in _SHM_BLOCKS:
+  """Clean every SharedMemory block and fail closed on any leak."""
+  failures = []
+  retry_blocks = []
+  for block in list(_SHM_BLOCKS):
+    shm, _ = block
     try:
       shm.close()
       shm.unlink()
-    except Exception as e:
-      testback_logger.warning(f"SharedMemory 清理失败 {shm.name}: {e}")
-  _SHM_BLOCKS.clear()
+    except Exception as error:
+      failures.append((getattr(shm, 'name', '<unknown>'), error))
+      retry_blocks.append(block)
+  _SHM_BLOCKS[:] = retry_blocks
+  if failures:
+    details = '; '.join(
+      f'{name}: {error}' for name, error in failures
+    )
+    raise RuntimeError(f'GA SharedMemory 清理失败: {details}')
+
+
+def _cleanup_ga_resources():
+  """Attempt both cleanup layers and surface every failure."""
+  failures = []
+  for label, cleanup in (
+    ('SharedMemory', _cleanup_shm),
+    ('memmap', _cleanup_memmap),
+  ):
+    try:
+      cleanup()
+    except Exception as error:
+      failures.append((label, error))
+  if failures:
+    details = '; '.join(
+      f'{label}: {error}' for label, error in failures
+    )
+    raise RuntimeError(f'GA 训练资源未完全释放: {details}')
 
 
 def _factor_worker(args):
@@ -673,9 +1183,19 @@ def _factor_worker(args):
   if is_filter:
       values = np.isfinite(raw) & (raw > 0)
   else:
-      values = np.zeros(raw.shape, dtype=np.float32)
-      values[:, rank_cols] = scores_to_ranks(
-          raw[:, rank_cols].astype(np.float32, copy=False)
+      rank_cols = np.asarray(rank_cols, dtype=np.intp)
+      if rank_cols.ndim != 1 or rank_cols.size == 0:
+        raise ValueError('GA 因子预排名股票池不能为空')
+      if (
+        np.unique(rank_cols).size != rank_cols.size
+        or rank_cols.min() < 0
+        or rank_cols.max() >= raw.shape[1]
+      ):
+        raise ValueError('GA 因子预排名股票列必须唯一且位于 runtime 范围内')
+      values = factor_scores_to_rank_matrix(
+          raw,
+          rank_cols,
+          scores_are_ranks=bool(getattr(f, 'scores_are_ranks', False)),
       )
   if row_slice is not None:
     fill_value = False if is_filter else np.nan
@@ -691,15 +1211,16 @@ def _factor_worker(args):
 
 
 def _build_worker_filter_masks(all_arrays, score_keys, config):
-  active_validity = [
-      all_arrays[f'_factor_valid_{name}']
-      for name in score_keys
-      if config['weights'].get(name, 0.0) != 0.0
-      and f'_factor_valid_{name}' in all_arrays
-  ]
   result = {}
-  if active_validity:
-      result['_active_factor_intersection'] = np.logical_and.reduce(active_validity)
+  if config.get('selection_sleeves') is None:
+    active_validity = [
+        all_arrays[f'_factor_valid_{name}']
+        for name in score_keys
+        if config['weights'].get(name, 0.0) != 0.0
+        and f'_factor_valid_{name}' in all_arrays
+    ]
+    if active_validity:
+        result['_active_factor_intersection'] = np.logical_and.reduce(active_validity)
   for name, enabled in config.get('filter_factors', {}).items():
     if enabled and name in all_arrays:
       result[name] = np.asarray(all_arrays[name], dtype=bool)
@@ -711,6 +1232,8 @@ def _worker_evaluate(args):
   train_info, score_keys, valid_dates, date_indices, stock_indices, \
       all_stocks_list, config, index_data, list_dates_map, training_objective = args
 
+  ranking_pool = train_info['_ranking_pool_prefixes']
+  _validate_config_ranking_pool(config, ranking_pool)
   factor_validity_keys = {f'_factor_valid_{name}' for name in score_keys}
   needed = score_keys | factor_validity_keys | set(config.get('filter_factors', {})) | {'open', 'close', 'high', 'low', 'preClose', 'volume', 'amount', 'total_share', 'st_mask', 'issue_price', 'stock_codes', 'trade_dates', '_market_open_index'}
   all_arrays = {k: arr for k, (shm, arr) in _worker_shm_cache.items() if k in needed}
@@ -720,22 +1243,34 @@ def _worker_evaluate(args):
       and k not in factor_validity_keys
       and k not in config.get('filter_factors', {})
   }
-  all_scores = {k: v for k, v in all_arrays.items() if k in score_keys}
+  score_values = {k: v for k, v in all_arrays.items() if k in score_keys}
+  factor_validity = {
+      name: all_arrays[f'_factor_valid_{name}']
+      for name in score_keys
+      if f'_factor_valid_{name}' in all_arrays
+  }
+  all_scores = FactorScoreMatrices(
+      score_values,
+      factor_validity=(
+          factor_validity if config.get('selection_sleeves') is not None
+          else None
+      ),
+  )
   filter_masks = _build_worker_filter_masks(all_arrays, score_keys, config)
 
-  stock_pool = config.get('stock_pool') or ('60', '00', '30', '688')
-  if isinstance(stock_pool, list):
-      stock_pool = tuple(stock_pool)
-  pool_stocks = [s for s in all_stocks_list if s.startswith(stock_pool)]
+  pool_stocks = list(all_stocks_list)
 
   def _timing_for(dates, indices):
       base = _compute_timing_multipliers(config, dates, index_data)
       from core.trend_timing import compute_configured_timing_multipliers
+      timing_filter_masks = top_level_factor_filter_masks(
+          all_scores, filter_masks, config['weights'],
+      )
       return compute_configured_timing_multipliers(
           data=data, all_scores=all_scores, valid_dates=dates,
           date_indices=indices, valid_stocks=pool_stocks,
           stock_indices=stock_indices, config=config,
-          filter_masks=filter_masks,
+          filter_masks=timing_filter_masks,
           base_multipliers=base,
       )
 
@@ -757,9 +1292,18 @@ def _worker_evaluate(args):
           list_dates_map=list_dates_map,
           lightweight=True, limit_up_protection=config.get('limit_up_protection', False),
           rebalance=config.get('rebalance', True),
-          filter_masks=filter_masks)
+          slippage_bps=config.get(
+              'slippage_bps',
+              EXECUTION_SEMANTIC_DEFAULTS['slippage_bps'],
+          ),
+          rebalance_band_pct=config.get(
+              'rebalance_band_pct',
+              EXECUTION_SEMANTIC_DEFAULTS['rebalance_band_pct'],
+          ),
+          filter_masks=filter_masks,
+          selection_sleeves=config.get('selection_sleeves'))
       calmar, fitness, fold_calmars = _training_fitness(
-          r['daily_returns'], training_objective,
+          r['daily_returns'], training_objective, dates=od,
       )
       m = compute_core_metrics(r['daily_returns'])
       calmar_list.append(calmar)
@@ -798,11 +1342,10 @@ def _worker_evaluate(args):
 
 def _eval_parallel(worker_args, results_list, ga_cache, logger, pool):
   import gc
-  import json as json_mod
 
   for result in pool.imap_unordered(_worker_evaluate, worker_args, chunksize=1):
     results_list.append(result)
-    key = json_mod.dumps(_config_key(result['individual_config']), ensure_ascii=False)
+    key = _ga_cache_key(result['individual_config'])
     ga_cache[key] = result
   gc.collect()
 
@@ -832,47 +1375,62 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   factor_classes = get_profile_factor_classes(profile_name)
   filter_factor_classes = get_profile_filter_factor_classes(profile_name)
   profile = get_profile(profile_name)
+  ranking_pool = _resolve_profile_ranking_pool(profile_name)
   training_objective = profile.get('training_objective', {})
+  profile_selection_sleeves = profile.get('fixed_parameters', {}).get(
+    'selection_sleeves'
+  )
+
+  metadata_path = output_dir / 'run_metadata.json'
+  sealed_holdout = bool(getattr(args, 'sealed_holdout', False))
+  training_only_debug = bool(is_debug and sealed_holdout)
+  training_only_runtime = sealed_holdout
+  if resume_dir:
+    metadata = _load_resume_metadata(
+      output_dir,
+      profile_name=profile_name,
+      seed=seed,
+      sealed_holdout=sealed_holdout,
+      split_period_results=split_period_results,
+      training_objective=training_objective,
+      ranking_pool=ranking_pool,
+      selection_sleeves=profile_selection_sleeves,
+    )
+    if bool(metadata.get('training_only_debug', False)) != training_only_debug:
+      raise ValueError(
+        '恢复目录 training_only_debug 与当前 debug/sealed 状态不一致'
+      )
+  else:
+    metadata = _build_run_metadata(
+      profile_name=profile_name,
+      seed=seed,
+      sealed_holdout=sealed_holdout,
+      split_period_results=split_period_results,
+      training_objective=training_objective,
+      ranking_pool=ranking_pool,
+      selection_sleeves=profile_selection_sleeves,
+    )
+    metadata['training_only_debug'] = training_only_debug
+    metadata['holdout_access_mode'] = (
+      'training_dates_only'
+      if training_only_debug
+      else (
+        'candidate_metrics_after_training_freeze'
+        if sealed_holdout
+        else 'period_diagnostics_enabled'
+      )
+    )
+    if training_only_debug:
+      metadata['final_candidate_diagnostic_files'] = None
+    metadata_path.write_text(
+      json_mod.dumps(metadata, ensure_ascii=False, indent=2), encoding='utf-8',
+    )
 
   # 添加文件日志 sink，将所有控制台日志同步写入 log 文件
   log_path = output_dir / 'ga.log'
   testback_logger.add_file_sink(str(log_path))
   testback_logger.info(f"日志文件: {log_path}")
   testback_logger.info(f"GA 随机种子: {seed}")
-
-  metadata_path = output_dir / 'run_metadata.json'
-  if resume_dir and metadata_path.exists():
-    metadata = json_mod.loads(metadata_path.read_text(encoding='utf-8'))
-    _validate_resume_metadata(
-      metadata, profile_name=profile_name, seed=seed,
-      sealed_holdout=bool(getattr(args, 'sealed_holdout', False)),
-      split_period_results=split_period_results,
-      training_objective=training_objective,
-    )
-  else:
-    metadata = {
-      'profile': profile_name,
-      'seed': seed,
-      'sealed_holdout': bool(getattr(args, 'sealed_holdout', False)),
-      'split_period_results': split_period_results,
-      'period_result_files': (
-        {
-          'training': 'training_results.jsonl',
-          'validation': 'validation_results.jsonl',
-          'test': 'test_results.jsonl',
-        }
-        if split_period_results else None
-      ),
-      'selection_uses_training_only': True,
-      'test_period_is_strictly_sealed': not split_period_results,
-      'training_objective': training_objective,
-      'legacy_resume_without_seed': bool(resume_dir),
-    }
-    metadata_path.write_text(
-      json_mod.dumps(metadata, ensure_ascii=False, indent=2), encoding='utf-8',
-    )
-    if resume_dir:
-      testback_logger.warning('恢复旧版无种子目录：后续可复现，但无法还原恢复前的随机路径')
 
   if split_period_results:
     _validate_split_result_files(output_dir)
@@ -885,14 +1443,14 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
 
   val_cache_path = output_dir / 'val_cache.json'
   val_eval_cache = {}
-  if val_cache_path.exists():
+  if not sealed_holdout and val_cache_path.exists():
     with open(val_cache_path, 'r', encoding='utf-8') as f:
       val_eval_cache = json_mod.load(f)
     testback_logger.info(f"加载验证集缓存: {len(val_eval_cache)} 条")
 
   test_cache_path = output_dir / 'test_cache.json'
   test_eval_cache = {}
-  if test_cache_path.exists():
+  if not sealed_holdout and test_cache_path.exists():
     with open(test_cache_path, 'r', encoding='utf-8') as f:
       test_eval_cache = json_mod.load(f)
     testback_logger.info(f"加载测试集缓存: {len(test_eval_cache)} 条")
@@ -913,16 +1471,49 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
       valid_dates.append(dt)
     return valid_dates, date_indices
 
-  # === 全量 NPZ 加载 + 因子计算（一次性）===
-  data = load_runtime_npz(backtest_datetime_list)
+  # === NPZ 加载 + 因子计算（一次性）===
+  max_hist = max(
+    f.hist_days
+    for f in [*factor_classes, *filter_factor_classes]
+  )
+  runtime_lookback = max(max_hist, 512) if training_only_runtime else None
+  data = load_runtime_npz(
+    backtest_datetime_list,
+    max_lookback=runtime_lookback,
+    strict_end=training_only_runtime,
+  )
   if data is None:
     first_d = backtest_datetime_list[0].strftime('%Y%m%d')
     last_d = backtest_datetime_list[-1].strftime('%Y%m%d')
     raise FileNotFoundError(f"未找到覆盖 {first_d}~{last_d} 的 runtime npz 文件")
+  if training_only_runtime:
+    strict_end = np.datetime64(
+      max(item.date() for item in backtest_datetime_list),
+      'D',
+    )
+    data = _trim_runtime_to_training_end(data, strict_end)
+    sealed_mode_name = 'debug' if training_only_debug else 'GA'
+    testback_logger.info(
+      f'training-only {sealed_mode_name} runtime 截止 {strict_end}: '
+      f'{len(data["trade_dates"])} 天，不构建 holdout 日期索引'
+    )
 
   npz_stocks = [str(s) for s in data['stock_codes']]
   stock_indices = {c: i for i, c in enumerate(npz_stocks)}
   all_valid_stocks = [s for s in all_stocks if s in stock_indices]
+  runtime_stock_count = len(all_valid_stocks)
+  all_valid_stocks = [
+    stock for stock in all_valid_stocks
+    if stock.startswith(ranking_pool)
+  ]
+  if not all_valid_stocks:
+    raise ValueError(
+      f'GA 预排名池 {ranking_pool} 在 runtime 中没有任何股票'
+    )
+  testback_logger.info(
+    f"GA 因子排名池={_format_pool(ranking_pool)}: "
+    f"{len(all_valid_stocks)}/{runtime_stock_count} 只"
+  )
   npz_dates = data['trade_dates']
   py_dates = [d.astype('datetime64[D]').item() for d in npz_dates]
 
@@ -950,17 +1541,35 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
 
   val_start = date(2019, 1, 1)
   val_end = date(2022, 12, 31)
-  val_datetime_list = [datetime.combine(d, datetime.min.time()) for d in get_trading_date_span(val_start, val_end)]
-  val_valid_dates, val_date_indices = _build_date_subset(val_datetime_list, npz_dates, date_to_idx)
-
   test_start = date(2023, 1, 1)
-  # 测试集末日 = runtime npz 实际数据末日（train/val/test 同切自一份全量 npz），避免硬编码过期；
-  # 不可用训练集末日（= 预加载区间末日，可能早于 test_start），否则 test_start>test_end。
-  test_end = py_dates[-1]
-  test_datetime_list = [datetime.combine(d, datetime.min.time()) for d in get_trading_date_span(test_start, test_end)]
-  test_valid_dates, test_date_indices = _build_date_subset(test_datetime_list, npz_dates, date_to_idx)
+  test_end = None
+  val_valid_dates = []
+  val_date_indices = []
+  test_valid_dates = []
+  test_date_indices = []
+  if not training_only_runtime:
+    val_datetime_list = [
+      datetime.combine(d, datetime.min.time())
+      for d in get_trading_date_span(val_start, val_end)
+    ]
+    val_valid_dates, val_date_indices = _build_date_subset(
+      val_datetime_list,
+      npz_dates,
+      date_to_idx,
+    )
 
-  max_hist = max(f.hist_days for f in factor_classes)
+    # 测试集末日 = runtime npz 实际数据末日，避免硬编码过期。
+    test_end = py_dates[-1]
+    test_datetime_list = [
+      datetime.combine(d, datetime.min.time())
+      for d in get_trading_date_span(test_start, test_end)
+    ]
+    test_valid_dates, test_date_indices = _build_date_subset(
+      test_datetime_list,
+      npz_dates,
+      date_to_idx,
+    )
+
   all_idx = date_indices + val_date_indices + test_date_indices
   row_start = max(0, min(all_idx) - max_hist)
   row_end = max(all_idx) + 1
@@ -1006,6 +1615,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
       info[f'_factor_valid_{name}'] = (
         str(validity_path), raw_valid.shape, str(raw_valid.dtype),
       )
+  info['_ranking_pool_prefixes'] = ranking_pool
   testback_logger.info(f"{len(factor_classes)} 因子计算完成 ({time.time() - t_f_all:.1f}s)")
 
   # 共用 list_dates
@@ -1038,6 +1648,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     shared_arr[:] = contig
     _SHM_BLOCKS.append((shm, shared_arr))
     shm_entries.append((name, shm.name, shape, dtype_str))
+    del arr, contig, shared_arr
   shm_gb = sum(int(np.prod(e[2])) * np.dtype(e[3]).itemsize for e in shm_entries) / 1024**3
   testback_logger.info(f"SharedMemory 就绪: {len(shm_entries)} 数组 ({shm_gb:.1f} GB)")
 
@@ -1053,21 +1664,36 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   ga_pool = ctx.Pool(processes=n_workers, initializer=_worker_initializer, initargs=(shm_entries,))
   testback_logger.info(f"多进程池已创建: {n_workers} workers")
 
-  val_index_data = _load_ga_index_data(val_valid_dates, profile_name)
-  testback_logger.info(f"验证集就绪: {val_start} - {val_end}, {len(val_valid_dates)} 天")
-
-  test_index_data = _load_ga_index_data(test_valid_dates, profile_name)
-  _log_benchmark_metrics({
-    '训练': valid_dates,
-    '验证': val_valid_dates,
-    '测试': test_valid_dates,
-  })
-  testback_logger.info(f"测试集就绪: {test_start} - {test_end}, {len(test_valid_dates)} 天")
+  val_index_data = None
+  test_index_data = None
+  if training_only_debug:
+    _log_benchmark_metrics({'训练': valid_dates})
+  elif sealed_holdout:
+    _log_benchmark_metrics({'训练': valid_dates})
+    testback_logger.info(
+      'sealed holdout: 验证/测试指数与候选指标将在训练候选冻结后加载'
+    )
+  else:
+    val_index_data = _load_ga_index_data(val_valid_dates, profile_name)
+    testback_logger.info(
+      f"验证集就绪: {val_start} - {val_end}, {len(val_valid_dates)} 天"
+    )
+    test_index_data = _load_ga_index_data(test_valid_dates, profile_name)
+    _log_benchmark_metrics({
+      '训练': valid_dates,
+      '验证': val_valid_dates,
+      '测试': test_valid_dates,
+    })
+    testback_logger.info(
+      f"测试集就绪: {test_start} - {test_end}, {len(test_valid_dates)} 天"
+    )
 
   generation_results = []
   candidate_config_path = getattr(args, 'candidate_configs', None)
   if candidate_config_path:
-    next_configs = _load_candidate_configs(candidate_config_path)
+    next_configs = _load_candidate_configs(
+      candidate_config_path, profile_name=profile_name,
+    )
     generations = 1
     testback_logger.info(f"训练候选批量评估: {len(next_configs)} 个配置")
   elif resume_dir:
@@ -1091,15 +1717,20 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
     with open(args.warm_start, 'r', encoding='utf-8') as f:
       cache_data = json_mod.load(f)
     if isinstance(cache_data, list):
-      cache_data = {json_mod.dumps(_config_key(v['individual_config']), ensure_ascii=False): v for v in cache_data}
+      cache_data = {_ga_cache_key(v['individual_config']): v for v in cache_data}
     for v in cache_data.values():
       v.setdefault('calmar', v.get('fitness', v['sharpe']))
-    sorted_results = sorted(cache_data.values(), key=lambda v: v['calmar'], reverse=True)
+    sorted_results = sorted(
+      cache_data.values(),
+      key=_training_candidate_rank_key,
+      reverse=True,
+    )
     next_configs = [v['individual_config'] for v in sorted_results[:2 * population_size]]
     testback_logger.info(f"热启动: 从 {args.warm_start} 加载 top {len(next_configs)} 个种子配置 (共 {len(cache_data)} 条缓存)")
   else:
     next_configs = generate_initial_configs(2 * population_size, profile_name=profile_name)
 
+  sealed_frozen_entry = None
   try:
     for generation in range(start_generation, generations):
       generation_start_ts = time.time()
@@ -1108,7 +1739,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
       cached_results = []
       uncached_configs = []
       for cfg in next_configs:
-        key = json_mod.dumps(_config_key(cfg), ensure_ascii=False)
+        key = _ga_cache_key(cfg)
         if key in ga_cache:
           cached_results.append(ga_cache[key])
         else:
@@ -1167,7 +1798,10 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
         # 训练集统计
         calmars = [r['calmar'] for r in results_list]
         fitnesses = [r.get('fitness', r['calmar']) for r in results_list]
-        best_idx = max(range(len(results_list)), key=lambda i: fitnesses[i])
+        best_idx = max(
+          range(len(results_list)),
+          key=lambda i: _training_candidate_rank_key(results_list[i]),
+        )
         best = results_list[best_idx]
         best_cfg = best['individual_config']
         best_m = {'calmar': best['calmar'],
@@ -1195,7 +1829,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
         )
         if report_gen:
           # 验证集评估训练最优个体
-          val_best_key = json_mod.dumps(_config_key(best_cfg), ensure_ascii=False)
+          val_best_key = _ga_cache_key(best_cfg)
           if val_best_key in val_eval_cache:
             train_best_val_m = dict(val_eval_cache[val_best_key])
           else:
@@ -1216,7 +1850,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
           ga_cache[val_best_key]['val_max_drawdown'] = train_best_val_m['max_drawdown']
 
           # 测试集评估训练最优个体
-          best_test_key = json_mod.dumps(_config_key(best_cfg), ensure_ascii=False)
+          best_test_key = _ga_cache_key(best_cfg)
           if best_test_key in test_eval_cache:
             _test_train_best_m = dict(test_eval_cache[best_test_key])
           else:
@@ -1244,7 +1878,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
           training_candidate = _select_training_candidate(ga_cache)
           if training_candidate is not None:
             candidate_cfg = training_candidate['individual_config']
-            candidate_key = json_mod.dumps(_config_key(candidate_cfg), ensure_ascii=False)
+            candidate_key = _ga_cache_key(candidate_cfg)
             candidate_val = val_eval_cache.get(candidate_key, {}).get('calmar')
             candidate_test = test_eval_cache.get(candidate_key, {}).get('calmar')
             val_text = f'{candidate_val:.3f}' if candidate_val is not None else 'N/A'
@@ -1292,7 +1926,7 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
         result.setdefault('fitness', result['calmar'])
 
 
-      best_in_gen = max(results_list, key=lambda x: x['fitness'])
+      best_in_gen = max(results_list, key=_training_candidate_rank_key)
 
       if not is_debug:
         fitnesses = [ind['fitness'] for ind in results_list]
@@ -1346,11 +1980,11 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
               entry['test_sharpe'] = _test_train_best_m['sharpe']
               entry['test_annualized'] = _test_train_best_m['annualized']
               entry['test_max_drawdown'] = _test_train_best_m['max_drawdown']
-          if split_period_results:
-            entry = {
-              key: value for key, value in entry.items()
-              if key not in _HOLDOUT_RESULT_FIELDS
-            }
+          entry = _training_jsonl_entry(
+            entry,
+            training_objective=training_objective,
+            split_period_results=split_period_results,
+          )
           _f.write(_json.dumps(entry, ensure_ascii=False) + '\n')
           training_entries.append(entry)
 
@@ -1374,11 +2008,6 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
         )
         _validate_split_result_files(output_dir)
 
-      if is_debug:
-        best_result = strategy_config_payload(profile_name, best_in_gen['individual_config'])
-        with open(output_dir / 'best_individual_config.json', 'w', encoding='utf-8') as f:
-          json_mod.dump(best_result, f, indent=2, ensure_ascii=False)
-
       if not is_debug:
         with open(output_dir / 'generation_results.pkl', 'wb') as f:
           pickle.dump(generation_results, f)
@@ -1388,8 +2017,26 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
                                   hall_of_fame_size=population_size, profile_name=profile_name,
                                   ga_cache=ga_cache, gen=generation)
 
-    # Freeze the train-only candidate before touching either holdout period.
-    if not is_debug and not split_period_results:
+    if not is_debug and not split_period_results and sealed_holdout:
+      sealed_frozen_entry = _select_training_candidate(ga_cache)
+      if sealed_frozen_entry is None:
+        raise RuntimeError('训练结束后没有可冻结候选')
+      sealed_config = sealed_frozen_entry['individual_config']
+      sealed_result = strategy_config_payload(profile_name, sealed_config)
+      with open(
+        output_dir / 'best_individual_config.json',
+        'w',
+        encoding='utf-8',
+      ) as f:
+        json_mod.dump(sealed_result, f, indent=2, ensure_ascii=False)
+      testback_logger.info(f"\n{'=' * 60}")
+      testback_logger.info(
+        '训练候选已冻结；先释放训练数据，再由独立 single '
+        '进程各运行一次验证/测试'
+      )
+
+    # 非 sealed 兼容模式沿用内存内 holdout 诊断。
+    if not is_debug and not split_period_results and not sealed_holdout:
       frozen_entry = _select_training_candidate(ga_cache)
       if frozen_entry is None:
         raise RuntimeError('训练结束后没有可冻结候选')
@@ -1421,13 +2068,26 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
         testback_logger.info(
           f"  [冻结训练候选] 测试Calmar={tr['calmar']:.3f}, "
           f"夏普={tr['sharpe']:.3f}, 年化={tr['annualized']:.1f}%, 回撤={tr['max_drawdown']:.1f}%")
+      frozen_validation_result = (
+        frozen_val_results[0] if frozen_val_results else None
+      )
+      frozen_test_result = (
+        train_test_results[0] if train_test_results else None
+      )
+      _write_frozen_candidate_diagnostics(
+        output_dir,
+        frozen_entry=frozen_entry,
+        validation_result=frozen_validation_result,
+        test_result=frozen_test_result,
+      )
       holdout_payload = {
         'selection_scope': 'train_only',
+        'candidate_id': _ga_cache_key(train_best_config),
         'training_fitness': frozen_entry.get('fitness', frozen_entry['calmar']),
         'training_calmar': frozen_entry['calmar'],
         'fold_calmars': frozen_entry.get('fold_calmars', []),
-        'validation': frozen_val_results[0] if frozen_val_results else None,
-        'test': train_test_results[0] if train_test_results else None,
+        'validation': frozen_validation_result,
+        'test': frozen_test_result,
       }
       for period in ('validation', 'test'):
         if holdout_payload[period] is not None:
@@ -1442,16 +2102,71 @@ def _run_ga(args, mode_config, backtest_datetime_list, all_stocks, profile_name=
   finally:
     ga_pool.terminate()
     ga_pool.join()
-    _cleanup_shm()
-    _cleanup_memmap()
+    _cleanup_ga_resources()
 
-  if not is_debug:
-    training_candidate = _select_training_candidate(ga_cache)
+  if sealed_frozen_entry is not None:
+    frozen_config = sealed_frozen_entry['individual_config']
+    frozen_config_path = output_dir / 'best_individual_config.json'
+    holdout_results = _run_frozen_holdout_reports(
+      output_dir,
+      frozen_config_path,
+      frozen_config,
+    )
+    frozen_validation_result = holdout_results['validation']
+    frozen_test_result = holdout_results['test']
+    _write_frozen_candidate_diagnostics(
+      output_dir,
+      frozen_entry=sealed_frozen_entry,
+      validation_result=frozen_validation_result,
+      test_result=frozen_test_result,
+    )
+    holdout_payload = {
+      'selection_scope': 'train_only',
+      'candidate_id': _ga_cache_key(frozen_config),
+      'training_fitness': sealed_frozen_entry.get(
+        'fitness',
+        sealed_frozen_entry['calmar'],
+      ),
+      'training_calmar': sealed_frozen_entry['calmar'],
+      'fold_calmars': sealed_frozen_entry.get('fold_calmars', []),
+      'validation': {
+        key: value
+        for key, value in frozen_validation_result.items()
+        if key != 'individual_config'
+      },
+      'test': {
+        key: value
+        for key, value in frozen_test_result.items()
+        if key != 'individual_config'
+      },
+    }
+    with open(
+      output_dir / 'holdout_diagnostics.json',
+      'w',
+      encoding='utf-8',
+    ) as f:
+      json_mod.dump(holdout_payload, f, indent=2, ensure_ascii=False)
+    testback_logger.info(
+      'sealed holdout 独立 single 诊断完成: '
+      f"验证Calmar={frozen_validation_result['calmar']:.3f}, "
+      f"测试Calmar={frozen_test_result['calmar']:.3f}"
+    )
+
+  training_candidate = _save_training_candidate(
+    output_dir,
+    profile_name,
+    ga_cache,
+  )
+  if is_debug:
+    if training_candidate is None:
+      raise RuntimeError('训练结束后没有可保存候选')
+    testback_logger.info(
+      '调试模式全局训练最优参数已保存: '
+      f"{output_dir / 'best_individual_config.json'}"
+    )
+  else:
     if training_candidate is not None:
       best_cfg = training_candidate['individual_config']
-      best_result = strategy_config_payload(profile_name, best_cfg)
-      with open(output_dir / 'best_individual_config.json', 'w', encoding='utf-8') as f:
-        json_mod.dump(best_result, f, indent=2, ensure_ascii=False)
       w_str = ', '.join(f'{k}={v:.2f}' for k, v in best_cfg['weights'].items())
       overlay_enabled = bool((best_cfg.get('trend_risk_overlay') or {}).get('enabled'))
       timing_str = ', trend_overlay=ON' if overlay_enabled else _format_timing(best_cfg)
@@ -1572,8 +2287,14 @@ def main():
         sys.exit(1)
     else:
       resume_dir = Path(args.resume)
-      if not resume_dir.is_dir() or not (resume_dir / 'all_results.jsonl').exists():
-        testback_logger.error(f'--resume 指定目录无效或缺少 all_results.jsonl: {resume_dir}')
+      if (
+        not resume_dir.is_dir()
+        or not (resume_dir / 'all_results.jsonl').is_file()
+        or not (resume_dir / 'run_metadata.json').is_file()
+      ):
+        testback_logger.error(
+          f'--resume 指定目录无效或缺少 all_results.jsonl/run_metadata.json: {resume_dir}'
+        )
         sys.exit(1)
     testback_logger.info(f'从 JSONL 恢复: {resume_dir}')
 

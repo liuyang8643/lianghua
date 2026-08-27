@@ -4,13 +4,48 @@
 record_event → _append_event,旧实现用固定 .tmp 文件名 + 无锁的读改写,
 导致多线程写花同一个 tmp(footer 损坏)与丢更新。
 """
+import multiprocessing
 import threading
+from datetime import date
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
 import trading.persistence as persistence
-from trading.persistence import EVT_ORDER, LiveTradeRecorder
+from trading.persistence import EVT_ORDER, EVT_TRADE, LiveTradeRecorder
+
+
+def _multiprocess_trade_writer(
+    trade_dir: str,
+    worker_id: int,
+    count: int,
+    start_event,
+):
+    """Spawn-safe writer; exceptions intentionally escape via exitcode."""
+    import trading.persistence as child_persistence
+
+    child_persistence._TRADE_DIR = Path(trade_dir)
+    child_persistence._TRADE_DIR.mkdir(parents=True, exist_ok=True)
+    child_recorder = child_persistence.LiveTradeRecorder()
+    if not start_event.wait(timeout=15):
+        raise RuntimeError("multiprocess writer start barrier timed out")
+    target = date(2026, 7, 27)
+    for i in range(count):
+        order_id = worker_id * 10_000 + i
+        price = 10.0 + order_id / 1_000_000
+        child_recorder.record_event(
+            EVT_TRADE,
+            trade_date=target,
+            code="000001.SZ",
+            direction="buy",
+            traded_price=price,
+            traded_volume=100,
+            amount=price * 100,
+            order_id=order_id,
+            traded_id=f"P{worker_id}-{i}",
+            est_price=10.0,
+        )
 
 
 @pytest.fixture
@@ -85,4 +120,43 @@ def test_concurrent_record_event_and_fill_mixed(recorder, tmp_path):
     # fills 派生的 trade 也会写进 events,故 events 至少包含 n 条 order 事件
     assert (ev["event_type"] == EVT_ORDER).sum() == n
     assert len(fl) == n
+    assert list(tmp_path.glob("*.tmp*")) == []
+
+
+def test_two_process_trade_writes_have_no_corruption_or_lost_updates(
+    tmp_path,
+):
+    """The file lock must cover the whole read/merge/replace transaction."""
+    ctx = multiprocessing.get_context("spawn")
+    start_event = ctx.Event()
+    per_process = 20
+    processes = [
+        ctx.Process(
+            target=_multiprocess_trade_writer,
+            args=(str(tmp_path), worker_id, per_process, start_event),
+        )
+        for worker_id in (1, 2)
+    ]
+    for process in processes:
+        process.start()
+    start_event.set()
+    for process in processes:
+        process.join(timeout=60)
+    hung = [process for process in processes if process.is_alive()]
+    for process in hung:
+        process.terminate()
+        process.join(timeout=10)
+    assert not hung, "multiprocess writers did not finish"
+    assert [process.exitcode for process in processes] == [0, 0]
+
+    target = date(2026, 7, 27).isoformat()
+    events = pd.read_parquet(tmp_path / f"events_{target}.parquet")
+    fills = pd.read_parquet(tmp_path / f"fills_{target}.parquet")
+    expected = 2 * per_process
+    assert len(events) == expected
+    assert events["traded_id"].nunique() == expected
+    assert len(fills) == expected
+    assert fills["traded_id"].nunique() == expected
+    assert not (tmp_path / f"events_{target}.parquet.corrupt").exists()
+    assert not (tmp_path / f"fills_{target}.parquet.corrupt").exists()
     assert list(tmp_path.glob("*.tmp*")) == []

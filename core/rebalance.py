@@ -1,7 +1,16 @@
 """回测与实盘共用的多退少补调仓计划。"""
 import numpy as np
 
-from core.fees import BUY_FEE_RATE, SELL_FEE_RATE
+from core.fees import (
+    BUY_FEE_RATE,  # Backward-compatible public re-export.
+    SELL_FEE_RATE,  # Backward-compatible public re-export.
+    SIM_SLIPPAGE_BPS,
+    slippage_rate_from_bps,
+)
+from core.sim.account import (
+    calculate_buy_total_cost,
+    calculate_sell_net_proceeds,
+)
 from utils.stock.info import (
     board_limit_ratio, floor_buy_shares, is_kcb_stock, limit_up_price,
     min_sell_shares, round_buy_shares,
@@ -57,7 +66,9 @@ def select_tradable_buys(checker, *, buy_n_stocks, prices, stock_indices,
 def compute_rebalance_plan(*, positions, sellable_volumes, pos_vals, cash,
                            buy_n_stocks, tradable_buy_stocks, sellable_ok,
                            prices, limit_prices, base_target,
-                           keep_stocks=None, rebalance=True):
+                           keep_stocks=None, rebalance=True,
+                           slippage_bps=SIM_SLIPPAGE_BPS,
+                           rebalance_band_pct=0.01):
     """多退少补：每只持仓目标 = base_target，超出则卖、不足则补。
 
     Args:
@@ -81,6 +92,12 @@ def compute_rebalance_plan(*, positions, sellable_volumes, pos_vals, cash,
         buy_orders: {code: shares}，按买入优先级有序
         skip_reasons: {code: 原因}，topN 内未下买单的原因（已达标/未触发少补/冻结资金不足）
     """
+    if not 0 <= float(rebalance_band_pct) < 1:
+        raise ValueError('rebalance_band_pct must be in [0, 1)')
+    slippage_rate = slippage_rate_from_bps(slippage_bps)
+    over_target_tolerance = 1.0 + float(rebalance_band_pct)
+    under_target_tolerance = 1.0 - float(rebalance_band_pct)
+
     buy_n_set = set(buy_n_stocks)
     keep_set = set(keep_stocks if keep_stocks is not None else buy_n_stocks)
     sell_orders: list[tuple[str, int]] = []
@@ -92,15 +109,20 @@ def compute_rebalance_plan(*, positions, sellable_volumes, pos_vals, cash,
             if code not in positions or code not in prices or code not in sellable_ok:
                 continue
             cv = pos_vals[code]
-            tgt = base_target if code in buy_n_set else (cv if code in keep_set else 0.0)
-            if cv <= tgt * OVER_TARGET_TOLERANCE:
+            tgt = base_target if code in buy_n_set else (
+                cv if code in keep_set else 0.0
+            )
+            if cv <= tgt * over_target_tolerance:
                 continue
             sellable = int(sellable_volumes[code])
             if sellable <= 0:
                 continue
             if tgt == 0:
                 sell_orders.append((code, -1))
-                cash_sim += sellable * prices[code] * (1 - SELL_FEE_RATE)
+                cash_sim += calculate_sell_net_proceeds(
+                    sellable * prices[code],
+                    slippage_rate=slippage_rate,
+                )
                 continue
             sell_step = 1 if is_kcb_stock(code) else 100
             sv = int((cv - tgt) / prices[code] / sell_step) * sell_step
@@ -108,7 +130,10 @@ def compute_rebalance_plan(*, positions, sellable_volumes, pos_vals, cash,
             if sv < min_sell_shares(code):
                 continue
             sell_orders.append((code, sv))
-            cash_sim += sv * prices[code] * (1 - SELL_FEE_RATE)
+            cash_sim += calculate_sell_net_proceeds(
+                sv * prices[code],
+                slippage_rate=slippage_rate,
+            )
     else:
         for code in positions:
             if code in keep_set or code not in prices or code not in sellable_ok:
@@ -116,10 +141,30 @@ def compute_rebalance_plan(*, positions, sellable_volumes, pos_vals, cash,
             if int(sellable_volumes[code]) <= 0:
                 continue
             sell_orders.append((code, -1))
-            cash_sim += int(sellable_volumes[code]) * prices[code] * (1 - SELL_FEE_RATE)
+            cash_sim += calculate_sell_net_proceeds(
+                int(sellable_volumes[code]) * prices[code],
+                slippage_rate=slippage_rate,
+            )
 
     buy_orders: dict[str, int] = {}
     skip_reasons: dict[str, str] = {}
+
+    def _affordable_buy_shares(code: str, unit_price: float) -> int:
+        if cash_sim <= 0 or unit_price <= 0:
+            return 0
+        low = 0
+        high = int(cash_sim / unit_price) + 1
+        while low + 1 < high:
+            middle = (low + high) // 2
+            required_cash = calculate_buy_total_cost(
+                middle * unit_price,
+                slippage_rate=slippage_rate,
+            )
+            if required_cash <= cash_sim:
+                low = middle
+            else:
+                high = middle
+        return floor_buy_shares(code, low)
 
     def _try_buy(code: str, bv: int):
         nonlocal cash_sim
@@ -128,21 +173,24 @@ def compute_rebalance_plan(*, positions, sellable_volumes, pos_vals, cash,
             skip_reasons[code] = '未触发少补'
             return
         unit = limit_prices[code] if code in limit_prices else prices[code]
-        unit_cost = unit * (1 + BUY_FEE_RATE)
-        affordable = floor_buy_shares(code, int(cash_sim / unit_cost))
+        budget_price = max(unit, prices[code])
+        affordable = _affordable_buy_shares(code, budget_price)
         bv = min(bv, affordable)
         if bv <= 0:
             skip_reasons[code] = '冻结资金不足'
             return
         buy_orders[code] = bv
-        cash_sim -= bv * prices[code] * (1 + BUY_FEE_RATE)
+        cash_sim -= calculate_buy_total_cost(
+            bv * prices[code],
+            slippage_rate=slippage_rate,
+        )
 
     if rebalance:
         for code in tradable_buy_stocks:
             if code not in prices:
                 continue
             cv = pos_vals[code] if code in pos_vals else 0.0
-            if cv >= base_target * UNDER_TARGET_TOLERANCE:
+            if cv >= base_target * under_target_tolerance:
                 skip_reasons[code] = '已达标'
                 continue
             _try_buy(code, int((base_target - cv) / prices[code]))

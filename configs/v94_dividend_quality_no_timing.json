@@ -1,0 +1,36 @@
+{
+  "ga_profile": "core6",
+  "individual_config": {
+    "weights": {
+      "LongHorizonVol36MStrict": 0.5,
+      "CompletedDividendConsistency3YPIT": 0.5
+    },
+    "buy_n": 20,
+    "sell_m": 24,
+    "filter_factors": {
+      "FilterST": true,
+      "FilterStarST": true,
+      "FilterLowPrice": true,
+      "FilterMarketCapTop40Pct": true,
+      "FilterDividendYieldTop50Positive252PIT": true,
+      "FilterDividendPaidAtLeast2Of3YearsPIT": true,
+      "FilterPositiveEarningsAndCashFlow": true
+    },
+    "stock_pool": [
+      "60",
+      "00",
+      "30"
+    ],
+    "holding_period": 1,
+    "slippage_bps": 20.0,
+    "rebalance_band_pct": 0.03,
+    "rebalance": true,
+    "limit_up_protection": true,
+    "trend_risk_overlay": {
+      "enabled": false
+    },
+    "timing_enabled": false,
+    "cash_reserve_ratio": 0.0,
+    "empty_months": null
+  }
+}

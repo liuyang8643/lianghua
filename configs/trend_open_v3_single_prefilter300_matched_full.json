@@ -1,0 +1,22 @@
+{
+  "ga_profile": "core6",
+  "individual_config": {
+    "filter_factors": {
+      "FilterST": true,
+      "FilterStarST": true,
+      "FilterLowPrice": true
+    },
+    "weights": {
+      "TrendOpenSignalV3": 1.0
+    },
+    "buy_n": 20,
+    "sell_m": 25,
+    "prefilter_n": 300,
+    "timing_enabled": false,
+    "rebalance": true,
+    "limit_up_protection": true,
+    "empty_months": [],
+    "cash_reserve_ratio": 0.25,
+    "holding_period": 1
+  }
+}

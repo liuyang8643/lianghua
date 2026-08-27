@@ -148,7 +148,26 @@ def compute_strategy_metrics(
   wins = [i for i in incomes if i > 0]
   losses = [i for i in incomes if i <= 0]
   win_rate = len(wins) / len(incomes) * 100 if incomes else 0.0
-  total_commission = sum(t.get('commission', 0) for t in trade_log if t.get('commission') is not None)
+  total_broker_commission = sum(
+      float(t.get('broker_commission') or 0.0) for t in trade_log
+  )
+  total_transfer_fee = sum(
+      float(t.get('transfer_fee') or 0.0) for t in trade_log
+  )
+  total_stamp_tax = sum(
+      float(t.get('stamp_tax') or 0.0) for t in trade_log
+  )
+  total_slippage = sum(
+      float(t.get('slippage') or 0.0) for t in trade_log
+  )
+  total_fees = sum(
+      float(
+          t.get('total_fee')
+          if t.get('total_fee') is not None
+          else (t.get('commission') or 0.0)
+      )
+      for t in trade_log
+  )
 
   return {
     'annualized': round(annualized, 2),
@@ -168,5 +187,12 @@ def compute_strategy_metrics(
     'avg_loss': round(float(np.mean(losses)), 2) if losses else 0.0,
     'max_profit': round(max(incomes), 2) if incomes else 0.0,
     'max_loss': round(min(incomes), 2) if incomes else 0.0,
-    'total_commission': round(total_commission, 2),
+    # total_commission historically meant all transaction costs. Keep the
+    # compatibility alias while exposing each cost component explicitly.
+    'total_broker_commission': round(total_broker_commission, 2),
+    'total_transfer_fee': round(total_transfer_fee, 2),
+    'total_stamp_tax': round(total_stamp_tax, 2),
+    'total_slippage': round(total_slippage, 2),
+    'total_fees': round(total_fees, 2),
+    'total_commission': round(total_fees, 2),
   }

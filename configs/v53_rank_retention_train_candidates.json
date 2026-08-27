@@ -1,0 +1,23 @@
+{
+  "inherit_profile_defaults": true,
+  "configs": [
+    {"retention_rank_n": 30, "rebalance_band_pct": 0.03},
+    {"retention_rank_n": 30, "rebalance_band_pct": 0.08},
+    {"retention_rank_n": 30, "rebalance_band_pct": 0.15},
+    {"retention_rank_n": 35, "rebalance_band_pct": 0.03},
+    {"retention_rank_n": 35, "rebalance_band_pct": 0.08},
+    {"retention_rank_n": 35, "rebalance_band_pct": 0.15},
+    {"retention_rank_n": 40, "rebalance_band_pct": 0.03},
+    {"retention_rank_n": 40, "rebalance_band_pct": 0.08},
+    {"retention_rank_n": 40, "rebalance_band_pct": 0.15},
+    {"retention_rank_n": 45, "rebalance_band_pct": 0.03},
+    {"retention_rank_n": 45, "rebalance_band_pct": 0.08},
+    {"retention_rank_n": 45, "rebalance_band_pct": 0.15},
+    {"retention_rank_n": 50, "rebalance_band_pct": 0.03},
+    {"retention_rank_n": 50, "rebalance_band_pct": 0.08},
+    {"retention_rank_n": 50, "rebalance_band_pct": 0.15},
+    {"retention_rank_n": 60, "rebalance_band_pct": 0.03},
+    {"retention_rank_n": 60, "rebalance_band_pct": 0.08},
+    {"retention_rank_n": 60, "rebalance_band_pct": 0.15}
+  ]
+}

@@ -14,9 +14,17 @@ warnings.filterwarnings('ignore', category=RuntimeWarning)
 from core.strategy_config import load_strategy_config
 from core.metrics import compute_core_metrics
 from core.runtime import load_runtime_npz
-from core.scoring import scores_to_ranks, compute_weighted_scores
+from core.scoring import (
+  FactorScoreMatrices,
+  compute_weighted_scores,
+  factor_scores_to_rank_matrix,
+  scores_to_ranks,
+  top_level_factor_filter_masks,
+  validate_selection_sleeves,
+)
 from core.prefilter import apply_prefilter
 from core.legality import LegalityChecker
+from core.fees import SIM_SLIPPAGE_BPS, slippage_rate_from_bps
 from core.sim.account import StockAccountMocker
 from core.strategy import build_rebalance_day
 from data.db.delist import get_delist_stock_info
@@ -177,7 +185,8 @@ def _extend_verify_stock_pool_with_historical_codes(
 
 def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_classes,
                            data=None, kline_data=None, filter_factor_classes=None,
-                           enable_nan_filter=True, factor_missing_counts=None):
+                           enable_nan_filter=True, factor_missing_counts=None,
+                           selection_sleeves=None, buy_n=None):
   """加载 NPZ 并批量计算因子分数，返回 (data, all_scores, valid_dates, date_indices, valid_stocks, stock_indices)。
 
   data 可传入预加载面板（GA 整轮复用同一份 NPZ，避免每个因子重复加载 580MB 文件）。
@@ -222,13 +231,31 @@ def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_c
   import time
   t0 = time.time()
 
+  sleeve_factor_names: set[str] = set()
+  if selection_sleeves is not None:
+    if buy_n is None:
+      raise ValueError('buy_n is required with selection_sleeves')
+    sleeves = validate_selection_sleeves(
+      selection_sleeves,
+      buy_n,
+      available_factor_names={factor_class.__name__ for factor_class in factor_classes},
+    )
+    sleeve_factor_names = {
+      name
+      for sleeve in sleeves
+      for name, weight in sleeve['weights'].items()
+      if weight != 0.0
+    }
+
   factor_meta = []
   for f_cls in factor_classes:
     f = f_cls()
     name = f.__class__.__name__
-    if weights is not None and name not in weights:
-      continue
-    if weights is not None and weights[name] == 0:
+    top_level_active = (
+      weights is None
+      or (name in weights and weights[name] != 0)
+    )
+    if not top_level_active and name not in sleeve_factor_names:
       continue
     factor_meta.append((name, f))
 
@@ -250,21 +277,34 @@ def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_c
     missing = ~np.isfinite(np.asarray(raw)[selection]) | ~available_open[selection]
     factor_missing_counts[name] = missing.sum(axis=1).astype(int).tolist()
 
-  all_scores: dict[str, np.ndarray] = {}
+  score_matrices: dict[str, np.ndarray] = {}
+  factor_validity: dict[str, np.ndarray] = {}
+  pre_ranked_names: set[str] = set()
   all_raw = []
   for name, f in factor_meta:
     raw = f.calc_batch(factor_data)
-    ranks = np.zeros(raw.shape, dtype=np.float32)
-    ranks[:, valid_cols] = scores_to_ranks(
-      raw[:, valid_cols].astype(np.float32, copy=False)
+    scores_are_ranks = bool(getattr(f, 'scores_are_ranks', False))
+    ranks = factor_scores_to_rank_matrix(
+      raw,
+      valid_cols,
+      scores_are_ranks=scores_are_ranks,
     )
-    all_scores[name] = ranks
+    if scores_are_ranks:
+      pre_ranked_names.add(name)
+    score_matrices[name] = ranks
+    if selection_sleeves is not None:
+      factor_validity[name] = ~np.isnan(raw)
     all_raw.append(raw.astype(np.float32, copy=False))
     _record_missing(name, raw)
+  all_scores = FactorScoreMatrices(
+    score_matrices,
+    pre_ranked_names=pre_ranked_names,
+    factor_validity=factor_validity if factor_validity else None,
+  )
 
   # 多因子 NaN 并集过滤：任一因子对某股票返回 NaN，该股票就该天排除
   filter_masks: dict[str, np.ndarray] = {}
-  if enable_nan_filter:
+  if enable_nan_filter and selection_sleeves is None:
     if len(all_raw) > 1:
       stacked = np.stack(all_raw, axis=0)
       any_nan = np.any(np.isnan(stacked), axis=0)
@@ -288,7 +328,11 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
                      position_multipliers=None, list_dates_map=None,
                      lightweight=False, init_cash=1_000_000.0, init_positions=None,
                      market_order_freeze=True, limit_up_protection=False,
-                     rebalance=True, filter_masks=None, prefilter_n=None):
+                     rebalance=True, filter_masks=None, prefilter_n=None,
+                     selection_sleeves=None,
+                     slippage_bps=SIM_SLIPPAGE_BPS,
+                     rebalance_band_pct=0.01,
+                     enforce_position_multiplier_on_sell_m=False):
   """直接 numpy 回测，不创建 TopN 对象。lightweight=True 跳过明细组装，仅返回收益序列。
 
   init_cash / init_positions: 种子参数，用于「单日回放」对账（盘后用实盘 T-1 真实
@@ -312,7 +356,10 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
   成交价与估值全用原始真实价（不复权）。preClose 已吸收除权除息调整，收益计算无误。
   """
 
-  account = StockAccountMocker(cash=init_cash)
+  account = StockAccountMocker(
+    cash=init_cash,
+    slippage=slippage_rate_from_bps(slippage_bps),
+  )
   if init_positions:
     seed_date = valid_dates[0].date() if valid_dates else None
     for code, info in init_positions.items():
@@ -412,6 +459,12 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         market_order_freeze=market_order_freeze,
         limit_up_protection=limit_up_protection,
         buy_filter_mask=buy_filter_mask,
+        selection_sleeves=selection_sleeves,
+        slippage_bps=slippage_bps,
+        rebalance_band_pct=rebalance_band_pct,
+        enforce_position_multiplier_on_sell_m=(
+          enforce_position_multiplier_on_sell_m
+        ),
     )
     buy_n_stocks = day_plan.buy_n_stocks
     sell_m_stocks = day_plan.sell_m_stocks
@@ -747,7 +800,19 @@ def run_live_simulation(data, all_scores, filter_masks, stock_codes, all_valid_s
 
     live_data = {k: _slice(v) if k not in ('stock_codes', 'issue_price') else v for k, v in data.items()}
     live_data['stock_codes'] = stock_codes
-    live_scores = {k: _slice(v) for k, v in all_scores.items()}
+    live_score_values = {k: _slice(v) for k, v in all_scores.items()}
+    factor_validity = getattr(all_scores, 'factor_validity', None)
+    if factor_validity is None:
+        live_scores = live_score_values
+    else:
+        live_scores = FactorScoreMatrices(
+            live_score_values,
+            pre_ranked_names=getattr(all_scores, 'pre_ranked_names', ()),
+            factor_validity={
+                name: _slice(values)
+                for name, values in factor_validity.items()
+            },
+        )
     live_filter_masks = {k: _slice(v) for k, v in filter_masks.items()}
 
     trade_dates = live_data['trade_dates']
@@ -786,11 +851,14 @@ def run_live_simulation(data, all_scores, filter_masks, stock_codes, all_valid_s
         pool_stocks = [str(s) for s in all_valid_stocks if str(s).startswith(stock_pool)]
         timing = _compute_timing_multipliers(config, live_valid_dates)
         if timing_multiplier_builder is not None:
+            timing_filter_masks = top_level_factor_filter_masks(
+                live_scores, live_filter_masks, config['weights'],
+            )
             timing = timing_multiplier_builder(
                 data=live_data, all_scores=live_scores,
                 valid_dates=live_valid_dates, date_indices=live_date_indices,
                 valid_stocks=pool_stocks, stock_indices=stock_indices_map,
-                config=config, filter_masks=live_filter_masks,
+                config=config, filter_masks=timing_filter_masks,
                 base_multipliers=timing,
             )
 
@@ -806,7 +874,13 @@ def run_live_simulation(data, all_scores, filter_masks, stock_codes, all_valid_s
                 position_multipliers=timing, list_dates_map=list_dates_map,
                 lightweight=True, limit_up_protection=config.get('limit_up_protection', False),
                 rebalance=config.get('rebalance', True),
-                filter_masks=live_filter_masks)
+                filter_masks=live_filter_masks,
+                selection_sleeves=config.get('selection_sleeves'),
+                slippage_bps=config.get('slippage_bps', SIM_SLIPPAGE_BPS),
+                rebalance_band_pct=config.get('rebalance_band_pct', 0.01),
+                enforce_position_multiplier_on_sell_m=config.get(
+                  'enforce_position_multiplier_on_sell_m', False,
+                ))
             m = compute_core_metrics(r['daily_returns'])
             price_results[label] = {'sharpe': m['sharpe'], 'annualized': m['annualized'], 'max_drawdown': m['max_drawdown']}
 
@@ -884,6 +958,10 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks, live_
     )
 
   testback_logger.info(f"使用配置进行单次回测: buy_n={individual_config['buy_n']}, sell_m={individual_config['sell_m']}")
+  testback_logger.info(
+    f"成交成本假设: 单边模拟滑点={individual_config['slippage_bps']:.2f}bp, "
+    f"再平衡容忍带={individual_config['rebalance_band_pct'] * 100:.2f}%"
+  )
 
   config_factor_classes = strategy_config['factor_classes']
   filter_factor_classes = strategy_config.get('filter_factor_classes') or []
@@ -902,6 +980,8 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks, live_
     weights=individual_config['weights'], factor_classes=config_factor_classes,
     filter_factor_classes=filter_factor_classes if filter_factor_classes else None,
     enable_nan_filter=enable_nan_filter,
+    selection_sleeves=individual_config.get('selection_sleeves'),
+    buy_n=individual_config['buy_n'],
   )
   if scores_result is None:
     testback_logger.error("因子计算失败，无有效交易日")
@@ -927,11 +1007,14 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks, live_
 
   timing_multipliers = _compute_timing_multipliers(individual_config, valid_dates)
   if timing_multiplier_builder is not None:
+    timing_filter_masks = top_level_factor_filter_masks(
+      all_scores, filter_masks, individual_config['weights'],
+    )
     timing_multipliers = timing_multiplier_builder(
       data=data, all_scores=all_scores, valid_dates=valid_dates,
       date_indices=date_indices, valid_stocks=valid_stocks,
       stock_indices=stock_indices, config=individual_config,
-      filter_masks=filter_masks, base_multipliers=timing_multipliers,
+      filter_masks=timing_filter_masks, base_multipliers=timing_multipliers,
     )
   if timing_multipliers is not None:
     parts = []
@@ -968,6 +1051,12 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks, live_
     rebalance=individual_config.get('rebalance', True),
     filter_masks=filter_masks,
     prefilter_n=prefilter_n,
+    selection_sleeves=individual_config.get('selection_sleeves'),
+    slippage_bps=individual_config['slippage_bps'],
+    rebalance_band_pct=individual_config['rebalance_band_pct'],
+    enforce_position_multiplier_on_sell_m=individual_config.get(
+      'enforce_position_multiplier_on_sell_m', False,
+    ),
   )
 
   signal_date_strs = [d.strftime('%Y-%m-%d') for d in signal_dates]
@@ -1035,6 +1124,8 @@ def run_single_mode(args, mode_config, backtest_datetime_list, all_stocks, live_
     },
     'rebalance_rule': {
       'signal_timing': 'T-1', 'trade_timing': 'T open', 'price_field': 'open',
+      'slippage_bps_per_side': individual_config['slippage_bps'],
+      'rebalance_band_pct': individual_config['rebalance_band_pct'],
     },
     'period': {
       'signal_start': signal_date_strs[0], 'signal_end': signal_date_strs[-1],

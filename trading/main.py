@@ -472,11 +472,13 @@ if __name__ == '__main__':
     scheduler._individual_config = individual_config
     scheduler._factor_classes = factor_classes
     scheduler._skip_update = no_data_fetch
+    scheduler._dry_run = dry_run and not args.trade
 
     if is_manual:
         store = SimpleNamespace(trader=td, whole_sub_id=None, pending_rebalance=None,
                                 _now=sim_clock if skip_update else datetime.now,
-                                _skip_update=skip_update)
+                                _skip_update=skip_update,
+                                _dry_run=dry_run and not args.trade)
         before_trade(store)
         pending = store.pending_rebalance
         if not pending:

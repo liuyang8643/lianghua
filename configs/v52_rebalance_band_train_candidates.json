@@ -1,0 +1,11 @@
+{
+  "inherit_profile_defaults": true,
+  "configs": [
+    {"rebalance_band_pct": 0.01},
+    {"rebalance_band_pct": 0.03},
+    {"rebalance_band_pct": 0.05},
+    {"rebalance_band_pct": 0.08},
+    {"rebalance_band_pct": 0.10},
+    {"rebalance_band_pct": 0.15}
+  ]
+}

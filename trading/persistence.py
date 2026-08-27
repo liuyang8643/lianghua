@@ -2,7 +2,7 @@
 
 目录: data/live_trades/
   plan_{date}.parquet      盘前调仓计划（候选股+订单计划+合法性状态）
-  fills_{date}.parquet     逐笔成交（含 est_price / slippage_pct）
+  fills_{date}.parquet     逐笔成交（显式费用三分项 + 方向滑点诊断）
   positions_{date}.parquet 日终持仓快照（含 daily_pnl / daily_return_pct）
   daily_summary.parquet    累计日终摘要（追加）
   cash_flows.parquet       出入金记录（追加）
@@ -16,23 +16,32 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from filelock import FileLock
 
 from core.fees import COMMISSION_RATE, MIN_COMMISSION, STAMP_TAX_RATE, TRANSFER_FEE_RATE
 from trading.logger import trading_logger
 
 _TRADE_DIR = Path(__file__).resolve().parents[1] / "data" / "live_trades"
 
-# 进程内序列化所有「读全量→concat→原子替换」的 parquet 追加。
-# 09:30 时 SellMonitor 线程池 / BuyMonitor 线程 / watcher 回调线程会并发 record_event,
-# 若不加锁会出现「读到旧版 + 丢更新」以及多线程共写同一 tmp → footer 损坏。
+# RLock 负责进程内线程；每个 parquet 的 FileLock 负责跨进程。两者都
+# 覆盖完整「读全量→合并→原子替换」事务，避免读旧版、丢更新或 footer 损坏。
 _WRITE_LOCK = threading.RLock()
+_FILE_LOCK_TIMEOUT_SECONDS = 60
+
+
+def _path_file_lock(path: Path) -> FileLock:
+    """Return the cross-process lock guarding one parquet transaction."""
+    return FileLock(
+        str(path.with_suffix(path.suffix + ".lock")),
+        timeout=_FILE_LOCK_TIMEOUT_SECONDS,
+    )
 
 
 def _atomic_write_parquet(df: pd.DataFrame, path: Path):
     """原子写 parquet:先写唯一临时文件再 os.replace,避免写一半 / 并发写导致文件损坏。
 
-    tmp 名带 pid+uuid:即便多线程/多进程同时写同一目标文件,各自写各自的 tmp,
-    不会互相写花;os.replace 本身原子,最终落地的一定是某个完整文件。
+    tmp 名带 pid+uuid，避免临时文件互相写花；调用方必须同时持有目标
+    parquet 的跨进程锁，防止两个完整快照互相覆盖而丢更新。
     """
     tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}")
     try:
@@ -80,7 +89,11 @@ def _build_existing_fill_index(df_old: pd.DataFrame):
         tid = str(r['traded_id']) if has_tid and pd.notna(r.get('traded_id')) and str(r['traded_id']) else ''
         if tid:
             tids.add(tid)
-        coarse[_coarse_key(r['order_id'], r['price'], r['shares'])] += 1
+        else:
+            # Coarse matching only bridges legacy/event-rebuilt rows that do
+            # not yet have a real QMT ID. Two different real IDs may be
+            # legitimate equal-price partial fills and must both survive.
+            coarse[_coarse_key(r['order_id'], r['price'], r['shares'])] += 1
     return tids, coarse
 
 
@@ -94,8 +107,438 @@ def _consume_existing_fill(tid, order_id, price, shares, tids: set, coarse: Coun
         return True
     return False
 
-FILL_COLS = ['date', 'code', 'name', 'direction', 'price', 'shares', 'amount',
-             'fee_est', 'order_id', 'traded_id', 'fill_time', 'est_price', 'slippage_pct']
+
+def _dedupe_fill_traded_ids(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep the last persisted row for each non-empty traded_id.
+
+    Empty traded IDs are deliberately not collapsed here: old event rebuilds
+    can contain several legitimate same-price partial fills, and their
+    multiplicity is needed when QMT later supplies the real IDs.
+    """
+    if df is None or df.empty or 'traded_id' not in df.columns:
+        return df
+    tids = df['traded_id'].fillna('').astype(str)
+    duplicate = tids.ne('') & tids.duplicated(keep='last')
+    if not duplicate.any():
+        return df.reset_index(drop=True)
+    return df.loc[~duplicate].reset_index(drop=True)
+
+
+def _merge_fill_record(
+    df_old: pd.DataFrame,
+    df_new: pd.DataFrame,
+) -> tuple[pd.DataFrame, bool]:
+    """Merge one normalized fill, returning ``(rows, inserted)``.
+
+    A real ``traded_id`` is authoritative. If no exact ID exists, a coarse
+    key may only replace an ID-less legacy row; it must never collapse two
+    distinct QMT fills that happen to share order/price/volume. When the
+    incoming row has no ID, a matching ID-bearing disk row wins over the less
+    informative callback.
+    """
+    if len(df_new) != 1:
+        raise ValueError("_merge_fill_record expects exactly one new fill")
+    if df_old is None or df_old.empty:
+        return df_new.reset_index(drop=True), True
+
+    old = _dedupe_fill_traded_ids(df_old)
+    new_row = df_new.iloc[0]
+    new_tid = str(new_row.get('traded_id', '') or '')
+    old_tids = old['traded_id'].fillna('').astype(str)
+
+    if new_tid:
+        exact = old_tids.eq(new_tid)
+        if exact.any():
+            merged = pd.concat(
+                [old.loc[~exact], df_new],
+                ignore_index=True,
+            )
+            return merged, False
+
+    new_coarse = _coarse_key(
+        new_row['order_id'],
+        new_row['price'],
+        new_row['shares'],
+    )
+    coarse_matches = [
+        idx
+        for idx, row in old.iterrows()
+        if _coarse_key(row['order_id'], row['price'], row['shares'])
+        == new_coarse
+    ]
+
+    if new_tid:
+        # Promote one ID-less legacy/rebuilt row to the real QMT trade ID.
+        legacy_matches = [
+            idx for idx in coarse_matches if old_tids.loc[idx] == ''
+        ]
+        if legacy_matches:
+            replace_idx = legacy_matches[-1]
+            merged = pd.concat(
+                [old.drop(index=replace_idx), df_new],
+                ignore_index=True,
+            )
+            return merged, False
+    elif coarse_matches:
+        # A persisted real trade is richer than an ID-less callback.
+        if any(old_tids.loc[idx] != '' for idx in coarse_matches):
+            return old.reset_index(drop=True), False
+        # With no IDs on either side, replace exactly one row. Do not erase
+        # the multiplicity of old event-rebuilt partial fills.
+        replace_idx = coarse_matches[-1]
+        merged = pd.concat(
+            [old.drop(index=replace_idx), df_new],
+            ignore_index=True,
+        )
+        return merged, False
+
+    return pd.concat([old, df_new], ignore_index=True), True
+
+
+FEE_COMPONENT_COLS = [
+    'broker_commission', 'transfer_fee', 'stamp_tax',
+]
+EXECUTION_COST_COLS = [
+    *FEE_COMPONENT_COLS,
+    'slippage_cost', 'total_execution_cost', 'fee_source',
+]
+FILL_COLS = [
+    'date', 'code', 'name', 'direction', 'price', 'shares', 'amount',
+    'fee_est', *EXECUTION_COST_COLS,
+    'order_id', 'traded_id', 'fill_time', 'est_price', 'slippage_pct',
+]
+
+_FEE_SOURCES = frozenset({'actual', 'estimated', 'legacy'})
+_COST_ABS_TOL = 1e-4
+
+
+def _cost_float(value, field: str, row_label) -> float:
+    """Return a finite cost value or fail with row/field context."""
+    if value is None or pd.isna(value):
+        raise ValueError(f"fill[{row_label}] missing {field}")
+    try:
+        result = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"fill[{row_label}] {field} must be numeric"
+        ) from exc
+    if not np.isfinite(result):
+        raise ValueError(f"fill[{row_label}] {field} must be finite")
+    return result
+
+
+def _costs_match(actual: float, expected: float) -> bool:
+    return bool(np.isclose(
+        actual,
+        expected,
+        rtol=1e-10,
+        atol=_COST_ABS_TOL,
+    ))
+
+
+def _expected_slippage_cost(row: pd.Series | dict, row_label) -> float:
+    """Execution-price diagnostic relative to the planned Open.
+
+    Positive means adverse execution (buying above / selling below the plan
+    Open); negative means price improvement.  Missing plan prices are legacy
+    data with no measurable slippage and therefore normalize to zero.
+    """
+    direction = str(row.get('direction', '') or '').lower()
+    if direction not in {'buy', 'sell'}:
+        raise ValueError(
+            f"fill[{row_label}] direction must be 'buy' or 'sell'"
+        )
+    price = _cost_float(row.get('price'), 'price', row_label)
+    shares = _cost_float(row.get('shares'), 'shares', row_label)
+    if price < 0 or shares < 0:
+        raise ValueError(
+            f"fill[{row_label}] price and shares must be non-negative"
+        )
+    est_price = row.get('est_price')
+    if est_price is None or pd.isna(est_price):
+        return 0.0
+    est_price = _cost_float(est_price, 'est_price', row_label)
+    if est_price <= 0:
+        return 0.0
+    sign = 1.0 if direction == 'buy' else -1.0
+    return round(sign * (price - est_price) * shares, 4)
+
+
+def normalize_fill_costs(df: pd.DataFrame) -> pd.DataFrame:
+    """Upgrade legacy fills and strictly validate execution-cost semantics.
+
+    Legacy rows only persisted ``fee_est``.  Their unknown breakdown is
+    represented conservatively as broker commission with zero transfer/stamp
+    tax and ``fee_source='legacy'``; this preserves the historical explicit
+    fee exactly without pretending a rate-era-specific decomposition.
+
+    New-format rows must contain the complete schema.  Explicit fees never
+    include slippage, while ``total_execution_cost`` is diagnostic only:
+
+      fee_est = broker_commission + transfer_fee + stamp_tax
+      total_execution_cost = fee_est + slippage_cost
+    """
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError("fills must be a pandas DataFrame")
+    out = df.copy()
+    if 'fee_est' not in out.columns:
+        raise ValueError("fills missing required fee_est column")
+
+    present = set(EXECUTION_COST_COLS) & set(out.columns)
+    if present and present != set(EXECUTION_COST_COLS):
+        missing = sorted(set(EXECUTION_COST_COLS) - present)
+        raise ValueError(
+            f"fills have partial execution-cost schema; missing {missing}"
+        )
+    if not present:
+        for field in EXECUTION_COST_COLS:
+            out[field] = None if field == 'fee_source' else np.nan
+
+    for index, row in out.iterrows():
+        fee_est = _cost_float(row.get('fee_est'), 'fee_est', index)
+        if fee_est < 0:
+            raise ValueError(f"fill[{index}] fee_est must be non-negative")
+
+        source_value = row.get('fee_source')
+        numeric_missing = all(
+            pd.isna(row.get(field))
+            for field in (
+                *FEE_COMPONENT_COLS,
+                'slippage_cost',
+                'total_execution_cost',
+            )
+        )
+        source_missing = source_value is None or pd.isna(source_value)
+        if source_missing and numeric_missing:
+            # Old parquet row: preserve the known total and mark the unknown
+            # component provenance explicitly.
+            broker_commission = fee_est
+            transfer_fee = 0.0
+            stamp_tax = 0.0
+            slippage_cost = _expected_slippage_cost(row, index)
+            total_execution_cost = round(
+                fee_est + slippage_cost,
+                4,
+            )
+            source = 'legacy'
+        else:
+            if source_missing:
+                raise ValueError(f"fill[{index}] missing fee_source")
+            source = str(source_value)
+            if source not in _FEE_SOURCES:
+                raise ValueError(
+                    f"fill[{index}] invalid fee_source={source!r}"
+                )
+            broker_commission = _cost_float(
+                row.get('broker_commission'),
+                'broker_commission',
+                index,
+            )
+            transfer_fee = _cost_float(
+                row.get('transfer_fee'),
+                'transfer_fee',
+                index,
+            )
+            stamp_tax = _cost_float(
+                row.get('stamp_tax'),
+                'stamp_tax',
+                index,
+            )
+            if min(broker_commission, transfer_fee, stamp_tax) < 0:
+                raise ValueError(
+                    f"fill[{index}] explicit fee components must be non-negative"
+                )
+            slippage_cost = _cost_float(
+                row.get('slippage_cost'),
+                'slippage_cost',
+                index,
+            )
+            total_execution_cost = _cost_float(
+                row.get('total_execution_cost'),
+                'total_execution_cost',
+                index,
+            )
+
+        expected_fee = round(
+            broker_commission + transfer_fee + stamp_tax,
+            4,
+        )
+        if not _costs_match(fee_est, expected_fee):
+            raise ValueError(
+                f"fill[{index}] fee_est mismatch: "
+                f"{fee_est} != {expected_fee}"
+            )
+        expected_slippage = _expected_slippage_cost(row, index)
+        if not _costs_match(slippage_cost, expected_slippage):
+            raise ValueError(
+                f"fill[{index}] slippage_cost mismatch: "
+                f"{slippage_cost} != {expected_slippage}"
+            )
+        expected_total = round(fee_est + slippage_cost, 4)
+        if not _costs_match(total_execution_cost, expected_total):
+            raise ValueError(
+                f"fill[{index}] total_execution_cost mismatch: "
+                f"{total_execution_cost} != {expected_total}"
+            )
+
+        out.at[index, 'broker_commission'] = round(
+            broker_commission,
+            4,
+        )
+        out.at[index, 'transfer_fee'] = round(transfer_fee, 4)
+        out.at[index, 'stamp_tax'] = round(stamp_tax, 4)
+        out.at[index, 'slippage_cost'] = round(slippage_cost, 4)
+        out.at[index, 'total_execution_cost'] = round(
+            total_execution_cost,
+            4,
+        )
+        out.at[index, 'fee_source'] = source
+
+    ordered = [field for field in FILL_COLS if field in out.columns]
+    extras = [field for field in out.columns if field not in ordered]
+    return out[ordered + extras]
+
+
+def summarize_fill_costs(df: pd.DataFrame) -> dict:
+    """Return validated aggregate explicit/slippage execution costs."""
+    normalized = normalize_fill_costs(df)
+    if normalized.empty:
+        return {
+            'broker_commission': 0.0,
+            'transfer_fee': 0.0,
+            'stamp_tax': 0.0,
+            'fee_est': 0.0,
+            'slippage_cost': 0.0,
+            'total_execution_cost': 0.0,
+            'fee_sources': {},
+        }
+    result = {
+        field: float(normalized[field].sum())
+        for field in (
+            *FEE_COMPONENT_COLS,
+            'fee_est',
+            'slippage_cost',
+            'total_execution_cost',
+        )
+    }
+    result['fee_sources'] = {
+        str(source): int(count)
+        for source, count in normalized['fee_source'].value_counts().items()
+    }
+    return result
+
+
+def _build_fill_cost_fields(
+    payload: dict,
+    *,
+    direction: str,
+    amount: float,
+    price: float,
+    shares: int,
+    est_price: float | None,
+) -> dict:
+    """Build one complete, self-validating execution-cost payload."""
+    component_presence = [
+        payload.get(field) is not None
+        for field in FEE_COMPONENT_COLS
+    ]
+    if any(component_presence) and not all(component_presence):
+        raise ValueError(
+            "actual fee payload must include broker_commission, "
+            "transfer_fee, and stamp_tax together"
+        )
+
+    supplied_source = payload.get('fee_source')
+    supplied_fee = payload.get('fee_est')
+    if all(component_presence):
+        source = supplied_source or 'actual'
+        if source not in {'actual', 'estimated'}:
+            raise ValueError(
+                "complete fee components require fee_source actual/estimated"
+            )
+        components = {
+            field: round(
+                _cost_float(payload[field], field, 'new'),
+                4,
+            )
+            for field in FEE_COMPONENT_COLS
+        }
+        if min(components.values()) < 0:
+            raise ValueError("explicit fee components must be non-negative")
+        component_total = round(sum(components.values()), 4)
+        fee_est = (
+            component_total
+            if supplied_fee is None
+            else round(_cost_float(supplied_fee, 'fee_est', 'new'), 4)
+        )
+    elif supplied_fee is None:
+        if supplied_source not in (None, 'estimated'):
+            raise ValueError(
+                "fee_source actual/legacy requires explicit fee data"
+            )
+        source = 'estimated'
+        broker_commission = max(
+            amount * COMMISSION_RATE,
+            MIN_COMMISSION,
+        )
+        components = {
+            'broker_commission': round(broker_commission, 4),
+            'transfer_fee': round(amount * TRANSFER_FEE_RATE, 4),
+            'stamp_tax': round(
+                amount * STAMP_TAX_RATE if direction == 'sell' else 0.0,
+                4,
+            ),
+        }
+        fee_est = round(sum(components.values()), 4)
+    else:
+        if supplied_source not in (None, 'legacy'):
+            raise ValueError(
+                "fee_est without components must use fee_source legacy"
+            )
+        source = 'legacy'
+        fee_est = round(_cost_float(supplied_fee, 'fee_est', 'new'), 4)
+        components = {
+            'broker_commission': fee_est,
+            'transfer_fee': 0.0,
+            'stamp_tax': 0.0,
+        }
+
+    reference_row = {
+        'direction': direction,
+        'price': price,
+        'shares': shares,
+        'est_price': est_price,
+    }
+    expected_slippage = _expected_slippage_cost(reference_row, 'new')
+    supplied_slippage = payload.get('slippage_cost')
+    slippage_cost = (
+        expected_slippage
+        if supplied_slippage is None
+        else round(
+            _cost_float(supplied_slippage, 'slippage_cost', 'new'),
+            4,
+        )
+    )
+    supplied_total = payload.get('total_execution_cost')
+    total_execution_cost = (
+        round(fee_est + slippage_cost, 4)
+        if supplied_total is None
+        else round(
+            _cost_float(
+                supplied_total,
+                'total_execution_cost',
+                'new',
+            ),
+            4,
+        )
+    )
+    return {
+        'fee_est': fee_est,
+        **components,
+        'slippage_cost': slippage_cost,
+        'total_execution_cost': total_execution_cost,
+        'fee_source': source,
+    }
 
 PLAN_COLS = ['date', 'code', 'name', 'direction', 'est_price', 'est_volume',
              'est_amount', 'factor_score', 'limit_status', 'reason', 'plan_seq']
@@ -202,9 +645,48 @@ class LiveTradeRecorder:
         self._today_fills: list[dict] = []
         # 盘前 plan 的预估价缓存，watcher 在成交回调中读它算 slippage
         self._today_plan_prices: dict[str, float] = {}
+        self._today_plan_date: date | None = None
 
-    def get_plan_est_price(self, code: str) -> float | None:
-        """供 watcher 在成交回调里查 est_price（已记录 plan 后才有值）。"""
+    def get_plan_est_price(
+        self,
+        code: str,
+        trade_date: date | None = None,
+    ) -> float | None:
+        """Return planned Open, lazily restoring ``plan_{T}`` after restart."""
+        target = trade_date or date.today()
+        code = str(code)
+        if (
+            self._today_plan_date != target
+            or code not in self._today_plan_prices
+        ):
+            path = self.plan_path(target)
+            prices: dict[str, float] = {}
+            with _WRITE_LOCK, _path_file_lock(path):
+                plan_df = (
+                    _safe_read_parquet(path)
+                    if path.exists()
+                    else None
+                )
+            if plan_df is not None and not plan_df.empty:
+                required = {'code', 'est_price'}
+                missing = required - set(plan_df.columns)
+                if missing:
+                    raise ValueError(
+                        f"{path.name} missing plan columns: "
+                        f"{sorted(missing)}"
+                    )
+                for _, row in plan_df.iterrows():
+                    row_code = str(row.get('code', '') or '')
+                    est_price = row.get('est_price')
+                    if (
+                        row_code
+                        and row_code not in prices
+                        and pd.notna(est_price)
+                        and float(est_price) > 0
+                    ):
+                        prices[row_code] = float(est_price)
+            self._today_plan_date = target
+            self._today_plan_prices = prices
         v = self._today_plan_prices.get(code)
         return float(v) if v and v > 0 else None
 
@@ -360,7 +842,10 @@ class LiveTradeRecorder:
             order_id, code, order_type, direction,
             order_status, order_volume, traded_volume,
             price, traded_price, amount, status_msg, name,
-            est_price (仅 trade 派生 fill 时用), fee_est (同上)
+            est_price (仅 trade 派生 fill 时用),
+            broker_commission / transfer_fee / stamp_tax（实际分项，必须齐全）,
+            fee_est（旧入口仅有总费用时使用）,
+            slippage_cost / total_execution_cost / fee_source（可选校验值）
 
         Returns: 已写入的 event 行（dict）。
         """
@@ -383,6 +868,55 @@ class LiveTradeRecorder:
             'status_msg': (payload.get('status_msg') or '').strip(),
             'name': (payload.get('name') or '').strip(),
         }
+        fill = None
+        if event_type == EVT_TRADE:
+            est_price = payload.get('est_price')
+            if est_price is None:
+                est_price = self.get_plan_est_price(
+                    row['code'],
+                    trade_date=target_date,
+                )
+            stored_est_price = (
+                round(float(est_price), 4)
+                if est_price is not None and float(est_price) > 0
+                else None
+            )
+            stored_price = round(row['traded_price'], 4)
+            slippage_pct = None
+            if stored_est_price is not None and stored_price > 0:
+                slippage_pct = round(
+                    (stored_price - stored_est_price)
+                    / stored_est_price
+                    * 100,
+                    4,
+                )
+            cost_fields = _build_fill_cost_fields(
+                payload,
+                direction=row['direction'],
+                amount=row['amount'],
+                price=stored_price,
+                shares=row['traded_volume'],
+                est_price=stored_est_price,
+            )
+            fill = {
+                'date': target_date, 'code': row['code'], 'name': row['name'],
+                'direction': row['direction'],
+                'price': stored_price,
+                'shares': row['traded_volume'],
+                'amount': round(row['amount'], 2),
+                **cost_fields,
+                'order_id': row['order_id'],
+                'traded_id': row['traded_id'],
+                'fill_time': now,
+                'est_price': stored_est_price,
+                'slippage_pct': slippage_pct,
+            }
+            # Validate before writing either the raw event or derived fill so a
+            # contradictory payload cannot leave a half-valid audit trail.
+            fill = normalize_fill_costs(
+                pd.DataFrame([fill], columns=FILL_COLS)
+            ).iloc[0].to_dict()
+
         self._append_event(row)
         trading_logger.info(
             f"[LiveTradeEvent] type={row['event_type']} source={row['source']} "
@@ -394,46 +928,28 @@ class LiveTradeRecorder:
         )
 
         # 派生 fill: trade 事件同步更新 fills_{T}.parquet
-        if event_type == EVT_TRADE:
-            est_price = payload.get('est_price')
-            if est_price is None:
-                est_price = self.get_plan_est_price(row['code'])
-            slippage_pct = None
-            if est_price is not None and est_price > 0 and row['traded_price'] > 0:
-                slippage_pct = round((row['traded_price'] - est_price) / est_price * 100, 4)
-            fee = payload.get('fee_est')
-            if fee is None:
-                amt = row['amount']
-                fee = max(amt * COMMISSION_RATE, MIN_COMMISSION) + amt * TRANSFER_FEE_RATE
-                if row['direction'] == 'sell':
-                    fee += amt * STAMP_TAX_RATE
-            fill = {
-                'date': target_date, 'code': row['code'], 'name': row['name'],
-                'direction': row['direction'],
-                'price': round(row['traded_price'], 4),
-                'shares': row['traded_volume'],
-                'amount': round(row['amount'], 2),
-                'fee_est': round(float(fee), 4),
-                'order_id': row['order_id'],
-                'traded_id': row['traded_id'],
-                'fill_time': now,
-                'est_price': round(float(est_price), 4) if est_price else None,
-                'slippage_pct': slippage_pct,
-            }
-            self._today_fills.append(fill)
+        if fill is not None:
             self._append_fill(fill)
         return row
 
     def record_fill(self, code: str, direction: str, price: float,
                     shares: int, amount: float, order_id: int,
-                    name: str = '', fee: float = 0.0,
-                    est_price: float | None = None):
+                    name: str = '', fee: float | None = None,
+                    est_price: float | None = None, *,
+                    broker_commission: float | None = None,
+                    transfer_fee: float | None = None,
+                    stamp_tax: float | None = None,
+                    fee_source: str | None = None):
         """兼容旧入口 —— 内部转 record_event(trade)。"""
         self.record_event(
             EVT_TRADE, source=SRC_CALLBACK,
             code=code, direction=direction,
             traded_price=price, traded_volume=shares, amount=amount,
             order_id=order_id, name=name, fee_est=fee, est_price=est_price,
+            broker_commission=broker_commission,
+            transfer_fee=transfer_fee,
+            stamp_tax=stamp_tax,
+            fee_source=fee_source,
         )
 
     def plan_path(self, trade_date: date | None = None) -> Path:
@@ -451,8 +967,10 @@ class LiveTradeRecorder:
         target_date = trade_date or date.today()
         path = _TRADE_DIR / f"plan_{target_date.isoformat()}.parquet"
         df = pd.DataFrame(plan_rows, columns=PLAN_COLS)
-        df.to_parquet(path, index=False)
+        with _WRITE_LOCK, _path_file_lock(path):
+            _atomic_write_parquet(df, path)
         # 刷新 est_price 缓存（每只股票取首次出现的非零 est_price，buy 行优先于 sell）
+        self._today_plan_date = target_date
         self._today_plan_prices = {}
         for row in plan_rows:
             code = row['code']
@@ -465,7 +983,7 @@ class LiveTradeRecorder:
         )
 
     def snapshot_positions(self, positions: list, fills_df: pd.DataFrame | None = None,
-                           trade_date: date | None = None):
+                           trade_date: date | None = None, *, persist: bool = True):
         """保存日终持仓快照 + 计算个股当日 P&L。
 
         公式：daily_pnl = (T_lp × T_vol) - (Y_lp × Y_vol) + S_amt - B_amt - fees
@@ -483,6 +1001,7 @@ class LiveTradeRecorder:
         fill_agg: dict[str, dict] = {}
         name_map: dict[str, str] = {}
         if fills_df is not None and not fills_df.empty:
+            fills_df = normalize_fill_costs(fills_df)
             for code, grp in fills_df.groupby('code'):
                 buys = grp[grp['direction'] == 'buy']
                 sells = grp[grp['direction'] == 'sell']
@@ -687,9 +1206,10 @@ class LiveTradeRecorder:
                 'daily_return_pct': round(daily_ret, 4) if daily_ret is not None else None,
             })
 
-        if rows:
+        result = pd.DataFrame(rows, columns=POSITION_COLS)
+        if rows and persist:
             path = _TRADE_DIR / f"positions_{target_date.isoformat()}.parquet"
-            pd.DataFrame(rows, columns=POSITION_COLS).to_parquet(path, index=False)
+            result.to_parquet(path, index=False)
             n_pnl = sum(1 for r in rows if r['daily_pnl'] is not None)
             n_named = sum(1 for r in rows if r['name'])
             n_sold = len(sold_to_zero)
@@ -697,6 +1217,8 @@ class LiveTradeRecorder:
                 f"[LiveTrade] 持仓快照 + 日 P&L: {len(rows)} 只 "
                 f"({n_pnl} 只可算 P&L, {n_named} 只有名称, {n_sold} 只昨日持仓已清空) → {path.name}"
             )
+
+        return result
 
     def write_daily_summary(self, total_asset: float, cash: float,
                             market_value: float, trade_date: date | None = None,
@@ -711,9 +1233,18 @@ class LiveTradeRecorder:
                 (total_asset - prev_asset - net_cash_flow)。账户口径始终另存 account_pnl。
         """
         target = trade_date or date.today()
-        buys = sum(1 for r in self._today_fills if r['direction'] == 'buy' and r['date'] == target)
-        sells = sum(1 for r in self._today_fills if r['direction'] == 'sell' and r['date'] == target)
-        fees = sum(r['fee_est'] for r in self._today_fills if r['date'] == target)
+        fills = self.get_today_fills_df(trade_date=target)
+        buys = (
+            int((fills['direction'] == 'buy').sum())
+            if not fills.empty
+            else 0
+        )
+        sells = (
+            int((fills['direction'] == 'sell').sum())
+            if not fills.empty
+            else 0
+        )
+        costs = summarize_fill_costs(fills)
         net_cf = self.get_today_cash_flows(trade_date=target)
 
         summary_path = _TRADE_DIR / "daily_summary.parquet"
@@ -739,7 +1270,21 @@ class LiveTradeRecorder:
             'daily_pnl': round(daily_pnl, 2),
             'account_pnl': round(account_pnl, 2),
             'net_cash_flow': round(net_cf, 2),
-            'total_fees': round(fees, 2), 'buy_count': buys, 'sell_count': sells,
+            # Explicit fees are already reflected in broker cash/P&L.
+            # Slippage and total execution cost are diagnostics only.
+            'total_fees': round(costs['fee_est'], 2),
+            'total_broker_commission': round(
+                costs['broker_commission'],
+                2,
+            ),
+            'total_transfer_fee': round(costs['transfer_fee'], 2),
+            'total_stamp_tax': round(costs['stamp_tax'], 2),
+            'total_slippage_cost': round(costs['slippage_cost'], 2),
+            'total_execution_cost': round(
+                costs['total_execution_cost'],
+                2,
+            ),
+            'buy_count': buys, 'sell_count': sells,
         }
 
         df_new = pd.DataFrame([row])
@@ -781,7 +1326,7 @@ class LiveTradeRecorder:
             return 0
 
         path = _TRADE_DIR / f"fills_{target.isoformat()}.parquet"
-        df_old = pd.read_parquet(path) if path.exists() else pd.DataFrame(columns=FILL_COLS)
+        df_old = self.get_today_fills_df(trade_date=target)
         # 去重判定:既有行先建索引——traded_id 命中即重复;否则按 (order_id,price,shares)
         # 粗键「按重数消费」(兼容从 events 重建、traded_id 为空的行,且不会把多笔等量同价
         # 成交误判为重复)。修复:旧实现要求"无 tid 才查粗键",导致 QMT 带 tid 的回填撞不上
@@ -823,22 +1368,21 @@ class LiveTradeRecorder:
     def get_today_fills_df(self, trade_date: date | None = None) -> pd.DataFrame:
         """获取指定日的 fills DataFrame。
 
-        优先返回内存里 `_today_fills`（仅当其日期与 trade_date 一致），
-        否则回退读 `fills_{date}.parquet`，缺失返回空 DataFrame。
-
-        这样保证 sim 模式、进程重启、盘后对账等场景都能拿到数据。
+        ``fills_{date}.parquet`` 是唯一权威源。内存列表只作为与磁盘
+        同步的缓存，不能在重启续写时覆盖旧行，也不能重复计算回调。
         """
         target = trade_date or date.today()
-        # 内存数据匹配同一日时优先用（最快，含未刷盘的数据）
-        if self._today_fills:
-            first_date = self._today_fills[0].get('date')
-            if first_date == target:
-                return pd.DataFrame(self._today_fills, columns=FILL_COLS)
-        # 回退读 parquet
         path = _TRADE_DIR / f"fills_{target.isoformat()}.parquet"
-        if path.exists():
-            return pd.read_parquet(path)
-        return pd.DataFrame(columns=FILL_COLS)
+        with _WRITE_LOCK, _path_file_lock(path):
+            df = _safe_read_parquet(path) if path.exists() else None
+            if df is None or df.empty:
+                result = pd.DataFrame(columns=FILL_COLS)
+            else:
+                result = _dedupe_fill_traded_ids(
+                    normalize_fill_costs(df)
+                )
+            self._today_fills = result.to_dict('records')
+            return result.copy()
 
     def _append_fill(self, record: dict):
         """追加一行到每日 parquet，按唯一成交号 traded_id 去重。
@@ -850,21 +1394,21 @@ class LiveTradeRecorder:
         """
         target = record.get('date') or date.today()
         path = _TRADE_DIR / f"fills_{target.isoformat()}.parquet"
-        df_new = pd.DataFrame([record], columns=FILL_COLS)
-        with _WRITE_LOCK:
+        df_new = normalize_fill_costs(
+            pd.DataFrame([record], columns=FILL_COLS)
+        )
+        with _WRITE_LOCK, _path_file_lock(path):
             df_old = _safe_read_parquet(path) if path.exists() else None
             if df_old is not None and not df_old.empty:
-                tid = str(record.get('traded_id', '') or '')
-                if tid and 'traded_id' in df_old.columns:
-                    df_old = df_old[df_old['traded_id'].astype(str) != tid]
-                else:
-                    key = ['order_id', 'price', 'shares']
-                    mask = ~df_old.set_index(key).index.isin(df_new.set_index(key).index)
-                    df_old = df_old[mask]
-                df_all = pd.concat([df_old, df_new], ignore_index=True)
+                df_old = normalize_fill_costs(df_old)
             else:
-                df_all = df_new
+                df_old = pd.DataFrame(columns=FILL_COLS)
+            df_all, inserted = _merge_fill_record(df_old, df_new)
+            df_all = normalize_fill_costs(df_all)
             _atomic_write_parquet(df_all, path)
+            # 只有权威磁盘写成功后才同步缓存，避免失败写产生幽灵成交。
+            self._today_fills = df_all.to_dict('records')
+            return inserted
 
     def _append_event(self, row: dict):
         """统一事件流追加。
@@ -875,7 +1419,7 @@ class LiveTradeRecorder:
         target = row.get('date') or date.today()
         path = _TRADE_DIR / f"events_{target.isoformat()}.parquet"
         df_new = pd.DataFrame([row], columns=EVENT_COLS)
-        with _WRITE_LOCK:
+        with _WRITE_LOCK, _path_file_lock(path):
             df_old = _safe_read_parquet(path) if path.exists() else None
             if df_old is not None and not df_old.empty:
                 # 去重 key：同一笔事件的所有字段（ts 精确到微秒，自然唯一）

@@ -10,7 +10,12 @@ from typing import Callable
 import numpy as np
 
 from core.rebalance import compute_rebalance_plan, freeze_unit_price
-from core.scoring import select_topn_legal
+from core.scoring import (
+  select_selection_sleeves_legal,
+  select_topn_legal,
+  top_level_factor_filter_masks,
+  validate_selection_sleeves,
+)
 from utils.stock.info import board_limit_ratio
 
 
@@ -62,6 +67,22 @@ def build_strategy_day(
   from core.legality import LegalityChecker
 
   weights = individual_config['weights']
+  selection_sleeves = individual_config.get('selection_sleeves')
+  sleeve_factor_names: set[str] = set()
+  if selection_sleeves is not None:
+    sleeves = validate_selection_sleeves(
+      selection_sleeves,
+      individual_config['buy_n'],
+      available_factor_names={
+        factor_class.__name__ for factor_class in factor_classes
+      },
+    )
+    sleeve_factor_names = {
+      name
+      for sleeve in sleeves
+      for name, weight in sleeve['weights'].items()
+      if weight != 0.0
+    }
   overlay_settings = individual_config.get('trend_risk_overlay') or {}
   overlay_mode = str(overlay_settings.get('mode', '')).lower()
   if kline_loader is not None:
@@ -77,7 +98,10 @@ def build_strategy_day(
 
     active_factor_classes = [
       factor_class for factor_class in factor_classes
-      if weights.get(factor_class.__name__, 0) != 0
+      if (
+        weights.get(factor_class.__name__, 0) != 0
+        or factor_class.__name__ in sleeve_factor_names
+      )
     ]
     history_classes = active_factor_classes + list(filter_factor_classes or [])
     completed_factor_history = max(
@@ -102,6 +126,8 @@ def build_strategy_day(
     [datetime.combine(trade_date, datetime.min.time())], all_stocks,
     weights, factor_classes, data=score_data, kline_data=kline_data,
     filter_factor_classes=filter_factor_classes or None,
+    selection_sleeves=selection_sleeves,
+    buy_n=individual_config['buy_n'],
   )
   if scored is None:
     raise ValueError(f'signal date {trade_date} is outside runtime data')
@@ -132,6 +158,9 @@ def build_strategy_day(
       datetime.combine(value.astype('datetime64[D]').item(), datetime.min.time())
       for value in np.asarray(data['trade_dates'])[history_start:date_idx + 1]
     ]
+    timing_filter_masks = top_level_factor_filter_masks(
+      all_scores, filter_masks, weights,
+    )
     dual = compute_dual_multiplier(
       data=data, all_scores=all_scores,
       valid_dates=history_dates, date_indices=history_indices,
@@ -139,7 +168,7 @@ def build_strategy_day(
       weights=weights, buy_n=individual_config['buy_n'],
       settings=overlay_settings,
       limit_up_protection=individual_config.get('limit_up_protection', False),
-      filter_masks=filter_masks,
+      filter_masks=timing_filter_masks,
     )
     position_multiplier *= float(dual[-1])
   else:
@@ -170,6 +199,9 @@ def build_strategy_day(
     target_cash=target_cash, target_positions=target_positions,
     price_codes_extra=set(target_positions or {}),
     buy_filter_mask=buy_filter_mask,
+    selection_sleeves=selection_sleeves,
+    slippage_bps=individual_config.get('slippage_bps', 10.0),
+    rebalance_band_pct=individual_config.get('rebalance_band_pct', 0.01),
     enforce_position_multiplier_on_sell_m=individual_config.get(
       'enforce_position_multiplier_on_sell_m', False
     ),
@@ -288,11 +320,35 @@ def build_rebalance_day(
     sell_all_scores: dict[str, np.ndarray] | None = None,
     sell_weights: dict[str, float] | None = None,
     sell_filter_mask: np.ndarray | None = None,
+    selection_sleeves: list[dict] | None = None,
+    slippage_bps: float = 10.0,
+    rebalance_band_pct: float = 0.01,
     enforce_position_multiplier_on_sell_m: bool = False,
 ) -> RebalanceDayPlan:
   if is_rebalance_day:
     day_open = data['open'][trade_idx]
-    if sell_all_scores is None:
+    if selection_sleeves is not None:
+      if sell_all_scores is not None:
+        raise ValueError(
+          'selection_sleeves cannot be combined with separate sell scores'
+        )
+      buy_n_stocks, sell_m_stocks, final_score, t1_ranking = (
+        select_selection_sleeves_legal(
+          all_scores=all_scores,
+          score_idx=date_idx,
+          valid_stocks=valid_stocks,
+          valid_cols=valid_cols,
+          selection_sleeves=selection_sleeves,
+          buy_n=buy_n,
+          sell_m=sell_m,
+          checker=checker,
+          trade_idx=trade_idx,
+          signal_date=signal_date,
+          day_open=day_open,
+          common_filter_mask=buy_filter_mask,
+        )
+      )
+    elif sell_all_scores is None:
       buy_n_stocks, sell_m_stocks, final_score, t1_ranking = select_topn_legal(
         all_scores, date_idx, valid_stocks, valid_cols,
         weights, buy_n, sell_m,
@@ -367,6 +423,8 @@ def build_rebalance_day(
       base_target=base_target,
       keep_stocks=buy_n_stocks if position_control_active else sell_m_stocks,
       rebalance=rebalance or position_control_active,
+      slippage_bps=slippage_bps,
+      rebalance_band_pct=rebalance_band_pct,
     )
 
   return RebalanceDayPlan(

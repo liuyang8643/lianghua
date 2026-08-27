@@ -14,11 +14,19 @@ def compute_core_metrics(daily_returns_pct) -> dict:
     std_ret = float(np.std(daily, ddof=1))
     sharpe = float(mean_ret / std_ret * np.sqrt(252.0)) if std_ret > 0 else 0.0
 
-    cum_ret = np.cumprod(1.0 + daily / 100.0)
+    terminal_nav_path = np.cumprod(1.0 + daily / 100.0)
     years = n / 252.0
-    annualized = float((cum_ret[-1] ** (1.0 / years) - 1) * 100) if years > 0 and cum_ret[-1] > 0 else 0.0
+    annualized = (
+        float((terminal_nav_path[-1] ** (1.0 / years) - 1) * 100)
+        if years > 0 and terminal_nav_path[-1] > 0
+        else 0.0
+    )
 
-    peaks = np.maximum.accumulate(cum_ret)
-    max_dd = float(np.min(cum_ret / peaks - 1.0) * 100)
+    # Every independently reported period starts with NAV=1.  Without this
+    # anchor, a loss on the first day is silently omitted from drawdown and can
+    # materially inflate short-fold Calmar.
+    nav = np.concatenate(([1.0], terminal_nav_path))
+    peaks = np.maximum.accumulate(nav)
+    max_dd = float(np.min(nav / peaks - 1.0) * 100)
 
     return {'annualized': annualized, 'max_drawdown': max_dd, 'sharpe': sharpe}

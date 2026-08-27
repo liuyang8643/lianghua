@@ -7,6 +7,11 @@ import pytest
 class _FakeStore:
     _skip_update = False
 
+    @staticmethod
+    def _now():
+        from datetime import datetime
+        return datetime.now()
+
 
 class _FakeLarkSender:
     def __init__(self):
@@ -105,7 +110,9 @@ def test_delist_kline_missing_is_completed_by_mootdx(tmp_path, monkeypatch):
     assert calls == [["000003.SZ"]]
 
 
-def test_delist_kline_missing_after_mootdx_raises(tmp_path, monkeypatch):
+def test_delist_kline_missing_after_mootdx_warns_without_blocking(
+    tmp_path, monkeypatch,
+):
     import data.update_all as update_all
     import data.db.delist as delist_db
     import data.kline_mootdx as kline_mootdx
@@ -119,5 +126,6 @@ def test_delist_kline_missing_after_mootdx_raises(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(kline_mootdx, "update_full", lambda codes: None)
 
-    with pytest.raises(RuntimeError, match="mootdx 未补齐"):
-        update_all._ensure_delist_kline_mootdx()
+    missing = update_all._ensure_delist_kline_mootdx()
+
+    assert missing == ["000003.SZ"]

@@ -1,0 +1,57 @@
+{
+  "ga_profile": "v71_v31_financial_pit_train20bp",
+  "individual_config": {
+    "weights": {
+      "PreCloseMarketCap": 1.0,
+      "AmihudIlliquidityStrict": 0.4,
+      "TrendReversalPreCloseStrict": 0.1,
+      "VolumeCVStrict": 0.2,
+      "EarningsQualityComposite": 0.0875,
+      "ProfitGrowth": 0.0125
+    },
+    "buy_n": 30,
+    "sell_m": 30,
+    "filter_factors": {
+      "FilterST": true,
+      "FilterStarST": true,
+      "FilterLowPrice": true,
+      "FilterFinancialCoreCoverage": true
+    },
+    "stock_pool": ["60", "00", "30"],
+    "holding_period": 1,
+    "slippage_bps": 20.0,
+    "rebalance_band_pct": 0.01,
+    "retention_rank_n": 30,
+    "retention_mode": "expanded_equal_weight",
+    "rebalance": true,
+    "limit_up_protection": true,
+    "trend_risk_overlay": {
+      "enabled": true,
+      "mode": "dual_completed",
+      "strict_history": true,
+      "strict_warmup_multiplier": 1.0,
+      "floor": 0.0,
+      "ceiling": 1.0,
+      "momentum_center": -0.055,
+      "momentum_scale": 0.012,
+      "ma_center": 1.01,
+      "ma_scale": 0.009,
+      "softmin_sharpness": 4.0,
+      "slope": 2.0,
+      "momentum_window": 10,
+      "ma_window": 20,
+      "strategy_weight": 0.8,
+      "strategy_momentum_window": 5,
+      "strategy_momentum_center": -0.044,
+      "strategy_momentum_scale": 0.015,
+      "strategy_ma_window": 20,
+      "strategy_ma_center": 1.014,
+      "strategy_ma_scale": 0.009,
+      "strategy_softmin_sharpness": 4.0,
+      "strategy_slope": 2.0
+    },
+    "timing_enabled": false,
+    "cash_reserve_ratio": 0.0,
+    "empty_months": null
+  }
+}

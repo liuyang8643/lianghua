@@ -200,14 +200,65 @@ def strategy_trend_multipliers(strategy_open_index: np.ndarray,
     )
 
 
+def _quantize_dual_exposure(
+    exposure: np.ndarray,
+    settings: dict,
+) -> np.ndarray:
+    """Optionally snap a mixed dual exposure to a zero-anchored grid."""
+    if "exposure_step" not in settings:
+        return exposure
+    raw_step = settings["exposure_step"]
+    if (
+        isinstance(raw_step, (bool, np.bool_))
+        or not isinstance(
+            raw_step,
+            (int, float, np.integer, np.floating),
+        )
+    ):
+        raise ValueError(
+            "trend_risk_overlay exposure_step must be 0 or finite in (0, 1]"
+        )
+    step = float(raw_step)
+    if not np.isfinite(step) or step < 0.0 or step > 1.0:
+        raise ValueError(
+            "trend_risk_overlay exposure_step must be 0 or finite in (0, 1]"
+        )
+    if step == 0.0:
+        return exposure
+
+    floor = float(settings.get("floor", 0.03))
+    ceiling = float(settings.get("ceiling", 1.0))
+    if (
+        not np.isfinite(floor)
+        or not np.isfinite(ceiling)
+        or not 0.0 <= floor <= ceiling <= 1.0
+    ):
+        raise ValueError(
+            "quantized dual trend floor and ceiling must be ordered in [0, 1]"
+        )
+    values = np.asarray(exposure, dtype=np.float64)
+    quantized = np.floor(values / step + 0.5) * step
+    return np.clip(quantized, floor, ceiling)
+
+
+def _blend_dual_exposure(
+    broad: np.ndarray,
+    strategy: np.ndarray,
+    settings: dict,
+) -> np.ndarray:
+    """Blend dual signals once, then apply the shared opt-in quantizer."""
+    weight = float(settings.get("strategy_weight", 0.60))
+    mixed = weight * strategy + (1.0 - weight) * broad
+    return _quantize_dual_exposure(mixed, settings)
+
+
 def dual_trend_multipliers(market_index: np.ndarray,
                            strategy_index: np.ndarray,
                            settings: dict) -> np.ndarray:
     """Blend broad-market and strategy-target trends."""
     broad = _continuous_score_multiplier({}, settings, open_index=market_index)
     strategy = strategy_trend_multipliers(strategy_index, settings)
-    weight = float(settings.get("strategy_weight", 0.60))
-    return weight * strategy + (1.0 - weight) * broad
+    return _blend_dual_exposure(broad, strategy, settings)
 
 
 def strategy_open_index(data: dict, daily_topn: list[list[str]],
@@ -259,17 +310,22 @@ def strategy_completed_index(data: dict, daily_topn: list[list[str]],
 
     Target names selected at open ``T`` contribute only their official
     ``close[T] / preClose[T] - 1`` return to index row ``T+1``.  Thus the
-    multiplier used at row T contains no T-day HLCVA or gap return.
+    multiplier used at row T contains no T-day HLCVA or gap return.  A day
+    with no legal target is represented as cash with a zero completed return.
     """
     rows = np.asarray(date_indices, dtype=np.intp)
     if len(rows) == 0:
         return np.empty(0, dtype=np.float64)
+    if len(daily_topn) != len(rows):
+        raise ValueError(
+            "strict completed strategy index requires one target list per row"
+        )
     if len(rows) == 1:
         return np.ones(1, dtype=np.float64)
 
     width = max((len(codes) for codes in daily_topn[:-1]), default=0)
     if width == 0:
-        raise ValueError("strict completed strategy index requires non-empty targets")
+        return np.ones(len(rows), dtype=np.float64)
     cols = np.zeros((len(rows) - 1, width), dtype=np.intp)
     selected = np.zeros_like(cols, dtype=bool)
     for i, codes in enumerate(daily_topn[:-1]):
@@ -300,7 +356,7 @@ def strategy_completed_index(data: dict, daily_topn: list[list[str]],
     daily_return = np.divide(
         np.where(valid, values, 0.0).sum(axis=1),
         selected_count,
-        out=np.full(len(rows) - 1, np.nan, dtype=np.float64),
+        out=np.zeros(len(rows) - 1, dtype=np.float64),
         where=selected_count > 0,
     )
     if not np.isfinite(daily_return).all():
@@ -370,8 +426,7 @@ def compute_dual_trend_multipliers(
         {}, settings, open_index=np.asarray(full_market_index),
     )[indices]
     strategy = strategy_trend_multipliers(strategy_index, settings)
-    weight = float(settings.get("strategy_weight", 0.60))
-    return weight * strategy + (1.0 - weight) * broad
+    return _blend_dual_exposure(broad, strategy, settings)
 
 
 def compute_dual_completed_trend_multipliers(
@@ -399,8 +454,7 @@ def compute_dual_completed_trend_multipliers(
         {}, settings, open_index=np.asarray(full_market_index),
     )[indices]
     strategy = strategy_trend_multipliers(strategy_index, settings)
-    weight = float(settings.get("strategy_weight", 0.60))
-    return weight * strategy + (1.0 - weight) * broad
+    return _blend_dual_exposure(broad, strategy, settings)
 
 
 def compute_configured_timing_multipliers(

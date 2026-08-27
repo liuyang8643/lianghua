@@ -1,0 +1,17 @@
+{
+  "experiment": "v51_ga_single_training_parity",
+  "selection_scope": "training_only_2010_2018",
+  "inherit_profile_defaults": true,
+  "configs": [
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "CompletedPriorMonthTurnoverStrict": 0.0
+      },
+      "buy_n": 30
+    }
+  ]
+}

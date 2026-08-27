@@ -185,7 +185,10 @@ def run_all(config_path: str, start_date: str, end_date: str):
 
     base_kwa = dict(weights=weights_no_og, buy_n=ic["buy_n"], sell_m=ic["sell_m"],
                     holding_period=ic.get("holding_period"),
-                    position_multipliers=timing, list_dates_map=list_dates, lightweight=False)
+                    position_multipliers=timing, list_dates_map=list_dates,
+                    lightweight=False,
+                    slippage_bps=ic.get("slippage_bps", 10.0),
+                    rebalance_band_pct=ic.get("rebalance_band_pct", 0.01))
 
     buy_minutes = ["09:32", "09:33", "09:34", "09:35"]
 

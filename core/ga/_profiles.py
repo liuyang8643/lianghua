@@ -61,14 +61,73 @@ def _expand_space(raw):
     return sorted(set(vals))
 
 
+def _validate_search_fixed_parameter_conflicts(
+    profile_name: str,
+    raw_profile: dict,
+    intrinsic_params: list[dict],
+) -> None:
+    """Reject search dimensions that ``fixed_parameters`` would overwrite."""
+    fixed_parameters = raw_profile.get('fixed_parameters', {})
+    definitions = {
+        definition['key']: definition
+        for definition in intrinsic_params
+    }
+    conflicts = []
+    for search_key in raw_profile['search_spaces']:
+        definition = definitions.get(search_key)
+        if definition is None:
+            continue
+
+        config_key = definition['config_key']
+        config_group = definition.get('config_group')
+        if config_group is None:
+            if config_key in fixed_parameters:
+                conflicts.append(
+                    (search_key, f'fixed_parameters.{config_key}')
+                )
+            continue
+
+        if config_group not in fixed_parameters:
+            continue
+        fixed_group = fixed_parameters[config_group]
+        if not isinstance(fixed_group, dict):
+            conflicts.append(
+                (search_key, f'fixed_parameters.{config_group}')
+            )
+        elif config_key in fixed_group:
+            conflicts.append((
+                search_key,
+                f'fixed_parameters.{config_group}.{config_key}',
+            ))
+
+    if conflicts:
+        details = ', '.join(
+            f'{search_key} -> {fixed_path}'
+            for search_key, fixed_path in conflicts
+        )
+        raise ValueError(
+            f'GA profile {profile_name!r} 的搜索参数同时被固定参数覆盖: '
+            f'{details}；请只保留 search_spaces 或 fixed_parameters '
+            f'中的一处定义'
+        )
+
+
 def _load():
     global _loaded, DEFAULT_GA_PROFILE, SEARCH_SPACE_VERSION, GA_PROFILES, INTRINSIC_PARAMS
     if _loaded:
         return
-    _loaded = True
 
     cfg = yaml.safe_load((_get_yaml_path()).read_text(encoding='utf-8'))
-    INTRINSIC_PARAMS = deepcopy(cfg['strategy_parameters'])
+    intrinsic_params = deepcopy(cfg['strategy_parameters'])
+    for name, raw in cfg['profiles'].items():
+        _validate_search_fixed_parameter_conflicts(
+            name,
+            raw,
+            intrinsic_params,
+        )
+
+    _loaded = True
+    INTRINSIC_PARAMS = intrinsic_params
     DEFAULT_GA_PROFILE = cfg['default_profile']
     SEARCH_SPACE_VERSION = cfg['version']
 

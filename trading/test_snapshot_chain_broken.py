@@ -91,3 +91,18 @@ def test_first_day_computes_pnl(recorder, tmp_path):
     # mv 21*500=10500, 买入成本 10000, fee 1 → ≈ +499
     assert pd.notna(row['daily_pnl'])
     assert abs(row['daily_pnl'] - (10500.0 - 10000.0 - 1.0)) < 1e-6
+
+
+def test_snapshot_positions_can_compute_without_persisting(recorder, tmp_path):
+    result = recorder.snapshot_positions(
+        [_Pos('000002.SZ', 500, 20.0, 21.0)],
+        fills_df=_fills([
+            ('000002.SZ', 'buy', 20.0, 500, 10000.0, 1.0, 'B'),
+        ]),
+        trade_date=date(2026, 6, 5),
+        persist=False,
+    )
+
+    assert result['code'].tolist() == ['000002.SZ']
+    assert result.iloc[0]['daily_pnl'] == pytest.approx(499.0)
+    assert not (tmp_path / 'positions_2026-06-05.parquet').exists()

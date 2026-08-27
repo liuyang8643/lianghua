@@ -128,6 +128,144 @@ def test_strategy_and_dual_trend_are_causal_continuous_values():
     assert np.all((dual >= 0.03) & (dual <= 1.0))
 
 
+def test_dual_exposure_step_missing_or_zero_is_exact_noop():
+    settings = {
+        "floor": 0.03, "ceiling": 1.0,
+        "momentum_window": 5, "ma_window": 20,
+        "momentum_center": -0.055, "momentum_scale": 0.012,
+        "ma_center": 1.0, "ma_scale": 0.012,
+        "softmin_sharpness": 4.0, "slope": 2.0,
+        "strategy_weight": 0.6,
+    }
+    market_index = np.cumprod(
+        1.0 + np.cos(np.arange(180) / 5.0) * 0.01,
+    )
+    strategy_index = np.cumprod(
+        1.0 + np.sin(np.arange(180) / 4.0) * 0.015,
+    )
+
+    expected = dual_trend_multipliers(
+        market_index, strategy_index, settings,
+    )
+    actual = dual_trend_multipliers(
+        market_index, strategy_index,
+        {**settings, "exposure_step": 0.0},
+    )
+
+    np.testing.assert_array_equal(actual, expected)
+
+
+def test_dual_exposure_step_matches_manual_nearest_grid(monkeypatch):
+    mixed = np.array([0.14, 0.26, 0.49, 0.76], dtype=np.float64)
+    monkeypatch.setattr(
+        "core.trend_timing._continuous_score_multiplier",
+        lambda *args, **kwargs: mixed,
+    )
+    monkeypatch.setattr(
+        "core.trend_timing.strategy_trend_multipliers",
+        lambda *args, **kwargs: mixed,
+    )
+
+    actual = dual_trend_multipliers(
+        np.ones(len(mixed)),
+        np.ones(len(mixed)),
+        {
+            "strategy_weight": 0.6,
+            "floor": 0.0,
+            "ceiling": 1.0,
+            "exposure_step": 0.25,
+        },
+    )
+
+    np.testing.assert_allclose(actual, [0.25, 0.25, 0.50, 0.75])
+
+
+def test_dual_exposure_step_clips_quantized_boundaries(monkeypatch):
+    mixed = np.array([0.04, 0.96], dtype=np.float64)
+    monkeypatch.setattr(
+        "core.trend_timing._continuous_score_multiplier",
+        lambda *args, **kwargs: mixed,
+    )
+    monkeypatch.setattr(
+        "core.trend_timing.strategy_trend_multipliers",
+        lambda *args, **kwargs: mixed,
+    )
+
+    actual = dual_trend_multipliers(
+        np.ones(len(mixed)),
+        np.ones(len(mixed)),
+        {
+            "strategy_weight": 0.6,
+            "floor": 0.1,
+            "ceiling": 0.9,
+            "exposure_step": 0.25,
+        },
+    )
+
+    np.testing.assert_allclose(actual, [0.1, 0.9])
+
+
+@pytest.mark.parametrize(
+    "exposure_step",
+    [np.nan, np.inf, -np.inf, -0.1, 1.01, True, None, "0.25"],
+)
+def test_dual_exposure_step_rejects_invalid_values(
+    monkeypatch,
+    exposure_step,
+):
+    values = np.array([0.5], dtype=np.float64)
+    monkeypatch.setattr(
+        "core.trend_timing._continuous_score_multiplier",
+        lambda *args, **kwargs: values,
+    )
+    monkeypatch.setattr(
+        "core.trend_timing.strategy_trend_multipliers",
+        lambda *args, **kwargs: values,
+    )
+
+    with pytest.raises(ValueError, match="exposure_step"):
+        dual_trend_multipliers(
+            np.ones(1),
+            np.ones(1),
+            {
+                "floor": 0.0,
+                "ceiling": 1.0,
+                "exposure_step": exposure_step,
+            },
+        )
+
+
+@pytest.mark.parametrize("mode", ["discrete", "continuous_score"])
+def test_exposure_step_does_not_change_legacy_overlay_modes(mode):
+    data = _data(days=80, stocks=4)
+    settings = {
+        "enabled": True,
+        "mode": mode,
+        "floor": 0.05,
+        "momentum_window": 5,
+        "ma_window": 20,
+        "momentum_center": -0.05,
+        "momentum_scale": 0.004,
+        "ma_center": 1.0,
+        "ma_scale": 0.012,
+        "softmin_sharpness": 4.0,
+        "slope": 2.0,
+        "momentum_floor": -0.05,
+        "ma_ratio_floor": 1.0,
+        "risk_floor": 0.3,
+    }
+    expected = trend_overlay_multipliers(
+        data,
+        {"trend_risk_overlay": settings},
+    )
+    actual = trend_overlay_multipliers(
+        data,
+        {"trend_risk_overlay": {**settings, "exposure_step": 0.25}},
+    )
+
+    np.testing.assert_array_equal(actual, expected)
+
+
 def test_dual_trend_may_use_current_open_but_not_current_hlc_or_future_rows():
     data = _data(days=180, stocks=12)
     strategy_index = np.cumprod(1.0 + np.sin(np.arange(180) / 4.0) * 0.015)
@@ -215,6 +353,40 @@ def test_completed_strategy_index_shifts_same_day_target_return_to_next_open():
     )
 
     np.testing.assert_allclose(actual, [1.0, 1.10, 1.10])
+
+
+def test_completed_strategy_index_treats_an_empty_legal_target_day_as_cash():
+    data = _data(days=4, stocks=2)
+    data["close"][:] = 10.0
+    data["preClose"][:] = 10.0
+    data["close"][0, 0] = 11.0
+    data["close"][2, 1] = 9.0
+    targets = [["A"], [], ["B"], ["A"]]
+
+    actual = strategy_completed_index(
+        data, targets, [0, 1, 2, 3], {"A": 0, "B": 1},
+    )
+
+    np.testing.assert_allclose(actual, [1.0, 1.10, 1.10, 0.99])
+
+
+def test_completed_strategy_index_treats_an_all_cash_path_as_flat():
+    data = _data(days=4, stocks=2)
+
+    actual = strategy_completed_index(
+        data, [[], [], [], []], [0, 1, 2, 3], {"A": 0, "B": 1},
+    )
+
+    np.testing.assert_array_equal(actual, np.ones(4))
+
+
+def test_completed_strategy_index_rejects_a_truncated_target_path():
+    data = _data(days=3, stocks=2)
+
+    with pytest.raises(ValueError, match="one target list per row"):
+        strategy_completed_index(
+            data, [["A"], []], [0, 1, 2], {"A": 0, "B": 1},
+        )
 
 
 def test_dual_completed_multiplier_is_strict_and_has_no_current_hlcva_input():
@@ -399,3 +571,81 @@ def test_configured_timing_combines_dual_overlay_with_base_multiplier():
 
     assert actual is not None
     assert np.all((actual >= 0.0) & (actual <= 0.5))
+
+
+@pytest.mark.parametrize(
+    ("mode", "direct"),
+    [
+        ("dual_strategy", compute_dual_trend_multipliers),
+        ("dual_completed", compute_dual_completed_trend_multipliers),
+    ],
+)
+def test_configured_and_direct_dual_paths_share_exposure_quantization(
+    mode,
+    direct,
+):
+    days = 50
+    code = "000001.SZ"
+    start = datetime(2024, 1, 2)
+    dates = [start + timedelta(days=i) for i in range(days)]
+    data = _data(days=days, stocks=1)
+    data["stock_codes"] = np.array([code])
+    data["issue_price"] = np.array([10.0])
+    data["trade_dates"] = np.array(
+        [d.date() for d in dates], dtype="datetime64[D]",
+    )
+    settings = {
+        "enabled": True,
+        "mode": mode,
+        "floor": 0.0,
+        "ceiling": 1.0,
+        "exposure_step": 0.2,
+        "momentum_window": 3,
+        "ma_window": 10,
+        "momentum_center": -0.05,
+        "momentum_scale": 0.01,
+        "ma_center": 1.0,
+        "ma_scale": 0.01,
+        "softmin_sharpness": 4.0,
+        "slope": 2.0,
+        "strategy_weight": 0.6,
+        "strategy_momentum_window": 3,
+        "strategy_momentum_center": -0.05,
+        "strategy_momentum_scale": 0.01,
+        "strategy_ma_window": 10,
+        "strategy_ma_center": 1.0,
+        "strategy_ma_scale": 0.01,
+        "strategy_softmin_sharpness": 4.0,
+        "strategy_slope": 2.0,
+    }
+    scores = {"Trend": np.ones((days, 1), dtype=np.float32)}
+    common = {
+        "data": data,
+        "all_scores": scores,
+        "valid_dates": dates,
+        "date_indices": list(range(days)),
+        "valid_stocks": [code],
+        "stock_indices": {code: 0},
+    }
+    expected = direct(
+        **common,
+        weights={"Trend": 1.0},
+        buy_n=1,
+        settings=settings,
+    )
+    actual = compute_configured_timing_multipliers(
+        **common,
+        config={
+            "weights": {"Trend": 1.0},
+            "buy_n": 1,
+            "limit_up_protection": False,
+            "trend_risk_overlay": settings,
+        },
+    )
+
+    np.testing.assert_array_equal(actual, expected)
+    np.testing.assert_allclose(
+        actual / settings["exposure_step"],
+        np.round(actual / settings["exposure_step"]),
+        atol=1e-12,
+    )

@@ -22,7 +22,8 @@ TRADE_DATES = (np.datetime64('2000-01-01') + np.arange(N)).astype('datetime64[D]
 
 def _make_checker(board, *, trade_idx, open_t, preclose=np.nan, st=False,
                   volume_t=1.0, list_tidx=-1, high_t=np.nan, low_t=np.nan,
-                  close_t=np.nan, issue_price=np.nan):
+                  close_t=np.nan, issue_price=np.nan,
+                  limit_up_protection=False):
     code = BOARD_CODE[board]
     o = np.full((N, 1), np.nan); c = np.full((N, 1), np.nan)
     v = np.zeros((N, 1))
@@ -40,7 +41,10 @@ def _make_checker(board, *, trade_idx, open_t, preclose=np.nan, st=False,
                 issue_price=np.array([issue_price]))
     effective_list_tidx = list_tidx if list_tidx >= 0 else 0
     list_map = {code: TRADE_DATES[effective_list_tidx].item()}
-    return LegalityChecker(data, {code: 0}, list_map)
+    return LegalityChecker(
+        data, {code: 0}, list_map,
+        limit_up_protection=limit_up_protection,
+    )
 
 
 def _buy(board, signal_date, **kw):
@@ -104,6 +108,20 @@ def test_buy_uptick_floor_strict():
 def test_sell_downtick_ceil_strict():
     assert _sell(0, SIG, trade_idx=30, open_t=9.04, preclose=10.04) is False
     assert _sell(0, SIG, trade_idx=30, open_t=9.05, preclose=10.04) is True
+
+
+def test_limit_up_protection_for_001260_next_open_scenarios():
+    """001260.SZ is protected only if the simulated next open is limit-up."""
+    next_day = date(2026, 8, 14)
+    # 2026-08-13 close=21.03; the strict main-board next-day limit is 23.13.
+    assert _sell(
+        0, next_day, trade_idx=30, open_t=23.13, preclose=21.03,
+        limit_up_protection=True,
+    ) is False
+    assert _sell(
+        0, next_day, trade_idx=30, open_t=22.00, preclose=21.03,
+        limit_up_protection=True,
+    ) is True
 
 
 # ---------- ST 按板块 ----------

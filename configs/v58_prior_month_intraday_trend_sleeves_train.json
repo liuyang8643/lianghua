@@ -1,0 +1,297 @@
+{
+  "ga_profile": "v58_prior_month_intraday_trend_sleeves",
+  "experiment": "v58_prior_month_intraday_trend_sleeves_training_ablation",
+  "selection_scope": "training_only_2010_2018",
+  "inherit_profile_defaults": false,
+  "configs": [
+    {
+      "name": "control_core30_trend0",
+      "individual_config": {
+        "weights": {
+          "PreCloseMarketCap": 1.0,
+          "AmihudIlliquidityStrict": 0.4,
+          "TrendReversalPreCloseStrict": 0.1,
+          "VolumeCVStrict": 0.2,
+          "CompletedPriorMonthIntradayTrendStrict": 0.0
+        },
+        "buy_n": 30,
+        "sell_m": 30,
+        "filter_factors": {
+          "FilterST": true,
+          "FilterStarST": true,
+          "FilterLowPrice": true
+        },
+        "stock_pool": ["60", "00", "30"],
+        "holding_period": 1,
+        "retention_rank_n": 30,
+        "retention_mode": "expanded_equal_weight",
+        "rebalance_band_pct": 0.15,
+        "slippage_bps": 20.0,
+        "rebalance": true,
+        "limit_up_protection": true,
+        "selection_sleeves": [
+          {
+            "name": "v31_core",
+            "slots": 30,
+            "weights": {
+              "PreCloseMarketCap": 1.0,
+              "AmihudIlliquidityStrict": 0.4,
+              "TrendReversalPreCloseStrict": 0.1,
+              "VolumeCVStrict": 0.2
+            }
+          }
+        ],
+        "trend_risk_overlay": {
+          "enabled": true,
+          "mode": "dual_completed",
+          "strict_history": true,
+          "strict_warmup_multiplier": 1.0,
+          "floor": 0.0,
+          "ceiling": 1.0,
+          "momentum_center": -0.055,
+          "momentum_scale": 0.012,
+          "ma_center": 1.01,
+          "ma_scale": 0.009,
+          "softmin_sharpness": 4.0,
+          "slope": 2.0,
+          "momentum_window": 10,
+          "ma_window": 20,
+          "strategy_weight": 0.8,
+          "strategy_momentum_window": 5,
+          "strategy_momentum_center": -0.044,
+          "strategy_momentum_scale": 0.015,
+          "strategy_ma_window": 20,
+          "strategy_ma_center": 1.014,
+          "strategy_ma_scale": 0.009,
+          "strategy_softmin_sharpness": 4.0,
+          "strategy_slope": 2.0
+        },
+        "timing_enabled": false,
+        "cash_reserve_ratio": 0.0,
+        "empty_months": null
+      }
+    },
+    {
+      "name": "core29_trend1",
+      "individual_config": {
+        "weights": {
+          "PreCloseMarketCap": 1.0,
+          "AmihudIlliquidityStrict": 0.4,
+          "TrendReversalPreCloseStrict": 0.1,
+          "VolumeCVStrict": 0.2,
+          "CompletedPriorMonthIntradayTrendStrict": 0.0
+        },
+        "buy_n": 30,
+        "sell_m": 30,
+        "filter_factors": {
+          "FilterST": true,
+          "FilterStarST": true,
+          "FilterLowPrice": true
+        },
+        "stock_pool": ["60", "00", "30"],
+        "holding_period": 1,
+        "retention_rank_n": 30,
+        "retention_mode": "expanded_equal_weight",
+        "rebalance_band_pct": 0.15,
+        "slippage_bps": 20.0,
+        "rebalance": true,
+        "limit_up_protection": true,
+        "selection_sleeves": [
+          {
+            "name": "v31_core",
+            "slots": 29,
+            "weights": {
+              "PreCloseMarketCap": 1.0,
+              "AmihudIlliquidityStrict": 0.4,
+              "TrendReversalPreCloseStrict": 0.1,
+              "VolumeCVStrict": 0.2
+            }
+          },
+          {
+            "name": "positive_prior_month_intraday_trend",
+            "slots": 1,
+            "weights": {
+              "CompletedPriorMonthIntradayTrendStrict": 1.0
+            }
+          }
+        ],
+        "trend_risk_overlay": {
+          "enabled": true,
+          "mode": "dual_completed",
+          "strict_history": true,
+          "strict_warmup_multiplier": 1.0,
+          "floor": 0.0,
+          "ceiling": 1.0,
+          "momentum_center": -0.055,
+          "momentum_scale": 0.012,
+          "ma_center": 1.01,
+          "ma_scale": 0.009,
+          "softmin_sharpness": 4.0,
+          "slope": 2.0,
+          "momentum_window": 10,
+          "ma_window": 20,
+          "strategy_weight": 0.8,
+          "strategy_momentum_window": 5,
+          "strategy_momentum_center": -0.044,
+          "strategy_momentum_scale": 0.015,
+          "strategy_ma_window": 20,
+          "strategy_ma_center": 1.014,
+          "strategy_ma_scale": 0.009,
+          "strategy_softmin_sharpness": 4.0,
+          "strategy_slope": 2.0
+        },
+        "timing_enabled": false,
+        "cash_reserve_ratio": 0.0,
+        "empty_months": null
+      }
+    },
+    {
+      "name": "core28_trend2",
+      "individual_config": {
+        "weights": {
+          "PreCloseMarketCap": 1.0,
+          "AmihudIlliquidityStrict": 0.4,
+          "TrendReversalPreCloseStrict": 0.1,
+          "VolumeCVStrict": 0.2,
+          "CompletedPriorMonthIntradayTrendStrict": 0.0
+        },
+        "buy_n": 30,
+        "sell_m": 30,
+        "filter_factors": {
+          "FilterST": true,
+          "FilterStarST": true,
+          "FilterLowPrice": true
+        },
+        "stock_pool": ["60", "00", "30"],
+        "holding_period": 1,
+        "retention_rank_n": 30,
+        "retention_mode": "expanded_equal_weight",
+        "rebalance_band_pct": 0.15,
+        "slippage_bps": 20.0,
+        "rebalance": true,
+        "limit_up_protection": true,
+        "selection_sleeves": [
+          {
+            "name": "v31_core",
+            "slots": 28,
+            "weights": {
+              "PreCloseMarketCap": 1.0,
+              "AmihudIlliquidityStrict": 0.4,
+              "TrendReversalPreCloseStrict": 0.1,
+              "VolumeCVStrict": 0.2
+            }
+          },
+          {
+            "name": "positive_prior_month_intraday_trend",
+            "slots": 2,
+            "weights": {
+              "CompletedPriorMonthIntradayTrendStrict": 1.0
+            }
+          }
+        ],
+        "trend_risk_overlay": {
+          "enabled": true,
+          "mode": "dual_completed",
+          "strict_history": true,
+          "strict_warmup_multiplier": 1.0,
+          "floor": 0.0,
+          "ceiling": 1.0,
+          "momentum_center": -0.055,
+          "momentum_scale": 0.012,
+          "ma_center": 1.01,
+          "ma_scale": 0.009,
+          "softmin_sharpness": 4.0,
+          "slope": 2.0,
+          "momentum_window": 10,
+          "ma_window": 20,
+          "strategy_weight": 0.8,
+          "strategy_momentum_window": 5,
+          "strategy_momentum_center": -0.044,
+          "strategy_momentum_scale": 0.015,
+          "strategy_ma_window": 20,
+          "strategy_ma_center": 1.014,
+          "strategy_ma_scale": 0.009,
+          "strategy_softmin_sharpness": 4.0,
+          "strategy_slope": 2.0
+        },
+        "timing_enabled": false,
+        "cash_reserve_ratio": 0.0,
+        "empty_months": null
+      }
+    },
+    {
+      "name": "core27_trend3",
+      "individual_config": {
+        "weights": {
+          "PreCloseMarketCap": 1.0,
+          "AmihudIlliquidityStrict": 0.4,
+          "TrendReversalPreCloseStrict": 0.1,
+          "VolumeCVStrict": 0.2,
+          "CompletedPriorMonthIntradayTrendStrict": 0.0
+        },
+        "buy_n": 30,
+        "sell_m": 30,
+        "filter_factors": {
+          "FilterST": true,
+          "FilterStarST": true,
+          "FilterLowPrice": true
+        },
+        "stock_pool": ["60", "00", "30"],
+        "holding_period": 1,
+        "retention_rank_n": 30,
+        "retention_mode": "expanded_equal_weight",
+        "rebalance_band_pct": 0.15,
+        "slippage_bps": 20.0,
+        "rebalance": true,
+        "limit_up_protection": true,
+        "selection_sleeves": [
+          {
+            "name": "v31_core",
+            "slots": 27,
+            "weights": {
+              "PreCloseMarketCap": 1.0,
+              "AmihudIlliquidityStrict": 0.4,
+              "TrendReversalPreCloseStrict": 0.1,
+              "VolumeCVStrict": 0.2
+            }
+          },
+          {
+            "name": "positive_prior_month_intraday_trend",
+            "slots": 3,
+            "weights": {
+              "CompletedPriorMonthIntradayTrendStrict": 1.0
+            }
+          }
+        ],
+        "trend_risk_overlay": {
+          "enabled": true,
+          "mode": "dual_completed",
+          "strict_history": true,
+          "strict_warmup_multiplier": 1.0,
+          "floor": 0.0,
+          "ceiling": 1.0,
+          "momentum_center": -0.055,
+          "momentum_scale": 0.012,
+          "ma_center": 1.01,
+          "ma_scale": 0.009,
+          "softmin_sharpness": 4.0,
+          "slope": 2.0,
+          "momentum_window": 10,
+          "ma_window": 20,
+          "strategy_weight": 0.8,
+          "strategy_momentum_window": 5,
+          "strategy_momentum_center": -0.044,
+          "strategy_momentum_scale": 0.015,
+          "strategy_ma_window": 20,
+          "strategy_ma_center": 1.014,
+          "strategy_ma_scale": 0.009,
+          "strategy_softmin_sharpness": 4.0,
+          "strategy_slope": 2.0
+        },
+        "timing_enabled": false,
+        "cash_reserve_ratio": 0.0,
+        "empty_months": null
+      }
+    }
+  ]
+}

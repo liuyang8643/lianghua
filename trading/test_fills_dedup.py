@@ -41,6 +41,14 @@ def test_traded_id_hit_is_duplicate():
     assert _consume_existing_fill('X1', 1, 10.0, 100, tids, coarse) is True
 
 
+def test_distinct_traded_ids_with_same_coarse_key_are_both_kept():
+    df_old = _fills([_row(1, 10.0, 100, traded_id='X1')])
+    tids, coarse = _build_existing_fill_index(df_old)
+    assert _consume_existing_fill(
+        'X2', 1, 10.0, 100, tids, coarse
+    ) is False
+
+
 def test_genuinely_new_fill_not_deduped():
     """既有 2 笔等量同价,QMT 来了 3 笔同键 → 前 2 笔消费存量、第 3 笔是真新增。"""
     df_old = _fills([_row(7, 5.0, 100, traded_id='') for _ in range(2)])

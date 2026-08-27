@@ -9,9 +9,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from trading.lark.format import fmt_pct, fmt_diff_money, fmt_shares
+from trading.lark.format import fmt_money, fmt_pct, fmt_diff_money, fmt_shares
 from trading.lark.sender import lark_sender, LarkMsgLevel, make_v2_card, make_v2_table, md_div
 from trading.logger import trading_logger
+from trading.persistence import normalize_fill_costs, summarize_fill_costs
 from utils.stock.time import get_trading_date_span
 
 _TRADE_DIR = Path(__file__).resolve().parents[1] / "data" / "live_trades"
@@ -24,7 +25,7 @@ def _read_plan(trade_date: date) -> pd.DataFrame | None:
 
 def _read_fills(trade_date: date) -> pd.DataFrame | None:
     p = _TRADE_DIR / f"fills_{trade_date.isoformat()}.parquet"
-    return pd.read_parquet(p) if p.exists() else None
+    return normalize_fill_costs(pd.read_parquet(p)) if p.exists() else None
 
 
 def _read_summary_row(trade_date: date) -> dict | None:
@@ -47,6 +48,13 @@ def _build_daily_card(trade_date: date, plan_df: pd.DataFrame | None,
                       summary: dict | None,
                       bt_daily_return: float | None = None) -> dict:
     """单张统一表：5 列 — 股票|持仓手数|操作|diff差异|实盘日志。日收益在标题。"""
+    if fills_df is not None:
+        fills_df = normalize_fill_costs(fills_df)
+    execution_costs = (
+        summarize_fill_costs(fills_df)
+        if fills_df is not None
+        else None
+    )
     pnl = summary.get('daily_pnl') if summary else None
     ret = summary.get('daily_return_pct') if summary else None
     level = LarkMsgLevel.Info
@@ -191,6 +199,25 @@ def _build_daily_card(trade_date: date, plan_df: pd.DataFrame | None,
             {'name': 'log', 'display_name': '实盘日志', 'horizontal_align': 'left'},
         ],
         rows=table, element_id='daily_tbl', page_size=20)]
+
+    if execution_costs is not None and fills_df is not None and not fills_df.empty:
+        sources = ' / '.join(
+            f"{source}:{count}"
+            for source, count
+            in sorted(execution_costs['fee_sources'].items())
+        )
+        elements.append({'tag': 'hr'})
+        elements.append(md_div(
+            f"**成交成本分项** · 券商佣金 "
+            f"{fmt_money(execution_costs['broker_commission'])} · 过户费 "
+            f"{fmt_money(execution_costs['transfer_fee'])} · 印花税 "
+            f"{fmt_money(execution_costs['stamp_tax'])} · 显式费用 "
+            f"{fmt_money(execution_costs['fee_est'])} · 滑点 "
+            f"{fmt_diff_money(execution_costs['slippage_cost'])} · "
+            f"总执行成本 "
+            f"{fmt_diff_money(execution_costs['total_execution_cost'])} · "
+            f"来源 {sources}"
+        ))
 
     elements.append({'tag': 'hr'})
     elements.append(md_div(f'<font color="grey">日报 {trade_date.isoformat()}</font>'))

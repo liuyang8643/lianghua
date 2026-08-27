@@ -23,6 +23,7 @@ def _strategy_fixture():
     data = {
         'open': np.array([[10.0, 5.0, 20.0]], dtype=np.float64),
         'close': np.array([[10.0, 5.0, 20.0]], dtype=np.float64),
+        'preClose': np.array([[10.0, 5.0, 20.0]], dtype=np.float64),
         'trade_dates': np.array(['2026-06-02'], dtype='datetime64[D]'),
     }
     valid_stocks = ['A.SZ', 'B.SH', 'C.SH']
@@ -66,8 +67,8 @@ def test_target_equity_falls_back_without_baseline():
     assert p.total_eq == 88_888.0
 
 
-def test_missing_open_is_suspended_no_trade_and_uses_previous_close_for_equity():
-    """T 日 open 缺失视为停牌：不买不卖，不用历史 open 回退成交。"""
+def test_missing_open_is_suspended_excluded_and_uses_preclose_for_equity():
+    """T 日 open 缺失：原持仓不卖、候选不可买，估值使用官方前收。"""
     data, all_scores, valid_stocks, stock_indices, valid_cols = _strategy_fixture()
     data['open'] = np.array([
         [10.0, 5.0, 20.0],
@@ -76,6 +77,10 @@ def test_missing_open_is_suspended_no_trade_and_uses_previous_close_for_equity()
     data['close'] = np.array([
         [10.0, 5.0, 20.0],
         [np.nan, 5.5, 21.0],
+    ], dtype=np.float64)
+    data['preClose'] = np.array([
+        [9.8, 4.9, 19.5],
+        [10.0, 5.0, 20.0],
     ], dtype=np.float64)
     data['trade_dates'] = np.array(['2026-06-01', '2026-06-02'], dtype='datetime64[D]')
     all_scores = {'F': np.array([
@@ -91,10 +96,12 @@ def test_missing_open_is_suspended_no_trade_and_uses_previous_close_for_equity()
         positions={'A.SZ': 1000}, sellable_volumes={'A.SZ': 1000},
         cash=50_000.0, rebalance=True,
     )
-    assert 'A.SZ' in p.buy_n_stocks
+    assert p.t1_ranking[0] == 'A.SZ'
+    assert 'A.SZ' not in p.buy_n_stocks
+    assert p.buy_n_stocks == ['B.SH']
     assert 'A.SZ' not in p.prices
     assert p.sell_orders == []
-    assert p.buy_orders == {}
+    assert set(p.buy_orders) == {'B.SH'}
     assert p.total_eq == 60_000.0
 
 

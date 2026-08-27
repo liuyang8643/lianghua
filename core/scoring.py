@@ -10,12 +10,50 @@ import numpy as np
 
 
 class FactorScoreMatrices(dict):
-    """Rank matrices with optional raw values for candidate-local reranking."""
+    """Rank matrices with raw values and per-factor validity kept out of filters."""
 
-    def __init__(self, *args, raw_scores=None, pre_ranked_names=(), **kwargs):
+    def __init__(
+        self,
+        *args,
+        raw_scores=None,
+        pre_ranked_names=(),
+        factor_validity=None,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.raw_scores = raw_scores
         self.pre_ranked_names = frozenset(pre_ranked_names)
+        self.factor_validity = factor_validity
+
+
+def top_level_factor_filter_masks(
+    all_scores,
+    common_filter_masks: dict,
+    weights: dict[str, float],
+) -> dict:
+    """Restore the ordinary top-level validity mask for timing only.
+
+    Sleeve selection keeps factor validity local to each sleeve.  The existing
+    timing target, however, still uses the top-level strategy weights and must
+    therefore receive exactly the validity intersection those weights would
+    have used without sleeves.
+    """
+    factor_validity = getattr(all_scores, 'factor_validity', None)
+    if factor_validity is None:
+        return common_filter_masks
+    active = []
+    for name, weight in weights.items():
+        if weight == 0.0:
+            continue
+        if name not in factor_validity:
+            raise ValueError(
+                f'missing factor validity for top-level factor: {name}'
+            )
+        active.append(np.asarray(factor_validity[name], dtype=bool))
+    result = dict(common_filter_masks)
+    if active:
+        result['_active_factor_intersection'] = np.logical_and.reduce(active)
+    return result
 
 
 def candidate_local_score_matrices(all_scores, score_idx, candidate_cols):
@@ -27,6 +65,7 @@ def candidate_local_score_matrices(all_scores, score_idx, candidate_cols):
     candidate_cols = np.asarray(candidate_cols, dtype=np.intp)
     width = next(iter(all_scores.values())).shape[1]
     local_scores = {}
+    local_validity = {}
     for name, ranked in all_scores.items():
         if name in all_scores.pre_ranked_names:
             values = ranked[score_idx, candidate_cols]
@@ -36,7 +75,96 @@ def candidate_local_score_matrices(all_scores, score_idx, candidate_cols):
         matrix = np.zeros((1, width), dtype=np.float32)
         matrix[0, candidate_cols] = values
         local_scores[name] = matrix
-    return local_scores, 0
+        if all_scores.factor_validity is not None:
+            validity = np.zeros((1, width), dtype=bool)
+            validity[0, candidate_cols] = np.asarray(
+                all_scores.factor_validity[name][score_idx, candidate_cols],
+                dtype=bool,
+            )
+            local_validity[name] = validity
+    return FactorScoreMatrices(
+        local_scores,
+        raw_scores=None,
+        pre_ranked_names=all_scores.pre_ranked_names,
+        factor_validity=local_validity if local_validity else None,
+    ), 0
+
+
+def validate_selection_sleeves(
+    selection_sleeves,
+    buy_n: int,
+    available_factor_names=None,
+) -> list[dict]:
+    """Validate and normalize fixed-slot sleeve selection configuration."""
+    if not isinstance(selection_sleeves, list) or not selection_sleeves:
+        raise ValueError('selection_sleeves must be a non-empty list')
+    if isinstance(buy_n, bool) or not isinstance(buy_n, (int, np.integer)) or buy_n <= 0:
+        raise ValueError('buy_n must be a positive integer')
+
+    available = (
+        None if available_factor_names is None
+        else set(available_factor_names)
+    )
+    normalized: list[dict] = []
+    names: set[str] = set()
+    total_slots = 0
+    for sleeve in selection_sleeves:
+        if not isinstance(sleeve, dict):
+            raise ValueError('each selection sleeve must be an object')
+        name = sleeve.get('name')
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError('selection sleeve name must be a non-empty string')
+        name = name.strip()
+        if name in names:
+            raise ValueError(f'duplicate selection sleeve name: {name}')
+        names.add(name)
+
+        slots = sleeve.get('slots')
+        if (
+            isinstance(slots, bool)
+            or not isinstance(slots, (int, np.integer))
+            or slots <= 0
+        ):
+            raise ValueError(f'selection sleeve {name} slots must be a positive integer')
+
+        weights = sleeve.get('weights')
+        if not isinstance(weights, dict) or not weights:
+            raise ValueError(f'selection sleeve {name} weights must be a non-empty object')
+        normalized_weights: dict[str, float] = {}
+        for factor_name, weight in weights.items():
+            if not isinstance(factor_name, str) or not factor_name:
+                raise ValueError(f'selection sleeve {name} has an invalid factor name')
+            if available is not None and factor_name not in available:
+                raise ValueError(
+                    f'selection sleeve {name} factor does not exist: {factor_name}'
+                )
+            if isinstance(weight, bool) or not isinstance(
+                weight, (int, float, np.integer, np.floating)
+            ):
+                raise ValueError(
+                    f'selection sleeve {name} factor {factor_name} weight must be numeric'
+                )
+            value = float(weight)
+            if not np.isfinite(value):
+                raise ValueError(
+                    f'selection sleeve {name} factor {factor_name} weight must be finite'
+                )
+            normalized_weights[factor_name] = value
+        if not any(weight != 0.0 for weight in normalized_weights.values()):
+            raise ValueError(f'selection sleeve {name} weights cannot all be zero')
+
+        normalized.append({
+            'name': name,
+            'slots': int(slots),
+            'weights': normalized_weights,
+        })
+        total_slots += int(slots)
+
+    if total_slots != int(buy_n):
+        raise ValueError(
+            f'selection sleeve slots must sum to buy_n: {total_slots} != {buy_n}'
+        )
+    return normalized
 
 
 def compute_weighted_scores(
@@ -48,7 +176,7 @@ def compute_weighted_scores(
     """加权求和：各因子排名 × 权重，返回 (n_stocks,) 数组。"""
     final_score = np.zeros(len(valid_cols))
     for name, ranks_mat in all_scores.items():
-        w = weights[name]
+        w = weights.get(name, 0.0)
         if w == 0:
             continue
         final_score += ranks_mat[score_idx][valid_cols] * w
@@ -67,7 +195,7 @@ def compute_weighted_score_matrix(
     result = np.zeros((len(rows), len(cols)), dtype=np.float64)
     selection = np.ix_(rows, cols)
     for name, ranks_mat in all_scores.items():
-        weight = float(weights[name])
+        weight = float(weights.get(name, 0.0))
         if weight != 0.0:
             result += np.asarray(ranks_mat[selection], dtype=np.float64) * weight
     return result
@@ -143,6 +271,86 @@ def select_topn_legal(
     return buy, sell, final_score, ranking
 
 
+def select_selection_sleeves_legal(
+    all_scores: dict,
+    score_idx: int,
+    valid_stocks: list[str],
+    valid_cols: np.ndarray,
+    selection_sleeves: list[dict],
+    buy_n: int,
+    sell_m: int,
+    checker,
+    trade_idx: int,
+    signal_date,
+    day_open: np.ndarray,
+    common_filter_mask: np.ndarray | None = None,
+) -> tuple[list[str], list[str], np.ndarray, list[str]]:
+    """Select fixed slots sleeve-by-sleeve, excluding earlier sleeve targets."""
+    sleeves = validate_selection_sleeves(
+        selection_sleeves, buy_n, available_factor_names=all_scores.keys()
+    )
+    factor_validity = getattr(all_scores, 'factor_validity', None)
+    if factor_validity is None:
+        raise ValueError(
+            'selection_sleeves require per-factor validity on all_scores'
+        )
+
+    n_stocks = len(valid_stocks)
+    stock_to_local = {code: idx for idx, code in enumerate(valid_stocks)}
+    if common_filter_mask is not None and len(common_filter_mask) != n_stocks:
+        raise ValueError('common sleeve filter mask length must match valid_stocks')
+    selected: list[str] = []
+    selected_indices: set[int] = set()
+    sleeve_rankings: list[list[str]] = []
+
+    for sleeve in sleeves:
+        scores = compute_weighted_scores(
+            all_scores, score_idx, valid_cols, sleeve['weights']
+        )
+        eligible = (
+            np.ones(n_stocks, dtype=bool)
+            if common_filter_mask is None
+            else np.asarray(common_filter_mask, dtype=bool).copy()
+        )
+        for factor_name, weight in sleeve['weights'].items():
+            if weight == 0.0:
+                continue
+            if factor_name not in factor_validity:
+                raise ValueError(
+                    f'missing factor validity for sleeve factor: {factor_name}'
+                )
+            eligible &= np.asarray(
+                factor_validity[factor_name][score_idx, valid_cols],
+                dtype=bool,
+            )
+        if selected_indices:
+            eligible[np.fromiter(selected_indices, dtype=np.intp)] = False
+        scores[~eligible] = -np.inf
+
+        sleeve_targets, _, sleeve_ranking = select_topn_legal_from_scores(
+            scores, valid_stocks, valid_cols, sleeve['slots'], 0,
+            checker, trade_idx, signal_date, day_open,
+        )
+        selected_indices.update(stock_to_local[code] for code in sleeve_targets)
+        selected.extend(sleeve_targets)
+        sleeve_rankings.append(sleeve_ranking)
+
+    # One deterministic display row: actual targets first, then remaining
+    # candidates in sleeve-priority order.
+    t1_ranking = list(selected)
+    ranked_seen = set(selected)
+    for ranking in sleeve_rankings:
+        for code in ranking:
+            if code not in ranked_seen:
+                ranked_seen.add(code)
+                t1_ranking.append(code)
+    final_score = np.full(n_stocks, -np.inf, dtype=np.float64)
+    for rank, code in enumerate(t1_ranking):
+        final_score[stock_to_local[code]] = float(len(t1_ranking) - rank)
+
+    return selected, selected[:sell_m], final_score, t1_ranking
+
+
 def select_topn_legal_from_scores(
     final_score: np.ndarray,
     valid_stocks: list[str],
@@ -196,6 +404,40 @@ def select_topn_legal_from_scores(
     t1_ranking = [valid_stocks[i] for i in ranked_idx]
 
     return buy_n_stocks, sell_m_stocks[:sell_m], t1_ranking
+
+
+def factor_scores_to_rank_matrix(
+    raw: np.ndarray,
+    valid_cols: np.ndarray,
+    *,
+    scores_are_ranks: bool = False,
+) -> np.ndarray:
+    """Convert raw factor values to the common rank matrix representation.
+
+    ``scores_are_ranks`` is an explicit opt-in for factors that already emit
+    comparable [0, 1] scores, such as missing-value-neutral composites.
+    Keeping this conversion shared prevents GA and single backtests from using
+    different score semantics.
+    """
+    columns = np.asarray(valid_cols, dtype=np.intp)
+    values = np.asarray(raw)[:, columns].astype(np.float32, copy=False)
+    ranks = np.zeros(np.asarray(raw).shape, dtype=np.float32)
+    if not scores_are_ranks:
+        ranks[:, columns] = scores_to_ranks(values)
+        return ranks
+
+    finite = values[np.isfinite(values)]
+    if finite.size and (finite.min() < 0.0 or finite.max() > 1.0):
+        raise ValueError(
+            "scores_are_ranks requires finite scores within [0, 1]"
+        )
+    ranks[:, columns] = np.nan_to_num(
+        values,
+        nan=0.0,
+        posinf=0.0,
+        neginf=0.0,
+    )
+    return ranks
 
 
 def scores_to_ranks(scores: np.ndarray, total_n: int | None = None) -> np.ndarray:

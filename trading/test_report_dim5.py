@@ -111,6 +111,27 @@ def test_summary_falls_back_to_account_when_unreconcilable():
     assert 'AAA' in (data['reconcile'].get('unreconcilable_codes') or [])
 
 
+def test_summary_falls_back_to_account_when_snapshot_chain_is_broken(monkeypatch):
+    rpt = _rpt_with_live_aaa(daily_pnl=40_000.0, total_asset=1_002_500.0)
+    monkeypatch.setattr(rpt, '_chain_broken', lambda: True)
+    dim5 = {
+        'live_total_pnl': 40_000.0,
+        'rows': [{
+            'code': 'AAA', 'live_daily_pnl': 40_000.0,
+            'live_volume': 100, 'live_yesterday_volume': 100,
+        }],
+    }
+
+    summary = rpt.build_summary(dim5)
+    reconcile = rpt.reconcile_pnl(dim5, summary)
+
+    assert summary['live_pnl_source'] == 'account'
+    assert summary['live_daily_pnl'] == 2_500.0
+    assert reconcile['per_stock_pnl_sum'] is None
+    assert reconcile['diff'] is None
+    assert reconcile['unreconcilable_codes'] == ['AAA']
+
+
 def test_reconcile_alert_fires_on_suspected_deposit(monkeypatch):
     calls = []
     monkeypatch.setattr(report_mod.lark_sender, 'send_notification_card',

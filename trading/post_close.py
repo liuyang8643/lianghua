@@ -230,6 +230,12 @@ def _seed_replay_core(*, prev_date: date, seed_cash: float, seed_positions: dict
         limit_up_protection=individual_config.get('limit_up_protection', False),
         rebalance=individual_config.get('rebalance', True),
         filter_masks=decision.filter_masks,
+        selection_sleeves=individual_config.get('selection_sleeves'),
+        slippage_bps=individual_config.get('slippage_bps', 10.0),
+        rebalance_band_pct=individual_config.get('rebalance_band_pct', 0.01),
+        enforce_position_multiplier_on_sell_m=individual_config.get(
+            'enforce_position_multiplier_on_sell_m', False
+        ),
     )
     snaps = bt_result.get('daily_snapshots') or []
     if not snaps:
@@ -350,7 +356,7 @@ def _run_continuous_backtest(start_date: date, end_date: date,
     """
     from core.backtest import (
         _compute_factor_scores, _backtest_direct, _compute_timing_multipliers,
-        build_list_dates_map,
+        _compute_list_dates,
     )
     from core.runtime import load_runtime_stock_codes
     from utils.stock.time import get_trading_date_span
@@ -381,7 +387,21 @@ def _run_continuous_backtest(start_date: date, end_date: date,
 
     timing_multipliers = _compute_timing_multipliers(
         individual_config, valid_dates,
-        runtime_data=data, date_indices=date_indices,
+    )
+    from core.scoring import top_level_factor_filter_masks
+    from core.trend_timing import compute_configured_timing_multipliers
+    timing_multipliers = compute_configured_timing_multipliers(
+        data=data,
+        all_scores=all_scores,
+        valid_dates=valid_dates,
+        date_indices=date_indices,
+        valid_stocks=valid_stocks,
+        stock_indices=stock_indices,
+        config=individual_config,
+        filter_masks=top_level_factor_filter_masks(
+            all_scores, filter_masks, weights,
+        ),
+        base_multipliers=timing_multipliers,
     )
     seed_in_npz = ({c: v for c, v in init_positions.items() if c in stock_indices}
                    if init_positions else None)
@@ -390,11 +410,15 @@ def _run_continuous_backtest(start_date: date, end_date: date,
         weights=weights, buy_n=buy_n, sell_m=sell_m,
         holding_period=individual_config.get('holding_period'),
         position_multipliers=timing_multipliers,
-        list_dates_map=build_list_dates_map(data),
+        list_dates_map=_compute_list_dates(
+            data['stock_codes'], data['open'], data['trade_dates']),
         lightweight=False, init_cash=init_cash, init_positions=seed_in_npz,
         limit_up_protection=individual_config.get('limit_up_protection', False),
         rebalance=individual_config.get('rebalance', True),
         filter_masks=filter_masks,
+        selection_sleeves=individual_config.get('selection_sleeves'),
+        slippage_bps=individual_config.get('slippage_bps', 10.0),
+        rebalance_band_pct=individual_config.get('rebalance_band_pct', 0.01),
         enforce_position_multiplier_on_sell_m=individual_config.get(
             'enforce_position_multiplier_on_sell_m', False
         ),
@@ -429,6 +453,7 @@ def run_post_close(store) -> dict | None:
         return None
 
     _skip = getattr(store, '_skip_update', False)
+    _dry_run = getattr(store, '_dry_run', False)
 
     # 1. 拉收盘 K 线 → parquet only（NPZ 等 16:00 update_all）
     recorder.mark("盘后K线更新")
@@ -517,12 +542,21 @@ def run_post_close(store) -> dict | None:
         except Exception as e:
             trading_logger.warning(f"[PostClose] 持仓查询失败: {e}")
             positions = []
+    live_positions_df = None
     if positions:
-        live_trade_recorder.snapshot_positions(positions, fills_df=live_fills, trade_date=trade_date)
+        live_positions_df = live_trade_recorder.snapshot_positions(
+            positions, fills_df=live_fills, trade_date=trade_date,
+            persist=not _dry_run,
+        )
+        if _dry_run:
+            trading_logger.info(
+                "[PostClose][dry-run] position snapshot computed without persistence"
+            )
     # positions_{T}.parquet 为权威实盘持仓源：实盘由上面 snapshot 落地，
     # sim/replay 直接读盘上已有快照（不查 QMT，避免非交易时段卡死）。
     pos_path = _TRADE_DIR / f"positions_{trade_date.isoformat()}.parquet"
-    live_positions_df = pd.read_parquet(pos_path) if pos_path.exists() else None
+    if live_positions_df is None and pos_path.exists():
+        live_positions_df = pd.read_parquet(pos_path)
     if live_positions_df is not None:
         report.feed_positions_df(live_positions_df)
 
@@ -545,7 +579,11 @@ def run_post_close(store) -> dict | None:
     # 5. 持久化日终摘要（复用上面已查到的 asset_snapshot，保证与 report 中的账户 P&L 完全一致）
     #    daily_pnl 以报告的「个股盈亏总和」口径为准（免疫未记账出入金），与飞书/HTML 一致；
     #    个股口径不可信（有漏记成交）时 per_stock_pnl=None，write_daily_summary 回退账户口径。
-    if asset_snapshot:
+    if _dry_run:
+        trading_logger.info(
+            "[PostClose][dry-run] daily summary computed without persistence"
+        )
+    if asset_snapshot and not _dry_run:
         per_stock_pnl = None
         if report_data:
             _s = report_data.get('summary', {})
@@ -561,7 +599,7 @@ def run_post_close(store) -> dict | None:
             )
         except Exception as e:
             trading_logger.warning(f"[PostClose] 日终摘要失败: {e}")
-    else:
+    elif not _dry_run:
         trading_logger.warning("[PostClose] 资产快照缺失，跳过日终摘要")
 
     # 6. 更新战报卡片 P&L 数据并锁定

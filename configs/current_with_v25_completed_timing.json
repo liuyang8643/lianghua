@@ -1,0 +1,49 @@
+{
+  "ga_profile": "core6",
+  "individual_config": {
+    "filter_factors": {
+      "FilterST": true,
+      "FilterStarST": true,
+      "FilterLowPrice": true
+    },
+    "weights": {
+      "AmihudIlliquidity": 0.4,
+      "TrueMarketCap": 0.9,
+      "VolumeCV": 0.1,
+      "AmountBasedSmallCap": 0.6
+    },
+    "buy_n": 20,
+    "sell_m": 25,
+    "timing_enabled": false,
+    "rebalance": true,
+    "limit_up_protection": true,
+    "empty_months": [],
+    "cash_reserve_ratio": 0.25,
+    "holding_period": 1,
+    "trend_risk_overlay": {
+      "enabled": true,
+      "mode": "dual_completed",
+      "strict_history": true,
+      "strict_warmup_multiplier": 1.0,
+      "floor": 0.0,
+      "ceiling": 1.0,
+      "momentum_center": -0.055,
+      "momentum_scale": 0.012,
+      "ma_center": 1.01,
+      "ma_scale": 0.009,
+      "softmin_sharpness": 4.0,
+      "slope": 2.0,
+      "momentum_window": 10,
+      "ma_window": 20,
+      "strategy_weight": 0.8,
+      "strategy_momentum_window": 5,
+      "strategy_momentum_center": -0.044,
+      "strategy_momentum_scale": 0.015,
+      "strategy_ma_window": 20,
+      "strategy_ma_center": 1.014,
+      "strategy_ma_scale": 0.009,
+      "strategy_softmin_sharpness": 4.0,
+      "strategy_slope": 2.0
+    }
+  }
+}

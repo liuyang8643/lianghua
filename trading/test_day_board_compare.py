@@ -143,5 +143,48 @@ def test_run_seed_replay_for_open_missing_seed(monkeypatch):
     monkeypatch.setattr(post_close, '_load_seed', lambda trade_date: None)
     out = post_close.run_seed_replay_for_open(
         date(2026, 6, 2), {'weights': {}, 'buy_n': 2},
-        data=None, all_scores=None, date_idx=0, valid_stocks=[], stock_indices={})
+        decision=None)
     assert out is None
+
+
+def test_continuous_backtest_builds_list_dates_with_core_helper(monkeypatch):
+    """种子重建应直接复用 core 的上市日期实现。"""
+    import numpy as np
+
+    from core import backtest
+    from trading import post_close
+    from utils.stock import time as stock_time
+
+    trade_date = date(2026, 6, 2)
+    data = {
+        'stock_codes': np.array(['600000.SH']),
+        'open': np.array([[10.0]], dtype=np.float32),
+        'trade_dates': np.array([trade_date], dtype='datetime64[D]'),
+    }
+    monkeypatch.setattr(stock_time, 'get_trading_date_span', lambda *_: [trade_date])
+    monkeypatch.setattr('core.runtime.load_runtime_stock_codes', lambda: ['600000.SH'])
+    monkeypatch.setattr(
+        backtest, '_compute_factor_scores',
+        lambda *_args, **_kwargs: (
+            data, {}, {}, [datetime.combine(trade_date, datetime.min.time())],
+            [0], ['600000.SH'], {'600000.SH': 0},
+        ),
+    )
+    monkeypatch.setattr(backtest, '_compute_timing_multipliers', lambda *_args, **_kwargs: None)
+
+    captured = {}
+
+    def fake_backtest_direct(*_args, **kwargs):
+        captured.update(kwargs)
+        return {'daily_snapshots': []}
+
+    monkeypatch.setattr(backtest, '_backtest_direct', fake_backtest_direct)
+
+    result = post_close._run_continuous_backtest(
+        trade_date, trade_date,
+        {'weights': {}, 'buy_n': 1, 'sell_m': 1},
+        factor_classes=[],
+    )
+
+    assert result == {'daily_snapshots': []}
+    assert captured['list_dates_map'] == {'600000.SH': trade_date}

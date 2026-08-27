@@ -1,5 +1,5 @@
 import time
-from datetime import date
+from datetime import date, datetime, time as dt_time
 from types import SimpleNamespace
 
 from xtquant import xtconstant
@@ -16,6 +16,8 @@ class _FakeTrader:
         self._next = 1000
         self.on_order = None  # (code, shares, oid) -> SimpleNamespace | None
         self.submitted = []  # (code, shares, oid, price)
+        self.cancelled = []
+        self.can_use = {}
 
     def query_asset(self):
         return SimpleNamespace(cash=self.cash)
@@ -24,7 +26,8 @@ class _FakeTrader:
         oid = self._next
         self._next += 1
         self.submitted.append((code, shares, oid, price))
-        o = SimpleNamespace(order_status=xtconstant.ORDER_SUCCEEDED,
+        o = SimpleNamespace(stock_code=code, order_type=order_type,
+                            order_status=xtconstant.ORDER_SUCCEEDED,
                             traded_volume=shares, order_volume=shares,
                             traded_price=0.0, status_msg='')
         if self.on_order:
@@ -36,13 +39,24 @@ class _FakeTrader:
         return self.orders.get(oid)
 
     def cancel_order(self, oid):
+        self.cancelled.append(oid)
         o = self.orders.get(oid)
         if o:
-            o.order_status = xtconstant.ORDER_CANCELED
+            o.order_status = (
+                xtconstant.ORDER_PART_CANCEL
+                if int(getattr(o, 'traded_volume', 0) or 0) > 0
+                else xtconstant.ORDER_CANCELED
+            )
+
+    def query_stock_position(self, code):
+        return SimpleNamespace(
+            stock_code=code, can_use_volume=self.can_use.get(code, 0))
 
 
 def _make_order_monitor(executor, allocations=None, prices=None, limit_prices=None,
-                        sell_orders=None):
+                         sell_orders=None):
+    # 普通单元测试固定在 09:31 前；时间线测试直接构造 monitor。
+    executor.OPEN_LIMIT_DEADLINE_SEC = 24 * 60 * 60
     om = OrderMonitor(
         executor,
         sell_orders=sell_orders or [],
@@ -152,6 +166,90 @@ def test_pending_orders_reflect_terminal_state():
     assert om._has_pending_orders() is False
 
 
+def test_transient_query_none_keeps_known_order_inflight():
+    """订单曾查到后短暂查询失败时，保守视为仍在途，不能重复下单。"""
+    trader = _FakeTrader(cash=1e7)
+    trader.on_order = lambda code, shares, oid: SimpleNamespace(
+        stock_code=code, order_type=xtconstant.STOCK_BUY,
+        order_status=xtconstant.ORDER_REPORTED,
+        traded_volume=0, order_volume=shares, traded_price=0.0, status_msg='')
+    ex = RebalanceExecutor(trader)
+    code = '600000.SH'
+    om = _make_order_monitor(ex, {code: 100}, {code: 10.0})
+    assert om._submit_affordable_buys() is True
+    assert om._has_open_order(code) is True
+
+    trader.orders.pop(1000)
+    assert om._remaining(code) == 0
+    assert om._submit_affordable_buys() is False
+    assert len(trader.submitted) == 1
+
+    trader.orders[1000] = SimpleNamespace(
+        stock_code=code, order_type=xtconstant.STOCK_BUY,
+        order_status=xtconstant.ORDER_CANCELED,
+        traded_volume=0, order_volume=100, traded_price=0.0, status_msg='')
+    assert om._remaining(code) == 100
+    trader.orders.pop(1000)
+    assert om._remaining(code) == 100
+
+
+def test_cached_reject_still_sets_backoff_when_query_turns_none():
+    """已缓存的终态废单即使随后查不到，也必须先执行退避副作用。"""
+    trader = _FakeTrader(cash=1e7)
+    trader.on_order = lambda code, shares, oid: SimpleNamespace(
+        stock_code=code, order_type=xtconstant.STOCK_BUY,
+        order_status=xtconstant.ORDER_REPORTED,
+        traded_volume=0, order_volume=shares, traded_price=0.0, status_msg='')
+    ex = RebalanceExecutor(trader)
+    code = '600000.SH'
+    om = _make_order_monitor(ex, {code: 100}, {code: 10.0})
+    om._submit_affordable_buys()
+
+    trader.orders[1000].order_status = xtconstant.ORDER_JUNK
+    trader.orders[1000].status_msg = 'price error'
+    assert om._remaining(code) == 100  # 缓存终态
+    trader.orders.pop(1000)
+    om._handle_terminal_orders()
+
+    assert om.retry_after[code] > time.time()
+    assert om._submit_affordable_buys() is False
+    assert len(trader.submitted) == 1
+
+
+def test_terminal_status_seen_after_handler_does_not_duplicate_order():
+    """同一轮稍后才查到终态时，先等终态处理，不能抢先补单。"""
+
+    class _StatusJumpTrader(_FakeTrader):
+        def __init__(self):
+            super().__init__(cash=1e7)
+            self.query_count = 0
+
+        def query_order(self, oid):
+            order = super().query_order(oid)
+            self.query_count += 1
+            if self.query_count >= 2:
+                order.order_status = xtconstant.ORDER_JUNK
+                order.status_msg = 'price error'
+            return order
+
+    trader = _StatusJumpTrader()
+    trader.on_order = lambda code, shares, oid: SimpleNamespace(
+        stock_code=code, order_type=xtconstant.STOCK_BUY,
+        order_status=xtconstant.ORDER_REPORTED,
+        traded_volume=0, order_volume=shares, traded_price=0.0, status_msg='')
+    ex = RebalanceExecutor(trader)
+    code = '600000.SH'
+    om = _make_order_monitor(ex, {code: 100}, {code: 10.0})
+    assert om._submit_affordable_buys() is True
+
+    om._handle_terminal_orders()  # 第一次仍是已报
+    assert om._submit_affordable_buys() is False  # 此时跳为废单
+    assert len(trader.submitted) == 1
+
+    om._handle_terminal_orders()
+    assert om.retry_after[code] > time.time()
+
+
 def test_remaining_counts_filled_and_inflight():
     ex = RebalanceExecutor(_FakeTrader())
     code = '600000.SH'
@@ -167,7 +265,7 @@ def test_remaining_counts_filled_and_inflight():
 # ── 持久挂单核心 ─────────────────────────────────────────
 
 def test_submit_affordable_buys_places_limit_order_once():
-    """现金够时直接挂 open[T] 限价单；挂上后不等待、不撤单。"""
+    """09:31 前现金够时直接挂 open[T] 限价单。"""
     ex = RebalanceExecutor(_FakeTrader(cash=1e7))
     code = '600000.SH'
     om = _make_order_monitor(ex, {code: 1000}, {code: 10.0}, limit_prices={code: 11.0})
@@ -341,8 +439,8 @@ def _stuck_order_monitor(ex, code, volume):
     return om, sub
 
 
-def test_execute_does_not_cancel_persistent_orders():
-    """主执行路径只挂单不撤单；未终态订单继续留在柜台。"""
+def test_execute_does_not_cancel_peer_order_before_ttl(monkeypatch):
+    """对手价单未满 30 分钟时不撤单。"""
     class _PendingTrader(_FakeTrader):
         def __init__(self):
             super().__init__(cash=1e7)
@@ -355,8 +453,12 @@ def test_execute_does_not_cancel_persistent_orders():
         def cancel_order(self, oid):
             self.cancel_count += 1
 
+    clock = _FakeClock(datetime.combine(date.today(), dt_time(10, 0)))
+    monkeypatch.setattr('trading.executor.time', clock)
+    monkeypatch.setattr('trading.executor.is_current_trading', lambda _: True)
     trader = _PendingTrader()
     ex = RebalanceExecutor(trader)
+    ex.OPEN_LIMIT_DEADLINE_SEC = 0
     ex.BUY_MONITOR_DEADLINE_SEC = 0.1
     ex.SETTLE_WAIT_SEC = 0
     pending = {
@@ -368,7 +470,294 @@ def test_execute_does_not_cancel_persistent_orders():
         'limit_prices': {'600002.SH': 11.0},
     }
     ex.execute(pending)
+    assert len(trader.submitted) == 2
     assert trader.cancel_count == 0
+
+
+class _FakeClock:
+    def __init__(self, current: datetime):
+        self.current = current.timestamp()
+
+    def time(self):
+        return self.current
+
+    def sleep(self, seconds):
+        self.current += seconds
+
+
+def test_open_order_switches_at_0931_then_reposts_peer_every_30m(monkeypatch):
+    """首单用 open；09:31 撤余改对手价，此后每 30 个连续交易分钟刷新。"""
+    start = datetime.combine(date.today(), dt_time(9, 25, 10))
+    clock = _FakeClock(start)
+    monkeypatch.setattr('trading.executor.time', clock)
+    monkeypatch.setattr('trading.executor.is_current_trading', lambda _: True)
+
+    trader = _FakeTrader(cash=1e7)
+
+    def pending_order(code, shares, oid):
+        first = oid == 1000
+        return SimpleNamespace(
+            stock_code=code, order_type=xtconstant.STOCK_BUY,
+            order_status=(xtconstant.ORDER_PART_SUCC if first
+                          else xtconstant.ORDER_REPORTED),
+            traded_volume=300 if first else 0, order_volume=shares,
+            traded_price=10.0 if first else 0.0, status_msg='')
+
+    trader.on_order = pending_order
+    ex = RebalanceExecutor(trader)
+    ex.BUY_MONITOR_DEADLINE_SEC = (
+        datetime.combine(date.today(), dt_time(10, 1, 20)).timestamp()
+        - start.timestamp()
+    )
+    ex.MONITOR_POLL_SEC = 10
+    code = '600000.SH'
+    om = OrderMonitor(
+        ex,
+        sell_orders=[],
+        buy_allocations={code: 1000},
+        buy_n_stocks=[code],
+        prices={code: 10.0},
+        signal_date=date.today(),
+        trade_date=date.today(),
+        limit_prices={code: 11.0},
+    )
+    om.record_action = lambda *a, **k: None
+
+    om.run()
+
+    assert [(shares, price) for _, shares, _, price in trader.submitted] == [
+        (1000, 10.0),
+        (700, None),
+        (700, None),
+    ]
+    assert trader.cancelled == [1000, 1001]
+    assert trader.orders[1000].order_status == xtconstant.ORDER_PART_CANCEL
+    assert [s['price_mode'] for s in om.submitted] == ['open', 'peer', 'peer']
+
+
+def test_sell_reprice_waits_for_released_shares(monkeypatch):
+    """卖单撤成终态后仍等待可用股份释放，并只重挂当前可用量。"""
+    clock = _FakeClock(datetime.combine(date.today(), dt_time(9, 30)))
+    monkeypatch.setattr('trading.executor.time', clock)
+    monkeypatch.setattr('trading.executor.is_current_trading', lambda _: True)
+
+    trader = _FakeTrader()
+    trader.on_order = lambda code, shares, oid: SimpleNamespace(
+        stock_code=code, order_type=xtconstant.STOCK_SELL,
+        order_status=xtconstant.ORDER_REPORTED,
+        traded_volume=0, order_volume=shares, traded_price=0.0, status_msg='')
+    ex = RebalanceExecutor(trader)
+    code = '600001.SH'
+    om = OrderMonitor(
+        ex,
+        sell_orders=[(code, 500)],
+        buy_allocations={},
+        buy_n_stocks=[],
+        prices={code: 10.0},
+        signal_date=date.today(),
+        trade_date=date.today(),
+    )
+    om.record_action = lambda *a, **k: None
+    om._submit('SELL', code, 500)
+
+    clock.current = datetime.combine(date.today(), dt_time(9, 31)).timestamp()
+    assert om._cancel_expired_orders(clock.time()) is True
+    om._handle_terminal_orders()
+    assert om._retry_sells() is False
+
+    trader.can_use[code] = 300
+    assert om._retry_sells() is True
+    assert [(shares, price) for _, shares, _, price in trader.submitted] == [
+        (500, 10.0),
+        (300, None),
+    ]
+
+
+def test_reprice_waits_for_cancel_terminal_without_duplicate_cancel(monkeypatch):
+    """撤单请求已受理但仍在过渡态时，不重复撤单也不提前重挂。"""
+    clock = _FakeClock(datetime.combine(date.today(), dt_time(9, 30)))
+    monkeypatch.setattr('trading.executor.time', clock)
+    monkeypatch.setattr('trading.executor.is_current_trading', lambda _: True)
+
+    class _AsyncCancelTrader(_FakeTrader):
+        def cancel_order(self, oid):
+            self.cancelled.append(oid)
+            self.orders[oid].order_status = xtconstant.ORDER_REPORTED_CANCEL
+
+    trader = _AsyncCancelTrader(cash=1e7)
+    trader.on_order = lambda code, shares, oid: SimpleNamespace(
+        stock_code=code, order_type=xtconstant.STOCK_BUY,
+        order_status=xtconstant.ORDER_REPORTED,
+        traded_volume=0, order_volume=shares, traded_price=0.0, status_msg='')
+    ex = RebalanceExecutor(trader)
+    code = '600002.SH'
+    om = OrderMonitor(
+        ex,
+        sell_orders=[],
+        buy_allocations={code: 100},
+        buy_n_stocks=[code],
+        prices={code: 10.0},
+        signal_date=date.today(),
+        trade_date=date.today(),
+    )
+    om.record_action = lambda *a, **k: None
+    om._submit('BUY', code, 100)
+
+    clock.current = datetime.combine(date.today(), dt_time(9, 31)).timestamp()
+    assert om._cancel_expired_orders(clock.time()) is True
+    assert om._cancel_expired_orders(clock.time()) is False
+    assert om._submit_affordable_buys() is False
+    assert trader.cancelled == [1000]
+    assert len(trader.submitted) == 1
+
+    # QMT 可能在“撤单请求已受理”后异步报错并恢复为已报；超时后必须重试。
+    trader.orders[1000].order_status = xtconstant.ORDER_REPORTED
+    clock.current += ex.CANCEL_REQUEST_RETRY_SEC
+    assert om._cancel_expired_orders(clock.time()) is True
+    assert trader.cancelled == [1000, 1000]
+
+    trader.orders[1000].order_status = xtconstant.ORDER_CANCELED
+    om._handle_terminal_orders()
+    assert om._submit_affordable_buys() is True
+    assert trader.submitted[-1][3] is None
+
+
+def test_peer_reprice_pauses_for_lunch_and_stops_before_close_auction(monkeypatch):
+    monkeypatch.setattr('trading.executor.is_current_trading', lambda _: True)
+    ex = RebalanceExecutor(_FakeTrader())
+    code = '600000.SH'
+    om = OrderMonitor(
+        ex,
+        sell_orders=[],
+        buy_allocations={code: 100},
+        buy_n_stocks=[code],
+        prices={code: 10.0},
+        signal_date=date.today(),
+        trade_date=date.today(),
+    )
+    at_1101 = datetime.combine(date.today(), dt_time(11, 1)).timestamp()
+    assert datetime.fromtimestamp(om._peer_reprice_at(at_1101)).time() == dt_time(13, 1)
+    at_1456 = datetime.combine(date.today(), dt_time(14, 56)).timestamp()
+    assert om._can_cancel_now(at_1456) is False
+    at_1457 = datetime.combine(date.today(), dt_time(14, 57)).timestamp()
+    assert om._can_submit_now(at_1457) is False
+    assert ex.BUY_MONITOR_END == dt_time(15, 0)
+
+
+def test_expired_peer_is_kept_during_close_cancel_buffer(monkeypatch):
+    """14:56 后保留旧单，避免撤成后跨入 14:57 而无法再挂市价单。"""
+    clock = _FakeClock(datetime.combine(date.today(), dt_time(14, 56, 59)))
+    monkeypatch.setattr('trading.executor.time', clock)
+    monkeypatch.setattr('trading.executor.is_current_trading', lambda _: True)
+    trader = _FakeTrader(cash=1e7)
+    trader.on_order = lambda code, shares, oid: SimpleNamespace(
+        stock_code=code, order_type=xtconstant.STOCK_BUY,
+        order_status=xtconstant.ORDER_REPORTED,
+        traded_volume=0, order_volume=shares, traded_price=0.0, status_msg='')
+    ex = RebalanceExecutor(trader)
+    code = '600000.SH'
+    om = OrderMonitor(
+        ex,
+        sell_orders=[],
+        buy_allocations={code: 100},
+        buy_n_stocks=[code],
+        prices={code: 10.0},
+        signal_date=date.today(),
+        trade_date=date.today(),
+    )
+    om.record_action = lambda *a, **k: None
+    om._submit('BUY', code, 100)
+    om.submitted[0]['reprice_at'] = clock.time() - 1
+
+    assert om._cancel_expired_orders(clock.time()) is False
+    assert trader.cancelled == []
+
+
+def test_summary_skips_replaced_intentional_reprice_cancel(monkeypatch):
+    monkeypatch.setattr('trading.executor.get_stock_detail', lambda _: {})
+    trader = _FakeTrader()
+    trader.orders[1000] = SimpleNamespace(
+        order_status=xtconstant.ORDER_CANCELED,
+        traded_volume=0, traded_price=0.0, order_volume=100, status_msg='')
+    trader.orders[1001] = SimpleNamespace(
+        order_status=xtconstant.ORDER_SUCCEEDED,
+        traded_volume=100, traded_price=10.0, order_volume=100, status_msg='')
+    ex = RebalanceExecutor(trader)
+    failures = []
+    ex._send_failure_summary_card = lambda rows: failures.extend(rows)
+
+    ex._summarize([
+        {
+            'code': '600000.SH',
+            'order_id': 1000,
+            'order_type': 'BUY',
+            'shares': 100,
+            'target_shares': 100,
+            'intentional_cancel': True,
+        },
+        {
+            'code': '600000.SH',
+            'order_id': 1001,
+            'order_type': 'BUY',
+            'shares': 100,
+            'target_shares': 100,
+        },
+    ])
+
+    assert failures == []
+
+
+def test_summary_reports_unreplaced_intentional_cancel(monkeypatch):
+    monkeypatch.setattr('trading.executor.get_stock_detail', lambda _: {})
+    trader = _FakeTrader()
+    trader.orders[1000] = SimpleNamespace(
+        order_status=xtconstant.ORDER_CANCELED,
+        traded_volume=0, traded_price=0.0, order_volume=100, status_msg='')
+    ex = RebalanceExecutor(trader)
+    failures = []
+    ex._send_failure_summary_card = lambda rows: failures.extend(rows)
+
+    ex._summarize([{
+        'code': '600000.SH',
+        'order_id': 1000,
+        'order_type': 'BUY',
+        'shares': 100,
+        'target_shares': 100,
+        'intentional_cancel': True,
+    }])
+
+    assert len(failures) == 1
+
+
+def test_summary_reports_target_gap_after_partial_replacement(monkeypatch):
+    """后续替代单只覆盖一部分撤单余量时，剩余目标必须进入失败汇总。"""
+    monkeypatch.setattr('trading.executor.get_stock_detail', lambda _: {})
+    trader = _FakeTrader()
+    trader.orders[1000] = SimpleNamespace(
+        order_status=xtconstant.ORDER_CANCELED,
+        traded_volume=0, traded_price=0.0, order_volume=1000, status_msg='')
+    trader.orders[1001] = SimpleNamespace(
+        order_status=xtconstant.ORDER_SUCCEEDED,
+        traded_volume=500, traded_price=10.0, order_volume=500, status_msg='')
+    ex = RebalanceExecutor(trader)
+    failures = []
+    ex._send_failure_summary_card = lambda rows: failures.extend(rows)
+
+    ex._summarize([
+        {
+            'code': '600000.SH', 'order_id': 1000,
+            'order_type': 'BUY', 'shares': 1000, 'target_shares': 1000,
+            'intentional_cancel': True,
+        },
+        {
+            'code': '600000.SH', 'order_id': 1001,
+            'order_type': 'BUY', 'shares': 500, 'target_shares': 1000,
+        },
+    ])
+
+    gaps = [row for row in failures if row['status'] == '目标未覆盖']
+    assert len(gaps) == 1
+    assert gaps[0]['shares'] == 500
 
 
 def test_submit_affordable_buys_kcb_300_share_target_submits_300():
@@ -466,6 +855,7 @@ def test_sell_reject_retries_after_backoff():
     assert om._sell_remaining('600000.SH') == 500
     assert om.retry_after['600000.SH'] > 0
     om.retry_after['600000.SH'] = 0
+    trader.can_use['600000.SH'] = 500
     assert om._retry_sells() is True
     assert len(om.submitted) == 2
     assert [x[1] for x in trader.submitted] == [500, 500]
@@ -475,6 +865,7 @@ def test_unified_sell_buy_run():
     """完整 run() 流程：卖->买->收尾，资金够时一瞬间全发。"""
     trader = _FakeTrader(cash=1e7)
     ex = RebalanceExecutor(trader)
+    ex.OPEN_LIMIT_DEADLINE_SEC = 24 * 60 * 60
     ex.BUY_MONITOR_DEADLINE_SEC = 0.1
     om = OrderMonitor(
         ex,

@@ -172,7 +172,7 @@ def _update_kline(anchor_date: date | None = None):
 
 
 def _ensure_delist_kline_mootdx():
-    """确保退市股 K 线存在；缺失时用 mootdx 全量补齐，补不齐则中止。"""
+    """确保退市股 K 线存在；数据源永久无数据时告警但不阻断每日更新。"""
     from data.db.delist import get_delist_stock_info
     from data.kline_mootdx import update_full
     from utils.stock.info import is_b_stock
@@ -190,7 +190,12 @@ def _ensure_delist_kline_mootdx():
     if still_missing:
         shown = ', '.join(still_missing[:20])
         suffix = f" ...(+{len(still_missing) - 20})" if len(still_missing) > 20 else ''
-        raise RuntimeError(f"[K线-退市] mootdx 未补齐 {len(still_missing)} 只退市股: {shown}{suffix}")
+        logger.warning(
+            "[K线-退市] mootdx 无可用行情，保留数据完整性告警但不阻断每日更新: "
+            "%d 只退市股: %s%s",
+            len(still_missing), shown, suffix,
+        )
+    return still_missing
 
 
 # ============================================================

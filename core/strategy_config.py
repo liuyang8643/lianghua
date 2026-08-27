@@ -3,11 +3,35 @@
 运行配置只保留 `ga_profile` 和 `individual_config`；GA 过程指标写入 results。
 """
 import json
+import math
 from pathlib import Path
 
 from core.factors.registry import get_factor_class
 from core.ga import get_profile, resolve_profile_name
+from core.scoring import validate_selection_sleeves
+from core.fees import SIM_SLIPPAGE_BPS
 
+
+def _normalize_execution_costs(cfg: dict) -> None:
+    slippage_bps = cfg.get('slippage_bps', SIM_SLIPPAGE_BPS)
+    if (
+        isinstance(slippage_bps, bool)
+        or not isinstance(slippage_bps, (int, float))
+        or not math.isfinite(float(slippage_bps))
+        or not 0 <= float(slippage_bps) < 10_000
+    ):
+        raise ValueError('slippage_bps must be finite and in [0, 10000)')
+    cfg['slippage_bps'] = float(slippage_bps)
+
+    rebalance_band_pct = cfg.get('rebalance_band_pct', 0.01)
+    if (
+        isinstance(rebalance_band_pct, bool)
+        or not isinstance(rebalance_band_pct, (int, float))
+        or not math.isfinite(float(rebalance_band_pct))
+        or not 0 <= float(rebalance_band_pct) < 1
+    ):
+        raise ValueError('rebalance_band_pct must be finite and in [0, 1)')
+    cfg['rebalance_band_pct'] = float(rebalance_band_pct)
 
 def normalize_individual_config(config: dict, profile_name: str | None = None) -> dict:
     cfg = dict(config)
@@ -32,6 +56,12 @@ def normalize_individual_config(config: dict, profile_name: str | None = None) -
     if (profile_name is not None
             and get_profile(profile_name).get('constraints', {}).get('sell_m_equals_buy_n')):
         cfg['sell_m'] = cfg['buy_n']
+    _normalize_execution_costs(cfg)
+    if cfg.get('selection_sleeves') is not None:
+        cfg['selection_sleeves'] = validate_selection_sleeves(
+            cfg['selection_sleeves'],
+            cfg['buy_n'],
+        )
     return cfg
 
 
@@ -47,6 +77,10 @@ def load_strategy_config(path: str | Path) -> dict:
     profile_name = resolve_profile_name(config_data)
     individual_config = normalize_individual_config(config_data['individual_config'], profile_name)
     factor_names = list(individual_config['weights'])
+    for sleeve in individual_config.get('selection_sleeves') or []:
+        for name in sleeve['weights']:
+            if name not in factor_names:
+                factor_names.append(name)
     filter_factor_names = [name for name, enabled in individual_config.get('filter_factors', {}).items() if enabled]
     return {
         'profile_name': profile_name,

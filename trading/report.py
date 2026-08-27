@@ -20,6 +20,7 @@ from data.db.stock_name import get_stock_name_at_date
 from trading.lark.format import fmt_money, fmt_pct, fmt_diff_money
 from trading.lark.sender import lark_sender, LarkMsgLevel
 from trading.logger import trading_logger
+from trading.persistence import normalize_fill_costs, summarize_fill_costs
 
 _TRADE_DIR = Path(__file__).resolve().parents[1] / "data" / "live_trades"
 
@@ -168,8 +169,8 @@ class PostCloseReport:
         self._harvest_names(df)
 
     def feed_fills_df(self, df: pd.DataFrame):
-        self._fills = df
-        self._harvest_names(df)
+        self._fills = normalize_fill_costs(df)
+        self._harvest_names(self._fills)
 
     def feed_positions_df(self, df: pd.DataFrame):
         self._positions = df
@@ -322,34 +323,74 @@ class PostCloseReport:
                 'sell_shares_gap_total': sum(r['sell_shares_gap'] for r in rows)}
 
     def build_dim4_slippage(self) -> dict:
-        """维度4：滑点 diff（市场冲击层）。实盘的 traded_price vs est_price，回测假定 0。"""
+        """维度4：实盘显式费用与方向调整后的执行滑点。
+
+        ``slippage_cost`` 已包含在实际成交价及账户现金/P&L 中；这里仅
+        报告、绝不再次扣减。
+        """
         if self._fills is None or self._fills.empty:
-            return {'rows': [], 'avg_slippage': 0.0, 'total_slippage_cost': 0.0}
-        df = self._fills.copy()
+            return {
+                'rows': [],
+                'avg_slippage': 0.0,
+                'total_broker_commission': 0.0,
+                'total_transfer_fee': 0.0,
+                'total_stamp_tax': 0.0,
+                'total_fee_est': 0.0,
+                'total_slippage_cost': 0.0,
+                'total_execution_cost': 0.0,
+                'fee_sources': {},
+            }
+        df = normalize_fill_costs(self._fills)
         if 'slippage_pct' not in df.columns:
             df['slippage_pct'] = None
 
         rows = []
-        total_cost = 0.0
         for _, r in df.iterrows():
-            if pd.isna(r.get('slippage_pct')):
-                continue
-            sp = float(r['slippage_pct'])
-            # 滑点成本：买入正滑点=多付，卖出负滑点=少收，绝对值都是成本
-            sign = 1 if r['direction'] == 'buy' else -1
-            cost = sign * sp / 100 * float(r['amount'])
+            sp = (
+                None
+                if pd.isna(r.get('slippage_pct'))
+                else float(r['slippage_pct'])
+            )
             rows.append({
                 'code': r['code'], 'name': r.get('name', ''),
                 'direction': r['direction'],
-                'est_price': float(r['est_price']) if not pd.isna(r['est_price']) else None,
+                'est_price': (
+                    float(r['est_price'])
+                    if not pd.isna(r.get('est_price'))
+                    else None
+                ),
                 'traded_price': float(r['price']),
                 'slippage_pct': sp,
                 'amount': float(r['amount']),
-                'slippage_cost': cost,
+                'broker_commission': float(r['broker_commission']),
+                'transfer_fee': float(r['transfer_fee']),
+                'stamp_tax': float(r['stamp_tax']),
+                'fee_est': float(r['fee_est']),
+                'slippage_cost': float(r['slippage_cost']),
+                'total_execution_cost': float(r['total_execution_cost']),
+                'fee_source': str(r['fee_source']),
             })
-            total_cost += cost
-        avg_sp = sum(r['slippage_pct'] for r in rows) / len(rows) if rows else 0.0
-        return {'rows': rows, 'avg_slippage': avg_sp, 'total_slippage_cost': total_cost}
+        measured = [
+            row['slippage_pct']
+            for row in rows
+            if row['slippage_pct'] is not None
+        ]
+        costs = summarize_fill_costs(df)
+        return {
+            'rows': rows,
+            'avg_slippage': (
+                sum(measured) / len(measured)
+                if measured
+                else 0.0
+            ),
+            'total_broker_commission': costs['broker_commission'],
+            'total_transfer_fee': costs['transfer_fee'],
+            'total_stamp_tax': costs['stamp_tax'],
+            'total_fee_est': costs['fee_est'],
+            'total_slippage_cost': costs['slippage_cost'],
+            'total_execution_cost': costs['total_execution_cost'],
+            'fee_sources': costs['fee_sources'],
+        }
 
     def build_dim5_pnl(self) -> dict:
         """维度5：日 P&L diff（结果层）。逐股对比。
@@ -456,7 +497,8 @@ class PostCloseReport:
              'unreconcilable_codes': list[str],
              'within_tolerance': bool}
         """
-        per_stock = dim5.get('live_total_pnl')
+        chain_broken = self._chain_broken()
+        per_stock = None if chain_broken else dim5.get('live_total_pnl')
         # 用账户层日变化（asset - prev - net_cash_flow）做对账基准。
         # 注意 summary['live_daily_pnl'] 现已切换为「个股口径」，不能再拿它对账，
         # 否则会自己跟自己比恒为 0；这里必须取独立的 live_account_pnl。
@@ -464,7 +506,7 @@ class PostCloseReport:
         # 只把「实盘确实持有(volume>0)却算不出 P&L」的票算作无法对账;
         # 实盘根本没持有的票贡献为 0、可对账,不应计入。
         unrec = [r['code'] for r in dim5.get('rows', [])
-                 if r.get('live_daily_pnl') is None and (
+                 if (chain_broken or r.get('live_daily_pnl') is None) and (
                      int(r.get('live_volume', 0) or 0) > 0
                      or int(r.get('live_yesterday_volume', 0) or 0) > 0)]
         tolerance = self._reconcile_tolerance(summary)
@@ -534,7 +576,7 @@ class PostCloseReport:
         # 时才采信。链路断裂时卖出仓位的 P&L 已在 build_dim5_pnl 置 None 剔除（不计入
         # 合计），剩余持有仓位用成本基线 (close-avg)×vol 计算，结果即「持仓盈亏」。
         per_stock_pnl = None
-        if dim5 is not None:
+        if dim5 is not None and not self._chain_broken():
             unrec = [r for r in dim5.get('rows', [])
                      if r.get('live_daily_pnl') is None and (
                          int(r.get('live_volume', 0) or 0) > 0
@@ -628,15 +670,13 @@ class PostCloseReport:
     # ── 个股盈亏差异 + 实盘滑点明细卡 ─────────────────────────
 
     def _slippage_agg_rows(self) -> list[dict]:
-        """fills 按 (code, direction) 聚合滑点：成交均价(vwap) vs 开盘价(est_price)。
+        """按 (code, direction) 聚合显式费用和持久化执行滑点。
 
         slippage_cost > 0 = 成本（买贵了/卖便宜了），< 0 = 反向占优。
         """
         if self._fills is None or self._fills.empty:
             return []
-        df = self._fills[self._fills.get('est_price').notna()] if 'est_price' in self._fills.columns else None
-        if df is None or df.empty:
-            return []
+        df = normalize_fill_costs(self._fills)
         out = []
         for (code, direction), grp in df.groupby(['code', 'direction']):
             shares = int(grp['shares'].sum())
@@ -644,19 +684,45 @@ class PostCloseReport:
             if shares <= 0:
                 continue
             vwap = amount / shares
-            est = float(grp['est_price'].iloc[0])
-            if est <= 0:
-                continue
-            sp = (vwap / est - 1) * 100
-            sign = 1 if direction == 'buy' else -1
+            valid_est = grp['est_price'].notna() & (grp['est_price'] > 0)
+            if bool(valid_est.all()):
+                est = float(
+                    (
+                        grp['est_price'].astype(float)
+                        * grp['shares'].astype(float)
+                    ).sum()
+                    / shares
+                )
+                sp = (vwap / est - 1) * 100
+            else:
+                est = None
+                sp = None
+            sources = {
+                str(source): int(count)
+                for source, count
+                in grp['fee_source'].value_counts().items()
+            }
             out.append({
                 'code': code, 'name': self._name_of(code),
                 'direction': direction, 'est_price': est, 'vwap': vwap,
                 'shares': shares, 'amount': amount,
                 'slippage_pct': sp,
-                'slippage_cost': sign * (vwap - est) * shares,
+                'broker_commission': float(
+                    grp['broker_commission'].sum()
+                ),
+                'transfer_fee': float(grp['transfer_fee'].sum()),
+                'stamp_tax': float(grp['stamp_tax'].sum()),
+                'fee_est': float(grp['fee_est'].sum()),
+                'slippage_cost': float(grp['slippage_cost'].sum()),
+                'total_execution_cost': float(
+                    grp['total_execution_cost'].sum()
+                ),
+                'fee_sources': sources,
             })
-        out.sort(key=lambda r: abs(r['slippage_cost']), reverse=True)
+        out.sort(
+            key=lambda r: abs(r['total_execution_cost']),
+            reverse=True,
+        )
         return out
 
     def _send_pnl_slippage_card(self, data: dict):
@@ -701,23 +767,43 @@ class PostCloseReport:
         if slip_rows:
             rows = []
             for r in slip_rows:
+                est_text = (
+                    f"{r['est_price']:.2f}"
+                    if r['est_price'] is not None
+                    else '—'
+                )
+                sp_text = (
+                    _color(
+                        r['slippage_cost'],
+                        f"{r['slippage_pct']:+.2f}%",
+                    )
+                    if r['slippage_pct'] is not None
+                    else '<font color="grey">—</font>'
+                )
                 rows.append({
                     'name': f"{r['name']} {'买' if r['direction'] == 'buy' else '卖'}",
-                    'open': f"{r['est_price']:.2f}",
+                    'open': est_text,
                     'vwap': f"{r['vwap']:.2f}",
-                    'sp': _color(r['slippage_cost'], f"{r['slippage_pct']:+.2f}%"),
+                    'fee': fmt_money(r['fee_est']),
+                    'sp': sp_text,
                     'cost': _color(r['slippage_cost'], fmt_diff_money(r['slippage_cost'])),
+                    'total': _color(
+                        r['total_execution_cost'],
+                        fmt_diff_money(r['total_execution_cost']),
+                    ),
                 })
             tables.append({
-                'title': '**🎯 实盘滑点（成交均价 vs 开盘价）**',
+                'title': '**🎯 实盘费用与滑点（成交均价 vs 开盘价）**',
                 'element_id': 'slippage_tbl',
                 'page_size': 15,
                 'columns': [
                     {'name': 'name', 'display_name': '股票·方向', 'horizontal_align': 'left'},
                     {'name': 'open', 'display_name': '开盘价', 'horizontal_align': 'right'},
                     {'name': 'vwap', 'display_name': '成交均价', 'horizontal_align': 'right'},
+                    {'name': 'fee', 'display_name': '显式费用', 'horizontal_align': 'right'},
                     {'name': 'sp', 'display_name': '滑点', 'horizontal_align': 'right'},
                     {'name': 'cost', 'display_name': '滑点成本', 'horizontal_align': 'right'},
+                    {'name': 'total', 'display_name': '总执行成本', 'horizontal_align': 'right'},
                 ],
                 'rows': rows,
             })
@@ -727,10 +813,19 @@ class PostCloseReport:
         bt_pnl = s.get('bt_daily_pnl')
         pnl_gap = (live_pnl - bt_pnl) if (live_pnl is not None and bt_pnl is not None) else None
         total_slip_cost = sum(r['slippage_cost'] for r in slip_rows)
+        total_explicit_fees = sum(r['fee_est'] for r in slip_rows)
+        total_execution_cost = sum(
+            r['total_execution_cost']
+            for r in slip_rows
+        )
         summary_parts = [
             f"盈亏差异(实盘-回测) **{fmt_diff_money(pnl_gap)}**"
             if pnl_gap is not None else None,
+            f"显式费用 **{fmt_money(total_explicit_fees)}**"
+            if slip_rows else None,
             f"总滑点成本 **{fmt_diff_money(total_slip_cost)}**" if slip_rows else None,
+            f"总执行成本 **{fmt_diff_money(total_execution_cost)}**"
+            if slip_rows else None,
         ]
         level = LarkMsgLevel.Info
         if pnl_gap is not None:
@@ -865,14 +960,33 @@ class PostCloseReport:
 
         def _slippage_table(rows):
             html = ['<table><thead><tr><th>代码</th><th>方向</th><th>est_price</th>',
-                    '<th>traded_price</th><th>滑点 %</th><th>滑点成本</th></tr></thead><tbody>']
+                    '<th>traded_price</th><th>券商佣金</th><th>过户费</th>',
+                    '<th>印花税</th><th>显式费用</th><th>滑点 %</th>',
+                    '<th>滑点成本</th><th>总执行成本</th><th>费用来源</th>',
+                    '</tr></thead><tbody>']
             for r in rows:
                 cls = 'positive' if r['slippage_cost'] > 0 else 'negative'
+                est_text = (
+                    f"{r['est_price']:.3f}"
+                    if r['est_price'] is not None
+                    else '—'
+                )
+                sp_text = (
+                    f"{r['slippage_pct']:+.3f}%"
+                    if r['slippage_pct'] is not None
+                    else '—'
+                )
                 html.append(
                     f"<tr><td>{r['code']} {r['name']}</td><td>{r['direction']}</td>"
-                    f"<td>{r['est_price']:.3f}</td><td>{r['traded_price']:.3f}</td>"
-                    f"<td class='{cls}'>{r['slippage_pct']:+.3f}%</td>"
-                    f"<td class='{cls}'>{fmt_diff_money(r['slippage_cost'])}</td></tr>"
+                    f"<td>{est_text}</td><td>{r['traded_price']:.3f}</td>"
+                    f"<td>{fmt_money(r['broker_commission'])}</td>"
+                    f"<td>{fmt_money(r['transfer_fee'])}</td>"
+                    f"<td>{fmt_money(r['stamp_tax'])}</td>"
+                    f"<td>{fmt_money(r['fee_est'])}</td>"
+                    f"<td class='{cls}'>{sp_text}</td>"
+                    f"<td class='{cls}'>{fmt_diff_money(r['slippage_cost'])}</td>"
+                    f"<td>{fmt_diff_money(r['total_execution_cost'])}</td>"
+                    f"<td>{r['fee_source']}</td></tr>"
                 )
             html.append('</tbody></table>')
             return '\n'.join(html)
@@ -944,8 +1058,9 @@ class PostCloseReport:
 </div>
 
 <div class='section'>
-  <h2>滑点明细（成交价 vs 开盘价，仅 debug 用）</h2>
-  <div>平均滑点 {d4['avg_slippage']:+.3f}% ({d4['avg_slippage']*100:+.1f} bp) · 总滑点成本 {fmt_diff_money(d4['total_slippage_cost'])}</div>
+  <h2>费用与滑点明细（滑点仅作诊断，不重复扣减）</h2>
+  <div>券商佣金 {fmt_money(d4['total_broker_commission'])} · 过户费 {fmt_money(d4['total_transfer_fee'])} · 印花税 {fmt_money(d4['total_stamp_tax'])} · 显式费用 {fmt_money(d4['total_fee_est'])}</div>
+  <div>平均滑点 {d4['avg_slippage']:+.3f}% ({d4['avg_slippage']*100:+.1f} bp) · 总滑点成本 {fmt_diff_money(d4['total_slippage_cost'])} · 总执行成本 {fmt_diff_money(d4['total_execution_cost'])}</div>
   {_slippage_table(d4['rows'])}
 </div>
 

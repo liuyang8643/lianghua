@@ -1,0 +1,213 @@
+{
+  "experiment": "v75_v31_financial_local_plateau",
+  "selection_scope": "training_only_2010_2018",
+  "inherit_profile_defaults": true,
+  "configs": [
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.05,
+        "ProfitGrowth": 0.0125
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.05,
+        "ProfitGrowth": 0.025
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.05,
+        "ProfitGrowth": 0.0375
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.0625,
+        "ProfitGrowth": 0.0125
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.0625,
+        "ProfitGrowth": 0.025
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.0625,
+        "ProfitGrowth": 0.0375
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.075,
+        "ProfitGrowth": 0.0125
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.075,
+        "ProfitGrowth": 0.025
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.075,
+        "ProfitGrowth": 0.0375
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.0875,
+        "ProfitGrowth": 0.0125
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.0875,
+        "ProfitGrowth": 0.025
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.0875,
+        "ProfitGrowth": 0.0375
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.1,
+        "ProfitGrowth": 0.0125
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.1,
+        "ProfitGrowth": 0.025
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    },
+    {
+      "weights": {
+        "PreCloseMarketCap": 1.0,
+        "AmihudIlliquidityStrict": 0.4,
+        "TrendReversalPreCloseStrict": 0.1,
+        "VolumeCVStrict": 0.2,
+        "EarningsQualityComposite": 0.1,
+        "ProfitGrowth": 0.0375
+      },
+      "filter_factors": {
+        "FilterFinancialCoreCoverage": true
+      }
+    }
+  ]
+}

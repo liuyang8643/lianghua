@@ -29,19 +29,31 @@ def load_runtime_stock_codes() -> list[str]:
         return [str(s) for s in npz['stock_codes']]
 
 
-def load_runtime_npz(dates: List[datetime], max_lookback: Optional[int] = None) -> dict | None:
+def load_runtime_npz(
+    dates: List[datetime],
+    max_lookback: Optional[int] = None,
+    *,
+    strict_end: bool = False,
+) -> dict | None:
     """加载 runtime NPZ 数据。
 
     Args:
         dates: 信号日期列表（回测=全部调仓日, 实盘=当日）
-        max_lookback: 可选，裁剪数据只保留 min(dates)-max_lookback 到 max(dates)+5 个交易日。
-                      用于实盘/单回测减少内存；GA 不传此参数加载全量。
+        max_lookback: 可选，裁剪数据只保留 min(dates)-max_lookback 到
+                      max(dates)+默认执行缓冲。用于实盘/单回测减少内存。
+        strict_end: 为 True 时，返回数据严格截止 max(dates)，不加载其后的
+                    执行缓冲行。仅用于 sealed 训练路径。
     """
     if not _RUNTIME_DIR.exists():
         return None
 
     min_date = np.datetime64(min(dt.date() for dt in dates)) - np.timedelta64(7, 'D')
-    max_date = np.datetime64(max(dt.date() for dt in dates)) + np.timedelta64(7, 'D')
+    requested_max_date = np.datetime64(max(dt.date() for dt in dates))
+    max_date = (
+        requested_max_date
+        if strict_end
+        else requested_max_date + np.timedelta64(7, 'D')
+    )
 
     trim_start = None
     if max_lookback is not None and max_lookback > 0:
@@ -69,18 +81,39 @@ def load_runtime_npz(dates: List[datetime], max_lookback: Optional[int] = None) 
             d0, d1 = td[0], td[-1]
             if not (d0 <= max_date and d1 >= min_date):
                 continue
-            if trim_start is not None:
-                si = max(0, int(np.searchsorted(td, trim_start)))
-                ei = min(len(td), int(np.searchsorted(td, max_date)) + 5)
+            si = (
+                max(0, int(np.searchsorted(td, trim_start)))
+                if trim_start is not None
+                else 0
+            )
+            if strict_end:
+                ei = min(
+                    len(td),
+                    int(np.searchsorted(
+                        td,
+                        requested_max_date,
+                        side='right',
+                    )),
+                )
+            elif trim_start is not None:
+                ei = min(
+                    len(td),
+                    int(np.searchsorted(td, max_date)) + 5,
+                )
             else:
-                si, ei = 0, len(td)
+                ei = len(td)
             data = {
-                'trade_dates': td[si:ei],
+                'trade_dates': (
+                    td[si:ei].copy()
+                    if strict_end
+                    else td[si:ei]
+                ),
                 'stock_codes': npz['stock_codes'],
             }
             for f in _2D_FIELDS:
                 if f in npz:
-                    data[f] = npz[f][si:ei]
+                    values = npz[f][si:ei]
+                    data[f] = values.copy() if strict_end else values
             for f in _1D_FIELDS:
                 if f in npz:
                     data[f] = npz[f]

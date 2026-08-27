@@ -1,0 +1,29 @@
+{
+  "inherit_profile_defaults": true,
+  "configs": [
+    {"buy_n": 20, "retention_rank_n": 20, "rebalance_band_pct": 0.15},
+    {"buy_n": 20, "retention_rank_n": 20, "rebalance_band_pct": 0.30},
+    {"buy_n": 20, "retention_rank_n": 20, "rebalance_band_pct": 0.50},
+    {"buy_n": 20, "retention_rank_n": 25, "rebalance_band_pct": 0.15},
+    {"buy_n": 20, "retention_rank_n": 25, "rebalance_band_pct": 0.30},
+    {"buy_n": 20, "retention_rank_n": 25, "rebalance_band_pct": 0.50},
+    {"buy_n": 20, "retention_rank_n": 30, "rebalance_band_pct": 0.15},
+    {"buy_n": 20, "retention_rank_n": 30, "rebalance_band_pct": 0.30},
+    {"buy_n": 20, "retention_rank_n": 30, "rebalance_band_pct": 0.50},
+    {"buy_n": 20, "retention_rank_n": 40, "rebalance_band_pct": 0.15},
+    {"buy_n": 20, "retention_rank_n": 40, "rebalance_band_pct": 0.30},
+    {"buy_n": 20, "retention_rank_n": 40, "rebalance_band_pct": 0.50},
+    {"buy_n": 30, "retention_rank_n": 30, "rebalance_band_pct": 0.15},
+    {"buy_n": 30, "retention_rank_n": 30, "rebalance_band_pct": 0.30},
+    {"buy_n": 30, "retention_rank_n": 30, "rebalance_band_pct": 0.50},
+    {"buy_n": 30, "retention_rank_n": 40, "rebalance_band_pct": 0.15},
+    {"buy_n": 30, "retention_rank_n": 40, "rebalance_band_pct": 0.30},
+    {"buy_n": 30, "retention_rank_n": 40, "rebalance_band_pct": 0.50},
+    {"buy_n": 30, "retention_rank_n": 45, "rebalance_band_pct": 0.15},
+    {"buy_n": 30, "retention_rank_n": 45, "rebalance_band_pct": 0.30},
+    {"buy_n": 30, "retention_rank_n": 45, "rebalance_band_pct": 0.50},
+    {"buy_n": 30, "retention_rank_n": 60, "rebalance_band_pct": 0.15},
+    {"buy_n": 30, "retention_rank_n": 60, "rebalance_band_pct": 0.30},
+    {"buy_n": 30, "retention_rank_n": 60, "rebalance_band_pct": 0.50}
+  ]
+}

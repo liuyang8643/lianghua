@@ -1,0 +1,10 @@
+{
+  "inherit_profile_defaults": true,
+  "configs": [
+    {"exposure_step": 0.0},
+    {"exposure_step": 0.1},
+    {"exposure_step": 0.2},
+    {"exposure_step": 0.25},
+    {"exposure_step": 0.5}
+  ]
+}

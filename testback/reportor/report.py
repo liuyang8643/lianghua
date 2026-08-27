@@ -681,7 +681,11 @@ def _make_trade_table(trade_log: List[Dict], stock_name_map: Dict[str, str]) -> 
         {'label': '价格(¥)', 'sort_type': 'number'},
         {'label': '数量(股)', 'sort_type': 'number'},
         {'label': '金额(¥)', 'sort_type': 'number'},
-        {'label': '手续费(¥)', 'sort_type': 'number'},
+        {'label': '券商佣金(¥)', 'sort_type': 'number'},
+        {'label': '过户费(¥)', 'sort_type': 'number'},
+        {'label': '印花税(¥)', 'sort_type': 'number'},
+        {'label': '滑点(¥)', 'sort_type': 'number'},
+        {'label': '总费用(¥)', 'sort_type': 'number'},
         {'label': '盈亏(¥)', 'sort_type': 'number'},
         {'label': '说明', 'sort_type': 'text'},
     ]
@@ -698,6 +702,11 @@ def _make_trade_table(trade_log: List[Dict], stock_name_map: Dict[str, str]) -> 
         signal_date = _get_signal_date(t)
         trade_date = _get_trade_date(t)
         execution_basis = _format_execution_basis(t)
+        total_fee = (
+            t.get('total_fee')
+            if t.get('total_fee') is not None
+            else (t.get('commission') or 0.0)
+        )
         if income is None:
             income_html = '<span class="muted">—</span>'
             income_sort = ''
@@ -719,7 +728,23 @@ def _make_trade_table(trade_log: List[Dict], stock_name_map: Dict[str, str]) -> 
             _make_cell(f'{t.get("price", 0):.4f}', t.get('price', 0)),
             _make_cell(f'{t.get("volume", 0):,}', t.get('volume', 0)),
             _make_cell(f'{t.get("amount", 0):,.2f}', t.get('amount', 0)),
-            _make_cell(f'{t.get("commission", 0):.2f}', t.get('commission', 0)),
+            _make_cell(
+                f'{float(t.get("broker_commission") or 0.0):.2f}',
+                t.get('broker_commission') or 0.0,
+            ),
+            _make_cell(
+                f'{float(t.get("transfer_fee") or 0.0):.2f}',
+                t.get('transfer_fee') or 0.0,
+            ),
+            _make_cell(
+                f'{float(t.get("stamp_tax") or 0.0):.2f}',
+                t.get('stamp_tax') or 0.0,
+            ),
+            _make_cell(
+                f'{float(t.get("slippage") or 0.0):.2f}',
+                t.get('slippage') or 0.0,
+            ),
+            _make_cell(f'{float(total_fee):.2f}', total_fee),
             _make_cell(income_html, income_sort),
             _make_cell(html_escape(t.get('reason', '') or ''), t.get('reason', '') or ''),
         ])
@@ -990,9 +1015,21 @@ def _build_metric_cards(metrics: Dict, holding_stats: Dict) -> str:
         ('最大单次亏损', _fmt_money(metrics.get('max_loss', 0)),
          'neutral',
          '已清仓持仓中的最大单笔亏损。'),
-        ('总手续费', _fmt_money(metrics.get('total_commission', 0)),
+        ('总交易成本', _fmt_money(metrics.get('total_fees', metrics.get('total_commission', 0))),
          'neutral',
-         '回测期间累计成交手续费。'),
+         '回测期间累计券商佣金、印花税、过户费与模拟滑点。'),
+        ('总滑点', _fmt_money(metrics.get('total_slippage', 0)),
+         'neutral',
+         '回测期间累计按成交金额计提的模拟滑点。'),
+        ('券商佣金', _fmt_money(metrics.get('total_broker_commission', 0)),
+         'neutral',
+         '回测期间累计支付的券商佣金。'),
+        ('印花税', _fmt_money(metrics.get('total_stamp_tax', 0)),
+         'neutral',
+         '回测期间累计支付的卖出印花税。'),
+        ('过户费', _fmt_money(metrics.get('total_transfer_fee', 0)),
+         'neutral',
+         '回测期间累计支付的过户费。'),
         ('当前持仓平均持仓天数', f"{holding_stats.get('average_current_holding_days', 0):.2f}",
          'neutral',
          '回测结束时仍持有仓位的平均持仓交易日。'),
@@ -1132,15 +1169,21 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
         / len(daily_snapshots)
         if daily_snapshots else 0.0
     )
+    executed_buy_count = report_data.get(
+        'executed_buy_count', metrics.get('buy_trades', 0)
+    )
+    executed_sell_count = report_data.get(
+        'executed_sell_count', metrics.get('sell_trades', 0)
+    )
     metrics.update({
-        'executed_buy_count': report_data.get('executed_buy_count', metrics.get('buy_trades', 0)),
-        'executed_sell_count': report_data.get('executed_sell_count', metrics.get('sell_trades', 0)),
+        'executed_buy_count': executed_buy_count,
+        'executed_sell_count': executed_sell_count,
         'delist_count': report_data.get('delist_count', len(delist_events)),
         'round_trip_count': report_data.get('round_trip_count', len(cleared_positions)),
         'cleared_positions_count': report_data.get('cleared_positions_count', len(cleared_positions)),
         'current_positions_count': report_data.get('current_positions_count', len(positions)),
-        'avg_daily_buys': metrics.get('executed_buy_count', 0) / max(trade_days, 1),
-        'avg_daily_sells': metrics.get('executed_sell_count', 0) / max(trade_days, 1),
+        'avg_daily_buys': executed_buy_count / max(trade_days, 1),
+        'avg_daily_sells': executed_sell_count / max(trade_days, 1),
         **holding_stats,
     })
 
@@ -1176,7 +1219,14 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
             'avg_loss': metrics.get('avg_loss', 0),
             'max_profit': metrics.get('max_profit', 0),
             'max_loss': metrics.get('max_loss', 0),
-            'total_commission': metrics.get('total_commission', 0),
+            'total_fees': metrics.get('total_fees', metrics.get('total_commission', 0)),
+            'total_broker_commission': metrics.get('total_broker_commission', 0),
+            'total_transfer_fee': metrics.get('total_transfer_fee', 0),
+            'total_stamp_tax': metrics.get('total_stamp_tax', 0),
+            'total_slippage': metrics.get('total_slippage', 0),
+            # Backward-compatible alias: historically total_commission included
+            # every transaction cost, including simulated slippage.
+            'total_commission': metrics.get('total_fees', metrics.get('total_commission', 0)),
             'total_days': trade_days,
             'init_cash': init_cash,
             'final_asset': final_asset,
@@ -1260,6 +1310,7 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
 </header>
 <details class="config-details"><summary><span class="summary-label">策略配置</span><span class="summary-preview">{weights_html}</span><span class="summary-caret" aria-hidden="true">⌄</span></summary><div class="config-content"><div><strong>因子权重</strong><div class="weight-list">{weights_html}</div></div><div><strong>策略参数</strong><div class="config-params">{config_params_html}</div></div><div><strong>执行口径</strong><div class="config-params">信号 {html_escape(signal_timing)} · 执行 {html_escape(trade_timing)} · 价格 {html_escape(price_field)} · 买入 {metrics.get('executed_buy_count', 0):,} · 卖出 {metrics.get('executed_sell_count', 0):,}</div></div></div></details>
 <section class="summary-section" aria-labelledby="summary-title"><div class="section-heading"><div><span class="section-eyebrow">PERFORMANCE SNAPSHOT</span><h2 id="summary-title">核心表现</h2></div><span class="section-note">策略累计 {_fmt_pct(total_return)} · 沪深300 {_fmt_pct(benchmark_return)}</span></div><div class="primary-metrics">{primary_metric_cards}</div></section>
+<section class="card" aria-labelledby="metric-detail-title"><div class="section-heading"><div><span class="section-eyebrow">FULL METRICS</span><h2 id="metric-detail-title">完整指标</h2></div><span class="section-note">收益、交易与成本明细</span></div><div class="metrics-grid">{metric_cards}</div></section>
 <section class="performance-section card" aria-labelledby="performance-title"><div class="section-heading"><div><span class="section-eyebrow">EQUITY CURVE</span><h2 id="performance-title">资金、回撤、仓位与调仓</h2></div><span class="section-note">单图叠加 · 曲线与柱状可在图例中开关</span></div><div id="equity-chart" class="chart-equity" role="img" aria-label="策略净值、沪深300基准、回撤、实际仓位、当日调仓资金占比与日收益率叠加组合图"></div></section>
 <section class="analysis-grid" aria-label="收益与风险分析"><div class="card analysis-panel panel-wide"><div class="section-heading"><div><span class="section-eyebrow">MONTHLY MAP</span><h2>月度收益热力图</h2></div><span class="section-note">颜色越深代表绝对收益越大</span></div><div id="monthly-heatmap" class="chart-heatmap" role="img" aria-label="月度收益热力图"></div></div><div class="card analysis-panel"><div class="section-heading"><div><span class="section-eyebrow">RETURN DISTRIBUTION</span><h2>日收益分布</h2></div></div><div id="distribution-chart" class="chart-analysis" role="img" aria-label="每日收益率分布"></div></div><div class="card analysis-panel"><div class="section-heading"><div><span class="section-eyebrow">TRADE OUTCOMES</span><h2>清仓盈亏</h2></div></div><div id="winloss-chart" class="chart-analysis" role="img" aria-label="清仓盈亏分布"></div></div><div class="card analysis-panel panel-wide"><div class="section-heading"><div><span class="section-eyebrow">DATA HEALTH</span><h2>因子有效股票数</h2></div><span class="section-note">完整股票池 {stock_pool_size:,} 只 · 按交易日观察</span></div><div id="factor-valid-chart" class="chart-factor" role="img" aria-label="各因子有效股票数量趋势"></div></div><div class="card analysis-panel panel-wide"><div class="section-heading"><div><span class="section-eyebrow">YEARLY SCORECARD</span><h2>分年度指标</h2></div></div>{_build_per_year_table(per_year_metrics)}</div></section>
 <section id="detail-tabs" class="detail-section" aria-labelledby="detail-title"><div class="section-heading"><div><span class="section-eyebrow">RESEARCH TABLES</span><h2 id="detail-title">明细工作区</h2></div><span class="section-note">共 {len(trade_log):,} 笔实际成交 · {len(positions)} 只当前持仓</span></div><div class="tab-list" role="tablist" aria-label="回测明细分类"><button class="tab-button is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-monthly" data-tab="monthly">月度</button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-trades" data-tab="trades">交易记录 <span>{len(trade_log):,}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-holdings" data-tab="holdings">当前持仓 <span>{len(positions)}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-cleared" data-tab="cleared">已清仓 <span>{len(cleared_positions)}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-daily" data-tab="daily">每日快照 <span>{trade_days:,}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-delist" data-tab="delist">退市归零 <span>{len(delist_events)}</span></button></div><div class="tab-panels"><div class="tab-panel is-active" id="panel-monthly" role="tabpanel"><div id="monthly-host"></div></div><div class="tab-panel" id="panel-trades" role="tabpanel" hidden><div id="trade-host"></div></div><div class="tab-panel" id="panel-holdings" role="tabpanel" hidden><div id="holdings-host"></div></div><div class="tab-panel" id="panel-cleared" role="tabpanel" hidden><div id="cleared-host"></div></div><div class="tab-panel" id="panel-daily" role="tabpanel" hidden><div id="daily-host"></div></div><div class="tab-panel" id="panel-delist" role="tabpanel" hidden><div id="delist-host"></div></div></div></section>
