@@ -1,0 +1,195 @@
+{
+  "fixed_config": {
+    "average_exposure": 0.882482858444745,
+    "end": "2018-12-28",
+    "metrics": {
+      "annualized_return": 0.5149175629520344,
+      "annualized_volatility": 0.3058113740820566,
+      "calmar": 1.016750121870046,
+      "max_drawdown": 0.5064347196782019,
+      "sharpe": 1.5144781840229284,
+      "total_return": 35.71157328893968,
+      "transition_count": 2186
+    },
+    "robust": {
+      "folds": [
+        {
+          "annualized_return": 0.2733575347225472,
+          "annualized_volatility": 0.23719749358226397,
+          "calmar": 0.9998966687368664,
+          "max_drawdown": 0.27338578402093283,
+          "sharpe": 1.1384412655853773,
+          "total_return": 1.0099716689965401,
+          "transition_count": 728
+        },
+        {
+          "annualized_return": 1.612196871299047,
+          "annualized_volatility": 0.38619604859858186,
+          "calmar": 3.183424849551127,
+          "max_drawdown": 0.506434719678202,
+          "sharpe": 2.6875131691327447,
+          "total_return": 14.899159080714488,
+          "transition_count": 726
+        },
+        {
+          "annualized_return": 0.055356477816425276,
+          "annualized_volatility": 0.27148340716056857,
+          "calmar": 0.1702022615349039,
+          "max_drawdown": 0.32523937882619236,
+          "sharpe": 0.33632953551278255,
+          "total_return": 0.1689160974882704,
+          "transition_count": 730
+        }
+      ],
+      "full": {
+        "annualized_return": 0.5149175629520344,
+        "annualized_volatility": 0.3058113740820566,
+        "calmar": 1.016750121870046,
+        "max_drawdown": 0.5064347196782019,
+        "sharpe": 1.5144781840229284,
+        "total_return": 35.71157328893968,
+        "transition_count": 2186
+      },
+      "robust_calmar": 0.593476191702475
+    },
+    "start": "2010-01-04"
+  },
+  "fixed_config_test": {
+    "average_exposure": 0.8357631939623635,
+    "end": "2026-08-27",
+    "metrics": {
+      "annualized_return": 0.30802295832376037,
+      "annualized_volatility": 0.33200098974894077,
+      "calmar": 0.6963419918603309,
+      "max_drawdown": 0.4423443680322272,
+      "sharpe": 0.9740374990728279,
+      "total_return": 1.5649523556676979,
+      "transition_count": 884
+    },
+    "start": "2023-01-03"
+  },
+  "fixed_config_validation": {
+    "average_exposure": 0.8220526064422695,
+    "end": "2022-12-30",
+    "metrics": {
+      "annualized_return": 0.33646606031063686,
+      "annualized_volatility": 0.21452460079048263,
+      "calmar": 1.564369620435121,
+      "max_drawdown": 0.21508092199914408,
+      "sharpe": 1.4607737652894746,
+      "total_return": 2.0572989942363966,
+      "transition_count": 971
+    },
+    "start": "2019-01-02"
+  },
+  "seeded_random": {
+    "average_exposure": 0.5362336546431058,
+    "end": "2018-12-28",
+    "metrics": {
+      "annualized_return": 0.03223125431037621,
+      "annualized_volatility": 0.20255568580228966,
+      "calmar": 0.05609696686997116,
+      "max_drawdown": 0.5745632270116493,
+      "sharpe": 0.25979793501099596,
+      "total_return": 0.31677037914559625,
+      "transition_count": 2186
+    },
+    "robust": {
+      "folds": [
+        {
+          "annualized_return": 0.008419051400900823,
+          "annualized_volatility": 0.16636236297149098,
+          "calmar": 0.034815684067299235,
+          "max_drawdown": 0.24181777915455205,
+          "sharpe": 0.1340889788966417,
+          "total_return": 0.024515576157445818,
+          "transition_count": 728
+        },
+        {
+          "annualized_return": 0.34984797817192304,
+          "annualized_volatility": 0.2541928426750608,
+          "calmar": 0.7759498551746066,
+          "max_drawdown": 0.4508641580881527,
+          "sharpe": 1.3110447523744273,
+          "total_return": 1.3732554053854735,
+          "transition_count": 726
+        },
+        {
+          "annualized_return": -0.1889169000646318,
+          "annualized_volatility": 0.1747451588935205,
+          "calmar": -0.37119967874134174,
+          "max_drawdown": 0.5089360548619233,
+          "sharpe": -1.1089098924051883,
+          "total_return": -0.45477193412972294,
+          "transition_count": 730
+        }
+      ],
+      "full": {
+        "annualized_return": 0.03223125431037621,
+        "annualized_volatility": 0.20255568580228966,
+        "calmar": 0.05609696686997116,
+        "max_drawdown": 0.5745632270116493,
+        "sharpe": 0.25979793501099596,
+        "total_return": 0.31677037914559625,
+        "transition_count": 2186
+      },
+      "robust_calmar": -0.15755135593568528
+    },
+    "start": "2010-01-04"
+  },
+  "untrained_ppo": {
+    "average_exposure": 0.882482858444745,
+    "end": "2018-12-28",
+    "metrics": {
+      "annualized_return": 0.5149175629520344,
+      "annualized_volatility": 0.3058113740820566,
+      "calmar": 1.016750121870046,
+      "max_drawdown": 0.5064347196782019,
+      "sharpe": 1.5144781840229284,
+      "total_return": 35.71157328893968,
+      "transition_count": 2186
+    },
+    "robust": {
+      "folds": [
+        {
+          "annualized_return": 0.2733575347225472,
+          "annualized_volatility": 0.23719749358226397,
+          "calmar": 0.9998966687368664,
+          "max_drawdown": 0.27338578402093283,
+          "sharpe": 1.1384412655853773,
+          "total_return": 1.0099716689965401,
+          "transition_count": 728
+        },
+        {
+          "annualized_return": 1.612196871299047,
+          "annualized_volatility": 0.38619604859858186,
+          "calmar": 3.183424849551127,
+          "max_drawdown": 0.506434719678202,
+          "sharpe": 2.6875131691327447,
+          "total_return": 14.899159080714488,
+          "transition_count": 726
+        },
+        {
+          "annualized_return": 0.055356477816425276,
+          "annualized_volatility": 0.27148340716056857,
+          "calmar": 0.1702022615349039,
+          "max_drawdown": 0.32523937882619236,
+          "sharpe": 0.33632953551278255,
+          "total_return": 0.1689160974882704,
+          "transition_count": 730
+        }
+      ],
+      "full": {
+        "annualized_return": 0.5149175629520344,
+        "annualized_volatility": 0.3058113740820566,
+        "calmar": 1.016750121870046,
+        "max_drawdown": 0.5064347196782019,
+        "sharpe": 1.5144781840229284,
+        "total_return": 35.71157328893968,
+        "transition_count": 2186
+      },
+      "robust_calmar": 0.593476191702475
+    },
+    "start": "2010-01-04"
+  }
+}

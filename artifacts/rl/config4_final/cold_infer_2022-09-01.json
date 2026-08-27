@@ -1,0 +1,55 @@
+{
+  "bundle": "D:\\coding\\WBR\\artifacts\\rl\\config4_final",
+  "day_config": {
+    "buy_n": 20,
+    "cash_reserve_ratio": 0.2688657343387604,
+    "factor_enabled": {
+      "AmihudIlliquidity": true,
+      "AmountBasedSmallCap": true,
+      "TrueMarketCap": true,
+      "VolumeCV": true
+    },
+    "filter_factors": {
+      "FilterLowPrice": true,
+      "FilterST": true,
+      "FilterStarST": true
+    },
+    "holding_period": 1,
+    "limit_up_protection": false,
+    "rebalance": true,
+    "rebalance_band_pct": 0.0069862291216850276,
+    "rebalance_now": true,
+    "sell_m": 30,
+    "weights": {
+      "AmihudIlliquidity": 0.21339328898389226,
+      "AmountBasedSmallCap": 0.2865390067509188,
+      "TrueMarketCap": 0.43354149836501754,
+      "VolumeCV": 0.06652620590017136
+    }
+  },
+  "decision_date": "2022-09-01",
+  "encoded_observation_sha256": "8b3d92fcb5de8db25293afcd4c919ae30a7c80311e732bb8d2eedc02092158c8",
+  "model_sha256": "4ebb61b9509c30e6a36c40fee147a9d7eceeb677e5d44c79aaf50604c859f5a3",
+  "observation_schema": "wbr-observation-v1:6dcf29c0bc6db355ab91f5870c28d133ea0bb7294eaad46fff9591ee84d8288a",
+  "raw_action": [
+    -0.5613597631454468,
+    -0.10883446037769318,
+    -0.8632521629333496,
+    -0.4110051989555359,
+    0.10526696592569351,
+    0.06165934354066849,
+    0.11057372391223907,
+    0.09602224826812744,
+    0.054451800882816315,
+    0.07335075736045837,
+    0.07150227576494217,
+    0.46226853132247925,
+    -0.7538641095161438,
+    -0.472034215927124,
+    0.057060372084379196,
+    -0.03803667426109314,
+    -0.03394293040037155,
+    -0.906850278377533
+  ],
+  "same_observation_exact": true
+}

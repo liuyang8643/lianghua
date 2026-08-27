@@ -1,0 +1,210 @@
+{
+  "buy_n_choices": [
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    100
+  ],
+  "exposure_range": [
+    0.0,
+    1.0
+  ],
+  "factor_names": [
+    "AmihudIlliquidity",
+    "TrueMarketCap",
+    "VolumeCV",
+    "AmountBasedSmallCap"
+  ],
+  "filter_names": [
+    "FilterST",
+    "FilterStarST",
+    "FilterLowPrice"
+  ],
+  "layout": [
+    {
+      "choices": [],
+      "index": 0,
+      "kind": "continuous",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "name": "factor_weight.AmihudIlliquidity"
+    },
+    {
+      "choices": [],
+      "index": 1,
+      "kind": "continuous",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "name": "factor_weight.TrueMarketCap"
+    },
+    {
+      "choices": [],
+      "index": 2,
+      "kind": "continuous",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "name": "factor_weight.VolumeCV"
+    },
+    {
+      "choices": [],
+      "index": 3,
+      "kind": "continuous",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "name": "factor_weight.AmountBasedSmallCap"
+    },
+    {
+      "choices": [],
+      "index": 4,
+      "kind": "binary",
+      "maximum": null,
+      "minimum": null,
+      "name": "factor_enabled.AmihudIlliquidity"
+    },
+    {
+      "choices": [],
+      "index": 5,
+      "kind": "binary",
+      "maximum": null,
+      "minimum": null,
+      "name": "factor_enabled.TrueMarketCap"
+    },
+    {
+      "choices": [],
+      "index": 6,
+      "kind": "binary",
+      "maximum": null,
+      "minimum": null,
+      "name": "factor_enabled.VolumeCV"
+    },
+    {
+      "choices": [],
+      "index": 7,
+      "kind": "binary",
+      "maximum": null,
+      "minimum": null,
+      "name": "factor_enabled.AmountBasedSmallCap"
+    },
+    {
+      "choices": [],
+      "index": 8,
+      "kind": "binary",
+      "maximum": null,
+      "minimum": null,
+      "name": "filter_flag.FilterST"
+    },
+    {
+      "choices": [],
+      "index": 9,
+      "kind": "binary",
+      "maximum": null,
+      "minimum": null,
+      "name": "filter_flag.FilterStarST"
+    },
+    {
+      "choices": [],
+      "index": 10,
+      "kind": "binary",
+      "maximum": null,
+      "minimum": null,
+      "name": "filter_flag.FilterLowPrice"
+    },
+    {
+      "choices": [],
+      "index": 11,
+      "kind": "continuous",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "name": "target_exposure"
+    },
+    {
+      "choices": [
+        20,
+        25,
+        30,
+        35,
+        40,
+        45,
+        50,
+        100
+      ],
+      "index": 12,
+      "kind": "discrete",
+      "maximum": null,
+      "minimum": null,
+      "name": "buy_n"
+    },
+    {
+      "choices": [
+        20,
+        25,
+        30,
+        35,
+        40,
+        45,
+        50,
+        100
+      ],
+      "index": 13,
+      "kind": "discrete",
+      "maximum": null,
+      "minimum": null,
+      "name": "sell_m"
+    },
+    {
+      "choices": [],
+      "index": 14,
+      "kind": "binary",
+      "maximum": null,
+      "minimum": null,
+      "name": "rebalance_now"
+    },
+    {
+      "choices": [
+        "equalize",
+        "replace_only"
+      ],
+      "index": 15,
+      "kind": "enum",
+      "maximum": null,
+      "minimum": null,
+      "name": "rebalance_mode"
+    },
+    {
+      "choices": [],
+      "index": 16,
+      "kind": "binary",
+      "maximum": null,
+      "minimum": null,
+      "name": "limit_up_protection"
+    },
+    {
+      "choices": [],
+      "index": 17,
+      "kind": "continuous",
+      "maximum": 0.15,
+      "minimum": 0.0,
+      "name": "rebalance_band_pct"
+    }
+  ],
+  "rebalance_band_range": [
+    0.0,
+    0.15
+  ],
+  "schema_hash": "80b08ff5974e97bbd65eb9264e1c765e925a62557dc0083bdf7742158af32c47",
+  "schema_version": "day-config-v1",
+  "sell_m_choices": [
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    100
+  ]
+}

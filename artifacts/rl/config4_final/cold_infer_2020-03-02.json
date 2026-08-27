@@ -1,0 +1,55 @@
+{
+  "bundle": "D:\\coding\\WBR\\artifacts\\rl\\config4_final",
+  "day_config": {
+    "buy_n": 20,
+    "cash_reserve_ratio": 0.25899936258792877,
+    "factor_enabled": {
+      "AmihudIlliquidity": true,
+      "AmountBasedSmallCap": true,
+      "TrueMarketCap": true,
+      "VolumeCV": true
+    },
+    "filter_factors": {
+      "FilterLowPrice": true,
+      "FilterST": true,
+      "FilterStarST": true
+    },
+    "holding_period": 1,
+    "limit_up_protection": true,
+    "rebalance": true,
+    "rebalance_band_pct": 0.009450428187847137,
+    "rebalance_now": true,
+    "sell_m": 30,
+    "weights": {
+      "AmihudIlliquidity": 0.21668354463517336,
+      "AmountBasedSmallCap": 0.2846303316854555,
+      "TrueMarketCap": 0.4409446240643464,
+      "VolumeCV": 0.057741499615024755
+    }
+  },
+  "decision_date": "2020-03-02",
+  "encoded_observation_sha256": "24bd4bc675839a40db6ea33eed7970fb1eecfaa77947bdefe69fdb33b54313dc",
+  "model_sha256": "4ebb61b9509c30e6a36c40fee147a9d7eceeb677e5d44c79aaf50604c859f5a3",
+  "observation_schema": "wbr-observation-v1:6dcf29c0bc6db355ab91f5870c28d133ea0bb7294eaad46fff9591ee84d8288a",
+  "raw_action": [
+    -0.5659724473953247,
+    -0.11676672846078873,
+    -0.8843410015106201,
+    -0.4298717677593231,
+    0.13059838116168976,
+    0.08734027296304703,
+    0.12648044526576996,
+    0.0881265252828598,
+    0.04707679897546768,
+    0.07818180322647095,
+    0.10134951770305634,
+    0.48200127482414246,
+    -0.7597492933273315,
+    -0.4922650158405304,
+    0.09418339282274246,
+    -0.03507288172841072,
+    0.014938361942768097,
+    -0.8739942908287048
+  ],
+  "same_observation_exact": true
+}

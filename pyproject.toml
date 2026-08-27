@@ -19,6 +19,7 @@ dependencies = [
     "pyarrow~=22.0.0",
     "pyyaml~=6.0",
     "scipy>=1.16.3",
+    "stable-baselines3>=2.7,<3",
     "ta-lib~=0.6.8",
     "tqdm>=4.67.1",
     "xtquant~=250516.1.1",
@@ -30,7 +31,27 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["core", "trading", "testback", "utils", "configs"]
+only-include = [
+    "ai",
+    "env",
+    "factor",
+    "offline_data",
+    "factor_db/__init__.py",
+    "factor_db/factors/__init__.py",
+    "factor_db/factors/AmihudIlliquidity.py",
+    "factor_db/factors/TrueMarketCap.py",
+    "factor_db/factors/VolumeCV.py",
+    "factor_db/factors/AmountBasedSmallCap.py",
+    "factor_db/factors/filter.py",
+    "data/build_runtime.py",
+    "data/financial_pit.py",
+    "data/kline_mootdx.py",
+    "data/update_financial_deep.py",
+    "data/update_all.py",
+    "data/db/delist.py",
+    "data/db/stock_name.py",
+    "utils/stock/info.py",
+]
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
@@ -47,4 +68,3 @@ markers = [
     "cninfo: tests that require CNINFO API access (stock names, ST status)",
     "qmt: tests that require local QMT/xtdata (K-line history)",
 ]
-

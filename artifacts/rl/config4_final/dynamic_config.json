@@ -1,0 +1,157 @@
+{
+  "categorical": {
+    "buy_n": {
+      "counts": {
+        "20": 261,
+        "25": 710
+      },
+      "coverage": {
+        "20": 0.2687950566426365,
+        "25": 0.7312049433573635
+      },
+      "unique_count": 2
+    },
+    "factor_enabled.AmihudIlliquidity": {
+      "counts": {
+        "True": 971
+      },
+      "coverage": {
+        "True": 1.0
+      },
+      "unique_count": 1
+    },
+    "factor_enabled.AmountBasedSmallCap": {
+      "counts": {
+        "True": 971
+      },
+      "coverage": {
+        "True": 1.0
+      },
+      "unique_count": 1
+    },
+    "factor_enabled.TrueMarketCap": {
+      "counts": {
+        "True": 971
+      },
+      "coverage": {
+        "True": 1.0
+      },
+      "unique_count": 1
+    },
+    "factor_enabled.VolumeCV": {
+      "counts": {
+        "True": 971
+      },
+      "coverage": {
+        "True": 1.0
+      },
+      "unique_count": 1
+    },
+    "filter_flag.FilterLowPrice": {
+      "counts": {
+        "True": 971
+      },
+      "coverage": {
+        "True": 1.0
+      },
+      "unique_count": 1
+    },
+    "filter_flag.FilterST": {
+      "counts": {
+        "True": 971
+      },
+      "coverage": {
+        "True": 1.0
+      },
+      "unique_count": 1
+    },
+    "filter_flag.FilterStarST": {
+      "counts": {
+        "True": 971
+      },
+      "coverage": {
+        "True": 1.0
+      },
+      "unique_count": 1
+    },
+    "limit_up_protection": {
+      "counts": {
+        "False": 838,
+        "True": 133
+      },
+      "coverage": {
+        "False": 0.86302780638517,
+        "True": 0.13697219361483007
+      },
+      "unique_count": 2
+    },
+    "rebalance": {
+      "counts": {
+        "True": 971
+      },
+      "coverage": {
+        "True": 1.0
+      },
+      "unique_count": 1
+    },
+    "rebalance_now": {
+      "counts": {
+        "True": 971
+      },
+      "coverage": {
+        "True": 1.0
+      },
+      "unique_count": 1
+    },
+    "sell_m": {
+      "counts": {
+        "25": 195,
+        "30": 776
+      },
+      "coverage": {
+        "25": 0.2008238928939238,
+        "30": 0.7991761071060762
+      },
+      "unique_count": 2
+    }
+  },
+  "continuous": {
+    "factor_weight.AmihudIlliquidity": {
+      "maximum": 0.22167021146875984,
+      "mean": 0.21407946248823237,
+      "minimum": 0.20432447312830504,
+      "std": 0.003144032636926831
+    },
+    "factor_weight.AmountBasedSmallCap": {
+      "maximum": 0.2943492325394488,
+      "mean": 0.2805201475102915,
+      "minimum": 0.2748732653352561,
+      "std": 0.002613145887367799
+    },
+    "factor_weight.TrueMarketCap": {
+      "maximum": 0.4535634799991802,
+      "mean": 0.43939691220477267,
+      "minimum": 0.4292109211192825,
+      "std": 0.004767907737500251
+    },
+    "factor_weight.VolumeCV": {
+      "maximum": 0.07398594650362277,
+      "mean": 0.06600347779670353,
+      "minimum": 0.056664702612710116,
+      "std": 0.003646922675476279
+    },
+    "rebalance_band_pct": {
+      "maximum": 0.011383093893527985,
+      "mean": 0.0067403143055038755,
+      "minimum": 0.00437270700931549,
+      "std": 0.001004904830622428
+    },
+    "target_exposure": {
+      "maximum": 0.7595479488372803,
+      "mean": 0.7280683722941687,
+      "minimum": 0.7171253859996796,
+      "std": 0.008121777931251859
+    }
+  },
+  "transition_count": 971
+}
