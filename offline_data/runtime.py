@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Iterable
 
 import numpy as np
+from utils.atomic_file import file_sha256 as hash_file_bytes
+
+from .financial_versions import FINANCIAL_PANEL_FIELDS
 
 from .contracts import (
     LEGACY_RUNTIME_PROVENANCE_NOTE,
@@ -26,9 +29,33 @@ from .contracts import (
 )
 
 
-DEFAULT_LOOKBACK = 64
-MAX_PRODUCTION_FACTOR_HISTORY = 60
-MIN_PRELOAD_ROWS = 126
+_RUNTIME_DIR = Path(__file__).resolve().parents[1] / "data" / "runtime"
+
+
+def latest_runtime_npz_path(runtime_dir: str | Path | None = None) -> Path:
+    """Return the newest local runtime snapshot without loading market data."""
+
+    directory = _RUNTIME_DIR if runtime_dir is None else Path(runtime_dir)
+    paths = sorted(directory.glob("runtime_*.npz"))
+    if not paths:
+        raise FileNotFoundError(f"no runtime NPZ found in {directory}")
+    return paths[-1]
+
+
+def load_runtime_stock_codes(runtime_path: str | Path | None = None) -> list[str]:
+    """Return the immutable stock vocabulary stored in one runtime snapshot."""
+
+    path = latest_runtime_npz_path() if runtime_path is None else Path(runtime_path)
+    with np.load(path, allow_pickle=False) as payload:
+        return [str(value) for value in payload["stock_codes"]]
+
+
+def load_runtime_calendar(runtime_path: str | Path) -> np.ndarray:
+    """Read only the sealed trading calendar, without opening future prices."""
+    with np.load(runtime_path, allow_pickle=False) as payload:
+        dates = _validate_dates(payload["trade_dates"]).copy()
+    dates.flags.writeable = False
+    return dates
 
 RUNTIME_FIELDS: tuple[RuntimeFieldMetadata, ...] = (
     RuntimeFieldMetadata("open", ("date", "stock"), "float32", 0),
@@ -48,17 +75,25 @@ RUNTIME_FIELDS: tuple[RuntimeFieldMetadata, ...] = (
     RuntimeFieldMetadata("operating_cf_ps", ("date", "stock"), "float32", 0),
     RuntimeFieldMetadata("gross_margin", ("date", "stock"), "float32", 0),
     RuntimeFieldMetadata("st_mask", ("date", "stock"), "bool", 0),
+    RuntimeFieldMetadata("listing_age", ("date", "stock"), "int32", 0),
+    # Persistent from the first runtime trading day strictly after the source
+    # delist date. Shanghai retains the historical source semantics where the
+    # local dataset calls this date "暂停上市日期".
+    RuntimeFieldMetadata("delisted_mask", ("date", "stock"), "bool", 0),
     RuntimeFieldMetadata("issue_price", ("stock",), "float32", 0),
-    RuntimeFieldMetadata("stock_names", ("stock",), "str", 0),
+    RuntimeFieldMetadata("issue_date", ("stock",), "datetime64[D]", 0),
 )
 
 OPTIONAL_RUNTIME_FIELDS: tuple[RuntimeFieldMetadata, ...] = (
     RuntimeFieldMetadata("star_st_mask", ("date", "stock"), "bool", 0),
+    *(RuntimeFieldMetadata(name, ("date", "stock"), "float64", 0) for name in FINANCIAL_PANEL_FIELDS),
 )
 
 _LINEAGE_CHUNK_ROWS = 64
 
 _GENERATION_SEMANTICS_COMPONENTS = (
+    ("financial_vintage_snapshot", "offline_data/financial_snapshot.py"),
+    ("financial_vintage_alignment", "offline_data/financial_versions.py"),
     ("runtime_builder", "data/build_runtime.py"),
     ("financial_pit", "data/financial_pit.py"),
     ("kline_and_preclose_builder", "data/kline_mootdx.py"),
@@ -99,11 +134,7 @@ def _update_framed(digest, payload: bytes) -> None:
 @lru_cache(maxsize=8)
 def _file_sha256_cached(path_text: str, size: int, mtime_ns: int) -> str:
     del size, mtime_ns
-    digest = hashlib.sha256()
-    with Path(path_text).open("rb") as stream:
-        while chunk := stream.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return hash_file_bytes(path_text)
 
 
 def file_sha256(path: str | Path) -> str:
@@ -158,6 +189,10 @@ def _selected_fields(
     missing = [field.name for field in RUNTIME_FIELDS if field.name not in available]
     if missing:
         raise ValueError(f"runtime NPZ is missing registered fields: {missing}")
+    financial_present = available.intersection(FINANCIAL_PANEL_FIELDS)
+    if financial_present and financial_present != set(FINANCIAL_PANEL_FIELDS):
+        missing_financial = sorted(set(FINANCIAL_PANEL_FIELDS) - available)
+        raise ValueError(f"runtime has an obsolete or partial financial schema: {missing_financial}")
     optional = tuple(
         field for field in OPTIONAL_RUNTIME_FIELDS if field.name in available
     )
@@ -213,12 +248,16 @@ def _canonical_numeric_chunk(
 ) -> np.ndarray:
     if dtype == "bool":
         return np.array(values, dtype=np.uint8, order="C", copy=True)
-    if dtype != "float32":
+    if dtype == "int32":
+        return np.array(values, dtype="<i4", order="C", copy=True)
+    if dtype == "datetime64[D]":
+        return np.asarray(values, dtype="datetime64[D]").view("<i8").copy(order="C")
+    if dtype not in ("float32", "float64"):
         raise ValueError(f"unsupported canonical numeric dtype: {dtype}")
     with np.errstate(over="ignore", invalid="ignore"):
-        normalized = np.array(values, dtype="<f4", order="C", copy=True)
+        normalized = np.array(values, dtype="<f4" if dtype == "float32" else "<f8", order="C", copy=True)
     normalized[normalized == 0] = 0.0
-    normalized[np.isnan(normalized)] = np.float32(np.nan)
+    normalized[np.isnan(normalized)] = np.nan
     return normalized
 
 
@@ -428,15 +467,16 @@ def load_runtime_slice(
     start: object,
     end: object,
     *,
-    lookback: int = DEFAULT_LOOKBACK,
-    max_factor_history: int = MAX_PRODUCTION_FACTOR_HISTORY,
+    preload_rows: int = 0,
     expected_stock_codes: Iterable[str] | None = None,
 ) -> RuntimeSlice:
     """Load one local NPZ into a sealed, copied runtime slice.
 
     No path discovery or network fallback occurs. ``end`` is a hard boundary;
     the result never includes a later row, including a validation/test row used
-    only to settle an earlier split.
+    only to settle an earlier split. ``preload_rows`` is deliberately a generic
+    data-slice request: the consuming domain owns and supplies its cumulative
+    history requirement.
     """
 
     source_path = Path(npz_path).resolve()
@@ -444,13 +484,9 @@ def load_runtime_slice(
     requested_end = _as_date(end)
     if requested_start > requested_end:
         raise ValueError("start must not be later than end")
-    if lookback < 1 or max_factor_history < 0:
-        raise ValueError("lookback must be positive and factor history non-negative")
-
-    requested_preload = max(
-        MIN_PRELOAD_ROWS,
-        int(lookback) + int(max_factor_history) + 2,
-    )
+    if type(preload_rows) is not int or preload_rows < 0:
+        raise ValueError("preload_rows must be a non-negative int")
+    requested_preload = preload_rows
 
     with np.load(source_path, allow_pickle=False) as npz:
         source_dates = _validate_dates(npz["trade_dates"])

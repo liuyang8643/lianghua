@@ -243,6 +243,13 @@ function renderDistributionChart() {
 function renderWinLossChart() {
   const payload = REPORT_DATA.charts.winloss;
   const chart = makeChart('winloss-chart');
+  if (REPORT_DATA.summary.position_lot_analytics_available === false) {
+    renderNoData(
+      document.getElementById('winloss-chart'),
+      'N/A（未提供逐持仓平仓配对）',
+    );
+    return;
+  }
   if (!chart || !payload || (payload.wins || 0) + (payload.losses || 0) === 0) {
     renderNoData(document.getElementById('winloss-chart'), '暂无清仓盈亏数据');
     return;

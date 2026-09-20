@@ -5,6 +5,7 @@ import inspect
 import json
 import math
 
+import numpy as np
 import pytest
 
 from env.contracts import AccountState, OrderPlan
@@ -15,6 +16,7 @@ from env.simulator import (
     DaySimulator,
     FeeSchedule,
     accounting_schema_manifest,
+    settlement_economics,
 )
 
 
@@ -31,7 +33,180 @@ def _plan(
     )
 
 
-def test_default_buy_fees_are_deducted_once_and_reward_is_next_open_log_return():
+def test_settlement_economics_broadcasts_all_fallback_and_action_cases():
+    economics = settlement_economics(
+        current_mark=np.asarray((10.0, 10.0, 10.0, 10.0, 10.0, np.nan)),
+        current_close=np.asarray((10.0, 10.0, np.nan, 10.0, np.nan, 10.0)),
+        next_preclose=np.asarray((10.0, 5.0, 5.0, np.nan, np.nan, 10.0)),
+        next_open=np.asarray((11.0, 5.5, np.nan, 12.0, np.nan, 11.0)),
+    )
+
+    np.testing.assert_allclose(
+        economics.settlement_mark[:5],
+        (11.0, 5.5, 5.0, 12.0, 10.0),
+    )
+    np.testing.assert_allclose(
+        economics.reference_ratio,
+        (1.0, 2.0, 2.0, 1.0, 1.0, 1.0),
+    )
+    np.testing.assert_allclose(
+        economics.effective_corporate_action_ratio,
+        (1.0, 2.0, 2.0, 1.0, 1.0, 1.0),
+    )
+    np.testing.assert_allclose(
+        economics.gross_return[:5],
+        (1.1, 1.1, 1.0, 1.2, 1.0),
+    )
+    assert np.isnan(economics.gross_return[5])
+    np.testing.assert_array_equal(
+        economics.gross_return_valid,
+        (True, True, True, True, True, False),
+    )
+    assert economics.mark_source.tolist() == [
+        "open[T+1]",
+        "open[T+1]",
+        "preClose[T+1]",
+        "open[T+1]",
+        "current_mark[T]",
+        "open[T+1]",
+    ]
+    assert economics.ratio_source.tolist() == [
+        "close[T]/preClose[T+1]",
+        "close[T]/preClose[T+1]",
+        "current_mark[T]_fallback/preClose[T+1]",
+        "unavailable; ratio=1",
+        "unavailable; ratio=1",
+        "close[T]/preClose[T+1]",
+    ]
+
+
+    lightweight = settlement_economics(
+        current_mark=np.asarray((10.0, 10.0, 10.0, 10.0, 10.0, np.nan)).reshape(2, 3),
+        current_close=np.asarray((10.0, 10.0, np.nan, 10.0, np.nan, 10.0)).reshape(2, 3),
+        next_preclose=np.asarray((10.0, 5.0, 5.0, np.nan, np.nan, 10.0)).reshape(2, 3),
+        next_open=np.asarray((11.0, 5.5, np.nan, 12.0, np.nan, 11.0)).reshape(2, 3),
+        diagnostics=False,
+        chunk_rows=1,
+    )
+    np.testing.assert_array_equal(
+        lightweight.gross_return,
+        economics.gross_return.reshape(2, 3),
+    )
+    np.testing.assert_array_equal(
+        lightweight.gross_return_valid,
+        economics.gross_return_valid.reshape(2, 3),
+    )
+    assert lightweight.settlement_mark is None
+    assert lightweight.mark_source is None
+    assert lightweight.ratio_source is None
+
+
+def test_next_day_delist_is_written_off_without_fabricating_a_fill():
+    simulator = DaySimulator(FeeSchedule())
+    account = AccountState(
+        cash=100.0,
+        positions={"000001.SZ": 100},
+        sellable_positions={"000001.SZ": 100},
+        average_costs={"000001.SZ": 10.0},
+        last_prices={"000001.SZ": 10.0},
+        nav=1100.0,
+        peak_nav=1100.0,
+    )
+
+    result = simulator.step(
+        account,
+        _plan(),
+        {"000001.SZ": 10.0},
+        {"000001.SZ": np.nan},
+        close_prices={"000001.SZ": 10.0},
+        next_preclose_prices={"000001.SZ": np.nan},
+        next_delisted_codes={"000001.SZ"},
+        next_decision_date="2026-08-21",
+    )
+
+    assert result.account_state.positions == {}
+    assert result.account_state.cash == 100.0
+    assert result.account_state.nav == 100.0
+    assert result.fills == ()
+    assert result.diagnostics["delist_write_offs"] == (
+        {
+            "type": "delist_write_off",
+            "code": "000001.SZ",
+            "effective_date": "2026-08-21",
+            "quantity": 100,
+            "average_cost": 10.0,
+            "proceeds": 0.0,
+        },
+    )
+
+
+def test_settlement_economics_snaps_near_one_ratio_and_matches_simulator_nav():
+    economics = settlement_economics(
+        current_mark=10.0,
+        current_close=10.00000009,
+        next_preclose=10.0,
+        next_open=11.0,
+    )
+    assert economics.reference_ratio.item() == pytest.approx(1.000000009)
+    assert economics.effective_corporate_action_ratio.item() == 1.0
+    assert economics.gross_return.item() == pytest.approx(1.1)
+
+    account = AccountState(
+        cash=0.0,
+        positions={"600000.SH": 100},
+        sellable_positions={"600000.SH": 100},
+        average_costs={"600000.SH": 10.0},
+        last_prices={"600000.SH": 10.0},
+        nav=1_000.0,
+        peak_nav=1_000.0,
+    )
+    result = DaySimulator().step(
+        account,
+        _plan(),
+        {"600000.SH": 10.0},
+        {"600000.SH": 11.0},
+        close_prices={"600000.SH": 10.00000009},
+        next_preclose_prices={"600000.SH": 10.0},
+    )
+
+    assert result.account_state.nav / account.nav == pytest.approx(
+        economics.gross_return.item()
+    )
+    assert result.diagnostics["corporate_action_adjustments"] == {}
+
+
+def test_settlement_economics_uses_scalar_math_isclose_boundary():
+    reference_ratio = 1.000000015
+    economics = settlement_economics(
+        current_mark=10.0,
+        current_close=reference_ratio * 10.0,
+        next_preclose=10.0,
+        next_open=11.0,
+    )
+
+    assert not math.isclose(reference_ratio, 1.0, rel_tol=1e-8, abs_tol=1e-8)
+    assert economics.effective_corporate_action_ratio.item() == pytest.approx(
+        reference_ratio
+    )
+    assert economics.gross_return.item() == pytest.approx(reference_ratio * 1.1)
+
+
+def test_settlement_economics_does_not_snap_infinite_reference_ratio():
+    with np.errstate(over="ignore", invalid="ignore"):
+        economics = settlement_economics(
+            current_mark=10.0,
+            current_close=np.finfo(np.float64).max,
+            next_preclose=np.nextafter(0.0, 1.0),
+            next_open=11.0,
+        )
+
+    assert np.isinf(economics.reference_ratio.item())
+    assert np.isinf(economics.effective_corporate_action_ratio.item())
+    assert not economics.gross_return_valid.item()
+    assert np.isnan(economics.gross_return.item())
+
+
+def test_default_buy_fees_enter_net_nav_once_before_episode_reward():
     result = DaySimulator().step(
         AccountState(cash=2_000.0, nav=2_000.0, peak_nav=2_000.0),
         _plan(buys={"600000.SH": 100}),
@@ -41,18 +216,105 @@ def test_default_buy_fees_are_deducted_once_and_reward_is_next_open_log_return()
         next_preclose_prices={"600000.SH": 10.0},
     )
 
-    expected_fee = 0.1 + 1_000.0 * 0.00002 + 1_000.0 * 0.001
+    expected_fee = 0.1 + 1_000.0 * 0.00002 + 1_000.0 * 0.0025
     expected_nav = 2_000.0 - expected_fee
     assert result.fills[0].fee == pytest.approx(expected_fee)
     assert result.account_state.cash == pytest.approx(1_000.0 - expected_fee)
     assert result.account_state.positions == {"600000.SH": 100}
     assert result.account_state.nav == pytest.approx(expected_nav)
     assert result.portfolio_return == pytest.approx(expected_nav / 2_000.0 - 1.0)
-    assert result.reward == pytest.approx(math.log(expected_nav / 2_000.0))
+    drawdown = 1.0 - expected_nav / 2_000.0
+    assert result.reward == 0.0
+    assert result.diagnostics["net_log_return"] == pytest.approx(
+        math.log(expected_nav / 2_000.0)
+    )
+    assert result.account_state.max_drawdown == pytest.approx(drawdown)
     assert result.diagnostics["total_fees"] == pytest.approx(expected_fee)
+    assert result.diagnostics["gross_traded_notional"] == pytest.approx(1_000.0)
+    assert result.diagnostics["gross_turnover_ratio"] == pytest.approx(0.5)
+    assert result.diagnostics["total_cost_ratio"] == pytest.approx(
+        expected_fee / 2_000.0
+    )
+    assert not result.policy_memory.initialized
     assert result.account_state.average_costs["600000.SH"] == pytest.approx(
         (1_000.0 + expected_fee) / 100
     )
+
+
+def test_weighted_average_cost_includes_buy_fees_and_survives_partial_sale():
+    fees = FeeSchedule(
+        commission_rate=0.01,
+        minimum_commission=2.0,
+        stamp_tax_rate=0.03,
+        transfer_fee_rate=0.005,
+        slippage_rate=0.02,
+    )
+    simulator = DaySimulator(fees)
+    account = AccountState(
+        cash=3_000.0,
+        positions={"600000.SH": 100},
+        sellable_positions={"600000.SH": 100},
+        average_costs={"600000.SH": 10.0},
+        last_prices={"600000.SH": 20.0},
+        nav=5_000.0,
+        peak_nav=5_000.0,
+    )
+
+    added = simulator.step(
+        account,
+        _plan(buys={"600000.SH": 100}),
+        {"600000.SH": 20.0},
+        {"600000.SH": 20.0},
+        close_prices={"600000.SH": 20.0},
+        next_preclose_prices={"600000.SH": 20.0},
+    )
+    expected_average = (100 * 10.0 + fees.buy_total_cost(100 * 20.0)) / 200
+    assert added.account_state.positions == {"600000.SH": 200}
+    assert added.account_state.average_costs["600000.SH"] == pytest.approx(
+        expected_average
+    )
+
+    partially_sold = simulator.step(
+        added.account_state,
+        _plan(sells=(("600000.SH", 100),)),
+        {"600000.SH": 30.0},
+        {"600000.SH": 30.0},
+        close_prices={"600000.SH": 30.0},
+        next_preclose_prices={"600000.SH": 30.0},
+    )
+    assert partially_sold.account_state.positions == {"600000.SH": 100}
+    assert partially_sold.account_state.average_costs["600000.SH"] == pytest.approx(
+        expected_average
+    )
+
+
+def test_simulator_keeps_running_drawdown_but_owns_no_episode_reward():
+    simulator = DaySimulator()
+    account = AccountState(
+        cash=0.0,
+        positions={"600000.SH": 100},
+        sellable_positions={"600000.SH": 100},
+        last_prices={"600000.SH": 10.0},
+        nav=1_000.0,
+        peak_nav=1_000.0,
+    )
+    first = simulator.step(
+        account,
+        _plan(),
+        {"600000.SH": 10.0},
+        {"600000.SH": 9.0},
+    )
+    assert first.account_state.max_drawdown == pytest.approx(0.10)
+    assert first.reward == 0.0
+
+    recovery = simulator.step(
+        first.account_state,
+        _plan(),
+        {"600000.SH": 9.0},
+        {"600000.SH": 9.5},
+    )
+    assert recovery.account_state.max_drawdown == pytest.approx(0.10)
+    assert recovery.reward == 0.0
 
 
 def test_default_sell_fees_include_stamp_tax_and_full_sell_allows_odd_lot():
@@ -67,7 +329,7 @@ def test_default_sell_fees_include_stamp_tax_and_full_sell_allows_odd_lot():
     )
     result = DaySimulator().step(
         account,
-        _plan(sells=(("600000.SH", -1),)),
+        _plan(sells=(("600000.SH", 150),)),
         {"600000.SH": 10.0},
         {},
     )
@@ -76,7 +338,7 @@ def test_default_sell_fees_include_stamp_tax_and_full_sell_allows_odd_lot():
         max(1_500.0 * 0.0000854, 0.1)
         + 1_500.0 * 0.0005
         + 1_500.0 * 0.00002
-        + 1_500.0 * 0.001
+        + 1_500.0 * 0.0025
     )
     assert result.fills[0].quantity == 150
     assert result.fills[0].fee == pytest.approx(expected_fee)
@@ -98,7 +360,7 @@ def test_sells_execute_before_buys_and_fund_them():
     result = DaySimulator().step(
         account,
         _plan(
-            sells=(("600000.SH", -1),),
+            sells=(("600000.SH", 100),),
             buys={"600001.SH": 100},
         ),
         {"600000.SH": 10.0, "600001.SH": 9.0},
@@ -130,7 +392,7 @@ def test_empty_sellable_mapping_does_not_fall_back_to_full_position():
     )
     result = DaySimulator().step(
         account,
-        _plan(sells=(("600000.SH", -1),)),
+        _plan(sells=(("600000.SH", 100),)),
         {"600000.SH": 10.0},
         {"600000.SH": 10.0},
         close_prices={"600000.SH": 10.0},
@@ -243,7 +505,8 @@ def test_kcb_direct_partial_sell_enforces_200_minimum_and_one_share_step():
     assert accepted.account_state.positions == {code: 167}
 
 
-def test_missing_opens_use_explained_mark_fallbacks_but_do_not_fill_orders():
+@pytest.mark.parametrize("invalid_open", (float("nan"), float("inf"), -float("inf"), 0.0, -1.0))
+def test_missing_opens_use_explained_mark_fallbacks_but_do_not_fill_orders(invalid_open):
     account = AccountState(
         cash=0.0,
         positions={"600000.SH": 100},
@@ -255,8 +518,8 @@ def test_missing_opens_use_explained_mark_fallbacks_but_do_not_fill_orders():
     )
     result = DaySimulator().step(
         account,
-        _plan(sells=(("600000.SH", -1),)),
-        {"600000.SH": float("nan")},
+        _plan(sells=(("600000.SH", 100),)),
+        {"600000.SH": invalid_open},
         {"600000.SH": float("nan")},
         close_prices={"600000.SH": 10.5},
         next_preclose_prices={"600000.SH": 10.5},
@@ -266,7 +529,7 @@ def test_missing_opens_use_explained_mark_fallbacks_but_do_not_fill_orders():
     assert result.account_state.positions == {"600000.SH": 100}
     assert result.account_state.last_prices == {"600000.SH": 10.5}
     assert result.account_state.nav == pytest.approx(1_050.0)
-    assert result.reward == pytest.approx(math.log(1.05))
+    assert result.reward == 0.0
     assert result.diagnostics["current_mark_fallbacks"]["600000.SH"] == (
         "open[T]_missing; used_account.last_prices"
     )
@@ -299,7 +562,7 @@ def test_reward_ends_at_next_open_not_current_close():
 
     assert result.account_state.nav == pytest.approx(1_100.0)
     assert result.portfolio_return == pytest.approx(0.10)
-    assert result.reward == pytest.approx(math.log(1.10))
+    assert result.reward == 0.0
     assert result.diagnostics["reward_interval"] == (
         "pretrade_open[T]_to_pretrade_open[T+1]"
     )
@@ -393,7 +656,7 @@ def test_corporate_action_rebases_economic_shares_and_stays_consistent_next_step
     assert first.account_state.last_prices == {"600000.SH": 5.5}
     assert first.account_state.cash == pytest.approx(0.0)
     assert first.account_state.nav == pytest.approx(1_100.0)
-    assert first.reward == pytest.approx(math.log(1.10))
+    assert first.reward == 0.0
     expected_economic_value = 100 * (10.0 / 5.0) * 5.5
     realized_economic_value = (
         first.account_state.positions["600000.SH"]
@@ -431,7 +694,7 @@ def test_corporate_action_rebases_economic_shares_and_stays_consistent_next_step
     assert second.account_state.positions == {"600000.SH": 200}
     assert second.account_state.last_prices == {"600000.SH": 6.6}
     assert second.account_state.nav == pytest.approx(1_320.0)
-    assert second.reward == pytest.approx(math.log(1.20))
+    assert second.reward == 0.0
     assert second.diagnostics["corporate_action_adjustments"] == {}
     assert second.diagnostics["broker_quantity_exact"] is False
 

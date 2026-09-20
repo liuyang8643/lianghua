@@ -11,6 +11,7 @@ survivorship bias.  No historical ``valid_from`` value is invented.
 
 from __future__ import annotations
 
+from utils.atomic_file import file_sha256, atomic_write_json
 import argparse
 import hashlib
 import io
@@ -110,12 +111,6 @@ def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _atomic_write_parquet(frame: pd.DataFrame, path: Path) -> str:
@@ -133,7 +128,7 @@ def _atomic_write_parquet(frame: pd.DataFrame, path: Path) -> str:
             frame.columns
         ):
             raise RuntimeError(f"parquet round-trip changed shape/schema for {path.name}")
-        digest = _sha256_file(temporary)
+        digest = file_sha256(temporary)
         os.replace(temporary, path)
         temporary = None
         return digest
@@ -142,26 +137,6 @@ def _atomic_write_parquet(frame: pd.DataFrame, path: Path) -> str:
             temporary.unlink(missing_ok=True)
 
 
-def _atomic_write_json(value: Mapping[str, object], path: Path) -> None:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            dir=path.parent,
-            suffix=".json",
-            mode="w",
-            encoding="utf-8",
-            delete=False,
-        ) as stream:
-            json.dump(value, stream, ensure_ascii=False, indent=2)
-            stream.write("\n")
-            temporary = Path(stream.name)
-        os.replace(temporary, path)
-        temporary = None
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
 
 
 def canonical_a_code(value: object) -> str:
@@ -1645,7 +1620,7 @@ def update_ah_history(
         szse_source_sha256=szse_source_sha256,
         szse_limitation=szse_limitation,
     )
-    _atomic_write_json(metadata, output_dir / METADATA_FILENAME)
+    atomic_write_json(output_dir / METADATA_FILENAME, metadata, sort_keys=False, trailing_newline=True)
     return metadata
 
 
@@ -1660,7 +1635,7 @@ def load_ah_history(
     for filename in (PAIR_FILENAME, HK_PRICE_FILENAME, FX_FILENAME):
         path = output_dir / filename
         expected = metadata["artifacts"][filename]["sha256"]
-        actual = _sha256_file(path)
+        actual = file_sha256(path)
         if actual != expected:
             raise RuntimeError(
                 f"A/H artifact SHA-256 mismatch for {filename}: "

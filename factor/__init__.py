@@ -8,6 +8,7 @@ from .base import (
     FactorMetadata,
 )
 from .compute import precompute_factors
+from .coverage import factor_coverage
 from .registry import (
     PRODUCTION_FACTORS,
     PRODUCTION_FACTOR_NAMES,
@@ -30,4 +31,5 @@ __all__ = [
     "get_factor_definition",
     "get_filter_definition",
     "precompute_factors",
+    "factor_coverage",
 ]

@@ -1,47 +1,53 @@
-"""真实数据测试共用 fixture。
-
-加载生产 runtime NPZ（session 内只加载一次），构建与回测完全一致的 LegalityChecker
-（list_dates_map 取 K 线首个有效开盘日），并提供按 (代码, 日期) 查询买卖合法性与
-原始 bar 的便捷 API，供 test_legality_realdata_*.py 使用。
-"""
+"""真实数据测试共用 fixture，只接受当前完整 runtime 契约。"""
 from datetime import date
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from core.legality import LegalityChecker
+from env.legality import classify_board_types, evaluate_trade_legality
+from offline_data.runtime import RUNTIME_FIELDS
+from offline_data.financial_versions import FINANCIAL_PANEL_FIELDS
 
 _ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope='session')
-def runtime_data():
+def compatible_runtime_path():
     files = sorted((_ROOT / 'data' / 'runtime').glob('runtime_*.npz'))
     if not files:
         pytest.skip('runtime npz 不存在，跳过真实数据测试')
-    npz = np.load(files[-1], allow_pickle=True)
-    return {k: npz[k] for k in npz.files}
+    path = files[-1]
+    required = {'stock_codes', 'trade_dates', *(field.name for field in RUNTIME_FIELDS), *FINANCIAL_PANEL_FIELDS}
+    with np.load(path, allow_pickle=False) as payload:
+        missing = sorted(required - set(payload.files))
+    if missing:
+        pytest.skip(f'生产 runtime 契约已过期，缺少字段: {missing}')
+    return path
+
+
+@pytest.fixture(scope='session')
+def runtime_data(compatible_runtime_path):
+    with np.load(compatible_runtime_path, allow_pickle=False) as payload:
+        return {key: payload[key] for key in payload.files}
 
 
 class RealMarket:
-    """封装真实 runtime + LegalityChecker，按 (code, date) 查询。"""
+    """封装真实 runtime，并调用生产唯一合法性函数。"""
 
     def __init__(self, data):
         self.data = data
         self.codes = [str(s) for s in data['stock_codes']]
         self.stock_indices = {c: i for i, c in enumerate(self.codes)}
         self.dates = data['trade_dates'].astype('datetime64[D]')
+        self.board_types = classify_board_types(self.codes)
 
-        # list_dates_map：K 线首个有效开盘日（与 core/backtest._compute_list_dates 一致）
-        valid = ~np.isnan(data['open']) & (data['open'] > 0)
-        first_idx = np.argmax(valid, axis=0)
-        has_valid = np.any(valid, axis=0)
-        list_map = {self.codes[i]: self.dates[first_idx[i]].item()
-                    for i in range(len(self.codes)) if has_valid[i]}
-
-        self.list_map = list_map
-        self.checker = LegalityChecker(data, self.stock_indices, list_map)
+        ages = np.asarray(data['listing_age'], dtype=np.int32)
+        self.list_map = {}
+        for stock_index, code in enumerate(self.codes):
+            first = np.flatnonzero(ages[:, stock_index] == 0)
+            if first.size:
+                self.list_map[code] = self.dates[int(first[0])].item()
 
     def has(self, code):
         return code in self.stock_indices
@@ -58,13 +64,32 @@ class RealMarket:
 
     def buy(self, code, d):
         """该股 d 日开盘能否买入。"""
-        ok, _ = self.checker.check([self.stock_indices[code]], self.didx(d), d, is_buy=True)
-        return bool(ok[0])
+        return bool(self._legality(code, d).buy_allowed[0])
 
     def sell(self, code, d):
         """该股 d 日开盘能否卖出。"""
-        ok, _ = self.checker.check([self.stock_indices[code]], self.didx(d), d, is_buy=False)
-        return bool(ok[0])
+        result = self._legality(code, d)
+        assert result.sell_allowed is not None
+        return bool(result.sell_allowed[0])
+
+    def _legality(self, code, d):
+        ti = self.didx(d)
+        ci = self.stock_indices[code]
+        issue_price = (
+            self.data['issue_price'][ci:ci + 1]
+            if self.data['issue_date'][ci] == self.dates[ti]
+            else np.asarray([np.nan])
+        )
+        return evaluate_trade_legality(
+            decision_date=d,
+            stock_codes=[code],
+            listing_age=self.data['listing_age'][ti, ci:ci + 1],
+            open_prices=self.data['open'][ti, ci:ci + 1],
+            preclose_prices=self.data['preClose'][ti, ci:ci + 1],
+            issue_prices=issue_price,
+            st_mask=self.data['st_mask'][ti, ci:ci + 1],
+            delisted_mask=self.data['delisted_mask'][ti, ci:ci + 1],
+        )
 
     def bar(self, code, d):
         """原始 OHLC + 前收 + ST + 发行价（用于在测试里核对样本是否符合预期形态）。"""
@@ -74,10 +99,12 @@ class RealMarket:
             high=float(self.data['high'][ti, ci]),
             low=float(self.data['low'][ti, ci]),
             close=float(self.data['close'][ti, ci]),
-            preclose=float(self.data['close'][ti - 1, ci]) if ti > 0 else np.nan,
+            preclose=float(self.data['preClose'][ti, ci]),
             st=bool(self.data['st_mask'][ti, ci]),
             issue_price=float(self.data['issue_price'][ci]),
-            board=int(self.checker.board_type[ci]),
+            issue_date=self.data['issue_date'][ci],
+            listing_age=int(self.data['listing_age'][ti, ci]),
+            board=int(self.board_types[ci]),
         )
 
 

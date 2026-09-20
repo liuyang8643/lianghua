@@ -5,22 +5,23 @@
   - 报告里回填 seed 因子缺失的夏普等指标（每日收益仅用于算夏普/净值，不做相关性）
   - 持仓明细留档
 
-注：因子之间的"相同/不同"（去重、多样性、GA NSGA 目标）统一由 factor_db.similarity 的
-每日截面股票 rank 指纹判定，本模块不参与任何收益相关性计算。
+本模块只保存回测留档，不参与因子打分、去重或策略选择。
 
 设计约束（同 db.py）：
 - 只提供 add_run() 写入与只读查询，绝不提供 update / delete。
 - SQLite 触发器在底层拦截 factor_runs 表的 UPDATE / DELETE，保证 append-only。
-- 复用同一个 factor_db/registry.db 文件。
+- 复用 artifacts/factor_discovery/registry.db。
 """
 import gzip
 import json
 import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
-_DB_PATH = Path(__file__).resolve().parent / 'registry.db'
+from factor_db import REGISTRY_PATH
+
+
+_DB_PATH = REGISTRY_PATH
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS factor_runs (
@@ -61,6 +62,7 @@ _BLOB_COLS = ('dates_blob', 'daily_ret_blob', 'topn_blob')
 
 
 def _connect() -> sqlite3.Connection:
+    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(_DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn

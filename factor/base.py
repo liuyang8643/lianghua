@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
 
-FACTOR_SCHEMA_VERSION = "wbr.production-factors.v2"
+FACTOR_SCHEMA_VERSION = "wbr.production-factors.v9-selected11-momentum-interior-gaps"
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +19,11 @@ class FactorMetadata:
     required_fields: tuple[str, ...]
     implementation_hash: str
     lagged_fields: tuple[str, ...] = ()
+    score_semantics: Literal["continuous", "binary"] = "continuous"
+
+    def __post_init__(self) -> None:
+        if self.score_semantics not in ("continuous", "binary"):
+            raise ValueError("score_semantics must be continuous or binary")
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -28,13 +33,29 @@ class FactorMetadata:
             "required_fields": list(self.required_fields),
             "implementation_hash": self.implementation_hash,
             "lagged_fields": list(self.lagged_fields),
+            "score_semantics": self.score_semantics,
         }
 
 
 @dataclass(frozen=True, slots=True)
 class FactorDefinition:
+    """One implementation and its declared input representation.
+
+    The default preserves canonical float64 calculation inputs. Explicit
+    ``raw_runtime_view`` definitions instead receive the original read-only
+    arrays and own any numeric conversion; implicit lag transforms are then
+    forbidden so object identity remains a meaningful binding contract.
+    """
+
     metadata: FactorMetadata
     implementation: type[Any]
+    raw_runtime_view: bool = False
+
+    def __post_init__(self) -> None:
+        if type(self.raw_runtime_view) is not bool:
+            raise TypeError("raw_runtime_view must be bool")
+        if self.raw_runtime_view and self.metadata.lagged_fields:
+            raise ValueError("raw runtime views cannot request transformed lagged fields")
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +68,6 @@ class FactorDay:
     ranks: np.ndarray
     validity: np.ndarray
     filters: np.ndarray
-    rank_universe_mask: np.ndarray
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,13 +76,13 @@ class FactorBatch:
 
     Factor arrays use ``[date, factor, stock]``. Filter arrays use
     ``[date, filter, stock]``. Invalid ranks are represented by zero and must
-    always be interpreted together with ``validity``.
+    always be interpreted together with ``validity``. Nonmembers also receive
+    rank zero; raw validity describes input availability, not pool membership.
     """
 
     schema_version: str
     schema_hash: str
     runtime_schema_hash: str
-    rank_universe_sha256: str
     stock_codes: tuple[str, ...]
     trade_dates: np.ndarray
     decision_start: int
@@ -73,7 +93,6 @@ class FactorBatch:
     ranks: np.ndarray
     validity: np.ndarray
     filters: np.ndarray
-    rank_universe_mask: np.ndarray
 
     def __post_init__(self) -> None:
         n_dates = len(self.trade_dates)
@@ -90,12 +109,6 @@ class FactorBatch:
             raise ValueError(f"validity must have shape {factor_shape}")
         if self.filters.shape != filter_shape:
             raise ValueError(f"filters must have shape {filter_shape}")
-        if self.rank_universe_mask.shape != (n_stocks,):
-            raise ValueError(
-                f"rank_universe_mask must have shape ({n_stocks},)"
-            )
-        if self.rank_universe_mask.dtype != np.bool_:
-            raise ValueError("rank_universe_mask must be bool")
         if not 0 <= self.decision_start < self.decision_stop <= n_dates:
             raise ValueError("invalid factor decision interval")
 
@@ -130,5 +143,4 @@ class FactorBatch:
             ranks=self.ranks[index],
             validity=self.validity[index],
             filters=self.filters[index],
-            rank_universe_mask=self.rank_universe_mask,
         )

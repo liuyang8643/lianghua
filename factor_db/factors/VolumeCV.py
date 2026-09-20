@@ -1,32 +1,25 @@
 import numpy as np
 
 
-def _shift(arr):
-    result = np.empty_like(arr)
-    result[0] = np.nan
-    result[1:] = arr[:-1]
-    return result
-
-
 class VolumeCV:
-  """成交量变异系数 — std(volume)/mean(volume)(已知量)，高CV=游资炒作=负面"""
-  hist_days = 20
+    """成交量变异系数 — std(volume)/mean(volume)，仅消费已完成日。"""
 
-  def calc_batch(self, panel: dict) -> np.ndarray:
-    volume_known = _shift(panel["volume"])
+    hist_days = 20
 
-    w = self.hist_days
-    n_valid = np.cumsum(~np.isnan(volume_known), axis=0).astype(float)
-    cum_sum = np.cumsum(np.where(np.isnan(volume_known), 0.0, volume_known), axis=0)
-    cum_sum2 = np.cumsum(np.where(np.isnan(volume_known), 0.0, volume_known * volume_known), axis=0)
+    def calc_batch(self, panel: dict) -> np.ndarray:
+        from factor.library.completed_windows import iter_completed_cumulative_sums
 
-    cv = np.empty_like(volume_known, dtype=float)
-    cv[:w] = np.nan
-    count = n_valid[w:] - n_valid[:-w]
-    mean = (cum_sum[w:] - cum_sum[:-w]) / count
-    mean_sq = (cum_sum2[w:] - cum_sum2[:-w]) / count
-    var = mean_sq - mean * mean
-    with np.errstate(divide='ignore', invalid='ignore'):
-        cv[w:] = np.sqrt(np.maximum(var, 0.0)) / mean
-
-    return np.where(~np.isnan(cv), -cv, np.nan)
+        volume = np.asarray(panel["volume"])
+        result = np.full(volume.shape, np.nan, dtype=np.float64)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            for row, sums, counts, squares in iter_completed_cumulative_sums(
+                volume, self.hist_days, include_squares=True,
+            ):
+                if row < self.hist_days:
+                    continue
+                mean = sums / counts
+                mean_sq = squares / counts
+                variance = mean_sq - mean * mean
+                cv = np.sqrt(np.maximum(variance, 0.0)) / mean
+                result[row] = np.where(~np.isnan(cv), -cv, np.nan)
+        return result

@@ -1,4 +1,4 @@
-"""LegalityChecker 合成单元测试（快速、不依赖真实 runtime）。
+"""生产合法性函数的合成单元测试（快速、不依赖真实 runtime）。
 
 覆盖核心分支逻辑：
   - 取整偏严：涨停价向下取整(_floor_2)、跌停价向上取整(_ceil_2)
@@ -12,51 +12,40 @@ from datetime import date
 
 import numpy as np
 
-from core.legality import LegalityChecker, _floor_2, _ceil_2
+from env.legality import _ceil_2, _floor_2, evaluate_trade_legality
 
 # 各板块用真实前缀代码（board_type 由前缀推断）
 BOARD_CODE = {0: '600519.SH', 1: '300750.SZ', 2: '688981.SH', 3: '830799.BJ'}
-N = 80
-TRADE_DATES = (np.datetime64('2000-01-01') + np.arange(N)).astype('datetime64[D]')
 
 
-def _make_checker(board, *, trade_idx, open_t, preclose=np.nan, st=False,
-                  volume_t=1.0, list_tidx=-1, high_t=np.nan, low_t=np.nan,
-                  close_t=np.nan, issue_price=np.nan,
-                  limit_up_protection=False):
+def _evaluate(board, signal_date, *, trade_idx, open_t, preclose=np.nan,
+              st=False, volume_t=1.0, list_tidx=-1, high_t=np.nan,
+              low_t=np.nan, close_t=np.nan, issue_price=np.nan,
+              limit_up_protection=False):
+    del volume_t, high_t, low_t, close_t
     code = BOARD_CODE[board]
-    o = np.full((N, 1), np.nan); c = np.full((N, 1), np.nan)
-    v = np.zeros((N, 1))
-    pc = np.full((N, 1), np.nan)
-    h = np.full((N, 1), np.nan); l = np.full((N, 1), np.nan)
-    o[trade_idx, 0] = open_t; h[trade_idx, 0] = high_t
-    l[trade_idx, 0] = low_t; c[trade_idx, 0] = close_t
-    v[trade_idx, 0] = volume_t
-    if trade_idx > 0 and not np.isnan(preclose):
-        c[trade_idx - 1, 0] = preclose
-        pc[trade_idx, 0] = preclose
-    st_mask = np.zeros((N, 1), dtype=bool); st_mask[trade_idx, 0] = st
-    data = dict(stock_codes=np.array([code]), trade_dates=TRADE_DATES,
-                open=o, close=c, high=h, low=l, volume=v, preClose=pc, st_mask=st_mask,
-                issue_price=np.array([issue_price]))
     effective_list_tidx = list_tidx if list_tidx >= 0 else 0
-    list_map = {code: TRADE_DATES[effective_list_tidx].item()}
-    return LegalityChecker(
-        data, {code: 0}, list_map,
+    return evaluate_trade_legality(
+        decision_date=signal_date,
+        stock_codes=[code],
+        listing_age=np.array([trade_idx - effective_list_tidx], dtype=np.int32),
+        open_prices=np.array([open_t]),
+        preclose_prices=np.array([preclose]),
+        issue_prices=np.array([issue_price]),
+        st_mask=np.array([st]),
+        delisted_mask=np.array([False]),
         limit_up_protection=limit_up_protection,
     )
 
 
 def _buy(board, signal_date, **kw):
-    ck = _make_checker(board, **kw)
-    ok, _ = ck.check([0], kw['trade_idx'], signal_date, is_buy=True)
-    return bool(ok[0])
+    return bool(_evaluate(board, signal_date, **kw).buy_allowed[0])
 
 
 def _sell(board, signal_date, **kw):
-    ck = _make_checker(board, **kw)
-    ok, _ = ck.check([0], kw['trade_idx'], signal_date, is_buy=False)
-    return bool(ok[0])
+    result = _evaluate(board, signal_date, **kw)
+    assert result.sell_allowed is not None
+    return bool(result.sell_allowed[0])
 
 
 SIG = date(2018, 6, 1)        # 普通时段（注册制前）
@@ -71,27 +60,19 @@ def test_floor_ceil_helpers():
 
 def test_legality_requires_no_current_hlcv_or_amount_fields():
     code = BOARD_CODE[0]
-    open_price = np.full((N, 1), np.nan)
-    pre_close = np.full((N, 1), np.nan)
-    open_price[30, 0] = 10.0
-    pre_close[30, 0] = 10.0
-    data = {
-        'stock_codes': np.array([code]),
-        'trade_dates': TRADE_DATES,
-        'open': open_price,
-        'preClose': pre_close,
-        'st_mask': np.zeros((N, 1), dtype=bool),
-        'issue_price': np.array([np.nan]),
-    }
-    checker = LegalityChecker(
-        data, {code: 0}, {code: TRADE_DATES[0].item()},
+    result = evaluate_trade_legality(
+        decision_date=SIG,
+        stock_codes=[code],
+        listing_age=np.array([30], dtype=np.int32),
+        open_prices=np.array([10.0]),
+        preclose_prices=np.array([10.0]),
+        issue_prices=np.array([np.nan]),
+        st_mask=np.array([False]),
+        delisted_mask=np.array([False]),
     )
 
-    buy_ok, _ = checker.check([0], 30, SIG, is_buy=True)
-    sell_ok, _ = checker.check([0], 30, SIG, is_buy=False)
-
-    assert buy_ok.tolist() == [True]
-    assert sell_ok.tolist() == [True]
+    assert result.buy_allowed.tolist() == [True]
+    assert result.sell_allowed.tolist() == [True]
 
 
 # ---------- 涨停取整偏严 ----------

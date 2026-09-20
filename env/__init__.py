@@ -6,6 +6,17 @@ from env.action_schema import (
     ActionField,
     ActionSchema,
 )
+from env.backtest import (
+    EpisodeSession,
+    EpisodeTransition,
+    PreparedDecision,
+    PreparedEpisode,
+    RolloutTrace,
+    run_day_config_episode,
+    run_policy_episode,
+    build_day_market,
+    required_runtime_preload_rows,
+)
 from env.contracts import (
     AccountState,
     DayConfig,
@@ -14,9 +25,12 @@ from env.contracts import (
     Observation,
     OrderPlan,
     Policy,
-    RebalanceMode,
+    PolicyMemory,
+    PolicyHistory,
     StepResult,
 )
+from env.encoder import EncodedObservationSchema, ObservationEncoder, RawMarketStore, TrainOnlyNormalizer
+from env.observation import ObservationBuilder, ObservationSchema
 
 __all__ = [
     "CORE_FACTOR_NAMES",
@@ -25,11 +39,27 @@ __all__ = [
     "ActionField",
     "ActionSchema",
     "DayConfig",
+    "EpisodeSession",
+    "EpisodeTransition",
     "ExecutionPort",
     "Fill",
     "Observation",
     "OrderPlan",
     "Policy",
-    "RebalanceMode",
+    "PolicyMemory",
+    "PolicyHistory",
+    "PreparedDecision",
+    "PreparedEpisode",
+    "RolloutTrace",
     "StepResult",
+    "run_day_config_episode",
+    "run_policy_episode",
+    "build_day_market",
+    "required_runtime_preload_rows",
+    "EncodedObservationSchema",
+    "ObservationEncoder",
+    "RawMarketStore",
+    "TrainOnlyNormalizer",
+    "ObservationBuilder",
+    "ObservationSchema",
 ]

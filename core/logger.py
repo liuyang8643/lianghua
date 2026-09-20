@@ -1,3 +1,0 @@
-from utils.logger import BaseLogger
-
-core_logger = BaseLogger()

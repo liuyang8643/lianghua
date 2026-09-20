@@ -1,22 +1,16 @@
 from __future__ import annotations
-
+from dataclasses import replace
 from types import SimpleNamespace
-
 import numpy as np
 import pytest
-
-from env.action_schema import CORE_FACTOR_NAMES
-from env.contracts import AccountState
-from env.observation import (
-    MARKET_FEATURE_NAMES,
-    PORTFOLIO_FEATURE_NAMES,
-    POSITION_FEATURE_NAMES,
-    STOCK_FEATURE_NAMES,
-    ObservationBuilder,
-)
-from factor import precompute_factors
-from offline_data import load_runtime_slice
-from test_rl_runtime_slice import _runtime_arrays
+from env.action_schema import ActionSchema, CORE_FACTOR_NAMES, CORE_FILTER_NAMES
+from env.contracts import AccountState, PolicyMemory
+from env.observation import (ObservationBuilder, ObservationSchema, LAGGED_RUNTIME_FIELDS,
+    OBSERVATION_SCHEMA_VERSION, POSITION_FEATURE_NAMES, PORTFOLIO_FEATURE_NAMES,
+    QUARANTINED_RUNTIME_FIELDS, STOCK_FEATURE_NAMES, RAW_MISSING_VALUE)
+from offline_data.financial_versions import RAW_FINANCIAL_VALUE_NAMES
+from env.planner import DayMarketData
+from rl_test_data import financial_runtime_arrays
 
 
 def synthetic_inputs(
@@ -45,9 +39,19 @@ def synthetic_inputs(
         "operating_cf_ps": base / 300.0,
         "gross_margin": 0.2 + base / 10_000.0,
         "st_mask": np.zeros((date_count, stock_count), dtype=np.bool_),
+        "listing_age": np.broadcast_to(
+            np.arange(date_count, dtype=np.int32)[:, None],
+            (date_count, stock_count),
+        ).copy(),
+        "delisted_mask": np.zeros((date_count, stock_count), dtype=np.bool_),
         "issue_price": np.linspace(8.0, 12.0, stock_count, dtype=np.float32),
-        "stock_names": np.asarray([f"stock-{i}" for i in range(stock_count)]),
+        "issue_date": np.full(
+            stock_count,
+            np.datetime64("2024-01-02"),
+            dtype="datetime64[D]",
+        ),
     }
+    data.update(financial_runtime_arrays(data["total_share"]))
     dates = np.arange(
         np.datetime64("2024-01-02"),
         np.datetime64("2024-01-02") + np.timedelta64(date_count, "D"),
@@ -55,10 +59,15 @@ def synthetic_inputs(
     ranks = np.empty((date_count, len(CORE_FACTOR_NAMES), stock_count), dtype=np.float32)
     for factor_index in range(len(CORE_FACTOR_NAMES)):
         ranks[:, factor_index, :] = (
-            0.1 * factor_index + row / (date_count * 10.0) + column / (stock_count * 10.0)
+            0.075 * factor_index + row / (date_count * 10.0) + column / (stock_count * 10.0)
         )
+    binary_index = CORE_FACTOR_NAMES.index("PBBelowTwoROEAbove10Signal")
+    ranks[:, binary_index, :] = ((row + column) % 3 == 0).astype(np.float32)
     validity = np.ones_like(ranks, dtype=np.bool_)
-    filters = np.zeros((date_count, 3, stock_count), dtype=np.bool_)
+    filters = np.zeros(
+        (date_count, len(CORE_FILTER_NAMES), stock_count),
+        dtype=np.bool_,
+    )
     runtime_schema_hash = "1" * 64
     runtime = SimpleNamespace(
         stock_codes=stock_codes,
@@ -68,6 +77,7 @@ def synthetic_inputs(
     )
     factors = SimpleNamespace(
         factor_names=tuple(CORE_FACTOR_NAMES),
+        filter_names=tuple(CORE_FILTER_NAMES),
         stock_codes=stock_codes,
         trade_dates=dates.copy(),
         ranks=ranks,
@@ -75,7 +85,6 @@ def synthetic_inputs(
         filters=filters,
         schema_hash="2" * 64,
         runtime_schema_hash=runtime_schema_hash,
-        rank_universe_sha256="3" * 64,
     )
     return runtime, factors
 
@@ -89,6 +98,7 @@ def copy_inputs(runtime, factors):
     )
     copied_factors = SimpleNamespace(
         factor_names=tuple(factors.factor_names),
+        filter_names=tuple(factors.filter_names),
         stock_codes=tuple(factors.stock_codes),
         trade_dates=factors.trade_dates.copy(),
         ranks=factors.ranks.copy(),
@@ -96,7 +106,6 @@ def copy_inputs(runtime, factors):
         filters=factors.filters.copy(),
         schema_hash=factors.schema_hash,
         runtime_schema_hash=factors.runtime_schema_hash,
-        rank_universe_sha256=factors.rank_universe_sha256,
     )
     return copied_runtime, copied_factors
 
@@ -118,159 +127,131 @@ def sample_account(runtime, decision_index: int = 5) -> AccountState:
     )
 
 
-def assert_static_equal(left, right) -> None:
+def make_builder(runtime, factors, *, lookback=4, action_schema=None):
+    markets = tuple(DayMarketData(
+        decision_date=str(date), stock_codes=runtime.stock_codes,
+        factor_ranks={name:factors.ranks[i,j] for j,name in enumerate(factors.factor_names)},
+        factor_validity={name:factors.validity[i,j] for j,name in enumerate(factors.factor_names)},
+        filter_masks={name:factors.filters[i,j] for j,name in enumerate(factors.filter_names)},
+        open_prices=runtime.data["open"][i], preclose_prices=runtime.data["preClose"][i],
+        issue_prices=np.where(runtime.data["issue_date"]==date,runtime.data["issue_price"],np.nan),
+        st_mask=runtime.data["st_mask"][i], delisted_mask=runtime.data["delisted_mask"][i],
+        listing_age=runtime.data["listing_age"][i]).seal(borrow_readonly=True)
+        for i,date in enumerate(runtime.trade_dates))
+    return ObservationBuilder(runtime,factors,lookback=lookback,day_markets=markets,action_schema=action_schema)
+
+
+def assert_static_equal(left, right):
     assert left.decision_date == right.decision_date
-    np.testing.assert_array_equal(left.stock_panel, right.stock_panel)
-    np.testing.assert_array_equal(left.market_panel, right.market_panel)
-    np.testing.assert_array_equal(left.feature_mask, right.feature_mask)
-    np.testing.assert_array_equal(left.stock_mask, right.stock_mask)
-    np.testing.assert_array_equal(left.time_mask, right.time_mask)
+    for name in ("stock_panel","time_mask","pit_universe_mask"):
+        np.testing.assert_array_equal(getattr(left,name),getattr(right,name))
 
 
-def test_observation_builder_shapes_masks_and_account_state() -> None:
-    runtime, factors = synthetic_inputs()
-    runtime.data["eps"][5, 0] = np.nan
-    runtime.data["eps"][5, 1] = 0.0
-    runtime.data["open"][5, 2] = np.nan
-    factors.validity[5, 0, 1] = False
-    factors.filters[5, :, :] = True  # Soft filters must not alter stock_mask.
-    builder = ObservationBuilder(runtime, factors, lookback=6)
-
-    observation = builder.build(5, sample_account(runtime))
-
-    assert observation.stock_panel.shape == (6, 3, len(STOCK_FEATURE_NAMES))
-    assert observation.market_panel.shape == (6, len(MARKET_FEATURE_NAMES))
-    assert observation.position_panel.shape == (3, len(POSITION_FEATURE_NAMES))
-    assert observation.portfolio.shape == (len(PORTFOLIO_FEATURE_NAMES),)
-    assert observation.feature_mask.shape == observation.stock_panel.shape
-    assert observation.stock_mask[-1].tolist() == [True, True, False]
-    eps_index = STOCK_FEATURE_NAMES.index("eps")
-    assert observation.stock_panel[-1, 0, eps_index] == 0.0
-    assert not observation.feature_mask[-1, 0, eps_index]
-    assert observation.stock_panel[-1, 1, eps_index] == 0.0
-    assert observation.feature_mask[-1, 1, eps_index]
-    factor_index = STOCK_FEATURE_NAMES.index(f"factor_rank.{CORE_FACTOR_NAMES[0]}")
-    assert not observation.feature_mask[-1, 1, factor_index]
-    assert observation.position_panel[0, 0] == 1.0
-    assert observation.position_panel[0, 4] == pytest.approx(0.8)
-    assert observation.portfolio[0] == 500.0
-    assert np.isfinite(observation.stock_panel).all()
-    assert np.isfinite(observation.market_panel).all()
-    account_part = builder.build_account(5, sample_account(runtime))
-    assert account_part.current_factor_ranks.shape == (len(CORE_FACTOR_NAMES), 3)
-    assert account_part.current_factor_validity.shape == (len(CORE_FACTOR_NAMES), 3)
+def test_full_raw_vocabulary_has_no_statistical_market_panel():
+    runtime,factors=synthetic_inputs()
+    builder=make_builder(runtime,factors)
+    obs=builder.build(5,sample_account(runtime))
+    assert builder.schema.version==OBSERVATION_SCHEMA_VERSION
+    assert obs.stock_panel.shape==(4,3,37)
+    assert not any(name.startswith(("factor_rank.", "filter_pass.")) for name in builder.schema.stock_feature_names)
+    assert obs.position_panel.shape==(3,4)
+    assert obs.portfolio.shape==(4,)
+    assert obs.policy_history.shape==(4,15)
+    assert not hasattr(obs,"market_panel")
+    assert not any(name in builder.schema.stock_feature_names for name in QUARANTINED_RUNTIME_FIELDS)
+    assert ObservationSchema.from_dict(builder.schema.to_dict())==builder.schema
 
 
-def test_observation_padding_and_issue_price_are_masked_before_listing() -> None:
-    runtime, factors = synthetic_inputs()
-    runtime.data["open"][:2, 0] = np.nan
-    builder = ObservationBuilder(runtime, factors, lookback=6)
-
-    static = builder.build_static(2)
-
-    assert static.time_mask.tolist() == [False, False, False, True, True, True]
-    issue_index = STOCK_FEATURE_NAMES.index("issue_price")
-    assert not static.feature_mask[3, 0, issue_index]
-    assert not static.feature_mask[4, 0, issue_index]
-    assert static.feature_mask[5, 0, issue_index]
-    assert np.all(static.stock_panel[~static.feature_mask] == 0.0)
-
-
-def test_future_and_t_post_open_fields_cannot_change_t_observation() -> None:
-    runtime, factors = synthetic_inputs()
-    baseline = ObservationBuilder(runtime, factors, lookback=4).build_static(5)
-
-    changed_runtime, changed_factors = copy_inputs(runtime, factors)
-    for values in changed_runtime.data.values():
-        if values.ndim == 2 and np.issubdtype(values.dtype, np.number):
-            values[6:] = 9_999.0
-    changed_factors.ranks[6:] = 0.999
-    future_changed = ObservationBuilder(changed_runtime, changed_factors, lookback=4).build_static(5)
-    assert_static_equal(baseline, future_changed)
-
-    changed_runtime, changed_factors = copy_inputs(runtime, factors)
-    for field in ("high", "low", "close", "volume", "amount", "total_share"):
-        changed_runtime.data[field][5] = 8_888.0
-    post_open_changed = ObservationBuilder(changed_runtime, changed_factors, lookback=4).build_static(5)
-    assert_static_equal(baseline, post_open_changed)
-
-    changed_runtime, changed_factors = copy_inputs(runtime, factors)
-    changed_runtime.data["close"][4, 0] += 7.0
-    lag_changed = ObservationBuilder(changed_runtime, changed_factors, lookback=4).build_static(5)
-    assert not np.array_equal(baseline.stock_panel, lag_changed.stock_panel)
-
-    changed_runtime, changed_factors = copy_inputs(runtime, factors)
-    changed_runtime.data["open"][5, 0] += 7.0
-    open_changed = ObservationBuilder(changed_runtime, changed_factors, lookback=4).build_static(5)
-    assert not np.array_equal(baseline.stock_panel, open_changed.stock_panel)
+def test_raw_rows_preserve_current_open_and_completed_ohlcva():
+    runtime,factors=synthetic_inputs()
+    builder=make_builder(runtime,factors)
+    obs=builder.build_static(5)
+    names=builder.schema.stock_feature_names
+    for offset,day in enumerate(range(2,6)):
+        for name in ("open","preClose"):
+            np.testing.assert_array_equal(obs.stock_panel[offset,:,names.index(name)],runtime.data[name][day])
+        for name in LAGGED_RUNTIME_FIELDS:
+            np.testing.assert_array_equal(obs.stock_panel[offset,:,names.index(name+"_lag1")],runtime.data[name][day-1])
+        for name in RAW_FINANCIAL_VALUE_NAMES:
+            np.testing.assert_array_equal(obs.stock_panel[offset,:,names.index(name)],runtime.data[name][day].astype(np.float32))
 
 
-def test_builder_fails_fast_on_alignment_or_unregistered_numeric_field() -> None:
-    runtime, factors = synthetic_inputs()
-    factors.stock_codes = tuple(reversed(factors.stock_codes))
-    with pytest.raises(ValueError, match="stock order"):
-        ObservationBuilder(runtime, factors)
-
-    runtime, factors = synthetic_inputs()
-    factors.factor_names = tuple(reversed(factors.factor_names))
-    with pytest.raises(ValueError, match="factor order"):
-        ObservationBuilder(runtime, factors)
-
-    runtime, factors = synthetic_inputs()
-    factors.runtime_schema_hash = "9" * 64
-    with pytest.raises(ValueError, match="different runtime schema"):
-        ObservationBuilder(runtime, factors)
-
-    runtime, factors = synthetic_inputs()
-    runtime.data["new_unregistered_panel"] = np.zeros_like(runtime.data["open"])
-    with pytest.raises(ValueError, match="unregistered runtime field"):
-        ObservationBuilder(runtime, factors)
+def test_current_completed_prices_and_future_rows_cannot_leak():
+    runtime,factors=synthetic_inputs()
+    before=make_builder(runtime,factors).build_static(5)
+    changed,cf=copy_inputs(runtime,factors)
+    for name in LAGGED_RUNTIME_FIELDS:
+        if name not in ("open","preClose"):
+            changed.data[name][5:]*=900
+        changed.data[name][6:]*=20
+    cf.ranks[6:]=0.99
+    assert_static_equal(before,make_builder(changed,cf).build_static(5))
 
 
-def test_registered_optional_runtime_field_upgrades_schema_instead_of_being_dropped() -> None:
-    runtime, factors = synthetic_inputs()
-    runtime.data["star_st_mask"] = np.zeros_like(runtime.data["st_mask"])
-    runtime.data["star_st_mask"][5, 1] = True
-
-    builder = ObservationBuilder(runtime, factors, lookback=4)
-    static = builder.build_static(5)
-
-    assert "star_st_mask" in builder.schema.stock_feature_names
-    feature_index = builder.schema.stock_feature_names.index("star_st_mask")
-    assert static.stock_panel[-1, 1, feature_index] == 1.0
-    assert static.feature_mask[-1, 1, feature_index]
-    assert builder.schema.stock_feature_count == len(STOCK_FEATURE_NAMES) + 1
-
-
-def test_static_part_can_be_reused_but_not_for_another_date() -> None:
-    runtime, factors = synthetic_inputs()
-    builder = ObservationBuilder(runtime, factors, lookback=4)
-    static = builder.build_static(5)
-    account = sample_account(runtime, 5)
-
-    direct = builder.build(5, account)
-    reused = builder.build(5, account, static=static)
-    np.testing.assert_array_equal(direct.stock_panel, reused.stock_panel)
-    np.testing.assert_array_equal(direct.position_panel, reused.position_panel)
-
-    with pytest.raises(ValueError, match="different decision date"):
-        builder.build(4, sample_account(runtime, 4), static=static)
+def test_pit_padding_and_first_listed_lag_are_unavailable():
+    runtime,factors=synthetic_inputs()
+    runtime.data["listing_age"][:3,1]=-1
+    runtime.data["listing_age"][3:,1]=np.arange(5)
+    builder=make_builder(runtime,factors,lookback=6)
+    obs=builder.build_static(3)
+    assert obs.time_mask.tolist()==[False,False,True,True,True,True]
+    assert not obs.pit_universe_mask[:5,1].any()
+    assert not obs.stock_panel[:5,1].any()
+    for name in LAGGED_RUNTIME_FIELDS:
+        assert obs.stock_panel[-1,1,builder.schema.stock_feature_names.index(name+"_lag1")]==RAW_MISSING_VALUE
+    assert obs.stock_panel[-1,1,builder.schema.stock_feature_names.index("open")]==runtime.data["open"][3,1]
 
 
-def test_builder_consumes_public_runtime_and_factor_contracts(tmp_path) -> None:
-    data = _runtime_arrays()
-    path = tmp_path / "runtime.npz"
-    np.savez(path, **data)
-    runtime = load_runtime_slice(path, data["trade_dates"][140], data["trade_dates"][150])
-    factors = precompute_factors(runtime)
-    builder = ObservationBuilder(runtime, factors, lookback=64)
+def test_real_zero_negative_financial_and_missing_volume_are_distinct():
+    runtime,factors=synthetic_inputs()
+    runtime.data["volume"][4,0]=0
+    runtime.data["volume"][4,1]=np.nan
+    financial = RAW_FINANCIAL_VALUE_NAMES[0]
+    runtime.data[financial][5,:] = [0, -1, np.nan]
+    builder=make_builder(runtime,factors)
+    raw=builder.build_static(5).stock_panel[-1]
+    names=builder.schema.stock_feature_names
+    assert raw[0,names.index("volume_lag1")]==0
+    assert raw[1,names.index("volume_lag1")]==RAW_MISSING_VALUE
+    np.testing.assert_array_equal(raw[:,names.index(financial)], [0, -1, RAW_MISSING_VALUE])
 
-    observation = builder.build(
-        runtime.decision_start,
-        AccountState(cash=1_000_000.0, nav=1_000_000.0, peak_nav=1_000_000.0),
-    )
 
-    assert observation.schema_version == builder.schema.identifier
-    assert builder.schema.runtime_schema_hash == runtime.manifest.schema_hash
-    assert builder.schema.factor_schema_hash == factors.schema_hash
-    assert observation.stock_panel.shape == (64, runtime.n_stocks, len(STOCK_FEATURE_NAMES))
+def test_legality_is_shared_with_planner_and_fixed_schema_controls():
+    runtime,factors=synthetic_inputs()
+    runtime.data["listing_age"][:]=1000
+    runtime.data["preClose"][5]=10
+    runtime.data["open"][5]=[11,9,0]
+    schema=ActionSchema()
+    builder=make_builder(runtime,factors,action_schema=schema)
+    raw=builder.build_static(5).stock_panel[-1]
+    legality=builder.day_markets[5].trade_legality(schema.fixed_limit_up_protection)
+    names=builder.schema.stock_feature_names
+    np.testing.assert_array_equal(raw[:,names.index("price_buy_allowed")],legality.buy_allowed)
+    np.testing.assert_array_equal(raw[:,names.index("price_sell_allowed")],legality.sell_allowed)
+    assert builder.day_markets[5].trade_legality(schema.fixed_limit_up_protection) is legality
+    disabled=make_builder(runtime,factors,action_schema=replace(schema,fixed_limit_up_protection=False))
+    assert disabled.schema.action_schema_hash!=builder.schema.action_schema_hash
+    assert disabled.build_static(5).stock_panel[-1,0,names.index("price_sell_allowed")]==1
+    assert raw[0,names.index("price_sell_allowed")]==0
+
+
+def test_account_preserves_full_axis_raw_holdings_even_nonmember():
+    runtime,factors=synthetic_inputs()
+    runtime.data["delisted_mask"][5,0]=True
+    account=sample_account(runtime)
+    builder=make_builder(runtime,factors)
+    obs=builder.build(5,account)
+    np.testing.assert_array_equal(obs.position_panel[0],[10,19,8,19.5])
+    np.testing.assert_array_equal(obs.portfolio,[account.cash,account.nav,account.peak_nav,account.max_drawdown])
+    assert not obs.pit_universe_mask[-1,0]
+    assert not obs.stock_panel[-1,0].any()
+    assert not obs.policy_history.any()
+
+
+def test_schema_and_date_mismatch_fail_closed():
+    runtime,factors=synthetic_inputs()
+    builder=make_builder(runtime,factors)
+    with pytest.raises(ValueError,match="identity"):
+        builder.build(4,sample_account(runtime,4),static=builder.build_static(5))
+    with pytest.raises(ValueError,match="unsupported"):
+        replace(builder.schema,version="old")

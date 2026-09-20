@@ -17,14 +17,14 @@ stock_financial_abstract_ths 限流宽松（实测 >4 req/s 稳定），且深�
 
 红线：本脚本属预下载入口，允许联网（akshare）。
 """
-import sys
+import argparse
 import time
 import logging
+import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import akshare as ak
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 logger = logging.getLogger('update_financial_deep')
@@ -71,19 +71,69 @@ def _parse_num(x):
         return np.nan
 
 
-def _ordered_symbols() -> list[tuple[str, str]]:
-    """返回 [(full_code, symbol6)]，按首个交易日升序（早上市优先）。"""
-    rt = sorted((DATA_DIR / 'runtime').glob('runtime_*.npz'))[-1]
-    d = np.load(rt, allow_pickle=False)
-    codes = d['stock_codes']
-    open_ = d['open']
-    first_idx = np.argmax(np.isfinite(open_), axis=0)
-    has_open = np.isfinite(open_).any(axis=0)
-    order = np.argsort(first_idx)
-    return [(str(codes[j]), str(codes[j])[:6]) for j in order if has_open[j]]
+def _all_symbols() -> list[tuple[str, str]]:
+    """Enumerate the current stock list plus all local delisted A shares."""
+    from data.db.stock_list import get_all_stock_code_list
+
+    codes = sorted(get_all_stock_code_list())
+    if not codes:
+        raise RuntimeError("current stock_list + delist 股票全集为空")
+    return [(code, code[:6]) for code in codes]
+
+
+def _validate_snapshot(
+    frame: pd.DataFrame,
+    expected_codes: set[str],
+) -> pd.DataFrame:
+    required = {"stock_code", "report_period", *_OUT_COLS}
+    missing = required.difference(frame.columns)
+    if missing:
+        raise ValueError(f"deep_indicators 缺少列: {sorted(missing)}")
+    if frame.empty:
+        raise ValueError("deep_indicators 不得为空")
+
+    result = frame.loc[:, ["stock_code", "report_period", *_OUT_COLS]].copy()
+    result["stock_code"] = result["stock_code"].astype(str).str.strip().str.upper()
+    unexpected = sorted(set(result["stock_code"]).difference(expected_codes))
+    if unexpected:
+        raise ValueError(
+            "deep_indicators 包含股票全集之外的代码: "
+            + ", ".join(unexpected[:20])
+        )
+    periods = pd.to_datetime(
+        result["report_period"].astype(str), format="%Y%m%d", errors="raise"
+    )
+    result["report_period"] = periods.dt.strftime("%Y%m%d").astype(np.int64)
+    if result.duplicated(["stock_code", "report_period"]).any():
+        raise ValueError("deep_indicators 存在重复 (stock_code, report_period)")
+    for column in _OUT_COLS:
+        result[column] = pd.to_numeric(result[column], errors="raise")
+    return result.sort_values(
+        ["stock_code", "report_period"], kind="stable"
+    ).reset_index(drop=True)
+
+
+def _save_snapshot_atomic(
+    frame: pd.DataFrame,
+    expected_codes: set[str],
+) -> None:
+    canonical = _validate_snapshot(frame, expected_codes)
+    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = OUT_PATH.with_name(
+        f".{OUT_PATH.name}.{os.getpid()}.tmp.parquet"
+    )
+    try:
+        canonical.to_parquet(temp_path, index=False)
+        _validate_snapshot(pd.read_parquet(temp_path), expected_codes)
+        temp_path.replace(OUT_PATH)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
 
 
 def _parse_one(symbol6: str) -> pd.DataFrame:
+    import akshare as ak
+
     df = ak.stock_financial_abstract_ths(symbol=symbol6, indicator='按报告期')
     if df is None or df.empty or '报告期' not in df.columns:
         return pd.DataFrame()
@@ -96,23 +146,29 @@ def _parse_one(symbol6: str) -> pd.DataFrame:
     return out
 
 
-def main():
+def main(*, refresh: bool = False):
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    done = set()
-    parts = []
+    symbols = _all_symbols()
+    expected_codes = {full for full, _symbol in symbols}
+    existing = pd.DataFrame(columns=["stock_code", "report_period", *_OUT_COLS])
     if OUT_PATH.exists():
-        existing = pd.read_parquet(OUT_PATH)
-        done = set(existing['stock_code'].unique())
-        parts.append(existing)
-        logger.info('已存在 %d 只股票，续传跳过', len(done))
+        existing = _validate_snapshot(pd.read_parquet(OUT_PATH), expected_codes)
+        logger.info('已存在 %d 只股票', existing['stock_code'].nunique())
 
-    symbols = _ordered_symbols()
-    todo = [(f, s) for f, s in symbols if f not in done]
+    done = set(existing['stock_code'].unique())
+    todo = symbols if refresh else [(f, s) for f, s in symbols if f not in done]
     logger.info('待抓取 %d / 共 %d 只', len(todo), len(symbols))
 
-    new_parts = []
+    replacements: dict[str, pd.DataFrame] = {}
+
+    def _combined() -> pd.DataFrame:
+        replaced = set(replacements)
+        parts = [existing[~existing["stock_code"].isin(replaced)]]
+        parts.extend(replacements.values())
+        return pd.concat(parts, ignore_index=True)
+
     t0 = time.time()
-    fail = 0
+    failures: list[tuple[str, Exception]] = []
     for i, (full, sym6) in enumerate(todo):
         one = pd.DataFrame()
         for attempt in range(4):
@@ -121,28 +177,41 @@ def main():
                 break
             except Exception as e:  # noqa: BLE001 — 下载模块允许网络重试
                 if attempt == 3:
-                    fail += 1
+                    failures.append((full, e))
                     logger.warning('  %s 失败: %r', full, e)
                 else:
                     time.sleep(2.0 * (attempt + 1))
         if not one.empty:
             one.insert(0, 'stock_code', full)
-            new_parts.append(one)
+            replacements[full] = one
         time.sleep(0.12)
         if (i + 1) % 100 == 0:
             elapsed = time.time() - t0
             rate = (i + 1) / elapsed
             eta = (len(todo) - i - 1) / rate / 60
             logger.info('进度 %d/%d  %.2f stk/s  ETA %.1f min  fail=%d  最近=%s',
-                        i + 1, len(todo), rate, eta, fail, full)
-            if new_parts:
-                pd.concat(parts + new_parts, ignore_index=True).to_parquet(OUT_PATH, index=False)
+                        i + 1, len(todo), rate, eta, len(failures), full)
+            if replacements:
+                _save_snapshot_atomic(_combined(), expected_codes)
 
-    pd.concat(parts + new_parts, ignore_index=True).to_parquet(OUT_PATH, index=False)
-    combined = pd.read_parquet(OUT_PATH)
+    if replacements or not OUT_PATH.exists():
+        _save_snapshot_atomic(_combined(), expected_codes)
+    combined = _validate_snapshot(pd.read_parquet(OUT_PATH), expected_codes)
     logger.info('完成：%d 只股票, %d 行, fail=%d -> %s',
-                combined['stock_code'].nunique(), len(combined), fail, OUT_PATH)
+                combined['stock_code'].nunique(), len(combined), len(failures), OUT_PATH)
+    if failures:
+        shown = ", ".join(code for code, _exc in failures[:20])
+        suffix = f" ...(+{len(failures) - 20})" if len(failures) > 20 else ""
+        raise RuntimeError(
+            f"deep_indicators 更新失败 {len(failures)} 只: {shown}{suffix}"
+        )
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="重新请求股票全集；成功代码替换旧记录，失败代码保留旧记录并阻断更新链",
+    )
+    main(refresh=parser.parse_args().refresh)

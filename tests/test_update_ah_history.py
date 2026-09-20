@@ -646,7 +646,7 @@ def test_loader_detects_artifact_hash_tampering(tmp_path):
         szse_source_sha256=None,
         szse_limitation="test-only SH artifact",
     )
-    ah._atomic_write_json(metadata, tmp_path / ah.METADATA_FILENAME)
+    ah.atomic_write_json(tmp_path / ah.METADATA_FILENAME, metadata, sort_keys=False, trailing_newline=True)
     (tmp_path / ah.HK_PRICE_FILENAME).write_bytes(b"tampered")
     with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
         ah.load_ah_history(tmp_path)

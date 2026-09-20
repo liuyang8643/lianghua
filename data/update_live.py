@@ -1,175 +1,215 @@
-"""09:25 / 15:00 快速 K 线更新 — 只写 parquet；NPZ 仅内存覆盖（不落盘）。
+"""Build the complete sealed T-open runtime used by the live decision path.
 
-- 09:25 / 15:00：update_live_quick(patch_npz=False) → parquet + 可选内存 overlay
-- 16:00 update_all：重拉 3 日 K 线 + build_runtime 全量写 NPZ（权威落盘）
-
-锚定日：
-- 未传 anchor：用 date.today() 在交易日历中的最近交易日（0605 凌晨常是 0604）
-- --skip 202606040925：anchor=2026-06-04 → 拉 0604 的 K 线
+The live snapshot is never patched field-by-field. Today's full active stock
+axis is downloaded first, then the canonical full-history runtime builder
+recomputes every PIT field and atomically promotes one schema-valid NPZ.
 """
-import time
+
+from __future__ import annotations
+
+import argparse
+from datetime import date
 import logging
-from datetime import date, datetime
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
+import requests
+
 
 logger = logging.getLogger("update_live")
-
-DATA_DIR = Path(__file__).resolve().parent
-DOWNLOAD_TRADING_DAYS = 1
-
-_RAW_PATCH_FIELDS = ('open', 'high', 'low', 'close', 'volume', 'amount', 'preClose')
-_KLINE_NANFILL_FIELDS = _RAW_PATCH_FIELDS
+LIVE_OPEN_DIR = Path(__file__).resolve().parent / "live_open"
+TENCENT_QUOTE_URL = "https://qt.gtimg.cn/q="
+TENCENT_QUOTE_CHUNK_SIZE = 250
+TENCENT_QUOTE_TIMEOUT_SECONDS = 10
 
 
-def _info(msg: str, *args):
-    logger.info(msg, *args)
-    try:
-        from trading.logger import trading_logger
-        trading_logger.info(msg % args if args else msg)
-    except Exception as e:
-        logger.debug(f"trading_logger 转发失败 (非实盘环境可忽略): {e}")
+def _tencent_symbol(stock_code: str) -> str:
+    bare, exchange = stock_code.split(".", 1)
+    prefix = "bj" if exchange == "BJ" else exchange.lower()
+    if prefix not in {"sh", "sz", "bj"} or len(bare) != 6 or not bare.isdigit():
+        raise ValueError(f"invalid A-share code: {stock_code!r}")
+    return prefix + bare
 
 
-def _download_kline_all(download_trading_days: int = DOWNLOAD_TRADING_DAYS,
-                        anchor_date: date | None = None,
-                        codes: list[str] | None = None) -> dict:
-    from data.kline_mootdx import update_recent
-    return update_recent(download_trading_days, anchor_date=anchor_date, collect=True,
-                         codes=codes)
+def _fetch_live_open_overlay(
+    stock_codes: Sequence[str],
+    decision_date: date,
+) -> Path:
+    """Fetch one complete batch-quote axis and atomically seal T open/preClose."""
 
-
-def apply_kline_overlay(data: dict, kline_data: dict) -> tuple[dict, int, list]:
-    """在已加载的 runtime dict 上覆盖 K 线（内存）— 不写 NPZ 文件。"""
-    if not kline_data:
-        return data, 0, []
-
-    stock_to_idx = {str(c): i for i, c in enumerate(data['stock_codes'])}
-    old_dates = data['trade_dates']
-    n_old = len(old_dates)
-    old_date_set = {d.astype('datetime64[D]').item() for d in old_dates}
-
-    all_kline_dates = set()
-    for bars in kline_data.values():
-        for ts in bars['time']:
-            dt = pd.Timestamp(int(ts), unit='ms').to_datetime64().astype('datetime64[D]').item()
-            all_kline_dates.add(dt)
-
-    new_dates = sorted(all_kline_dates - old_date_set)
-    if new_dates:
-        n_new = len(new_dates)
-        new_dt = np.array(new_dates, dtype='datetime64[D]')
-        data['trade_dates'] = np.concatenate([old_dates, new_dt])
-        for key in list(data.keys()):
-            arr = data[key]
-            if not isinstance(arr, np.ndarray) or arr.ndim != 2:
+    codes = tuple(str(code).strip().upper() for code in stock_codes)
+    if not codes or len(set(codes)) != len(codes):
+        raise ValueError("live quote stock axis must be non-empty and unique")
+    symbol_to_code = {_tencent_symbol(code): code for code in codes}
+    rows: list[dict[str, object]] = []
+    headers = {"User-Agent": "Mozilla/5.0"}
+    symbols = tuple(symbol_to_code)
+    for start in range(0, len(symbols), TENCENT_QUOTE_CHUNK_SIZE):
+        chunk = symbols[start : start + TENCENT_QUOTE_CHUNK_SIZE]
+        response = requests.get(
+            TENCENT_QUOTE_URL + ",".join(chunk),
+            headers=headers,
+            timeout=TENCENT_QUOTE_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        text = response.content.decode("gbk", errors="strict")
+        for item in text.split(";"):
+            if '="' not in item:
                 continue
-            if arr.shape[0] != n_old:
+            variable, quoted = item.split("=", 1)
+            symbol = variable.removeprefix("v_").strip()
+            code = symbol_to_code.get(symbol)
+            if code is None:
                 continue
-            is_kline = key in _KLINE_NANFILL_FIELDS
-            filler = np.full((1, arr.shape[1]), np.nan, dtype=arr.dtype) if is_kline else arr[-1:].copy()
-            new_rows = np.tile(filler, (n_new, 1))
-            data[key] = np.concatenate([arr, new_rows], axis=0)
+            payload = quoted.strip().strip('"')
+            fields = payload.split("~")
+            if len(fields) <= 30:
+                raise RuntimeError(f"腾讯行情字段不足: {code}")
+            quote_date = fields[30].strip()[:8]
+            if quote_date != decision_date.strftime("%Y%m%d"):
+                raise RuntimeError(
+                    f"腾讯行情日期不是决策日: {code}={quote_date}"
+                )
+            try:
+                preclose = float(fields[4])
+                open_price = float(fields[5])
+            except ValueError as exc:
+                raise RuntimeError(f"腾讯开盘行情不是数值: {code}") from exc
+            if not np.isfinite(preclose) or preclose <= 0.0:
+                raise RuntimeError(f"腾讯前收无效: {code}")
+            rows.append(
+                {
+                    "trade_date": decision_date.isoformat(),
+                    "stock_code": code,
+                    "open": (
+                        open_price
+                        if np.isfinite(open_price) and open_price > 0.0
+                        else np.nan
+                    ),
+                    "preClose": preclose,
+                }
+            )
+    frame = pd.DataFrame(rows)
+    if frame.empty or frame["stock_code"].duplicated().any():
+        raise RuntimeError("腾讯全轴开盘行情为空或股票重复")
+    actual = set(frame["stock_code"])
+    if actual != set(codes):
+        missing = sorted(set(codes) - actual)
+        unexpected = sorted(actual - set(codes))
+        raise RuntimeError(
+            f"腾讯全轴开盘行情覆盖不完整: missing={missing}, unexpected={unexpected}"
+        )
+    frame = frame.set_index("stock_code").loc[list(codes)].reset_index()
+    LIVE_OPEN_DIR.mkdir(parents=True, exist_ok=True)
+    target = LIVE_OPEN_DIR / f"{decision_date.isoformat()}.parquet"
+    temporary = target.with_suffix(".parquet.tmp")
+    frame.to_parquet(temporary, index=False)
+    temporary.replace(target)
+    return target
 
-    trade_dates = data['trade_dates']
-    date_to_idx = {
-        trade_dates[i].astype('datetime64[D]').item(): i for i in range(len(trade_dates))
+
+def build_live_runtime(
+    decision_date: date | None = None,
+    *,
+    candidate_codes: Sequence[str] | None = None,
+) -> Path:
+    """Materialise a full-axis T-open runtime from explicit fetch candidates."""
+    from data.build_runtime import build_runtime
+    from data.db.issue_price import resolve_terminal_active_codes
+    from data.db.stock_list import load_current_stock_codes
+    from data.kline_mootdx import resolve_recent_range, update_recent
+
+    target = decision_date or date.today()
+    _, _, resolved = resolve_recent_range(1, target)
+    if resolved != target:
+        raise RuntimeError(f"{target.isoformat()} 不是交易日，拒绝构建实盘快照")
+    kline_dir = Path(__file__).resolve().parent / "k-line"
+    current_codes = tuple(load_current_stock_codes())
+    local_kline_codes = {
+        path.stem for path in kline_dir.glob("*.parquet")
     }
-
-    updated_cells = 0
-    patched_rows: dict[int, list[int]] = {}
-    for code, bars in kline_data.items():
-        si = stock_to_idx.get(code)
-        if si is None:
-            continue
-        rows = []
-        for k in range(len(bars['time'])):
-            dt = pd.Timestamp(int(bars['time'][k]), unit='ms').to_datetime64().astype('datetime64[D]').item()
-            di = date_to_idx.get(dt)
-            if di is None:
-                continue
-            for f in _RAW_PATCH_FIELDS:
-                data[f][di, si] = bars[f][k]
-            rows.append(di)
-            updated_cells += 1
-        if rows:
-            patched_rows[si] = sorted(set(rows))
-
-    return data, updated_cells, new_dates
-
-
-def _patch_npz_incremental(kline_data: dict):
-    """增量修补 NPZ 并落盘（仅 16:00 全量 build 或显式 patch_npz=True 时使用）。"""
-    OUT_DIR = DATA_DIR / "runtime"
-    npz_files = sorted(OUT_DIR.glob("runtime_*.npz"))
-    if not npz_files:
-        _info("[NPZ增量] 无现有 NPZ，执行全量构建")
-        from data.build_runtime import build_runtime
-        return build_runtime()
-
-    t0 = time.time()
-    data = dict(np.load(npz_files[-1], allow_pickle=False))
-    data, updated_cells, new_dates = apply_kline_overlay(data, kline_data)
-    _info("[NPZ增量] 覆盖 %d 个 (date,stock) 单元格 + 连乘复权 (%.0fs)",
-          updated_cells, time.time() - t0)
-
-    if updated_cells == 0 and not new_dates:
-        _info("[NPZ增量] 无变更，跳过 1GB 级重写 → %s", npz_files[-1].name)
-        return npz_files[-1]
-
-    td = data['trade_dates']
-    output_path = OUT_DIR / f"runtime_{str(td[0])}_{str(td[-1])}.npz"
-    from data.build_runtime import save_runtime_npz_atomic
-    save_runtime_npz_atomic(output_path, **data)
-    for f in npz_files:
-        if f != output_path:
-            f.unlink()
-    file_size_mb = output_path.stat().st_size / (1024 * 1024)
-    _info("[NPZ增量] 保存: %s (%.1f MB, %.0fs)", output_path.name, file_size_mb, time.time() - t0)
-    return output_path
-
-
-def update_live_quick(download_trading_days: int = DOWNLOAD_TRADING_DAYS, *,
-                      patch_npz: bool = False,
-                      anchor_date: date | None = None,
-                      codes: list[str] | None = None) -> dict:
-    """快速 K 线更新。默认只写 parquet；patch_npz=True 时才落盘 NPZ。
-    codes 非空时只拉取指定股票（用于实盘 prefilter 加速）。
-    """
-    from data.kline_mootdx import resolve_recent_range
-
-    t0 = time.time()
-    _, _, end_d = resolve_recent_range(download_trading_days, anchor_date)
-    anchor_note = f"锚定={end_d.isoformat()}" + (
-        f" (来自 --skip {anchor_date})" if anchor_date else " (日历最近交易日)")
-    _info("=" * 60)
-    _info("快速K线: 最近 %d 日 parquet%s | %s%s",
-          download_trading_days, " + NPZ落盘" if patch_npz else " only", anchor_note,
-          f" | 子集 {len(codes)}只" if codes else "")
-    _info("=" * 60)
-
-    _info("--- Phase 1: K线下载 → parquet ---")
-    kline_data = _download_kline_all(download_trading_days, anchor_date=anchor_date,
-                                     codes=codes)
-
-    if patch_npz:
-        _info("--- Phase 2: NPZ 落盘 ---")
-        _patch_npz_incremental(kline_data)
+    complete_active_codes = list(
+        resolve_terminal_active_codes(
+            current_codes,
+            target,
+            local_kline_codes,
+        )
+    )
+    if not complete_active_codes:
+        raise RuntimeError("实盘快照的完整活跃股票轴为空")
+    if candidate_codes is None:
+        fetch_codes = complete_active_codes
     else:
-        _info("--- Phase 2: 跳过 NPZ 落盘（16:00 update_all 再全量写）---")
+        normalized = tuple(
+            str(code).strip().upper() for code in candidate_codes
+        )
+        if not normalized or len(normalized) != len(set(normalized)):
+            raise ValueError("candidate_codes 必须非空且不得重复")
+        selected = set(normalized)
+        unknown = sorted(selected.difference(current_codes))
+        if unknown:
+            raise ValueError(
+                "candidate_codes 包含当前股票列表之外代码: "
+                + ", ".join(unknown[:20])
+            )
+        active_set = set(complete_active_codes)
+        prelisting = sorted(selected.difference(active_set))
+        if prelisting:
+            raise ValueError(
+                "candidate_codes 包含决策日尚未上市代码: "
+                + ", ".join(prelisting[:20])
+            )
+        first_day_missing_axis = active_set.difference(local_kline_codes)
+        required = selected | first_day_missing_axis
+        fetch_codes = [
+            code for code in complete_active_codes if code in required
+        ]
+        if not fetch_codes:
+            raise RuntimeError("prefilter 后的实盘 K 线候选为空")
 
-    _info("=" * 60)
-    _info("快速K线完成! 耗时 %.0fs", time.time() - t0)
-    _info("=" * 60)
-    return kline_data
+    logger.info(
+        "下载 %s 的 T-open K 线候选：%d/%d 只",
+        target,
+        len(fetch_codes),
+        len(complete_active_codes),
+    )
+    update_recent(
+        1,
+        anchor_date=target,
+        codes=fetch_codes,
+        strict=True,
+    )
+    live_open_overlay = _fetch_live_open_overlay(complete_active_codes, target)
+    runtime_path = Path(
+        build_runtime(
+            partial_live_candidates=fetch_codes,
+            live_open_overlay=live_open_overlay,
+        )
+    ).resolve()
+    with np.load(runtime_path, allow_pickle=False) as payload:
+        latest = np.asarray(payload["trade_dates"], dtype="datetime64[D]")[-1]
+    if latest != np.datetime64(target, "D"):
+        raise RuntimeError(
+            f"实盘 runtime 最后一行是 {latest}，不是决策日 {target.isoformat()}"
+        )
+    logger.info("完整 T-open runtime 已封存：%s", runtime_path)
+    return runtime_path
+
+
+def main(argv: list[str] | None = None) -> Path:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--date", default=date.today().isoformat())
+    args = parser.parse_args(argv)
+    path = build_live_runtime(date.fromisoformat(args.date))
+    print(path, flush=True)
+    return path
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    update_live_quick()
+    logging.basicConfig(level=logging.INFO)
+    main()
+
+
+__all__ = ["build_live_runtime", "main"]

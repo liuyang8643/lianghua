@@ -1,6 +1,6 @@
 import numpy as np
 
-import core.runtime as runtime
+import offline_data.runtime as runtime
 
 
 def test_runtime_stock_pool_keeps_delisted_codes(tmp_path, monkeypatch):

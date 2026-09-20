@@ -4,7 +4,6 @@ import pytest
 from factor_db.factors.IntermediateMomentum12Minus1 import (
     IntermediateMomentum12Minus1,
 )
-from core.ga import get_profile, get_profile_factor_names
 
 
 def _panel(days=280, stocks=2):
@@ -80,15 +79,3 @@ def test_intermediate_momentum_uses_current_open_only_for_eligibility():
 
     assert np.isnan(actual[260, 0])
     assert np.isnan(actual[261, 1])
-
-
-def test_v10_profile_changes_only_the_factor_set():
-    baseline = get_profile('v9_dual_shadow')
-    experiment = get_profile('v10_intermediate_momentum')
-
-    assert get_profile_factor_names('v10_intermediate_momentum') == [
-        *get_profile_factor_names('v9_dual_shadow'),
-        'IntermediateMomentum12Minus1',
-    ]
-    assert experiment['search_spaces'] == baseline['search_spaces']
-    assert experiment['training_objective'] == baseline['training_objective']

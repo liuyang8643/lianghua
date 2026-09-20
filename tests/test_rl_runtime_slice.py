@@ -7,14 +7,18 @@ import pytest
 
 import offline_data.runtime as runtime_module
 from offline_data import (
-    MIN_PRELOAD_ROWS,
     RUNTIME_LINEAGE_VERSION,
     compute_runtime_lineage,
     load_runtime_slice,
 )
 
 
+TEST_PRELOAD_ROWS = 126
+
+
 def _runtime_arrays(rows: int = 180, stocks: int = 3) -> dict[str, np.ndarray]:
+    from rl_test_data import financial_runtime_arrays
+
     dates = np.datetime64("2020-01-01") + np.arange(rows)
     day = np.arange(rows, dtype=np.float64)[:, None]
     stock = np.arange(stocks, dtype=np.float64)[None, :]
@@ -40,9 +44,15 @@ def _runtime_arrays(rows: int = 180, stocks: int = 3) -> dict[str, np.ndarray]:
         "operating_cf_ps": np.full((rows, stocks), 0.4),
         "gross_margin": np.full((rows, stocks), 0.3),
         "st_mask": np.zeros((rows, stocks), dtype=np.bool_),
+        "listing_age": np.broadcast_to(
+            np.arange(rows, dtype=np.int32)[:, None],
+            (rows, stocks),
+        ).copy(),
+        "delisted_mask": np.zeros((rows, stocks), dtype=np.bool_),
         "issue_price": np.linspace(5.0, 7.0, stocks),
-        "stock_names": np.array([f"stock-{index}" for index in range(stocks)]),
+        "issue_date": np.full(stocks, dates[0], dtype="datetime64[D]"),
     }
+    data.update(financial_runtime_arrays(data["total_share"]))
     return data
 
 
@@ -53,21 +63,37 @@ def _write_runtime(path, **changes) -> dict[str, np.ndarray]:
     return data
 
 
+def test_runtime_rejects_old_six_field_or_partial_financial_enrichment(tmp_path):
+    from offline_data.financial_versions import ABNORMAL_GROSS_PROFIT_PANEL_FIELDS
+    data = _runtime_arrays()
+    for name in ABNORMAL_GROSS_PROFIT_PANEL_FIELDS:
+        data.pop(name)
+    path = tmp_path / "old_financial.npz"
+    np.savez(path, **data)
+    with pytest.raises(ValueError, match="obsolete or partial financial schema"):
+        load_runtime_slice(path, "2020-05-01", "2020-05-05", preload_rows=0)
+
+
 def test_runtime_slice_is_strict_copied_contiguous_and_sealed(tmp_path):
     path = tmp_path / "runtime.npz"
     source = _write_runtime(path)
     start = source["trade_dates"][150]
     end = source["trade_dates"][160]
 
-    runtime = load_runtime_slice(path, start, end)
+    runtime = load_runtime_slice(
+        path,
+        start,
+        end,
+        preload_rows=TEST_PRELOAD_ROWS,
+    )
 
-    assert runtime.decision_start == MIN_PRELOAD_ROWS
+    assert runtime.decision_start == TEST_PRELOAD_ROWS
     assert runtime.decision_stop - runtime.decision_start == 11
     assert runtime.trade_dates[0] == source["trade_dates"][24]
     assert runtime.trade_dates[-1] == end
     assert np.all(runtime.trade_dates <= end)
-    assert runtime.manifest.requested_preload_rows == MIN_PRELOAD_ROWS
-    assert runtime.manifest.actual_preload_rows == MIN_PRELOAD_ROWS
+    assert runtime.manifest.requested_preload_rows == TEST_PRELOAD_ROWS
+    assert runtime.manifest.actual_preload_rows == TEST_PRELOAD_ROWS
     assert runtime.manifest.loaded_end == str(end)
     assert runtime.manifest.source_sha256 == hashlib.sha256(
         path.read_bytes()
@@ -85,7 +111,8 @@ def test_runtime_slice_is_strict_copied_contiguous_and_sealed(tmp_path):
     assert runtime.field("open").dtype == np.float32
     assert runtime.field("st_mask").dtype == np.bool_
     assert runtime.field("issue_price").shape == (3,)
-    assert runtime.field("stock_names").shape == (3,)
+    assert runtime.field("issue_date").dtype == np.dtype("datetime64[D]")
+    assert runtime.field("issue_date").shape == (3,)
     assert runtime.index_of(start) == runtime.decision_start
 
 
@@ -142,6 +169,7 @@ def test_runtime_slice_uses_available_history_at_source_start(tmp_path):
         path,
         source["trade_dates"][20],
         source["trade_dates"][25],
+        preload_rows=TEST_PRELOAD_ROWS,
     )
 
     assert runtime.decision_start == 20
@@ -277,14 +305,14 @@ def test_runtime_lineage_detects_date_rewrite_and_insertion(tmp_path):
     assert date_insert.prefix_rows == baseline.prefix_rows + 1
 
 
-@pytest.mark.parametrize("field", ["issue_price", "stock_names"])
+@pytest.mark.parametrize("field", ["issue_price", "issue_date"])
 def test_runtime_lineage_detects_stock_field_rewrite(tmp_path, field):
     base = _runtime_arrays(rows=8, stocks=2)
     changed = _copy_runtime(base)
     if field == "issue_price":
         changed[field][0] += 1.0
     else:
-        changed[field][0] = "renamed"
+        changed[field][0] += np.timedelta64(1, "D")
     base_path = tmp_path / f"base-{field}.npz"
     changed_path = tmp_path / f"changed-{field}.npz"
     np.savez(base_path, **base)

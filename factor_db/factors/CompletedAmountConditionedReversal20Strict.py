@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 
+from factor_db.factors.CompletedSignedAmountImbalance20Strict import (
+    _return_flat_result_when_possible,
+)
+
 
 class CompletedAmountConditionedReversal20Strict:
     """Prefer windows whose down days carry relatively more RMB amount.
@@ -33,6 +37,10 @@ class CompletedAmountConditionedReversal20Strict:
         result = np.full((rows, stocks), np.nan, dtype=np.float32)
         window = self.hist_days
         if rows <= window:
+            return result
+        if _return_flat_result_when_possible(
+            close, pre_close, amount, result, window
+        ):
             return result
 
         # For output row ``block_start + offset``, the exact history is the

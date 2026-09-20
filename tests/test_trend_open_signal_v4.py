@@ -51,6 +51,13 @@ def _panel(days=340, stocks=25):
         "st_mask": np.zeros_like(close, dtype=bool),
         "preClose": np.vstack((close[:1], close[:-1])),
         "issue_price": np.full(stocks, 8.0),
+        "issue_date": np.full(
+            stocks, np.datetime64(start.date(), "D"), dtype="datetime64[D]"
+        ),
+        "listing_age": np.broadcast_to(
+            np.arange(days, dtype=np.int32)[:, None], close.shape
+        ).copy(),
+        "delisted_mask": np.zeros_like(close, dtype=bool),
         "stock_codes": np.array([f"{i + 1:06d}.SZ" for i in range(stocks)]),
         "trade_dates": np.array(
             [(start + timedelta(days=i)).date() for i in range(days)],

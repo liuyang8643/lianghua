@@ -1,6 +1,6 @@
 """Leakage-controlled A/H premium mean-reversion research.
 
-This module deliberately does not use :mod:`core.backtest`.  That engine has
+This module deliberately does not use :mod:`env.backtest`.  That engine has
 one CNY cash account and A-share trading rules; treating an H share as another
 A-share column would silently apply the wrong calendar, lot, fee, currency,
 and shorting rules.  The executable result here is therefore a conservative

@@ -9,7 +9,7 @@ silently substituted.
 
 from __future__ import annotations
 
-import hashlib
+from utils.atomic_file import file_sha256
 import json
 import os
 from datetime import date
@@ -78,12 +78,6 @@ def _fetch_all_index_bars(mdx, *, label: str, code: str) -> pd.DataFrame:
     return _normalize_bars(pd.concat(pages, ignore_index=True), label=label, code=code)
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def main() -> None:
@@ -115,7 +109,7 @@ def main() -> None:
             "csi_1000": "backfilled history is stored for audit only; do not use before its 2014-10-17 publication date without a contemporaneous-publication proof",
             "sse_dividend": "price-index proxy; assess total-return mismatch before using relative style performance",
         },
-        "data_sha256": _sha256(OUTPUT_PATH),
+        "data_sha256": file_sha256(OUTPUT_PATH),
     }
     temporary_status = STATUS_PATH.with_suffix(".tmp.json")
     temporary_status.write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")

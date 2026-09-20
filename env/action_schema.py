@@ -1,25 +1,39 @@
-"""The single mixed-type action codec used by GA, PPO, and live inference."""
+"""The single continuous action codec used by GA, PPO, and live inference."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cached_property
 import hashlib
 import json
 import math
 from typing import Literal, Mapping, Sequence
 
 import numpy as np
-from gymnasium import spaces
 from numpy.typing import NDArray
 
-from env.contracts import DayConfig, RebalanceMode
+from env.contracts import DayConfig, PolicyHistory, PolicyMemory, decode_unit_action, encode_unit_action
 from factor.registry import PRODUCTION_FACTOR_NAMES, PRODUCTION_FILTER_NAMES
 
 
 CORE_FACTOR_NAMES = PRODUCTION_FACTOR_NAMES
 CORE_FILTER_NAMES = PRODUCTION_FILTER_NAMES
-DEFAULT_BUY_N_CHOICES = (20, 25, 30, 35, 40, 45, 50, 100)
-DEFAULT_SELL_M_CHOICES = (20, 25, 30, 35, 40, 45, 50, 100)
+FIXED_BUY_N = 50
+SERIALIZED_DAY_CONFIG_FIELDS = (
+    "weights",
+    "factor_enabled",
+    "filter_factors",
+    "buy_n",
+    "turnover_rate",
+    "limit_up_protection",
+    "rebalance_band_pct",
+    "single_buy_pct",
+)
+STATIC_CONFIG_FIELDS = frozenset(
+    field for field in (*SERIALIZED_DAY_CONFIG_FIELDS, "prefilter_n")
+    if field != "factor_enabled"
+)
+STATIC_CONFIG_WRAPPER_FIELDS = frozenset(("ga_profile", "individual_config"))
 
 
 @dataclass(frozen=True)
@@ -28,10 +42,10 @@ class ActionField:
 
     index: int
     name: str
-    kind: Literal["continuous", "binary", "discrete", "enum"]
-    minimum: float | None = None
-    maximum: float | None = None
-    choices: tuple[int | str, ...] = ()
+    kind: Literal["continuous"]
+    minimum: float
+    maximum: float
+    transform: Literal["linear"] = "linear"
 
 
 @dataclass(frozen=True)
@@ -44,81 +58,43 @@ class ActionSchema:
 
     factor_names: tuple[str, ...] = CORE_FACTOR_NAMES
     filter_names: tuple[str, ...] = CORE_FILTER_NAMES
-    buy_n_choices: tuple[int, ...] = DEFAULT_BUY_N_CHOICES
-    sell_m_choices: tuple[int, ...] = DEFAULT_SELL_M_CHOICES
-    exposure_range: tuple[float, float] = (0.0, 1.0)
-    rebalance_band_range: tuple[float, float] = (0.0, 0.15)
-    schema_version: str = "day-config-v1"
+    fixed_buy_n: int = FIXED_BUY_N
+    turnover_maximum: float = 0.2
+    fixed_filter_flags: tuple[bool, ...] = (True, True)
+    fixed_limit_up_protection: bool = True
+    fixed_rebalance_band_pct: float = 0.01
+    schema_version: str = "day-config-v19-closed-unit-weights"
     _layout: tuple[ActionField, ...] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
+        # Own immutable vocabulary/control sequences before caching identity.
+        for name in ("factor_names", "filter_names", "fixed_filter_flags"):
+            object.__setattr__(self, name, tuple(getattr(self, name)))
         if not self.factor_names or len(set(self.factor_names)) != len(self.factor_names):
             raise ValueError("factor_names must be non-empty and unique")
         if not self.filter_names or len(set(self.filter_names)) != len(self.filter_names):
             raise ValueError("filter_names must be non-empty and unique")
-        self._validate_choices("buy_n_choices", self.buy_n_choices)
-        self._validate_choices("sell_m_choices", self.sell_m_choices)
-        self._validate_continuous_range("exposure_range", self.exposure_range, upper_closed=True)
-        self._validate_continuous_range(
-            "rebalance_band_range", self.rebalance_band_range, upper_closed=False
-        )
+        if type(self.fixed_buy_n) is not int or self.fixed_buy_n <= 0:
+            raise ValueError("fixed_buy_n must be a positive int")
+        if isinstance(self.turnover_maximum, bool) or not math.isfinite(self.turnover_maximum) or not 0 < self.turnover_maximum <= 1:
+            raise ValueError("turnover_maximum must be finite and in (0, 1]")
+        object.__setattr__(self, "turnover_maximum", float(self.turnover_maximum))
+        if len(self.fixed_filter_flags) != len(self.filter_names) or any(
+            type(value) is not bool for value in self.fixed_filter_flags
+        ):
+            raise ValueError("fixed_filter_flags must match filter_names")
+        if type(self.fixed_limit_up_protection) is not bool:
+            raise TypeError("fixed_limit_up_protection must be bool")
+        if not math.isfinite(self.fixed_rebalance_band_pct) or not (
+            0.0 <= self.fixed_rebalance_band_pct < 1.0
+        ):
+            raise ValueError("fixed_rebalance_band_pct must be in [0, 1)")
 
         layout: list[ActionField] = []
         for name in self.factor_names:
             layout.append(ActionField(len(layout), f"factor_weight.{name}", "continuous", 0.0, 1.0))
-        for name in self.factor_names:
-            layout.append(ActionField(len(layout), f"factor_enabled.{name}", "binary"))
-        for name in self.filter_names:
-            layout.append(ActionField(len(layout), f"filter_flag.{name}", "binary"))
-        layout.extend(
-            (
-                ActionField(
-                    len(layout),
-                    "target_exposure",
-                    "continuous",
-                    self.exposure_range[0],
-                    self.exposure_range[1],
-                ),
-                ActionField(len(layout) + 1, "buy_n", "discrete", choices=self.buy_n_choices),
-                ActionField(len(layout) + 2, "sell_m", "discrete", choices=self.sell_m_choices),
-                ActionField(len(layout) + 3, "rebalance_now", "binary"),
-                ActionField(
-                    len(layout) + 4,
-                    "rebalance_mode",
-                    "enum",
-                    choices=tuple(mode.value for mode in RebalanceMode),
-                ),
-                ActionField(len(layout) + 5, "limit_up_protection", "binary"),
-                ActionField(
-                    len(layout) + 6,
-                    "rebalance_band_pct",
-                    "continuous",
-                    self.rebalance_band_range[0],
-                    self.rebalance_band_range[1],
-                ),
-            )
-        )
+        layout.append(ActionField(len(layout), "turnover_rate", "continuous", 0.0, self.turnover_maximum))
         object.__setattr__(self, "_layout", tuple(layout))
-
-    @staticmethod
-    def _validate_choices(name: str, choices: Sequence[int]) -> None:
-        if not choices or tuple(sorted(set(choices))) != tuple(choices):
-            raise ValueError(f"{name} must contain unique ascending values")
-        if any(type(value) is not int or value <= 0 for value in choices):
-            raise ValueError(f"{name} values must be positive ints")
-
-    @staticmethod
-    def _validate_continuous_range(
-        name: str,
-        value_range: tuple[float, float],
-        *,
-        upper_closed: bool,
-    ) -> None:
-        low, high = value_range
-        valid_high = high <= 1.0 if upper_closed else high < 1.0
-        if not (math.isfinite(low) and math.isfinite(high) and 0.0 <= low < high and valid_high):
-            upper = "]" if upper_closed else ")"
-            raise ValueError(f"{name} must be an increasing subset of [0, 1{upper}")
 
     @property
     def layout(self) -> tuple[ActionField, ...]:
@@ -139,20 +115,24 @@ class ActionSchema:
             np.full(self.action_dim, 1.0, dtype=np.float32),
         )
 
-    @property
-    def action_space(self) -> spaces.Box:
-        low, high = self.space_bounds
-        return spaces.Box(low=low, high=high, dtype=np.float32)
-
     def _schema_payload(self) -> dict[str, object]:
         return {
             "schema_version": self.schema_version,
             "factor_names": list(self.factor_names),
             "filter_names": list(self.filter_names),
-            "buy_n_choices": list(self.buy_n_choices),
-            "sell_m_choices": list(self.sell_m_choices),
-            "exposure_range": list(self.exposure_range),
-            "rebalance_band_range": list(self.rebalance_band_range),
+            "fixed_buy_n": self.fixed_buy_n,
+            "turnover_maximum": self.turnover_maximum,
+            "replacement_rule": "count(canonical_box_float32(rate) >= canonical_box_float32(k/buy_n), k=1..buy_n); worst-held-only; outside-full-PIT-top-buy_n",
+            "canonical_precision": {
+                "coordinates": "field-relative unit IEEE-754 binary32 projected to Box[-1,1]",
+                "unit_encode": "float32(float32(2)*float32(value)-float32(1))",
+                "unit_decode": "(float64(action)+1)/2",
+                "decoded_config": "field_min + unit_decode(unit_encode(unit_decode(action))) * (field_max-field_min)",
+                "turnover_boundaries": "actual turnover k/buy_n; equality enters quantity k; actor uses declared field-relative range",
+            },
+            "fixed_filter_flags": list(self.fixed_filter_flags),
+            "fixed_limit_up_protection": self.fixed_limit_up_protection,
+            "fixed_rebalance_band_pct": self.fixed_rebalance_band_pct,
             "layout": [
                 {
                     "index": item.index,
@@ -160,13 +140,13 @@ class ActionSchema:
                     "kind": item.kind,
                     "minimum": item.minimum,
                     "maximum": item.maximum,
-                    "choices": list(item.choices),
+                    "transform": item.transform,
                 }
                 for item in self.layout
             ],
         }
 
-    @property
+    @cached_property
     def schema_hash(self) -> str:
         encoded = json.dumps(
             self._schema_payload(),
@@ -186,17 +166,16 @@ class ActionSchema:
             schema_version=str(payload["schema_version"]),
             factor_names=tuple(str(value) for value in payload["factor_names"]),
             filter_names=tuple(str(value) for value in payload["filter_names"]),
-            buy_n_choices=tuple(int(value) for value in payload["buy_n_choices"]),
-            sell_m_choices=tuple(int(value) for value in payload["sell_m_choices"]),
-            exposure_range=tuple(float(value) for value in payload["exposure_range"]),
-            rebalance_band_range=tuple(
-                float(value) for value in payload["rebalance_band_range"]
-            ),
+            fixed_buy_n=int(payload["fixed_buy_n"]),
+            turnover_maximum=payload["turnover_maximum"],
+            fixed_filter_flags=tuple(bool(value) for value in payload["fixed_filter_flags"]),
+            fixed_limit_up_protection=bool(payload["fixed_limit_up_protection"]),
+            fixed_rebalance_band_pct=float(payload["fixed_rebalance_band_pct"]),
         )
         if str(payload["schema_hash"]) != schema.schema_hash:
             raise ValueError("action schema hash mismatch")
-        if payload.get("layout") != schema._schema_payload()["layout"]:
-            raise ValueError("action schema layout mismatch")
+        if dict(payload) != schema.to_dict():
+            raise ValueError("action schema payload mismatch")
         return schema
 
     def decode(self, action: Sequence[float] | NDArray[np.floating]) -> DayConfig:
@@ -206,154 +185,238 @@ class ActionSchema:
         if not np.isfinite(values).all() or np.any(values < -1.0) or np.any(values > 1.0):
             raise ValueError("action values must be finite and in [-1, 1]")
 
-        cursor = 0
-        raw_weights = self._decode_continuous_array(values[cursor : cursor + len(self.factor_names)])
-        cursor += len(self.factor_names)
-        enabled_values = values[cursor : cursor + len(self.factor_names)] >= 0.0
-        cursor += len(self.factor_names)
-        if not enabled_values.any():
-            enabled_values[int(np.argmax(raw_weights))] = True
-        masked_weights = raw_weights * enabled_values
-        weight_sum = float(masked_weights.sum())
-        if weight_sum == 0.0:
-            masked_weights = enabled_values.astype(np.float64) / float(enabled_values.sum())
-        else:
-            masked_weights /= weight_sum
-
-        filter_values = values[cursor : cursor + len(self.filter_names)] >= 0.0
-        cursor += len(self.filter_names)
-        target_exposure = self._decode_continuous(values[cursor], self.exposure_range)
-        cursor += 1
-        buy_n = int(self._decode_choice(values[cursor], self.buy_n_choices))
-        cursor += 1
-        decoded_sell_m = int(self._decode_choice(values[cursor], self.sell_m_choices))
-        sell_m = max(buy_n, decoded_sell_m)
-        cursor += 1
-        rebalance_now = bool(values[cursor] >= 0.0)
-        cursor += 1
-        rebalance_mode = RebalanceMode(self._decode_choice(values[cursor], tuple(RebalanceMode)))
-        cursor += 1
-        limit_up_protection = bool(values[cursor] >= 0.0)
-        cursor += 1
-        rebalance_band_pct = self._decode_continuous(values[cursor], self.rebalance_band_range)
-
+        unit_values = decode_unit_action(encode_unit_action(decode_unit_action(values)))
+        raw_weights = unit_values[:-1]
+        enabled_values = raw_weights != 0.0
+        buy_n = self.fixed_buy_n
+        turnover_field = self.layout[-1]
+        turnover_rate = float(
+            turnover_field.minimum
+            + unit_values[-1] * (turnover_field.maximum - turnover_field.minimum)
+        )
         return DayConfig(
-            factor_weights=dict(zip(self.factor_names, masked_weights.tolist())),
+            factor_weights=dict(zip(self.factor_names, raw_weights.tolist())),
             factor_enabled=dict(zip(self.factor_names, enabled_values.tolist())),
-            filter_flags=dict(zip(self.filter_names, filter_values.tolist())),
-            target_exposure=target_exposure,
+            filter_flags=dict(zip(self.filter_names, self.fixed_filter_flags)),
             buy_n=buy_n,
-            sell_m=sell_m,
-            rebalance_now=rebalance_now,
-            rebalance_mode=rebalance_mode,
-            limit_up_protection=limit_up_protection,
-            rebalance_band_pct=rebalance_band_pct,
+            turnover_rate=turnover_rate,
+            limit_up_protection=self.fixed_limit_up_protection,
+            rebalance_band_pct=self.fixed_rebalance_band_pct,
+            single_buy_pct=1.0 / buy_n,
         )
 
     def encode(self, config: DayConfig) -> NDArray[np.float32]:
         self.validate_day_config(config)
-        action: list[float] = []
-        action.extend(self._encode_continuous(config.factor_weights[name], (0.0, 1.0)) for name in self.factor_names)
-        action.extend(1.0 if config.factor_enabled[name] else -1.0 for name in self.factor_names)
-        action.extend(1.0 if config.filter_flags[name] else -1.0 for name in self.filter_names)
-        action.append(self._encode_continuous(config.target_exposure, self.exposure_range))
-        action.append(self._encode_choice(config.buy_n, self.buy_n_choices))
-        action.append(self._encode_choice(config.sell_m, self.sell_m_choices))
-        action.append(1.0 if config.rebalance_now else -1.0)
-        action.append(self._encode_choice(config.rebalance_mode, tuple(RebalanceMode)))
-        action.append(1.0 if config.limit_up_protection else -1.0)
-        action.append(self._encode_continuous(config.rebalance_band_pct, self.rebalance_band_range))
-        return np.asarray(action, dtype=np.float32)
+        turnover_field = self.layout[-1]
+        turnover_unit = (
+            config.turnover_rate - turnover_field.minimum
+        ) / (turnover_field.maximum - turnover_field.minimum)
+        unit_values = np.asarray(
+            [*(config.factor_weights[name] for name in self.factor_names), turnover_unit],
+            dtype=np.float64,
+        )
+        return encode_unit_action(unit_values)
+
+    def canonicalize_day_config(self, config: DayConfig) -> DayConfig:
+        """Put GA/static inputs on exactly the same finite action axis as PPO."""
+        return self.decode(self.encode(config))
+
+    def validate_policy_memory(self, memory: PolicyMemory) -> None:
+        """Require recorded history before an initialized state enters an actor."""
+        if not isinstance(memory, PolicyMemory):
+            raise TypeError("policy memory must be PolicyMemory")
+        if not memory.initialized:
+            return
+        history = memory.history
+        if history is None:
+            raise ValueError("initialized policy memory is missing its actual dated history")
+        if history.action_schema_hash != self.schema_hash or history.values.shape[1] != self.action_dim + 2:
+            raise ValueError("policy history action schema mismatch")
+        actions = history.values[:, :-2]
+        canonical = np.ascontiguousarray(actions, dtype=np.float32)
+        if not np.array_equal(actions, canonical):
+            raise ValueError("every policy history action must use canonical action coordinates")
+        if not np.array_equal(history.values[-1, :-2], self.encode(memory.previous_day_config)):
+            raise ValueError("policy history must end with the canonical previous DayConfig")
+
+    def advance_policy_memory(
+        self,
+        previous: PolicyMemory,
+        settled: PolicyMemory,
+        *,
+        decision_date: str,
+        history_length: int,
+    ) -> PolicyMemory:
+        """Append one actual Fill settlement, encoding its DayConfig exactly once."""
+        if type(history_length) is not int or history_length <= 0:
+            raise ValueError("policy history length must be a positive int")
+        self.validate_policy_memory(previous)
+        if not isinstance(settled, PolicyMemory) or not settled.initialized:
+            raise ValueError("a recorded decision requires a completed config and Fill settlement")
+        if settled.history is not None:
+            raise ValueError("a completed decision must be appended exactly once")
+        action = self.encode(settled.previous_day_config)
+        row = np.asarray((
+            *action, settled.previous_gross_turnover_ratio, settled.previous_total_cost_ratio,
+        ), dtype=np.float64).reshape(1, -1)
+        date = np.asarray([decision_date], dtype="datetime64[D]")
+        if previous.history is not None:
+            if date[0] <= previous.history.decision_dates[-1]:
+                raise ValueError("a policy history decision date cannot repeat or go backwards")
+            dates = np.concatenate((previous.history.decision_dates, date))[-history_length:]
+            values = np.concatenate((previous.history.values, row), axis=0)[-history_length:]
+        else:
+            dates, values = date, row
+        history = PolicyHistory(dates, values, self.schema_hash)
+        return PolicyMemory(
+            previous_day_config=settled.previous_day_config,
+            previous_gross_turnover_ratio=settled.previous_gross_turnover_ratio,
+            previous_total_cost_ratio=settled.previous_total_cost_ratio,
+            history=history,
+        )
 
     def validate_day_config(self, config: DayConfig) -> None:
+        # DayConfig owns immutable mappings; a successful check remains valid
+        # for this immutable schema. Retain one certificate, not an object cache.
+        if type(config) is DayConfig and getattr(config, "_validated_action_schema_hash", None) == self.schema_hash:
+            return
         if tuple(config.factor_weights) != self.factor_names:
             raise ValueError("DayConfig factor order does not match ActionSchema")
         if tuple(config.factor_enabled) != self.factor_names:
             raise ValueError("DayConfig factor_enabled order does not match ActionSchema")
         if tuple(config.filter_flags) != self.filter_names:
             raise ValueError("DayConfig filter order does not match ActionSchema")
-        if config.buy_n not in self.buy_n_choices:
-            raise ValueError(f"buy_n {config.buy_n} is not registered in ActionSchema")
-        if config.sell_m not in self.sell_m_choices:
-            raise ValueError(f"sell_m {config.sell_m} is not registered in ActionSchema")
-        exposure_low, exposure_high = self.exposure_range
-        if not exposure_low <= config.target_exposure <= exposure_high:
-            raise ValueError("target_exposure is outside ActionSchema range")
-        band_low, band_high = self.rebalance_band_range
-        if not band_low <= config.rebalance_band_pct <= band_high:
-            raise ValueError("rebalance_band_pct is outside ActionSchema range")
+        if config.buy_n != self.fixed_buy_n:
+            raise ValueError(f"buy_n must equal the fixed ActionSchema value {self.fixed_buy_n}")
+        turnover_field = self.layout[-1]
+        if not turnover_field.minimum <= config.turnover_rate <= turnover_field.maximum:
+            raise ValueError(
+                f"turnover_rate must be in [{turnover_field.minimum}, {turnover_field.maximum}]"
+            )
+        expected_enabled = {
+            name: config.factor_weights[name] != 0.0 for name in self.factor_names
+        }
+        if dict(config.factor_enabled) != expected_enabled:
+            raise ValueError("factor_enabled must be derived from non-zero weights")
+        if tuple(config.filter_flags.values()) != self.fixed_filter_flags:
+            raise ValueError("filter flags differ from fixed ActionSchema controls")
+        if config.limit_up_protection != self.fixed_limit_up_protection:
+            raise ValueError("limit-up protection differs from fixed ActionSchema control")
+        if config.rebalance_band_pct != self.fixed_rebalance_band_pct:
+            raise ValueError("rebalance band differs from fixed ActionSchema control")
+        if config.single_buy_pct != 1.0 / config.buy_n:
+            raise ValueError("single_buy_pct must equal 1 / buy_n")
+        if type(config) is DayConfig:
+            object.__setattr__(config, "_validated_action_schema_hash", self.schema_hash)
 
     def from_static_config(self, payload: Mapping[str, object]) -> DayConfig:
-        """Convert a legacy static config (or its outer payload) without prefiltering."""
+        """Convert the explicit static-policy vocabulary into ``DayConfig``."""
 
-        nested = payload.get("individual_config")
-        config = nested if isinstance(nested, Mapping) else payload
+        if not isinstance(payload, Mapping):
+            raise TypeError("static config must be a mapping")
+        if "individual_config" in payload:
+            unexpected_wrapper = sorted(set(payload) - STATIC_CONFIG_WRAPPER_FIELDS)
+            if unexpected_wrapper:
+                raise ValueError(
+                    "static config wrapper contains unexpected fields: "
+                    + ", ".join(unexpected_wrapper)
+                )
+            nested = payload["individual_config"]
+            if not isinstance(nested, Mapping):
+                raise TypeError("individual_config must be a mapping")
+            config = nested
+        else:
+            config = payload
+
+        unexpected = sorted(set(config) - STATIC_CONFIG_FIELDS)
+        if unexpected:
+            raise ValueError(
+                "static config contains unexpected fields: " + ", ".join(unexpected)
+            )
         raw_weights = config.get("weights")
         if not isinstance(raw_weights, Mapping):
             raise TypeError("static config must contain a weights mapping")
         if set(raw_weights) != set(self.factor_names):
             raise ValueError("static factor vocabulary does not match ActionSchema")
 
-        explicit_enabled = config.get("factor_enabled")
-        if explicit_enabled is not None and not isinstance(explicit_enabled, Mapping):
-            raise TypeError("factor_enabled must be a mapping")
-        enabled = {
-            name: (
-                bool(explicit_enabled[name])
-                if isinstance(explicit_enabled, Mapping) and name in explicit_enabled
-                else float(raw_weights[name]) > 0.0
-            )
-            for name in self.factor_names
-        }
-        if not any(enabled.values()):
-            raise ValueError("static config must enable at least one factor")
         positive_weights: dict[str, float] = {}
         for name in self.factor_names:
             value = float(raw_weights[name])
             if not math.isfinite(value) or value < 0.0:
                 raise ValueError("static factor weights must be finite and non-negative")
-            positive_weights[name] = value if enabled[name] else 0.0
+            positive_weights[name] = value
         total = sum(positive_weights.values())
-        if total == 0.0:
-            count = sum(enabled.values())
-            weights = {name: (1.0 / count if enabled[name] else 0.0) for name in self.factor_names}
-        else:
-            weights = {name: positive_weights[name] / total for name in self.factor_names}
+        # All-zero weights are a valid tied-score configuration.
+        weights = {name: (positive_weights[name] / total if total > 0.0 else 0.0)
+                   for name in self.factor_names}
+        enabled = {name: weights[name] > 0.0 for name in self.factor_names}
 
         raw_filters = config.get("filter_factors", {})
         if not isinstance(raw_filters, Mapping):
             raise TypeError("filter_factors must be a mapping")
+        if raw_filters and set(raw_filters) != set(self.filter_names):
+            raise ValueError("static filter vocabulary does not match ActionSchema")
         filters = {name: bool(raw_filters.get(name, False)) for name in self.filter_names}
-        reserve = float(config.get("cash_reserve_ratio", 0.0))
-        holding_period = int(config.get("holding_period", 1))
-        rebalance_mode = (
-            RebalanceMode.EQUALIZE if bool(config.get("rebalance", True)) else RebalanceMode.REPLACE_ONLY
-        )
+        buy_n = int(config["buy_n"])
 
-        return DayConfig(
+        day_config = DayConfig(
             factor_weights=weights,
             factor_enabled=enabled,
             filter_flags=filters,
-            target_exposure=1.0 - reserve,
-            buy_n=int(config["buy_n"]),
-            sell_m=int(config.get("sell_m", config["buy_n"])),
-            rebalance_now=bool(config.get("rebalance_now", holding_period == 1)),
-            rebalance_mode=rebalance_mode,
+            buy_n=buy_n,
+            turnover_rate=float(config["turnover_rate"]),
             limit_up_protection=bool(config.get("limit_up_protection", False)),
             rebalance_band_pct=float(config.get("rebalance_band_pct", 0.01)),
+            single_buy_pct=float(config.get("single_buy_pct", 1.0 / buy_n)),
         )
+        return self.canonicalize_day_config(day_config)
 
-    def encode_static_config(self, payload: Mapping[str, object]) -> NDArray[np.float32]:
-        return self.encode(self.from_static_config(payload))
+    def from_serialized_day_config(self, payload: Mapping[str, object]) -> DayConfig:
+        """Restore an exact policy snapshot without legacy config defaults."""
+
+        if not isinstance(payload, Mapping):
+            raise TypeError("serialized DayConfig must be a mapping")
+        expected_fields = set(SERIALIZED_DAY_CONFIG_FIELDS)
+        actual_fields = set(payload)
+        if actual_fields != expected_fields:
+            missing = sorted(expected_fields - actual_fields)
+            unexpected = sorted(actual_fields - expected_fields)
+            raise ValueError(
+                "serialized DayConfig fields must match exactly; "
+                f"missing={missing}, unexpected={unexpected}"
+            )
+
+        raw_weights = payload["weights"]
+        raw_enabled = payload["factor_enabled"]
+        raw_filters = payload["filter_factors"]
+        if not isinstance(raw_weights, Mapping):
+            raise TypeError("serialized DayConfig weights must be a mapping")
+        if not isinstance(raw_enabled, Mapping):
+            raise TypeError("serialized DayConfig factor_enabled must be a mapping")
+        if not isinstance(raw_filters, Mapping):
+            raise TypeError("serialized DayConfig filter_factors must be a mapping")
+        if set(raw_weights) != set(self.factor_names):
+            raise ValueError("serialized factor weight vocabulary does not match ActionSchema")
+        if set(raw_enabled) != set(self.factor_names):
+            raise ValueError("serialized factor_enabled vocabulary does not match ActionSchema")
+        if set(raw_filters) != set(self.filter_names):
+            raise ValueError("serialized filter vocabulary does not match ActionSchema")
+
+        config = DayConfig(
+            factor_weights={name: raw_weights[name] for name in self.factor_names},
+            factor_enabled={name: raw_enabled[name] for name in self.factor_names},
+            filter_flags={name: raw_filters[name] for name in self.filter_names},
+            buy_n=payload["buy_n"],
+            turnover_rate=payload["turnover_rate"],
+            limit_up_protection=payload["limit_up_protection"],
+            rebalance_band_pct=payload["rebalance_band_pct"],
+            single_buy_pct=payload["single_buy_pct"],
+        )
+        self.validate_day_config(config)
+        return config
 
     def to_static_config(self, config: DayConfig) -> dict[str, object]:
-        """Export the legacy parameter vocabulary for parity diagnostics.
-
-        ``rebalance_now`` is a per-day decision and has no general legacy
-        ``holding_period`` equivalent.  A true value is exactly representable as
-        ``holding_period=1``; the returned explicit flag preserves false values
-        for consumers of the new contract.
-        """
+        """Export only parameters that the daily policy is allowed to control."""
 
         self.validate_day_config(config)
         return {
@@ -361,40 +424,9 @@ class ActionSchema:
             "factor_enabled": dict(config.factor_enabled),
             "filter_factors": dict(config.filter_flags),
             "buy_n": config.buy_n,
-            "sell_m": config.sell_m,
-            "rebalance": config.rebalance_mode is RebalanceMode.EQUALIZE,
-            "rebalance_now": config.rebalance_now,
+            "turnover_rate": config.turnover_rate,
             "limit_up_protection": config.limit_up_protection,
-            "cash_reserve_ratio": 1.0 - config.target_exposure,
-            "holding_period": 1,
             "rebalance_band_pct": config.rebalance_band_pct,
+            "single_buy_pct": config.single_buy_pct,
         }
 
-    @staticmethod
-    def _decode_continuous_array(values: NDArray[np.float64]) -> NDArray[np.float64]:
-        return (values + 1.0) / 2.0
-
-    @staticmethod
-    def _decode_continuous(value: float, value_range: tuple[float, float]) -> float:
-        low, high = value_range
-        return low + ((float(value) + 1.0) / 2.0) * (high - low)
-
-    @staticmethod
-    def _encode_continuous(value: float, value_range: tuple[float, float]) -> float:
-        low, high = value_range
-        if not low <= float(value) <= high:
-            raise ValueError(f"continuous value {value} is outside [{low}, {high}]")
-        return 2.0 * ((float(value) - low) / (high - low)) - 1.0
-
-    @staticmethod
-    def _decode_choice(value: float, choices: Sequence[int | str | RebalanceMode]):
-        index = min(int(((float(value) + 1.0) / 2.0) * len(choices)), len(choices) - 1)
-        return choices[index]
-
-    @staticmethod
-    def _encode_choice(value, choices: Sequence[int | str | RebalanceMode]) -> float:
-        try:
-            index = choices.index(value)
-        except ValueError as exc:
-            raise ValueError(f"discrete value {value!r} is not registered") from exc
-        return -1.0 + 2.0 * (index + 0.5) / len(choices)

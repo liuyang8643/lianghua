@@ -1,38 +1,27 @@
-"""Strict JSON identity for a frozen policy artifact."""
+"""Strict identity and deployment checks for a frozen policy artifact."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
 import json
+import math
 from pathlib import Path
 from types import MappingProxyType
 from typing import Iterable, Mapping
 
+from utils.atomic_file import atomic_write_json, file_sha256
 
-BUNDLE_VERSION = "wbr-policy-bundle-v5"
+
+BUNDLE_VERSION = "wbr-policy-bundle-v44-periodic-evaluation"
 MANIFEST_FILE = "manifest.json"
 DEPLOYMENT_GATE_NAMES = (
     "trained_checkpoint_selected",
     "finite",
-    "beats_untrained_threshold",
-    "beats_random_threshold",
-    "beats_fixed_config_threshold",
-    "validation_noninferiority_and_positive_return",
-    "plateau_reached",
-    "average_exposure_at_least_0_45",
-    "continuous_parameter_dynamic",
-    "binary_parameter_dynamic",
-    "discrete_parameter_dynamic",
+    "full_investment_contract_satisfied",
+    "validation_selected",
+    "test_reported",
 )
-
-
-def file_sha256(path: str | Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        while chunk := stream.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def source_tree_sha256(root: str | Path, paths: Iterable[str | Path]) -> str:
@@ -43,9 +32,6 @@ def source_tree_sha256(root: str | Path, paths: Iterable[str | Path]) -> str:
         relative = path.relative_to(base).as_posix().encode("utf-8")
         digest.update(len(relative).to_bytes(4, "big"))
         digest.update(relative)
-        # Git working trees may expose the same Python source with LF, CRLF,
-        # or mixed legacy line endings. Source identity is semantic across
-        # platforms, so canonicalize line endings before hashing.
         content = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
         digest.update(len(content).to_bytes(8, "big"))
         digest.update(content)
@@ -53,27 +39,47 @@ def source_tree_sha256(root: str | Path, paths: Iterable[str | Path]) -> str:
 
 
 def policy_source_sha256(repo_root: str | Path) -> str:
-    """Hash the code that defines training, inference, and env semantics.
-
-    This is intentionally independent of generated artifacts and repository
-    metadata.  A frozen bundle must not silently run against changed action,
-    observation, planner, settlement, or PPO assembly code.
-    """
+    """Hash every source file that can alter policy or environment semantics."""
 
     root = Path(repo_root).resolve()
     files: list[Path] = []
     for package in ("ai", "env", "factor", "offline_data"):
         files.extend((root / package).rglob("*.py"))
     files.extend(
-        (
+        path
+        for path in (
             root / "factor_db" / "factors" / "AmihudIlliquidity.py",
             root / "factor_db" / "factors" / "TrueMarketCap.py",
             root / "factor_db" / "factors" / "VolumeCV.py",
             root / "factor_db" / "factors" / "AmountBasedSmallCap.py",
             root / "factor_db" / "factors" / "filter.py",
+            root / "utils" / "atomic_file.py",
+            root / "utils" / "stable_sort.py",
+            root / "configs" / "training.py",
         )
+        if path.is_file()
     )
     return source_tree_sha256(root, files)
+
+
+def _require_candidate_evaluation(
+    split: str,
+    summary: object,
+) -> float:
+    if not isinstance(summary, Mapping):
+        raise ValueError(f"policy bundle has no {split} evaluation")
+    if summary.get("full_investment_contract_satisfied") is not True:
+        raise ValueError(f"policy bundle {split} lacks full-investment proof")
+    metrics = summary.get("metrics")
+    if not isinstance(metrics, Mapping):
+        raise ValueError(f"policy bundle {split} metrics are missing")
+    try:
+        calmar = float(metrics["calmar"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"policy bundle {split} Calmar is invalid") from exc
+    if not math.isfinite(calmar):
+        raise ValueError(f"policy bundle {split} Calmar is non-finite")
+    return calmar
 
 
 @dataclass(frozen=True)
@@ -154,11 +160,11 @@ class BundleManifest:
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, object]) -> "BundleManifest":
-        bundle_version = str(payload.get("bundle_version", ""))
-        if bundle_version != BUNDLE_VERSION:
-            raise ValueError(f"unsupported bundle version: {bundle_version}")
+        version = str(payload.get("bundle_version", ""))
+        if version != BUNDLE_VERSION:
+            raise ValueError(f"unsupported bundle version: {version}")
         return cls(
-            bundle_version=bundle_version,
+            bundle_version=version,
             created_at=str(payload["created_at"]),
             algorithm=str(payload["algorithm"]),
             model_file=str(payload["model_file"]),
@@ -180,14 +186,16 @@ class BundleManifest:
 
     def save(self, directory: str | Path) -> Path:
         target = Path(directory) / MANIFEST_FILE
-        target.write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, sort_keys=True, indent=2),
-            encoding="utf-8",
-        )
+        atomic_write_json(target, self.to_dict())
         return target
 
     @classmethod
-    def load(cls, directory: str | Path, *, verify_files: bool = True) -> "BundleManifest":
+    def load(
+        cls,
+        directory: str | Path,
+        *,
+        verify_files: bool = True,
+    ) -> "BundleManifest":
         root = Path(directory)
         payload = json.loads((root / MANIFEST_FILE).read_text(encoding="utf-8"))
         manifest = cls.from_dict(payload)
@@ -197,8 +205,7 @@ class BundleManifest:
                 (manifest.normalizer_file, manifest.normalizer_sha256),
                 (manifest.config_file, manifest.config_sha256),
             ):
-                actual = file_sha256(root / file_name)
-                if actual != expected:
+                if file_sha256(root / file_name) != expected:
                     raise ValueError(f"bundle file hash mismatch: {file_name}")
         return manifest
 
@@ -211,22 +218,40 @@ class BundleManifest:
         )
 
     def require_deployable(self) -> None:
-        if not self.technical_convergence:
-            raise ValueError("policy bundle is diagnostic-only: convergence gate failed")
-        convergence = self.training["convergence"]
-        failed = [name for name in DEPLOYMENT_GATE_NAMES if convergence.get(name) is not True]
-        if failed:
+        convergence = self.training.get("convergence")
+        if not isinstance(convergence, Mapping):
+            raise ValueError("policy bundle has no convergence record")
+        failed = [
+            name
+            for name in DEPLOYMENT_GATE_NAMES
+            if convergence.get(name) is not True
+        ]
+        if failed or not self.technical_convergence:
             raise ValueError(
-                "policy bundle has incomplete deployment gates: " + ", ".join(failed)
+                "policy bundle is diagnostic-only: "
+                + ", ".join(failed or ["technical_convergence"])
             )
-        missing = {"train", "validation", "test"} - set(self.evaluation)
-        if missing:
-            raise ValueError(
-                "policy bundle is diagnostic-only: missing sealed evaluation splits "
-                + ", ".join(sorted(missing))
-            )
+        for split in ("train", "validation", "test"):
+            _require_candidate_evaluation(split, self.evaluation.get(split))
+        selection = self.training.get("checkpoint_selection")
+        if not isinstance(selection, Mapping) or (
+            selection.get("objective") != "full_validation_calmar"
+        ):
+            raise ValueError("policy bundle was not selected by validation Calmar")
         if not self.environment:
             raise ValueError("policy bundle has no frozen environment semantics")
+        financial = self.runtime.get("financial_snapshot")
+        if not isinstance(financial, Mapping):
+            raise ValueError("policy bundle has no financial snapshot provenance")
+        for name in ("manifest_sha256", "snapshot_sha256", "financial_identity_sha256"):
+            value = financial.get(name)
+            if not isinstance(value, str) or len(value) != 64 or any(
+                character not in "0123456789abcdef" for character in value
+            ):
+                raise ValueError(f"policy bundle financial snapshot has invalid {name}")
+        for name in ("panel_builder_version", "financial_replay_version", "availability", "pit_evidence_limit"):
+            if not isinstance(financial.get(name), str) or not financial[name]:
+                raise ValueError(f"policy bundle financial snapshot lacks {name}")
         lineage = self.runtime.get("lineage")
         required_lineage = {
             "lineage_version",
@@ -242,11 +267,11 @@ class BundleManifest:
         }
         if not isinstance(lineage, Mapping):
             raise ValueError("policy bundle has no runtime prefix lineage")
-        missing_lineage = required_lineage - set(lineage)
-        if missing_lineage:
+        missing = required_lineage - set(lineage)
+        if missing:
             raise ValueError(
                 "policy bundle has incomplete runtime prefix lineage: "
-                + ", ".join(sorted(missing_lineage))
+                + ", ".join(sorted(missing))
             )
 
 

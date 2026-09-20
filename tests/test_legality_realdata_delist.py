@@ -1,4 +1,4 @@
-"""真实 runtime 数据下的 LegalityChecker 边界场景验收。
+"""真实 runtime 数据下的生产合法性边界场景验收。
 
 覆盖三类容易出错、且只能靠真实样本证伪的判定：
   A. 未来退市日期不影响历史 T 日买入。
@@ -34,9 +34,9 @@ def test_跳空突破涨停的实际不设限日被拦(market):
     """B. 跳空突破涨停的"实际不设限"日：open 远高于理论涨停价 → 被涨停判定一并拦下。
 
     样本 600705.SH（中航资本，借壳重组致股价跳变）2012-08-30：
-      preclose=close[T-1]=4.44，open=14.00（ratio≈3.15），主板理论涨停价仅
-      floor(4.44*1.10)=4.88。该日属"实际不设涨跌幅"的重组/复牌跳空日，runtime 无事件
-      字段无法单独识别，但因 open 远超 4.88 会被涨停（limit_up）判定拦下，buy==False。
+      官方参考价 preclose=6.80，open=14.00（ratio≈2.06），主板理论涨停价仅
+      floor(6.80*1.10)=7.48。该日属"实际不设涨跌幅"的重组/复牌跳空日，runtime 无事件
+      字段无法单独识别，但因 open 远超 7.48 会被涨停（limit_up）判定拦下，buy==False。
       这正是模块文档所述"跳空高开形态已被涨停判定一并拦下"的真实写照。
     """
     if not market.has('600705.SH'):
@@ -45,12 +45,12 @@ def test_跳空突破涨停的实际不设限日被拦(market):
     bar = market.bar('600705.SH', d)
 
     assert bar['board'] == 0                        # 主板，日常 ±10%
-    assert bar['preclose'] == pytest.approx(4.44, abs=1e-2)
+    assert bar['preclose'] == pytest.approx(6.80, abs=1e-2)
     assert bar['open'] == pytest.approx(14.00, abs=1e-2)
 
-    # open 远高于理论涨停价（preclose*1.10≈4.88），跳空幅度 >200%
+    # open 远高于理论涨停价（preclose*1.10≈7.48）
     theoretical_up_limit = bar['preclose'] * 1.10
-    assert bar['open'] > theoretical_up_limit * 2
+    assert bar['open'] > theoretical_up_limit
 
     # 被涨停判定一并拦下
     assert market.buy('600705.SH', d) is False

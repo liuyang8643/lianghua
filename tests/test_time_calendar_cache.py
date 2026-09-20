@@ -1,43 +1,45 @@
-"""交易日历读一次放内存 + is_current_trading 先判时段再查日历 的单元测试。"""
-from datetime import datetime
-
+from datetime import date
+import pandas as pd
 import pytest
-
 import utils.stock.time as st
 
 
-def test_is_current_trading_short_circuits_outside_hours(monkeypatch):
-    """不在交易时段时直接短路，绝不调用 is_trading_day（不读日历 parquet）。"""
-    def _boom(*a, **k):
-        raise AssertionError("不在交易时段不应查交易日历")
-
-    monkeypatch.setattr(st, "is_trading_day", _boom)
-
-    # 12:00 处于午休（11:30~13:00 之外的交易时段），trading_hours=False
-    assert st.is_current_trading(datetime(2026, 6, 1, 12, 0)) is False
-    # 08:00 开盘前
-    assert st.is_current_trading(datetime(2026, 6, 1, 8, 0)) is False
-    # 16:00 收盘后
-    assert st.is_current_trading(datetime(2026, 6, 1, 16, 0)) is False
+@pytest.fixture
+def calendar(tmp_path, monkeypatch):
+    path = tmp_path / 'calendar.parquet'
+    dates = [date(2026, 9, 17), date(2026, 9, 18), date(2026, 9, 21)]
+    pd.DataFrame({'trade_date': dates}).to_parquet(path)
+    monkeypatch.setattr(st, '_CALENDAR_PATH', path)
+    monkeypatch.setattr(st, '_TRADING_CALENDAR_STATE', None)
+    return path, dates
 
 
-def test_is_current_trading_checks_calendar_inside_hours(monkeypatch):
-    """处于交易时段时才查交易日历，结果取决于 is_trading_day。"""
-    calls = []
-
-    monkeypatch.setattr(st, "is_trading_day", lambda d: (calls.append(d) or True))
-    assert st.is_current_trading(datetime(2026, 6, 1, 10, 0)) is True
-    assert len(calls) == 1  # 交易时段内确实查了日历
-
-    monkeypatch.setattr(st, "is_trading_day", lambda d: False)
-    assert st.is_current_trading(datetime(2026, 6, 1, 14, 0)) is False
+def test_calendar_loaded_once_and_holidays_are_not_invented(calendar, monkeypatch):
+    path, dates = calendar
+    assert st.get_last_trading_day(date(2026, 9, 20)) == dates[1]
+    import pyarrow.parquet as pq
+    monkeypatch.setattr(pq, 'read_table', lambda *a, **k: pytest.fail('calendar reloaded'))
+    assert st.get_trading_date_span(dates[0], dates[-1]) == dates
 
 
-def test_calendar_state_cached_in_memory():
-    """连续调用返回同一个对象（读一次放内存，不重复读 parquet）。"""
-    st._TRADING_CALENDAR_STATE = None  # 复位，确保从磁盘读一次
-    first = st._get_trading_calendar_state()
-    if first[1] is None:
-        pytest.skip("trading_calendar.parquet 不存在，跳过缓存断言")
-    second = st._get_trading_calendar_state()
-    assert first is second  # 同一对象 → 命中内存缓存
+def test_calendar_missing_empty_and_out_of_bounds_fail(calendar):
+    path, dates = calendar
+    with pytest.raises(ValueError, match='does not cover'):
+        st.get_last_trading_day(date(2026, 9, 22))
+    st._TRADING_CALENDAR_STATE = None
+    pd.DataFrame({'trade_date': []}).to_parquet(path)
+    with pytest.raises(ValueError, match='nonempty'):
+        st.get_last_trading_day(dates[0])
+    path.unlink()
+    with pytest.raises(FileNotFoundError):
+        st.get_last_trading_day(dates[0])
+
+
+def test_calendar_rejects_duplicate_dates_and_reversed_query(calendar):
+    path, dates = calendar
+    with pytest.raises(ValueError):
+        st.get_trading_date_span(dates[-1], dates[0])
+    st._TRADING_CALENDAR_STATE = None
+    pd.DataFrame({'trade_date': dates + dates[:1]}).to_parquet(path)
+    with pytest.raises(ValueError, match='duplicate'):
+        st.get_last_trading_day(dates[0])

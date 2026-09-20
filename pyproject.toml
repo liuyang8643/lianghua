@@ -6,24 +6,22 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "akshare>=1.14.0",
-    "deap>=1.4.3",
+    "baostock~=0.9.3",
     "filelock~=3.20.3",
-    "jinja2~=3.1.6",
-    "joblib~=1.5.3",
     "lark-oapi~=1.4.23",
     "loguru~=0.7.2",
-    "loky~=3.5.6",
+    "matplotlib>=3.9,<4",
+    "mini-racer~=0.12.4; sys_platform != 'linux'",
+    "mootdx~=0.11.7",
     "numpy~=2.3.5",
     "pandas~=2.3.3",
     "psutil~=7.1.3",
     "pyarrow~=22.0.0",
     "pyyaml~=6.0",
-    "scipy>=1.16.3",
     "stable-baselines3>=2.7,<3",
-    "ta-lib~=0.6.8",
-    "tqdm>=4.67.1",
     "xtquant~=250516.1.1",
-    "plotly~=6.5.0",
+    "py-mini-racer~=0.6.0; sys_platform == 'linux'",
+    "numba~=0.63.1",
 ]
 
 [build-system]
@@ -31,27 +29,26 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-only-include = [
-    "ai",
-    "env",
-    "factor",
-    "offline_data",
-    "factor_db/__init__.py",
-    "factor_db/factors/__init__.py",
-    "factor_db/factors/AmihudIlliquidity.py",
-    "factor_db/factors/TrueMarketCap.py",
-    "factor_db/factors/VolumeCV.py",
-    "factor_db/factors/AmountBasedSmallCap.py",
-    "factor_db/factors/filter.py",
-    "data/build_runtime.py",
-    "data/financial_pit.py",
-    "data/kline_mootdx.py",
-    "data/update_financial_deep.py",
-    "data/update_all.py",
-    "data/db/delist.py",
-    "data/db/stock_name.py",
-    "utils/stock/info.py",
+include = [
+    "/ai/**/*.py",
+    "/ai/report_assets/*",
+    "/env/**/*.py",
+    "/factor/**/*.py",
+    "/offline_data/**/*.py",
+    "/trade/**/*.py",
+    "/utils/**/*.py",
+    "/testback/**/*.py",
+    "/testback/reportor/templates/*",
+    "/factor_db/*.py",
+    "/factor_db/factors/*.py",
+    "/data/*.py",
+    "/data/db/**/*.py",
+    "/configs/*.py",
+    "/configs/config.json",
+    "/configs/evaluation_splits.json",
+    "/configs/strategy.yaml",
 ]
+exclude = ["**/test_*.py"]
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"

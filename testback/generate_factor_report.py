@@ -319,7 +319,7 @@ footer {{ margin-top:40px; padding-top:16px; border-top:1px solid #30363d; color
 
 <footer>
 生成时间: {config['generated_at']} | 数据来源: {config.get('data_source', 'factor_scan.json')}<br>
-回测引擎: WBR core.backtest | 成交价: T日 open | 收益基准: preClose
+回测引擎: WBR env.backtest | 成交价: T日 open | 收益基准: preClose
 </footer>
 
 <script>
@@ -380,7 +380,7 @@ def main():
 
     input_path = Path(args.input)
     if not input_path.exists():
-        print(f"ERROR: 未找到 {input_path}，请先运行 scan_factors.py")
+        print(f"ERROR: 未找到 canonical factor-scan JSON: {input_path}")
         return
 
     results = json.loads(input_path.read_text(encoding="utf-8"))

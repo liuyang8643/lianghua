@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from factor.library import completed_windows
+
 from factor_db.factors.CompletedOfficialReversalLowVol12020Strict import (
     CompletedOfficialReversalLowVol12020Strict,
 )
@@ -342,7 +344,7 @@ def test_source_has_no_per_stock_loop_fill_tolerance_or_fallback():
             CompletedOfficialReversalLowVol12020Strict
         )
     )
-    source = source_path.read_text(encoding="utf-8")
+    source = source_path.read_text(encoding="utf-8") + "\n" + inspect.getsource(completed_windows)
     tree = ast.parse(source)
     loop_targets = {
         node.target.id

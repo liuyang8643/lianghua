@@ -9,9 +9,11 @@ from typing import Mapping
 import numpy as np
 
 
-RUNTIME_SCHEMA_VERSION = "wbr.runtime-slice.v1"
+RUNTIME_SCHEMA_VERSION = "wbr.runtime-slice.v8-source-financial-state"
 RUNTIME_LINEAGE_VERSION = "wbr.runtime-lineage.v1"
-RUNTIME_GENERATION_SEMANTICS_VERSION = "wbr.runtime-generation-semantics.v1"
+RUNTIME_GENERATION_SEMANTICS_VERSION = (
+    "wbr.runtime-generation-semantics.v8-source-financial-state"
+)
 
 LEGACY_RUNTIME_PROVENANCE_NOTE = (
     "Legacy runtime NPZ files do not embed upstream source provenance; "
@@ -40,7 +42,11 @@ class RuntimeFieldMetadata:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeManifest:
-    """Serializable identity and boundaries of one immutable runtime slice."""
+    """Source schema identity and boundaries of one immutable runtime slice.
+
+    ``fields`` and ``schema_hash`` describe the original snapshot. For replay
+    projections, ``retained_fields`` explicitly declares materialized fields.
+    """
 
     schema_version: str
     schema_hash: str
@@ -55,9 +61,10 @@ class RuntimeManifest:
     requested_preload_rows: int
     actual_preload_rows: int
     fields: tuple[RuntimeFieldMetadata, ...]
+    replay_projection: ReplayProjection | None = None
 
     def as_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "schema_version": self.schema_version,
             "schema_hash": self.schema_hash,
             "source_path": self.source_path,
@@ -72,6 +79,48 @@ class RuntimeManifest:
             "actual_preload_rows": self.actual_preload_rows,
             "fields": [field.as_dict() for field in self.fields],
         }
+        if self.replay_projection is not None:
+            payload["replay_projection"] = self.replay_projection.as_dict()
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayProjection:
+    """Provenance and materialized fields of an already-computed replay cache."""
+
+    source_manifest: RuntimeManifest
+    source_rows: int
+    source_row_offset: int
+    factor_schema_hash: str
+    observation_schema: str | None
+    encoded_schema: str | None
+    retained_fields: tuple[str, ...]
+    schema_version: str = "wbr-replay-projection-v2-explicit-fields"
+
+    def __post_init__(self) -> None:
+        if self.schema_version != "wbr-replay-projection-v2-explicit-fields":
+            raise ValueError("unsupported replay projection version")
+        if self.source_manifest.replay_projection is not None:
+            raise ValueError("replay projection must reference the original loaded runtime")
+        if (type(self.source_rows) is not int or type(self.source_row_offset) is not int
+                or not 0 <= self.source_row_offset < self.source_rows):
+            raise ValueError("replay projection needs an in-range source row offset")
+        if (self.observation_schema is None) != (self.encoded_schema is None):
+            raise ValueError("replay observation and encoded schemas must be present together")
+        source_fields = tuple(item.name for item in self.source_manifest.fields)
+        if (not isinstance(self.retained_fields, tuple) or not self.retained_fields
+                or len(set(self.retained_fields)) != len(self.retained_fields)
+                or self.retained_fields != tuple(name for name in source_fields if name in self.retained_fields)):
+            raise ValueError("replay retained fields must be an ordered unique subset of the source schema")
+        if self.observation_schema is not None and self.retained_fields != source_fields:
+            raise ValueError("actor replay must retain every source field")
+
+    def as_dict(self) -> dict[str, object]:
+        return {"schema_version": self.schema_version,
+                "source_manifest": self.source_manifest.as_dict(), "source_rows": self.source_rows,
+                "source_row_offset": self.source_row_offset, "factor_schema_hash": self.factor_schema_hash,
+                "observation_schema": self.observation_schema, "encoded_schema": self.encoded_schema,
+                "retained_fields": list(self.retained_fields)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,6 +241,9 @@ class RuntimeSlice:
 
     def __post_init__(self) -> None:
         dates = self.trade_dates
+        projection = self.manifest.replay_projection
+        if projection is not None and tuple(self.data) != projection.retained_fields:
+            raise ValueError("replay runtime fields differ from declared retained fields")
         if dates.ndim != 1 or dates.dtype != np.dtype("datetime64[D]"):
             raise ValueError("trade_dates must be a 1D datetime64[D] array")
         if not 0 <= self.decision_start < self.decision_stop <= len(dates):

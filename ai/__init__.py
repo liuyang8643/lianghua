@@ -1,5 +1,4 @@
-"""Parameter policies and their portable model bundles."""
+"""Parameter policies, portable bundles, and lightweight report adapters.
 
-from ai.policy import FixedPolicy
-
-__all__ = ["FixedPolicy"]
+Policies are imported from ai.policy; importing the package has no env side effects.
+"""

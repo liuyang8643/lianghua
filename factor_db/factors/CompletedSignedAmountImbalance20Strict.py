@@ -5,6 +5,41 @@ from __future__ import annotations
 import numpy as np
 
 
+_FLAT_SCAN_ELEMENTS = 192 * 1024
+
+
+def _return_flat_result_when_possible(
+    close: np.ndarray,
+    pre_close: np.ndarray,
+    amount: np.ndarray,
+    result: np.ndarray,
+    window: int,
+) -> bool:
+    """Fill the exact zero result for an entirely valid flat-price panel.
+
+    Flat completed returns make both amount factors identically zero.  Scan in
+    fixed-size row chunks so the equality/validity masks never become a second
+    production-size matrix.  Non-flat or invalid panels continue through the
+    numerically robust general implementation below.
+    """
+
+    rows, stocks = close.shape
+    chunk_rows = max(1, _FLAT_SCAN_ELEMENTS // max(stocks, 1))
+    for start in range(0, rows, chunk_rows):
+        stop = min(start + chunk_rows, rows)
+        close_chunk = close[start:stop]
+        amount_chunk = amount[start:stop]
+        if not np.array_equal(close_chunk, pre_close[start:stop]):
+            return False
+        if not np.isfinite(close_chunk).all() or not np.all(close_chunk > 0.0):
+            return False
+        if not np.isfinite(amount_chunk).all() or not np.all(amount_chunk > 0.0):
+            return False
+
+    result[window:] = np.float32(0.0)
+    return True
+
+
 class CompletedSignedAmountImbalance20Strict:
     """Prefer completed windows whose RMB amount is concentrated on up days.
 
@@ -33,6 +68,10 @@ class CompletedSignedAmountImbalance20Strict:
         result = np.full((rows, stocks), np.nan, dtype=np.float32)
         window = self.hist_days
         if rows <= window:
+            return result
+        if _return_flat_result_when_possible(
+            close, pre_close, amount, result, window
+        ):
             return result
 
         # For row ``block_start + offset``, the 20-day history is exactly the

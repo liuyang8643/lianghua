@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
+from utils.atomic_file import file_sha256
 import json
 import math
 import random
@@ -203,8 +203,6 @@ def fetch_query(
     }
 
 
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def main() -> None:
@@ -323,7 +321,7 @@ def main() -> None:
         json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    metadata["output_sha256"] = sha256(OUTPUT)
+    metadata["output_sha256"] = file_sha256(OUTPUT)
     METADATA.write_text(
         json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

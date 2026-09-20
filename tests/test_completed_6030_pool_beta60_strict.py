@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from factor.library import completed_windows
+
 from factor_db.factors.Completed6030PoolBeta60Strict import (
     Completed6030PoolBeta60Strict,
     _compute_6030_market_returns,
@@ -609,7 +611,7 @@ def test_factor_source_has_no_per_stock_loop_or_forbidden_fill_path():
     source_path = Path(
         inspect.getsourcefile(Completed6030PoolBeta60Strict)
     )
-    source = source_path.read_text(encoding="utf-8")
+    source = source_path.read_text(encoding="utf-8") + "\n" + inspect.getsource(completed_windows)
     tree = ast.parse(source)
     loop_targets = {
         node.target.id

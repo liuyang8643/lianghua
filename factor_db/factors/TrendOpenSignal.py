@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from core.legality import compute_limit_up_matrix
+from env.legality import compute_limit_up_matrix
 
 
 class TrendOpenSignal:

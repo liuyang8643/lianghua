@@ -1,25 +1,28 @@
 {
-  "ga_profile": "core6",
+  "ga_profile": "current4",
   "individual_config": {
     "filter_factors": {
       "FilterST": true,
-      "FilterStarST": true,
       "FilterLowPrice": true
     },
     "weights": {
-      "AmihudIlliquidity": 0.4,
       "TrueMarketCap": 0.9,
       "VolumeCV": 0.1,
-      "AmountBasedSmallCap": 0.6
+      "AmountBasedSmallCap": 0.6,
+      "CompletedReversal20": 0.0,
+      "CompletedMomentum252Skip21": 0.0,
+      "BiliAdjustedIssueDiscount": 0.0,
+      "BiliHighLifetimeRangeRatio": 0.0,
+      "PBBelowTwoROEAbove10Signal": 0.0,
+      "LowCashOutflowProfitGrowthSpread": 0.0,
+      "HighOperatingProfitRevenueGrowthSpread": 0.0,
+      "HighAbnormalGrossProfit": 0.0
     },
-    "buy_n": 20,
-    "sell_m": 25,
+    "buy_n": 50,
+    "single_buy_pct": 0.02,
     "prefilter_n": 300,
-    "timing_enabled": false,
-    "rebalance": true,
     "limit_up_protection": true,
-    "empty_months": [],
-    "cash_reserve_ratio": 0.25,
-    "holding_period": 1
+    "rebalance_band_pct": 0.01,
+    "turnover_rate": 0.1
   }
 }

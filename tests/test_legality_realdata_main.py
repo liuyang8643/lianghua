@@ -1,7 +1,7 @@
 """主板（沪深主板，含原中小板 002/003）买卖合法性——真实 runtime 数据回归测试。
 
 每个 case 用真实股票 + 真实交易日硬编码，注释写明该 bar 的关键数值（open/preclose/
-涨跌幅/st/board/issue_price），断言 LegalityChecker（经 conftest 的 market fixture）判定
+涨跌幅/st/board/issue_price），断言生产唯一合法性函数（经 conftest 的 market fixture）判定
 与制度预期一致，并核对 market.bar 关键字段确认样本确属该 case。
 
 涨停价向下取整、跌停价向上取整（与 core/legality.py 一致）：

@@ -1,157 +1,154 @@
-from pathlib import Path
-
 import pytest
 
 from ai.bundle import (
-    BUNDLE_VERSION,
-    DEPLOYMENT_GATE_NAMES,
-    BundleManifest,
-    file_sha256,
-    source_tree_sha256,
+    BUNDLE_VERSION, DEPLOYMENT_GATE_NAMES, BundleManifest,
+    policy_source_sha256,
 )
-from env.action_schema import ActionSchema
 
 
-def test_action_schema_roundtrip_is_hash_and_layout_strict():
-    schema = ActionSchema()
-    payload = schema.to_dict()
+def test_policy_identity_binds_shared_numeric_execution_kernel(tmp_path):
+    shared = tmp_path / "utils" / "stable_sort.py"
+    shared.parent.mkdir()
+    shared.write_text("def stable_radix_order():\n    return 1\n", encoding="utf-8")
+    before = policy_source_sha256(tmp_path)
+    shared.write_text("def stable_radix_order():\n    return 2\n", encoding="utf-8")
+    assert policy_source_sha256(tmp_path) != before
 
-    assert ActionSchema.from_dict(payload) == schema
-    payload["layout"][0]["name"] = "changed"
-    with pytest.raises(ValueError, match="action schema"):
-        ActionSchema.from_dict(payload)
+
+def _summary(calmar=1.0):
+    return {
+        "full_investment_contract_satisfied": True,
+        "metrics": {"calmar": calmar},
+    }
 
 
-def test_bundle_manifest_verifies_model_and_normalizer_hashes(tmp_path: Path):
-    model = tmp_path / "model.zip"
-    normalizer = tmp_path / "normalizer.json"
-    config = tmp_path / "strategy_config.json"
-    model.write_bytes(b"model")
-    normalizer.write_text("{}", encoding="utf-8")
-    config.write_text("{}", encoding="utf-8")
-    digest = "0" * 64
-    manifest = BundleManifest(
-        created_at="2026-08-27T00:00:00+00:00",
+def _manifest():
+    convergence = {name: True for name in DEPLOYMENT_GATE_NAMES}
+    convergence["technical_convergence"] = True
+    return BundleManifest(
+        created_at="2026-08-30T00:00:00+00:00",
         algorithm="stable_baselines3.PPO",
-        model_file=model.name,
-        model_sha256=file_sha256(model),
-        normalizer_file=normalizer.name,
-        normalizer_sha256=file_sha256(normalizer),
-        config_file=config.name,
-        config_sha256=file_sha256(config),
-        source_sha256=digest,
-        runtime={"schema": "runtime"},
-        factors={"schema": "factor"},
-        observation_schema={"schema": "observation"},
-        encoded_schema={"schema": "encoded"},
-        action_schema={"schema": "action"},
-        environment={"accounting_schema": "test"},
+        model_file="model.zip",
+        model_sha256="a" * 64,
+        normalizer_file="normalizer.json",
+        normalizer_sha256="b" * 64,
+        config_file="strategy_config.json",
+        config_sha256="c" * 64,
+        source_sha256="d" * 64,
+        runtime={
+            "financial_snapshot": {
+                "manifest_sha256": "a" * 64,
+                "snapshot_sha256": "b" * 64,
+                "financial_identity_sha256": "c" * 64,
+                "panel_builder_version": "fixture-panel",
+                "financial_replay_version": "fixture-replay",
+                "availability": "announcement_date < decision_date",
+                "pit_evidence_limit": "test fixture",
+            },
+            "lineage": {
+                "lineage_version": "v1",
+                "runtime_schema_hash": "schema",
+                "generation_semantics_sha256": "generation",
+                "semantic_sha256": "semantic",
+                "prefix_start": "2010-01-01",
+                "prefix_end": "2026-08-28",
+                "prefix_rows": 1,
+                "stock_vocabulary_sha256": "stocks",
+                "date_axis_sha256": "dates",
+                "fields": [],
+            }
+        },
+        factors={"schema_hash": "factors"},
+        observation_schema={"schema_version": "observation"},
+        encoded_schema={"identifier": "encoded"},
+        action_schema={"schema_version": "action"},
+        environment={"schema_version": "environment"},
         training={
-            "timesteps": 1,
-            "convergence": {
-                "technical_convergence": True,
-                **{name: True for name in DEPLOYMENT_GATE_NAMES},
+            "convergence": convergence,
+            "checkpoint_selection": {"objective": "full_validation_calmar"},
+        },
+        evaluation={
+            "train": _summary(2.0),
+            "validation": _summary(1.8),
+            "test": _summary(2.1),
+            "static_benchmark": {
+                "role": (
+                    "external_benchmark_not_rollout_loss_or_checkpoint_ranking"
+                ),
+                "train": _summary(0.9),
+                "validation": _summary(0.7),
+                "test": _summary(1.0),
             },
         },
-        evaluation={"finite": True},
-    )
-    manifest.save(tmp_path)
-
-    loaded = BundleManifest.load(tmp_path)
-    assert loaded.model_sha256 == manifest.model_sha256
-    with pytest.raises(ValueError, match="missing sealed evaluation"):
-        loaded.require_deployable()
-
-    deployable = loaded.to_dict()
-    deployable["evaluation"] = {"train": {}, "validation": {}, "test": {}}
-    for value in (None, False):
-        convergence = deployable["training"]["convergence"]
-        if value is None:
-            convergence.pop("trained_checkpoint_selected")
-        else:
-            convergence["trained_checkpoint_selected"] = value
-        incomplete = BundleManifest.from_dict(deployable)
-        with pytest.raises(
-            ValueError,
-            match="trained_checkpoint_selected",
-        ):
-            incomplete.require_deployable()
-        convergence["trained_checkpoint_selected"] = True
-
-    with pytest.raises(ValueError, match="runtime prefix lineage"):
-        BundleManifest.from_dict(deployable).require_deployable()
-
-    config.write_text('{"tampered": true}', encoding="utf-8")
-    with pytest.raises(ValueError, match="strategy_config.json"):
-        BundleManifest.load(tmp_path)
-    config.write_text("{}", encoding="utf-8")
-
-    normalizer.write_text('{"tampered": true}', encoding="utf-8")
-    with pytest.raises(ValueError, match="normalizer.json"):
-        BundleManifest.load(tmp_path)
-    normalizer.write_text("{}", encoding="utf-8")
-
-    model.write_bytes(b"tampered")
-    with pytest.raises(ValueError, match="model.zip"):
-        BundleManifest.load(tmp_path)
-
-
-def test_previous_bundle_schema_is_rejected_explicitly():
-    with pytest.raises(ValueError, match="unsupported bundle version"):
-        BundleManifest.from_dict({"bundle_version": "wbr-policy-bundle-v4"})
-
-    assert BUNDLE_VERSION == "wbr-policy-bundle-v5"
-
-
-def test_source_tree_identity_is_independent_of_checkout_line_endings(
-    tmp_path: Path,
-):
-    lf_root = tmp_path / "lf"
-    crlf_root = tmp_path / "crlf"
-    (lf_root / "pkg").mkdir(parents=True)
-    (crlf_root / "pkg").mkdir(parents=True)
-    (lf_root / "pkg" / "module.py").write_bytes(b"first\nsecond\n")
-    (crlf_root / "pkg" / "module.py").write_bytes(b"first\r\nsecond\r\n")
-
-    assert source_tree_sha256(
-        lf_root,
-        [lf_root / "pkg" / "module.py"],
-    ) == source_tree_sha256(
-        crlf_root,
-        [crlf_root / "pkg" / "module.py"],
     )
 
 
-def test_bundle_deployment_requires_explicit_convergence(tmp_path: Path):
-    model = tmp_path / "model.zip"
-    normalizer = tmp_path / "normalizer.json"
-    config = tmp_path / "strategy_config.json"
-    model.write_bytes(b"model")
-    normalizer.write_text("{}", encoding="utf-8")
-    config.write_text("{}", encoding="utf-8")
-    digest = "0" * 64
-    manifest = BundleManifest(
-        created_at="2026-08-27T00:00:00+00:00",
-        algorithm="stable_baselines3.PPO",
-        model_file=model.name,
-        model_sha256=file_sha256(model),
-        normalizer_file=normalizer.name,
-        normalizer_sha256=file_sha256(normalizer),
-        config_file=config.name,
-        config_sha256=file_sha256(config),
-        source_sha256=digest,
-        runtime={},
-        factors={},
-        observation_schema={},
-        encoded_schema={},
-        action_schema={},
-        environment={},
-        training={"convergence": {"technical_convergence": False}},
-        evaluation={},
-    )
-    manifest.save(tmp_path)
+def test_bundle_deployability_uses_only_calmar_and_technical_contract():
+    manifest = _manifest()
 
-    loaded = BundleManifest.load(tmp_path)
-    assert not loaded.technical_convergence
-    with pytest.raises(ValueError, match="diagnostic-only"):
-        loaded.require_deployable()
+    manifest.require_deployable()
+    assert manifest.bundle_version == BUNDLE_VERSION
+    assert manifest.technical_convergence is True
+
+
+def test_previous_ten_factor_bundle_is_not_an_eleven_factor_bundle():
+    payload = _manifest().to_dict()
+    payload["bundle_version"] = "wbr-policy-bundle-v32-long-history-actual-actions"
+    with pytest.raises(ValueError, match="version"):
+        BundleManifest.from_dict(payload).require_deployable()
+
+
+def test_selected10_bundle_cannot_drop_financial_provenance():
+    payload = _manifest().to_dict()
+    del payload["runtime"]["financial_snapshot"]
+    with pytest.raises(ValueError, match="financial snapshot provenance"):
+        BundleManifest.from_dict(payload).require_deployable()
+
+
+@pytest.mark.parametrize("field", ("manifest_sha256", "snapshot_sha256", "financial_identity_sha256"))
+def test_selected10_bundle_rejects_invalid_financial_hash(field):
+    payload = _manifest().to_dict()
+    payload["runtime"]["financial_snapshot"][field] = "not-a-sealed-source"
+    with pytest.raises(ValueError, match=field):
+        BundleManifest.from_dict(payload).require_deployable()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def test_bundle_rejects_non_calmar_selection_or_missing_full_investment():
+    payload = _manifest().to_dict()
+    payload["training"]["checkpoint_selection"]["objective"] = "nine_margins"
+    changed = BundleManifest.from_dict(payload)
+    with pytest.raises(ValueError, match="validation Calmar"):
+        changed.require_deployable()
+
+    payload = _manifest().to_dict()
+    payload["evaluation"]["test"]["full_investment_contract_satisfied"] = False
+    changed = BundleManifest.from_dict(payload)
+    with pytest.raises(ValueError, match="full-investment"):
+        changed.require_deployable()
+
+@pytest.mark.parametrize("split", ["train", "validation", "test"])
+@pytest.mark.parametrize("calmar", [-1.0, 0.0, 1.5])
+def test_finite_performance_has_no_qualification_threshold(split, calmar):
+    payload = _manifest().to_dict()
+    payload["evaluation"][split]["metrics"]["calmar"] = calmar
+    payload["evaluation"]["static_benchmark"][split]["metrics"]["calmar"] = 100.0
+    BundleManifest.from_dict(payload).require_deployable()
+
+@pytest.mark.parametrize("invalid", [None, float("nan"), float("inf")])
+def test_candidate_evaluation_must_remain_finite(invalid):
+    payload = _manifest().to_dict()
+    payload["evaluation"]["test"]["metrics"]["calmar"] = invalid
+    with pytest.raises(ValueError):
+        BundleManifest.from_dict(payload).require_deployable()

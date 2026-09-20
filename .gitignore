@@ -27,11 +27,23 @@ logs/
 *.pid
 *.png
 
-# ---- Data products (large, non-code)。仅保留 data 下的脚本 *.py ----
+# ---- Data products (large, non-code)。保留 data 下的 Python 源码 ----
 data/*
 !data/*.py
+!data/db/
+data/db/**
+!data/db/*.py
+!data/db/**/
+!data/db/**/*.py
 results/
 core/factors/results/
+
+# ---- Training / verification artifacts ----
+artifacts/rl/
+artifacts/verification/
+artifacts/factor_discovery/
+dashboard/data.json
+dashboard/data.js
 
 # ---- MCP runtime ----
 .mcp.json
@@ -51,8 +63,7 @@ projects/
 .idea/
 .vscode/
 .DS_Store
-
-# ---- llm_ga ----
+# ---- retired factor-discovery artifacts (preserve local research output) ----
 llm_ga/_scratch/
 llm_ga/_e2e.log
 llm_ga/proposals/

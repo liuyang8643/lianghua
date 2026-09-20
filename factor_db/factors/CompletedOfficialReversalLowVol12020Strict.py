@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 
+from factor.library.completed_windows import (
+    completed_window_all,
+    completed_window_sum,
+)
+
 
 _MOMENTUM_WINDOW = 120
 _VOLATILITY_WINDOW = 20
@@ -59,113 +64,6 @@ def _official_return_terms(
     return log_return, squared_return, valid
 
 
-def _completed_window_sum(values: np.ndarray, window: int) -> np.ndarray:
-    """Sum independent completed windows through block suffixes/prefixes."""
-    rows, stocks = values.shape
-    output = np.empty((rows - window, stocks), dtype=np.float64)
-    full_blocks = rows // window
-    full_rows = full_blocks * window
-    blocks = values[:full_rows].reshape(full_blocks, window, stocks)
-    complete_output_rows = (full_blocks - 1) * window
-
-    if complete_output_rows:
-        complete = output[:complete_output_rows].reshape(
-            full_blocks - 1,
-            window,
-            stocks,
-        )
-        np.cumsum(
-            blocks[:-1, ::-1],
-            axis=1,
-            dtype=np.float64,
-            out=complete[:, ::-1],
-        )
-
-    remainder = rows - full_rows
-    if remainder:
-        last_suffix = np.empty((window, stocks), dtype=np.float64)
-        np.cumsum(
-            blocks[-1, ::-1],
-            axis=0,
-            dtype=np.float64,
-            out=last_suffix[::-1],
-        )
-        output[complete_output_rows:] = last_suffix[:remainder]
-
-    if full_blocks > 1:
-        np.cumsum(
-            blocks[1:],
-            axis=1,
-            dtype=np.float64,
-            out=blocks[1:],
-        )
-        complete = output[:complete_output_rows].reshape(
-            full_blocks - 1,
-            window,
-            stocks,
-        )
-        complete[:, 1:] += blocks[1:, :-1]
-
-    if remainder:
-        tail = values[full_rows:]
-        np.cumsum(tail, axis=0, dtype=np.float64, out=tail)
-        output[complete_output_rows + 1 :] += tail[:-1]
-
-    return output
-
-
-def _completed_window_all(valid: np.ndarray, window: int) -> np.ndarray:
-    """Apply strict missing propagation to independent completed windows."""
-    rows, stocks = valid.shape
-    output = np.empty((rows - window, stocks), dtype=bool)
-    full_blocks = rows // window
-    full_rows = full_blocks * window
-    blocks = valid[:full_rows].reshape(full_blocks, window, stocks)
-    complete_output_rows = (full_blocks - 1) * window
-
-    if complete_output_rows:
-        complete = output[:complete_output_rows].reshape(
-            full_blocks - 1,
-            window,
-            stocks,
-        )
-        np.logical_and.accumulate(
-            blocks[:-1, ::-1],
-            axis=1,
-            out=complete[:, ::-1],
-        )
-
-    remainder = rows - full_rows
-    if remainder:
-        last_suffix = np.empty((window, stocks), dtype=bool)
-        np.logical_and.accumulate(
-            blocks[-1, ::-1],
-            axis=0,
-            out=last_suffix[::-1],
-        )
-        output[complete_output_rows:] = last_suffix[:remainder]
-
-    if full_blocks > 1:
-        np.logical_and.accumulate(
-            blocks[1:],
-            axis=1,
-            out=blocks[1:],
-        )
-        complete = output[:complete_output_rows].reshape(
-            full_blocks - 1,
-            window,
-            stocks,
-        )
-        complete[:, 1:] &= blocks[1:, :-1]
-
-    if remainder:
-        tail = valid[full_rows:]
-        np.logical_and.accumulate(tail, axis=0, out=tail)
-        output[complete_output_rows + 1 :] &= tail[:-1]
-
-    return output
-
-
 class CompletedOfficialReversalLowVol12020Strict:
     """Prefer 120-day reversal and low 20-day official-return volatility.
 
@@ -206,19 +104,19 @@ class CompletedOfficialReversalLowVol12020Strict:
             close,
             pre_close,
         )
-        total_log_return = _completed_window_sum(
+        total_log_return = completed_window_sum(
             log_return,
             _MOMENTUM_WINDOW,
         )
-        total_squared_return = _completed_window_sum(
+        total_squared_return = completed_window_sum(
             squared_return,
             _VOLATILITY_WINDOW,
         )[_MOMENTUM_WINDOW - _VOLATILITY_WINDOW :]
-        long_valid = _completed_window_all(
+        long_valid = completed_window_all(
             daily_valid.copy(),
             _MOMENTUM_WINDOW,
         )
-        volatility_valid = _completed_window_all(
+        volatility_valid = completed_window_all(
             daily_valid,
             _VOLATILITY_WINDOW,
         )[_MOMENTUM_WINDOW - _VOLATILITY_WINDOW :]

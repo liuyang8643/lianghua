@@ -9,10 +9,10 @@ QMT_ROOT_DIR = [
   'D:\\申万宏源策略量化交易终端\\bin.x64'
 ]
 
-# 交易账户配置
-TRADE_ACCOUNT = '824300045987'
+# 交易账户配置。生产凭据只从进程环境注入，不进入源码或模型包。
+TRADE_ACCOUNT = os.environ.get("WBR_TRADE_ACCOUNT", "")
 
 # 飞书机器人配置（回测可留空）
-LARK_APP_ID = "cli_a92a96c39d785cd5"
-LARK_APP_SECRET = "2agI94VvgyhP0FKBeowcqhUggH7A7Rm6"
-LARK_RECEIVE_ID = "oc_73029acae6daaf5f2fc4e4f841918c46"
+LARK_APP_ID = os.environ.get("WBR_LARK_APP_ID", "")
+LARK_APP_SECRET = os.environ.get("WBR_LARK_APP_SECRET", "")
+LARK_RECEIVE_ID = os.environ.get("WBR_LARK_RECEIVE_ID", "")

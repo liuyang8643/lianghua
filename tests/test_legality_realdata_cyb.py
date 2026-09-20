@@ -1,6 +1,6 @@
 """创业板（300/301）买卖合法性闸门真实数据回归测试。
 
-用生产 runtime NPZ 里真实存在的（股票, 日期）样本，验证 `core.legality.LegalityChecker`
+用生产 runtime NPZ 里真实存在的（股票, 日期）样本，验证 `evaluate_trade_legality`
 对创业板各时段/各规则的判定与监管制度一致：
   1. 注册制前(2014-01-01~2020-08-23) 日常 ±10%
   2. 注册制后(2020-08-24 起) 日常 ±20%
@@ -19,7 +19,7 @@ import pytest
 
 
 def _floor2(v):
-    """与 LegalityChecker 一致的向下取整到分（涨停价偏严）。"""
+    """与生产合法性函数一致的向下取整到分（涨停价偏严）。"""
     return np.floor(v * 100.0 + 1e-9) / 100.0
 
 

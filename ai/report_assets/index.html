@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WBR · 训练报告</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <div><div class="eyebrow">WBR / RESEARCH</div><h1>训练报告</h1><p class="muted">同一套指标，查看 GA 与 PPO 的训练结果。</p></div>
+      <div class="header-actions"><span id="connection" class="muted" role="status">正在读取</span><button id="refresh">刷新</button><button id="pause" aria-pressed="false">暂停刷新</button></div>
+    </header>
+    <p id="connection-error" class="notice" role="alert" hidden></p>
+    <div id="empty-runs" class="empty-state" hidden>尚未登记训练记录。</div>
+    <div id="report" hidden>
+      <div id="run-cards" class="run-grid"></div>
+      <div class="toolbar">
+        <nav aria-label="报告栏目">
+          <button class="tab active" data-tab="overview">结果对比</button>
+          <button class="tab" data-tab="actions">权重与配置</button>
+          <button class="tab" data-tab="diagnostics">训练诊断</button>
+          <button class="tab" data-tab="logs">运行记录</button>
+        </nav>
+        <label class="run-picker">查看详情 <select id="run-select" aria-label="选择训练记录"></select></label>
+      </div>
+      <p id="run-issues" class="notice" role="status" hidden></p>
+      <section id="overview" class="tab-panel">
+        <div class="section-heading"><div><h2>训练、验证与测试</h2><p>连线连接已保存的有限评估点，缺失不填零。每条横轴使用各自训练进度，代数与轮数不代表相同计算预算。</p></div><label>指标 <select id="metric"><option value="calmar">Calmar</option><option value="annualized_return">年化净收益</option><option value="max_drawdown">最大回撤</option><option value="sharpe">Sharpe</option></select></label></div>
+        <div id="performance-charts" class="chart-grid"></div>
+        <div class="section-heading"><div><h2>当前记录的正式选择</h2><p>显示训练流程实际保存的选择结果；图中的历史诊断点不会重新参与选模。</p></div></div>
+        <div id="selection" class="panel"></div>
+        <details class="panel details-panel"><summary>数据周期与评估约定</summary><div id="protocol"></div></details>
+        <div class="section-heading"><div><h2>已保存的评估明细</h2><p id="evaluation-count"></p></div><a id="download" class="button" href="#" download>下载 CSV</a></div>
+        <div class="panel table-wrap"><table><thead><tr><th>训练进度</th><th>数据阶段</th><th>Calmar</th><th>年化净收益</th><th>最大回撤</th><th>记录用途</th><th>模型记录</th></tr></thead><tbody id="evaluations"></tbody></table></div>
+        <button id="more-evaluations" class="more" hidden>显示更多评估</button>
+      </section>
+      <section id="actions" class="tab-panel" hidden>
+        <div class="section-heading"><div><h2>因子权重与策略配置</h2><p id="action-note"></p></div></div>
+        <div class="panel table-wrap"><table><thead><tr><th>因子</th><th>正式选中权重</th><th>最新回放 · 最低</th><th>最新回放 · 平均</th><th>最新回放 · 最高</th></tr></thead><tbody id="weights"></tbody></table></div>
+        <div id="weight-history" class="single-chart"></div>
+        <details class="panel details-panel"><summary>正式选中配置的全部参数</summary><div id="config"></div></details>
+        <div class="section-heading"><div><h2>训练期逐日权重</h2><p>读取已保存的训练期记录；页面不执行历史模型。</p></div></div>
+        <div class="panel trace-controls"><label>模型记录 <select id="checkpoint" aria-label="选择逐日权重模型"></select></label><button id="load-trace">读取已有记录</button><p id="trace-status" class="muted" role="status"></p></div>
+        <div id="trace-charts" class="single-chart"></div>
+      </section>
+      <section id="diagnostics" class="tab-panel" hidden>
+        <div class="section-heading"><div><h2>训练诊断</h2><p id="diagnostic-note"></p></div><label>观察项目 <select id="diagnostic-group"><option value="learning">学习与收敛</option><option value="execution">成交与成本</option><option value="actions">动作与探索</option><option value="gradient">梯度</option></select></label></div>
+        <details class="panel details-panel"><summary>最新动作分布</summary><div id="distribution-details"></div></details>
+        <div id="diagnostic-charts" class="chart-grid"></div>
+        <div id="diagnostic-empty" class="empty-state" hidden>该训练记录尚未保存诊断曲线。</div>
+        <details class="panel details-panel"><summary>训练参数</summary><div id="parameters"></div></details>
+      </section>
+      <section id="logs" class="tab-panel" hidden>
+        <div class="section-heading"><div><h2>运行记录</h2><p id="log-label"></p></div></div>
+        <pre id="event-log" class="console"></pre>
+        <details class="panel details-panel"><summary>记录身份</summary><pre id="identity" class="json"></pre></details>
+      </section>
+    </div>
+    <footer><span>本地训练报告 · GA / PPO 共用</span><span id="updated">每 5 秒读取一次已保存记录</span></footer>
+  </main>
+  <div id="chart-tooltip" role="tooltip" hidden></div>
+</body>
+</html>

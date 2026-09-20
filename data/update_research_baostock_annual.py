@@ -18,7 +18,7 @@ RESULT_DIR = ROOT / "results" / "strategy_opt_20260730"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.runtime import load_runtime_stock_codes  # noqa: E402
+from offline_data import load_runtime_stock_codes  # noqa: E402
 
 
 OUTPUT_PATH = RESULT_DIR / "baostock_annual_growth_2010_2018.parquet"

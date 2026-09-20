@@ -26,12 +26,7 @@ def terminate_process_tree(
     pid = process.pid
     process_obj = process
   else:
-    # 检查是否是 ProcessWrapper 类型的对象
-    if hasattr(process, 'pid') and hasattr(process, 'poll'):
-      pid = process.pid
-      process_obj = psutil.Process(pid)
-    else:
-      raise ValueError(f"不支持的进程类型: {type(process)}")
+    raise ValueError(f"不支持的进程类型: {type(process)}")
 
   try:
     # 获取进程名称

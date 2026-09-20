@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from data.update_industry_history import (
+from offline_data.industry_history import (
     build_industry_panel,
     normalize_industry_history,
 )
@@ -152,3 +152,34 @@ def test_panel_rejects_non_monotonic_dates_and_duplicate_events():
             ["000001.SZ"],
             duplicates,
         )
+
+
+def test_tls_failure_does_not_retry_or_replace_existing_snapshot(tmp_path, monkeypatch):
+    import requests
+    from offline_data.industry_history import (
+        METADATA_FILENAME,
+        PARQUET_FILENAME,
+        RAW_FILENAME,
+        update_industry_history,
+    )
+
+    previous = {
+        RAW_FILENAME: b"previous workbook",
+        PARQUET_FILENAME: b"previous panel",
+        METADATA_FILENAME: b'{"previous": true}',
+    }
+    for name, content in previous.items():
+        (tmp_path / name).write_bytes(content)
+    calls = []
+
+    def reject_tls(url, **kwargs):
+        calls.append((url, kwargs))
+        raise requests.exceptions.SSLError("untrusted source certificate")
+
+    monkeypatch.setattr(requests, "get", reject_tls)
+    with pytest.raises(requests.exceptions.SSLError, match="untrusted"):
+        update_industry_history(output_dir=tmp_path)
+
+    assert len(calls) == 1
+    assert calls[0][1]["verify"] is True
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == previous

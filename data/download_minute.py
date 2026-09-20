@@ -39,13 +39,6 @@ def _all_codes() -> list[str]:
     return sorted(get_all_stock_code_list())
 
 
-def _parse_minute(dt_str: str) -> str | None:
-    try:
-        return dt_str[11:16]
-    except (IndexError, TypeError):
-        return None
-
-
 def fetch_minutes(client, code: str) -> pd.DataFrame | None:
     """分页拉取全量1分钟K线，仅保留09:31-09:35。"""
     parts = []

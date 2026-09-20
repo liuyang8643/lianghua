@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
+from utils.atomic_file import file_sha256
 import json
 import random
 import time
@@ -162,15 +162,13 @@ def normalize_detail(frame: pd.DataFrame) -> pd.DataFrame:
     ).reset_index(drop=True)
 
 
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def main() -> None:
     metadata = json.loads(
         FETCH_METADATA.read_text(encoding="utf-8")
     )
-    if sha256(SNAPSHOT) != metadata["output_sha256"]:
+    if file_sha256(SNAPSHOT) != metadata["output_sha256"]:
         raise RuntimeError("pledge snapshot hash changed before audit")
     local = normalize_detail(pd.read_parquet(SNAPSHOT))
     session = requests.Session()
@@ -306,7 +304,7 @@ def main() -> None:
     audit = {
         "audited_at_utc": datetime.now(timezone.utc).isoformat(),
         "snapshot_path": SNAPSHOT.name,
-        "snapshot_sha256": sha256(SNAPSHOT),
+        "snapshot_sha256": file_sha256(SNAPSHOT),
         "reports": {
             "profile": PROFILE_REPORT,
             "stock_detail": DETAIL_REPORT,

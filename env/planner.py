@@ -8,39 +8,51 @@ this module once and selected here for the current row.
 
 from __future__ import annotations
 
+from copy import copy
 from dataclasses import dataclass, field
 from datetime import date
+from functools import lru_cache
 import math
+from types import MappingProxyType
 from typing import Mapping, Sequence
 
 import numpy as np
+from numba import njit, literal_unroll
 from numpy.typing import NDArray
 
-from env.contracts import AccountState, DayConfig, OrderPlan, RebalanceMode
-from env.fees import DEFAULT_FEE_SCHEDULE
+from env.legality import (
+    classify_board_types,
+    evaluate_trade_legality,
+    legality_reason_text,
+    ordinary_limit_ratios,
+    TradeLegalityResult,
+)
+from env.contracts import AccountState, DayConfig, OrderPlan
+from env.fees import (
+    DEFAULT_FEE_SCHEDULE, FeeSchedule,
+    affordable_buy_shares, buy_total_cost, sell_net_proceeds,
+)
+from env.scoring import FactorScoreRow, score_factor_ranks
+from env.prefilter import PrefilterUniverse, rank_scored_universe_indices
 from env.quantity import (
-    floor_buy_quantity,
-    floor_partial_sell_quantity,
-    round_buy_quantity,
+    minimum_buy_quantity,
+    buy_quantity_step,
+    floor_quantity,
 )
 
 
-_PRICE_EPS = 0.001
-
-_IPO_44_START = date(2014, 1, 1)
-_KCB_OPEN = date(2019, 7, 22)
-_CYB_REG = date(2020, 8, 24)
-_MB_REG = date(2023, 4, 10)
-_MB_ST_10_START = date(2026, 7, 6)
-
-_BOARD_MAIN = 0
-_BOARD_CYB = 1
-_BOARD_KCB = 2
-_BOARD_BJ = 3
+_EQUALIZE_INPUT_DTYPE = np.dtype([
+    ("quantity", np.int64), ("available", np.int64),
+    ("values", np.float64), ("price", np.float64), ("limits", np.float64),
+    ("minimum", np.int64), ("step", np.int64),
+    ("target", np.bool_), ("keep", np.bool_), ("sell", np.bool_),
+], align=True)
 
 
-def _as_float_row(name: str, values, size: int) -> NDArray[np.float64]:
-    result = np.asarray(values, dtype=np.float64)
+def _as_float_row(name: str, values, size: int) -> NDArray[np.floating]:
+    result = np.asarray(values)
+    if result.dtype not in (np.dtype('float32'), np.dtype('float64')):
+        result = np.asarray(result, dtype=np.float64)
     if result.shape != (size,):
         raise ValueError(f"{name} must have shape ({size},)")
     return np.ascontiguousarray(result)
@@ -53,14 +65,149 @@ def _as_bool_row(name: str, values, size: int) -> NDArray[np.bool_]:
     return np.ascontiguousarray(result)
 
 
+@lru_cache(maxsize=8)
+def _sealed_board_types(codes: tuple[str, ...]) -> NDArray[np.int8]:
+    values = classify_board_types(codes)
+    values.flags.writeable = False
+    return values
+
+
+@njit(cache=True, fastmath=False, parallel=False)
+def _eligibility_rows(listing_age, delisted, opens, candidates, factor_masks, filter_masks):
+    """Single serial scan for eligibility and all rejection counters."""
+    size = len(opens)
+    listed = np.empty(size, dtype=np.bool_)
+    valid_open = np.empty(size, dtype=np.bool_)
+    factor_eligible = np.empty(size, dtype=np.bool_)
+    eligible = np.empty(size, dtype=np.bool_)
+    counts = np.zeros(4, dtype=np.int64)
+    missing = np.zeros(len(factor_masks), dtype=np.int64)
+    rejected = np.zeros(len(filter_masks), dtype=np.int64)
+    for stock in range(size):
+        listed[stock] = listing_age[stock] >= 0
+        valid_open[stock] = np.isfinite(opens[stock]) and opens[stock] > 0.0
+        base = listed[stock] and not delisted[stock] and valid_open[stock]
+        factor_eligible[stock] = base and candidates[stock]
+        counts[0] += not listed[stock]
+        counts[1] += listed[stock] and delisted[stock]
+        counts[2] += listed[stock] and not delisted[stock] and not valid_open[stock]
+        counts[3] += base and not candidates[stock]
+        allowed = factor_eligible[stock]
+        if allowed:
+            if len(factor_masks):
+                factor = 0
+                for factor_mask in literal_unroll(factor_masks):
+                    missing[factor] += not factor_mask[stock]
+                    factor += 1
+            for filt in range(len(filter_masks)):
+                rejected[filt] += allowed and not filter_masks[filt, stock]
+                allowed = allowed and filter_masks[filt, stock]
+        eligible[stock] = allowed
+    return listed, valid_open, factor_eligible, eligible, counts, missing, rejected
+
+
+@njit(cache=True, fastmath=False, parallel=False)
+def _try_buy_quantity(requested, price, budget_price, cash, minimum, step, fees):
+    quantity = floor_quantity(requested, minimum, step)
+    if quantity <= 0:
+        return 0, cash, 1
+    affordable = floor_quantity(affordable_buy_shares(cash, budget_price, fees), minimum, step)
+    quantity = min(quantity, affordable)
+    if quantity <= 0:
+        return 0, cash, 2
+    return quantity, cash - buy_total_cost(quantity * price, fees), 0
+
+
+@njit(cache=True, fastmath=False, parallel=False)
+def _equalize_quantities(positions, sellable, values, prices, budget_prices, buy_indices,
+                        target_mask, keep_mask, sell_allowed, minimums, steps, cash, target, band, fees):
+    """Canonical sell-first equalization and mandatory cash sweep, serial."""
+    count = len(positions)
+    sells = np.zeros(count, dtype=np.int64)
+    buys = np.zeros(count, dtype=np.int64)
+    buy_order = np.full(count, -1, dtype=np.int64)
+    skip = np.zeros(count, dtype=np.int8)
+    post_values = values.copy()
+    order_counter = 0
+    for index in range(count):
+        if not np.isfinite(prices[index]) or not sell_allowed[index]:
+            continue
+        current = values[index]
+        goal = target if target_mask[index] else (current if keep_mask[index] else 0.0)
+        if current <= goal * (1.0 + band):
+            continue
+        available = min(positions[index], max(0, sellable[index]))
+        if available <= 0:
+            continue
+        if goal == 0.0 and available == positions[index]:
+            quantity = available
+        else:
+            quantity = min(floor_quantity((current - goal) / prices[index], minimums[index], steps[index]),
+                           floor_quantity(available, minimums[index], steps[index]))
+        if quantity == 0:
+            continue
+        sells[index] = quantity
+        cash += sell_net_proceeds(quantity * prices[index], fees)
+        post_values[index] = max(0.0, post_values[index] - quantity * prices[index])
+    for index in buy_indices:
+        if not np.isfinite(prices[index]):
+            skip[index] = 3
+            continue
+        if post_values[index] >= target * (1.0 - band):
+            skip[index] = 4
+            continue
+        quantity, cash, reason = _try_buy_quantity(
+            int((target - post_values[index]) / prices[index]), prices[index], budget_prices[index],
+            cash, minimums[index], steps[index], fees,
+        )
+        skip[index] = reason
+        if quantity:
+            buy_order[index] = order_counter
+            order_counter += 1
+            buys[index] += quantity
+    progress = True
+    while progress:
+        progress = False
+        for index in buy_indices:
+            if not np.isfinite(prices[index]):
+                continue
+            planned = post_values[index] + buys[index] * prices[index]
+            shortfall = target - planned
+            if shortfall <= 0.0:
+                continue
+            quantity, cash, reason = _try_buy_quantity(
+                int(shortfall / prices[index]), prices[index], budget_prices[index], cash,
+                minimums[index], steps[index], fees,
+            )
+            skip[index] = reason
+            if quantity:
+                if buys[index] == 0:
+                    buy_order[index] = order_counter
+                    order_counter += 1
+                buys[index] += quantity
+                progress = True
+    cheapest = 0.0
+    has_increment = False
+    for index in buy_indices:
+        if not np.isfinite(prices[index]):
+            continue
+        planned = post_values[index] + buys[index] * prices[index]
+        remaining = int(max(0.0, target - planned) / prices[index])
+        if floor_quantity(remaining, minimums[index], steps[index]) < minimums[index]:
+            continue
+        next_cost = buy_total_cost(minimums[index] * budget_prices[index], fees)
+        cheapest = min(cheapest, next_cost) if has_increment else next_cost
+        has_increment = True
+    return sells, buys, buy_order, skip, cash, cheapest, has_increment
+
+
 @dataclass(frozen=True)
 class DayMarketData:
     """The complete causal market input for one T-open decision.
 
-    ``listing_age`` is measured in trading rows: ``-1`` means not listed yet,
-    ``0`` is the first listed row.  If omitted, a positive open/pre-close is
-    conservatively treated as an established listing; callers that need IPO
-    first-five-day rules must provide the exact age.
+    ``listing_age`` is measured on the full runtime trading axis: ``-1`` means
+    not listed yet and ``0`` is the first listed row. It is mandatory; a
+    sliced panel may not infer IPO age from its own first row.
     """
 
     decision_date: str
@@ -72,8 +219,15 @@ class DayMarketData:
     preclose_prices: NDArray[np.floating]
     issue_prices: NDArray[np.floating]
     st_mask: NDArray[np.bool_]
-    listing_age: NDArray[np.integer] | None = None
+    delisted_mask: NDArray[np.bool_]
+    listing_age: NDArray[np.integer]
+    candidate_mask: NDArray[np.bool_] | None = None
     metadata: Mapping[str, object] = field(default_factory=dict)
+    _sealed: bool = field(default=False, init=False, repr=False, compare=False)
+    _legality_cache: dict[bool, TradeLegalityResult] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
+    _factor_score_row: FactorScoreRow | None = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         try:
@@ -94,13 +248,28 @@ class DayMarketData:
         precloses = _as_float_row("preclose_prices", self.preclose_prices, size)
         issues = _as_float_row("issue_prices", self.issue_prices, size)
         st = _as_bool_row("st_mask", self.st_mask, size)
+        delisted = _as_bool_row("delisted_mask", self.delisted_mask, size)
+        candidates = (
+            np.ones(size, dtype=np.bool_)
+            if self.candidate_mask is None
+            else _as_bool_row("candidate_mask", self.candidate_mask, size)
+        )
 
         if set(self.factor_ranks) != set(self.factor_validity):
             raise ValueError("factor_ranks and factor_validity must have identical keys")
         ranks: dict[str, NDArray[np.float64]] = {}
         validity: dict[str, NDArray[np.bool_]] = {}
         for name in self.factor_ranks:
-            rank = _as_float_row(f"factor_ranks[{name!r}]", self.factor_ranks[name], size)
+            # FactorBatch already owns a contiguous numeric cache. Preserve its
+            # dtype: expanding every daily row to float64 in each worker would
+            # turn shared factors into gigabytes of private copies. Scoring
+            # owns the float64 arithmetic conversion.
+            rank = np.asarray(self.factor_ranks[name])
+            if rank.dtype not in (np.dtype('float32'), np.dtype('float64')):
+                rank = np.asarray(rank, dtype=np.float64)
+            if rank.shape != (size,):
+                raise ValueError(f"factor_ranks[{name!r}] must have shape ({size},)")
+            rank = np.ascontiguousarray(rank)
             valid = _as_bool_row(
                 f"factor_validity[{name!r}]", self.factor_validity[name], size
             )
@@ -113,17 +282,10 @@ class DayMarketData:
             str(name): _as_bool_row(f"filter_masks[{name!r}]", values, size)
             for name, values in self.filter_masks.items()
         }
-        if self.listing_age is None:
-            established = (
-                (np.isfinite(opens) & (opens > 0.0))
-                | (np.isfinite(precloses) & (precloses > 0.0))
-            )
-            listing_age = np.where(established, 5, -1).astype(np.int32)
-        else:
-            listing_age = np.asarray(self.listing_age, dtype=np.int32)
-            if listing_age.shape != (size,):
-                raise ValueError(f"listing_age must have shape ({size},)")
-            listing_age = np.ascontiguousarray(listing_age)
+        listing_age = np.asarray(self.listing_age, dtype=np.int32)
+        if listing_age.shape != (size,):
+            raise ValueError(f"listing_age must have shape ({size},)")
+        listing_age = np.ascontiguousarray(listing_age)
 
         object.__setattr__(self, "stock_codes", codes)
         object.__setattr__(self, "factor_ranks", ranks)
@@ -133,52 +295,102 @@ class DayMarketData:
         object.__setattr__(self, "preclose_prices", precloses)
         object.__setattr__(self, "issue_prices", issues)
         object.__setattr__(self, "st_mask", st)
+        object.__setattr__(self, "delisted_mask", delisted)
         object.__setattr__(self, "listing_age", listing_age)
+        object.__setattr__(self, "candidate_mask", candidates)
         object.__setattr__(self, "metadata", dict(self.metadata))
 
+    def seal(self, *, borrow_readonly: bool = False) -> "DayMarketData":
+        """Freeze a decision snapshot so all policies can reuse it.
 
-def _bare_code(code: str) -> str:
-    return code.split(".", 1)[0]
+        Public callers get owned arrays. PreparedEpisode may explicitly borrow
+        readonly arrays whose lifetime/immutability are owned by its sealed
+        RuntimeSlice/FactorBatch, including shared-memory-backed snapshots.
+        A readonly view alone is not proof that its external buffer is immutable.
+        """
+        result = copy(self)
+        def frozen(values):
+            owner = values
+            aliased_writable = values.flags.writeable
+            while isinstance(owner.base, np.ndarray):
+                owner = owner.base
+                aliased_writable |= owner.flags.writeable
+            array = values.copy() if aliased_writable or not borrow_readonly else values.view()
+            array.flags.writeable = False
+            return array
+        for name in ("open_prices", "preclose_prices", "issue_prices", "st_mask",
+                     "delisted_mask", "listing_age", "candidate_mask"):
+            object.__setattr__(result, name, frozen(getattr(self, name)))
+        for name in ("factor_ranks", "factor_validity", "filter_masks"):
+            object.__setattr__(result, name, MappingProxyType({
+                key: frozen(values) for key, values in getattr(self, name).items()
+            }))
+        object.__setattr__(result, "metadata", MappingProxyType(dict(self.metadata)))
+        object.__setattr__(result, "_legality_cache", {})
+        object.__setattr__(result, "_factor_score_row", FactorScoreRow(
+            result.factor_ranks, result.factor_validity, len(result.stock_codes),
+        ))
+        object.__setattr__(result, "_sealed", True)
+        return result
 
+    def factor_scores(self, config: DayConfig) -> NDArray[np.float64]:
+        if self._sealed:
+            return self._factor_score_row.score(config)
+        return score_factor_ranks(self.factor_ranks, self.factor_validity, config, len(self.stock_codes))
 
-def _board_type(code: str) -> int:
-    bare = _bare_code(code)
-    if bare.startswith(("300", "301")):
-        return _BOARD_CYB
-    if bare.startswith("688"):
-        return _BOARD_KCB
-    if bare.startswith(("43", "83", "87", "92")):
-        return _BOARD_BJ
-    return _BOARD_MAIN
+    def trade_legality(self, limit_up_protection: bool) -> TradeLegalityResult:
+        """Reuse policy-independent legality only for a sealed snapshot."""
+        if self._sealed and limit_up_protection in self._legality_cache:
+            return self._legality_cache[limit_up_protection]
+        result = evaluate_trade_legality(
+            decision_date=self.decision_date, stock_codes=self.stock_codes,
+            listing_age=self.listing_age, open_prices=self.open_prices,
+            preclose_prices=self.preclose_prices, issue_prices=self.issue_prices,
+            st_mask=self.st_mask, delisted_mask=self.delisted_mask,
+            limit_up_protection=limit_up_protection,
+            precomputed_board_types=_sealed_board_types(self.stock_codes),
+        )
+        if self._sealed:
+            for values in vars(result).values():
+                if isinstance(values, np.ndarray):
+                    values.flags.writeable = False
+            self._legality_cache[limit_up_protection] = result
+        return result
 
+    def with_candidate_mask(self, values: NDArray[np.bool_]) -> "DayMarketData":
+        """Replace only the candidate row of this already validated snapshot.
 
-def _ordinary_limit_ratio(code: str) -> float:
-    board = _board_type(code)
-    if board in (_BOARD_CYB, _BOARD_KCB):
-        return 0.20
-    if board == _BOARD_BJ:
-        return 0.30
-    return 0.10
+        The independent read-only mask prevents a caller's scratch buffer from
+        changing a frozen decision. Other market fields keep their validated
+        storage rather than repeating all full-universe checks for a prefilter.
+        """
 
+        candidates = _as_bool_row("candidate_mask", values, len(self.stock_codes)).copy()
+        candidates.flags.writeable = False
+        result = copy(self)
+        object.__setattr__(result, "candidate_mask", candidates)
+        return result
 
-def _floor_price(values: float) -> float:
-    return math.floor(values * 100.0 + 1e-9) / 100.0
-
-
-def _ceil_price(values: float) -> float:
-    return math.ceil(values * 100.0 - 1e-9) / 100.0
 
 
 class DayPlanner:
     """Produce one deterministic order plan from a causal T-open snapshot."""
 
-    def __init__(self, diagnostics: str = "minimal") -> None:
+    def __init__(
+        self,
+        diagnostics: str = "minimal",
+        *,
+        fees: FeeSchedule = DEFAULT_FEE_SCHEDULE,
+    ) -> None:
         if diagnostics not in ("minimal", "full"):
             raise ValueError("diagnostics must be 'minimal' or 'full'")
         self.diagnostics_mode = diagnostics
+        self.fees = fees
         self._cached_stock_codes: tuple[str, ...] | None = None
         self._cached_code_to_idx: dict[str, int] = {}
         self._cached_board_types = np.empty(0, dtype=np.int8)
+        self._cached_limit_ratios = np.empty(0, dtype=np.float64)
+        self._cached_universe: PrefilterUniverse | None = None
 
     def _universe_metadata(
         self, stock_codes: tuple[str, ...]
@@ -196,11 +408,9 @@ class DayPlanner:
             self._cached_code_to_idx = {
                 code: idx for idx, code in enumerate(stock_codes)
             }
-            self._cached_board_types = np.fromiter(
-                (_board_type(code) for code in stock_codes),
-                dtype=np.int8,
-                count=len(stock_codes),
-            )
+            self._cached_board_types = classify_board_types(stock_codes)
+            self._cached_limit_ratios = ordinary_limit_ratios(self._cached_board_types)
+            self._cached_universe = PrefilterUniverse(stock_codes)
         return self._cached_code_to_idx, self._cached_board_types, cache_reused
 
     def plan(
@@ -209,21 +419,50 @@ class DayPlanner:
         account: AccountState,
         config: DayConfig,
     ) -> OrderPlan:
+        return self._plan(market, account, config)[0]
+
+    def plan_and_rank(
+        self, market: DayMarketData, account: AccountState, config: DayConfig,
+        universe: PrefilterUniverse,
+        *, prefilter_n: int | None = None,
+    ) -> tuple[OrderPlan, NDArray[np.intp]]:
+        """One score calculation feeds today's plan and tomorrow's prefilter."""
+        if universe.stock_codes != market.stock_codes:
+            raise ValueError("prefilter universe differs from the decision market")
+        if prefilter_n is not None and (type(prefilter_n) is not int or prefilter_n <= 0):
+            raise ValueError("prefilter_n must be a positive int")
+        plan, ranking = self._plan(market, account, config)
+        return plan, ranking[:prefilter_n]
+
+    def _plan(
+        self, market: DayMarketData, account: AccountState, config: DayConfig,
+    ) -> tuple[OrderPlan, NDArray[np.intp]]:
         codes = market.stock_codes
         size = len(codes)
         code_to_idx, board_types, universe_cache_reused = self._universe_metadata(codes)
         self._validate_config_inputs(market, config)
+        trade_legality = market.trade_legality(config.limit_up_protection)
+        if (
+            trade_legality.sell_allowed is None
+            or trade_legality.buy_reason_codes is None
+            or trade_legality.sell_reason_codes is None
+        ):
+            raise RuntimeError("planner requires complete trade legality diagnostics")
 
         enabled_factors = [
             name for name, enabled in config.factor_enabled.items() if enabled
         ]
-        listed = np.asarray(market.listing_age >= 0, dtype=np.bool_)
-        valid_open = np.isfinite(market.open_prices) & (market.open_prices > 0.0)
-        eligible = listed & valid_open
-        market_rejection_counts = {
-            "not_listed": int((~listed).sum()),
-            "suspended_or_missing_open": int((listed & ~valid_open).sum()),
-        }
+        enabled_filters = [name for name, enabled in config.filter_flags.items() if enabled]
+        factor_masks = tuple(market.factor_validity[name] for name in enabled_factors)
+        filter_masks = np.asarray([market.filter_masks[name] for name in enabled_filters], dtype=np.bool_).reshape(-1, size)
+        listed, valid_open, factor_eligible, eligible, market_counts, factor_counts, filter_counts = _eligibility_rows(
+            market.listing_age, market.delisted_mask, market.open_prices, market.candidate_mask,
+            factor_masks, filter_masks,
+        )
+        market_rejection_counts = dict(zip(
+            ("not_listed", "delisted", "suspended_or_missing_open", "outside_t1_prefilter"),
+            map(int, market_counts),
+        ))
         market_rejection_counts = {
             reason: count
             for reason, count in market_rejection_counts.items()
@@ -232,90 +471,101 @@ class DayPlanner:
         market_rejections = (
             {
                 codes[idx]: (
-                    "not_listed" if not listed[idx] else "suspended_or_missing_open"
+                    "not_listed"
+                    if not listed[idx]
+                    else (
+                        "delisted"
+                        if market.delisted_mask[idx]
+                        else (
+                            "suspended_or_missing_open"
+                            if not valid_open[idx]
+                            else "outside_t1_prefilter"
+                        )
+                    )
                 )
-                for idx in np.flatnonzero(~(listed & valid_open))
+                for idx in np.flatnonzero(
+                    ~(listed & ~market.delisted_mask & valid_open & market.candidate_mask)
+                )
             }
             if self.diagnostics_mode == "full"
             else {}
         )
-        factor_rejected: dict[str, int] = {}
-        for name in enabled_factors:
-            before = int(eligible.sum())
-            eligible &= market.factor_validity[name]
-            factor_rejected[name] = before - int(eligible.sum())
+        factor_rejected = dict(zip(enabled_factors, map(int, factor_counts)))
+        filter_rejected = dict(zip(enabled_filters, map(int, filter_counts)))
 
-        filter_rejected: dict[str, int] = {}
-        for name, enabled in config.filter_flags.items():
-            if not enabled:
-                continue
-            before = int(eligible.sum())
-            eligible &= market.filter_masks[name]
-            filter_rejected[name] = before - int(eligible.sum())
-
-        scores = np.zeros(size, dtype=np.float64)
-        for name in enabled_factors:
-            scores += market.factor_ranks[name] * float(config.factor_weights[name])
-        scores[~eligible] = -np.inf
-        finite_indices = np.flatnonzero(np.isfinite(scores))
-        # Stable input-order tie breaking is deterministic and matches the
-        # historical stock-universe ordering used by the legacy planner.
-        ranked_indices = finite_indices[
-            np.argsort(-scores[finite_indices], kind="stable")
-        ]
+        universe_scores = market.factor_scores(config)
+        member = listed & ~market.delisted_mask
+        full_ranking = rank_scored_universe_indices(
+            self._cached_universe, universe_scores, pit_universe_mask=member,
+        )
+        full_members = full_ranking[member[full_ranking]]
+        # Retention uses full PIT factor ranking, before buy legality, filters
+        # or the operational T-1 new-buy prefilter can remove a holding.
+        top_codes = {codes[index] for index in full_members[:config.buy_n]}
+        factor_ranked_indices = full_ranking[factor_eligible[full_ranking]]
+        # Filters are strategy preferences, not a hidden exposure switch.  Use
+        # filtered names first, then deterministically backfill from the same
+        # factor-valid ranking so filter toggles can never create cash while a
+        # hard-legal stock remains available.
+        ranked_indices = np.concatenate(
+            (
+                factor_ranked_indices[eligible[factor_ranked_indices]],
+                factor_ranked_indices[~eligible[factor_ranked_indices]],
+            )
+        )
         buy_legality: dict[str, str] = {}
         buy_legality_counts: dict[str, int] = {}
         sell_legality: dict[str, str] = {}
-        buy_targets: list[str] = []
-        legal_keep_candidates: list[str] = []
-        for idx in ranked_indices:
-            ok, reason = self._trade_legality(
-                market,
-                int(idx),
-                is_buy=True,
-                config=config,
-                board=int(board_types[idx]),
-            )
-            if ok:
-                code = codes[idx]
-                if len(buy_targets) < config.buy_n:
-                    buy_targets.append(code)
-                if len(legal_keep_candidates) < config.sell_m:
-                    legal_keep_candidates.append(code)
-                if (
-                    len(buy_targets) >= config.buy_n
-                    and len(legal_keep_candidates) >= config.sell_m
-                ):
-                    break
-            else:
-                buy_legality_counts[reason] = buy_legality_counts.get(reason, 0) + 1
-                if self.diagnostics_mode == "full":
-                    buy_legality[codes[idx]] = reason
-
-        # Match the established retention contract: prefer buy-legal names,
-        # then fill a short sell-M list from raw rank without applying buy
-        # legality (sell legality is checked independently below).
-        keep_codes = list(legal_keep_candidates)
-        keep_seen = set(keep_codes)
-        for idx in ranked_indices:
-            if len(keep_codes) >= config.sell_m:
-                break
-            code = codes[idx]
-            if code not in keep_seen:
-                keep_codes.append(code)
-                keep_seen.add(code)
+        legal_offsets = np.flatnonzero(trade_legality.buy_allowed[ranked_indices])
+        positions = {str(code): int(quantity) for code, quantity in account.positions.items() if int(quantity) > 0}
+        held_mask = np.zeros(size, dtype=bool)
+        held_mask[[code_to_idx[code] for code in positions if code in code_to_idx]] = True
+        held_order = [codes[index] for index in full_ranking[held_mask[full_ranking]]]
+        held_order.extend(sorted(code for code in positions if code not in code_to_idx))
+        replacement_limit = config.replacement_limit
+        examined = held_order[-replacement_limit:] if replacement_limit else []
+        # Do not replace locked worst holdings with better-ranked sell candidates.
+        exits = [code for code in examined if code not in top_codes
+                 and code in code_to_idx and trade_legality.sell_allowed[code_to_idx[code]]
+                 and account.sellable_positions.get(code, 0) >= positions[code]]
+        exit_set = set(exits)
+        keep_codes = [code for code in held_order if code not in exit_set]
+        vacancies = max(0, config.buy_n - len(keep_codes))
+        legal_ranked = ranked_indices[legal_offsets]
+        new_indices = legal_ranked[~held_mask[legal_ranked]][:vacancies]
+        target_codes = [*keep_codes, *(codes[index] for index in new_indices)]
+        target_mask = np.zeros(size, dtype=bool)
+        target_mask[[code_to_idx[code] for code in target_codes if code in code_to_idx]] = True
+        buy_indices = legal_ranked[target_mask[legal_ranked]]
+        buy_targets = [codes[index] for index in buy_indices]
+        filter_backfill_buy_count = int((~eligible[buy_indices]).sum())
+        # Buy diagnostics cover the prefix through the first buy_n legal names;
+        # full-universe retention ranking is independent of this cutoff.
+        visited_stop = (int(legal_offsets[config.buy_n - 1]) + 1
+                        if len(legal_offsets) >= config.buy_n else len(ranked_indices))
+        visited = ranked_indices[:visited_stop]
+        rejected = visited[~trade_legality.buy_allowed[visited]]
+        if rejected.size:
+            reason_counts = np.bincount(trade_legality.buy_reason_codes[rejected])
+            buy_legality_counts = {
+                legality_reason_text(int(reason)): int(reason_counts[reason])
+                for reason in np.flatnonzero(reason_counts)
+            }
+            if self.diagnostics_mode == "full":
+                buy_legality = {
+                    codes[index]: legality_reason_text(int(trade_legality.buy_reason_codes[index]))
+                    for index in rejected
+                }
 
         valuation_prices: dict[str, float] = {}
         valuation_fallbacks: dict[str, str] = {}
-        positions = {
-            str(code): int(quantity)
-            for code, quantity in account.positions.items()
-            if int(quantity) > 0
-        }
+        prices: dict[str, float] = {}
         for code in positions:
             idx = code_to_idx.get(code)
             if idx is not None and valid_open[idx]:
-                valuation_prices[code] = float(market.open_prices[idx])
+                price = float(market.open_prices[idx])
+                valuation_prices[code] = price
+                prices[code] = price
             else:
                 fallback = float(account.last_prices.get(code, math.nan))
                 if math.isfinite(fallback) and fallback > 0.0:
@@ -324,11 +574,12 @@ class DayPlanner:
                 else:
                     valuation_fallbacks[code] = "missing"
 
-        balance_sheet_nav = float(account.cash) + sum(
-            positions[code] * valuation_prices[code]
+        position_values = {
+            code: positions[code] * valuation_prices[code]
             for code in positions
             if code in valuation_prices
-        )
+        }
+        balance_sheet_nav = float(account.cash) + sum(position_values.values())
         missing_valuation_marks = tuple(
             code for code in positions if code not in valuation_prices
         )
@@ -342,22 +593,25 @@ class DayPlanner:
         if not math.isfinite(total_equity) or total_equity < 0.0:
             raise ValueError("account pretrade NAV must be finite and non-negative")
 
-        reserve_ratio = max(
-            (_ordinary_limit_ratio(code) for code in buy_targets), default=0.0
-        )
-        base_target = (
-            total_equity * config.target_exposure / (config.buy_n + reserve_ratio)
-        )
-        prices = {
-            code: float(market.open_prices[code_to_idx[code]])
-            for code in set(positions) | set(buy_targets) | set(keep_codes)
-            if code in code_to_idx and valid_open[code_to_idx[code]]
-        }
+        # ``single_buy_pct`` is a concentration control, not an exposure
+        # control.  Its conditional lower bound (1 / buy_n) guarantees that
+        # the target list has at least one NAV of aggregate buy capacity.
+        # Affordability below still reserves the exchange freeze price and all
+        # fees, so any residual cash is operationally unavoidable rather than
+        # a learned cash allocation.
+        base_target = total_equity * config.single_buy_pct
+        # Holdings already supplied their valid T-open price above; retained
+        # names are a subset of holdings, so only new buy targets need a read.
+        for code in buy_targets:
+            if code not in prices:
+                idx = code_to_idx.get(code)
+                if idx is not None and valid_open[idx]:
+                    prices[code] = float(market.open_prices[idx])
         limit_prices = {
             code: self._freeze_price(
-                code,
                 prices[code],
                 float(market.preclose_prices[code_to_idx[code]]),
+                ratio=float(self._cached_limit_ratios[code_to_idx[code]]),
             )
             for code in buy_targets
             if code in prices
@@ -365,14 +619,22 @@ class DayPlanner:
 
         diagnostics: dict[str, object] = {
             "enabled_factors": tuple(enabled_factors),
-            "enabled_filters": tuple(
-                name for name, enabled in config.filter_flags.items() if enabled
-            ),
+            "enabled_filters": tuple(enabled_filters),
             "factor_rejected": factor_rejected,
+            "factor_missing": dict(factor_rejected),
+            "factor_missing_policy": "available_absolute_weight_centered_rank_normalization_no_signal_stable_tail",
             "filter_rejected": filter_rejected,
             "eligible_count": int(eligible.sum()),
+            "filter_backfill_buy_count": filter_backfill_buy_count,
             "buy_n_stocks": tuple(buy_targets),
-            "sell_m_stocks": tuple(keep_codes),
+            "retained_stocks": tuple(keep_codes),
+            "target_stocks": tuple(target_codes),
+            "turnover_rate": config.turnover_rate,
+            "replacement_limit": replacement_limit,
+            "examined_worst_holdings": tuple(examined),
+            "replacement_exit_stocks": tuple(exits),
+            "replacement_entry_stocks": tuple(codes[index] for index in new_indices),
+            "full_rank_top_stocks": tuple(codes[index] for index in full_members[:config.buy_n]),
             "sell_legality_rejections": sell_legality,
             "prices": prices,
             "limit_prices": limit_prices,
@@ -383,7 +645,6 @@ class DayPlanner:
             "cached_account_nav": float(account.nav),
             "cached_account_nav_difference": float(account.nav) - total_equity,
             "base_target": base_target,
-            "reserve_ratio": reserve_ratio,
             "universe_cache_reused": universe_cache_reused,
         }
         diagnostics["market_rejection_counts"] = market_rejection_counts
@@ -396,17 +657,9 @@ class DayPlanner:
                     "market_rejections": market_rejections,
                     "ranked_stocks": tuple(codes[idx] for idx in ranked_indices),
                     "buy_legality_rejections": buy_legality,
-                    "final_scores": scores.copy(),
+                    "final_scores": np.where(factor_eligible, universe_scores, -np.inf),
                 }
             )
-        if not config.rebalance_now:
-            diagnostics["no_trade_reason"] = "rebalance_now_false"
-            return OrderPlan(
-                decision_date=market.decision_date,
-                day_config=config,
-                diagnostics=diagnostics,
-            )
-
         sellable = {
             str(code): max(0, int(value))
             for code, value in account.sellable_positions.items()
@@ -417,57 +670,48 @@ class DayPlanner:
             if idx is None:
                 sell_legality[code] = "outside_market_universe"
                 continue
-            ok, reason = self._trade_legality(
-                market,
-                idx,
-                is_buy=False,
-                config=config,
-                board=int(board_types[idx]),
-            )
+            ok = bool(trade_legality.sell_allowed[idx])
             if ok:
                 sellable_ok.add(code)
             else:
-                sell_legality[code] = reason
+                sell_legality[code] = legality_reason_text(int(trade_legality.sell_reason_codes[idx]))
 
-        position_values = {
-            code: positions[code] * valuation_prices[code]
-            for code in positions
-            if code in valuation_prices
-        }
-        if config.rebalance_mode is RebalanceMode.EQUALIZE:
-            sell_orders, buy_orders, skip_reasons = self._equalize_orders(
-                market=market,
-                account_cash=float(account.cash),
-                positions=positions,
-                sellable=sellable,
-                position_values=position_values,
-                prices=prices,
-                limit_prices=limit_prices,
-                buy_targets=buy_targets,
-                keep_codes=keep_codes,
-                sellable_ok=sellable_ok,
-                base_target=base_target,
-                band=config.rebalance_band_pct,
-            )
+        sell_orders, buy_orders, skip_reasons, planned_cash, cheapest_next_legal_buy_cost = self._equalize_orders(
+            market=market,
+            account_cash=float(account.cash),
+            positions=positions,
+            sellable=sellable,
+            position_values=position_values,
+            prices=prices,
+            limit_prices=limit_prices,
+            buy_targets=buy_targets,
+            target_codes=target_codes,
+            keep_codes=keep_codes,
+            sellable_ok=sellable_ok,
+            base_target=base_target,
+            band=config.rebalance_band_pct,
+        )
+
+        if not buy_targets:
+            residual_reason = "no_legal_buy_target"
+        elif cheapest_next_legal_buy_cost is None:
+            residual_reason = "concentration_or_lot_capacity_exhausted"
+        elif planned_cash + 1e-9 < cheapest_next_legal_buy_cost:
+            residual_reason = "below_next_legal_frozen_lot_cost"
         else:
-            sell_orders, buy_orders, skip_reasons = self._replacement_orders(
-                account_cash=float(account.cash),
-                positions=positions,
-                sellable=sellable,
-                position_values=position_values,
-                prices=prices,
-                limit_prices=limit_prices,
-                buy_targets=buy_targets,
-                keep_codes=keep_codes,
-                sellable_ok=sellable_ok,
-                desired_invested=total_equity * config.target_exposure,
-            )
+            residual_reason = "cash_sweep_incomplete"
+        full_investment_contract_satisfied = residual_reason != "cash_sweep_incomplete"
 
         diagnostics["sell_legality_rejections"] = sell_legality
         diagnostics["skip_reasons"] = skip_reasons
+        diagnostics["planned_post_order_cash"] = planned_cash
+        diagnostics["cheapest_next_legal_buy_cost"] = cheapest_next_legal_buy_cost
+        diagnostics["residual_cash_reason"] = residual_reason
+        diagnostics["full_investment_contract_satisfied"] = (
+            full_investment_contract_satisfied
+        )
         diagnostics["planned_sell_notional"] = sum(
-            (positions.get(code, 0) if quantity < 0 else quantity)
-            * prices.get(code, 0.0)
+            quantity * prices.get(code, 0.0)
             for code, quantity in sell_orders
         )
         diagnostics["planned_buy_notional"] = sum(
@@ -479,7 +723,7 @@ class DayPlanner:
             buy_orders=buy_orders,
             day_config=config,
             diagnostics=diagnostics,
-        )
+        ), full_ranking
 
     @staticmethod
     def _validate_config_inputs(market: DayMarketData, config: DayConfig) -> None:
@@ -495,9 +739,10 @@ class DayPlanner:
             raise ValueError(f"market is missing enabled filters: {sorted(missing_filters)}")
 
     @staticmethod
-    def _freeze_price(code: str, open_price: float, preclose: float) -> float:
+    def _freeze_price(
+        open_price: float, preclose: float, *, ratio: float
+    ) -> float:
         base = preclose
-        ratio = _ordinary_limit_ratio(code)
         if (
             not math.isfinite(base)
             or base <= 0.0
@@ -506,85 +751,8 @@ class DayPlanner:
             base = open_price
         return base * (1.0 + ratio)
 
-    @staticmethod
-    def _trade_legality(
-        market: DayMarketData,
-        idx: int,
-        *,
-        is_buy: bool,
-        config: DayConfig,
-        board: int | None = None,
-    ) -> tuple[bool, str]:
-        age = int(market.listing_age[idx])
-        if age < 0:
-            return False, "not_listed"
-        open_price = float(market.open_prices[idx])
-        if not math.isfinite(open_price) or open_price <= 0.0:
-            return False, "suspended_or_missing_open"
-
-        code = market.stock_codes[idx]
-        board = _board_type(code) if board is None else board
-        decision_day = date.fromisoformat(market.decision_date)
-        ratio = _ordinary_limit_ratio(code)
-        if board == _BOARD_CYB and decision_day < _CYB_REG:
-            ratio = 0.10
-        if bool(market.st_mask[idx]):
-            if board == _BOARD_CYB:
-                ratio = 0.05 if decision_day < _CYB_REG else 0.20
-            elif board == _BOARD_KCB:
-                ratio = 0.20
-            elif board == _BOARD_BJ:
-                ratio = 0.30
-            else:
-                ratio = 0.05 if decision_day < _MB_ST_10_START else 0.10
-
-        first_day = age == 0
-        exempt = board == _BOARD_BJ and first_day
-        if board == _BOARD_KCB and decision_day >= _KCB_OPEN and 0 <= age <= 4:
-            exempt = True
-        if board == _BOARD_CYB:
-            if decision_day >= _CYB_REG and 0 <= age <= 4:
-                exempt = True
-            elif decision_day < _IPO_44_START and first_day:
-                exempt = True
-        if board == _BOARD_MAIN:
-            if decision_day >= _MB_REG and 0 <= age <= 4:
-                exempt = True
-            elif decision_day < _IPO_44_START and first_day:
-                exempt = True
-
-        old_ipo_first = first_day and decision_day >= _IPO_44_START and not exempt
-        preclose = float(market.preclose_prices[idx])
-        if first_day:
-            issue = float(market.issue_prices[idx])
-            if math.isfinite(issue) and issue > 0.0:
-                preclose = issue
-        if exempt:
-            return True, "ok_no_daily_limit"
-        if not math.isfinite(preclose) or preclose <= 0.0:
-            return False, "missing_preclose"
-
-        if old_ipo_first:
-            ratio = 0.44
-        up_limit = _floor_price(preclose * (1.0 + ratio))
-        down_limit = _ceil_price(preclose * (1.0 - ratio))
-        if is_buy:
-            if open_price >= up_limit - _PRICE_EPS:
-                return False, "limit_up"
-            if old_ipo_first:
-                ipo_open_limit = _floor_price(preclose * 1.20)
-                if open_price >= ipo_open_limit - _PRICE_EPS:
-                    return False, "ipo_open_limit"
-            return True, "ok"
-        if open_price <= down_limit + _PRICE_EPS:
-            return False, "limit_down"
-        if config.limit_up_protection and open_price >= up_limit - _PRICE_EPS:
-            return False, "limit_up_protected"
-        return True, "ok"
-
-    @staticmethod
     def _ordered_position_codes(
-        positions: Mapping[str, int], preferred: Sequence[str], stock_codes: Sequence[str]
+        self, positions: Mapping[str, int], preferred: Sequence[str], stock_codes: Sequence[str]
     ) -> list[str]:
         result: list[str] = []
         seen: set[str] = set()
@@ -592,60 +760,11 @@ class DayPlanner:
             if code in positions and code not in seen:
                 result.append(code)
                 seen.add(code)
-        for code in stock_codes:
-            if code in positions and code not in seen:
-                result.append(code)
-                seen.add(code)
-        for code in sorted(set(positions) - seen):
-            result.append(code)
+        code_to_idx, _, _ = self._universe_metadata(tuple(stock_codes))
+        remaining = set(positions) - seen
+        result.extend(sorted((code for code in remaining if code in code_to_idx), key=code_to_idx.__getitem__))
+        result.extend(sorted(code for code in remaining if code not in code_to_idx))
         return result
-
-    @staticmethod
-    def _affordable_buy_shares(
-        code: str,
-        cash: float,
-        unit_price: float,
-    ) -> int:
-        if cash <= 0.0 or unit_price <= 0.0:
-            return 0
-        low, high = 0, int(cash / unit_price) + 1
-        while low + 1 < high:
-            middle = (low + high) // 2
-            if DEFAULT_FEE_SCHEDULE.buy_total_cost(middle * unit_price) <= cash:
-                low = middle
-            else:
-                high = middle
-        return floor_buy_quantity(code, low)
-
-    def _try_buy(
-        self,
-        *,
-        code: str,
-        requested: int,
-        prices: Mapping[str, float],
-        limit_prices: Mapping[str, float],
-        cash_sim: float,
-        buy_orders: dict[str, int],
-        skip_reasons: dict[str, str],
-    ) -> float:
-        quantity = round_buy_quantity(code, requested)
-        if quantity <= 0:
-            skip_reasons[code] = "below_lot_or_band"
-            return cash_sim
-        budget_price = max(prices[code], limit_prices.get(code, prices[code]))
-        affordable = self._affordable_buy_shares(
-            code,
-            cash_sim,
-            budget_price,
-        )
-        quantity = min(quantity, affordable)
-        if quantity <= 0:
-            skip_reasons[code] = "insufficient_frozen_cash"
-            return cash_sim
-        buy_orders[code] = quantity
-        return cash_sim - DEFAULT_FEE_SCHEDULE.buy_total_cost(
-            quantity * prices[code]
-        )
 
     def _equalize_orders(
         self,
@@ -658,139 +777,53 @@ class DayPlanner:
         prices: Mapping[str, float],
         limit_prices: Mapping[str, float],
         buy_targets: Sequence[str],
+        target_codes: Sequence[str],
         keep_codes: Sequence[str],
         sellable_ok: set[str],
         base_target: float,
         band: float,
-    ) -> tuple[list[tuple[str, int]], dict[str, int], dict[str, str]]:
-        target_set, keep_set = set(buy_targets), set(keep_codes)
-        sell_orders: list[tuple[str, int]] = []
-        cash_sim = account_cash
-        sell_sequence = self._ordered_position_codes(
-            positions, buy_targets, market.stock_codes
+    ) -> tuple[list[tuple[str, int]], dict[str, int], dict[str, str], float, float | None]:
+        # Only the small position/target set crosses the numeric boundary;
+        # selection and the stock vocabulary retain the complete PIT axis.
+        codes = self._ordered_position_codes(positions, buy_targets, market.stock_codes)
+        codes.extend(code for code in buy_targets if code not in positions)
+        indices = {code: index for index, code in enumerate(codes)}
+        buy_indices = np.asarray([indices[code] for code in buy_targets], dtype=np.int64)
+        keep = set(keep_codes)
+        targets = set(target_codes)
+        # Pack each code once. Integer fields never pass through float64;
+        # strided field views feed the same numeric equalization authority.
+        packed = np.asarray([
+            (positions.get(code, 0), sellable.get(code, 0),
+             position_values.get(code, 0.0), prices.get(code, math.nan),
+             limit_prices.get(code, prices.get(code, math.nan)),
+             minimum_buy_quantity(code), buy_quantity_step(code),
+             code in targets, code in keep, code in sellable_ok)
+            for code in codes
+        ], dtype=_EQUALIZE_INPUT_DTYPE)
+        quantity, available, values, price, limits, minimum, step, target_mask, keep_mask, sell_mask = (
+            packed[name] for name in _EQUALIZE_INPUT_DTYPE.names
         )
-        for code in sell_sequence:
-            if code not in prices or code not in sellable_ok:
-                continue
-            current_value = position_values[code]
-            target = base_target if code in target_set else (
-                current_value if code in keep_set else 0.0
-            )
-            if current_value <= target * (1.0 + band):
-                continue
-            available = min(int(positions[code]), max(0, int(sellable.get(code, 0))))
-            if available <= 0:
-                continue
-            if target == 0.0 and available == int(positions[code]):
-                quantity = -1
-            else:
-                quantity = min(
-                    floor_partial_sell_quantity(
-                        code,
-                        (current_value - target) / prices[code],
-                    ),
-                    floor_partial_sell_quantity(code, available),
-                )
-            if quantity == 0:
-                continue
-            sell_orders.append((code, quantity))
-            executed_quantity = available if quantity < 0 else quantity
-            cash_sim += DEFAULT_FEE_SCHEDULE.sell_net_proceeds(
-                executed_quantity * prices[code]
-            )
-
-        buy_orders: dict[str, int] = {}
-        skip_reasons: dict[str, str] = {}
-        for code in buy_targets:
-            if code not in prices:
-                skip_reasons[code] = "missing_open"
-                continue
-            current_value = position_values.get(code, 0.0)
-            if current_value >= base_target * (1.0 - band):
-                skip_reasons[code] = "within_or_above_target_band"
-                continue
-            cash_sim = self._try_buy(
-                code=code,
-                requested=int((base_target - current_value) / prices[code]),
-                prices=prices,
-                limit_prices=limit_prices,
-                cash_sim=cash_sim,
-                buy_orders=buy_orders,
-                skip_reasons=skip_reasons,
-            )
-        return sell_orders, buy_orders, skip_reasons
-
-    def _replacement_orders(
-        self,
-        *,
-        account_cash: float,
-        positions: Mapping[str, int],
-        sellable: Mapping[str, int],
-        position_values: Mapping[str, float],
-        prices: Mapping[str, float],
-        limit_prices: Mapping[str, float],
-        buy_targets: Sequence[str],
-        keep_codes: Sequence[str],
-        sellable_ok: set[str],
-        desired_invested: float,
-    ) -> tuple[list[tuple[str, int]], dict[str, int], dict[str, str]]:
-        keep_set = set(keep_codes)
-        sell_orders: list[tuple[str, int]] = []
-        cash_sim = account_cash
-        remaining_values = dict(position_values)
-        for code in positions:
-            if code in keep_set or code not in prices or code not in sellable_ok:
-                continue
-            available = min(int(positions[code]), max(0, int(sellable.get(code, 0))))
-            if available <= 0:
-                continue
-            quantity = (
-                -1
-                if available == int(positions[code])
-                else floor_partial_sell_quantity(code, available)
-            )
-            if quantity == 0:
-                continue
-            sell_orders.append((code, quantity))
-            executed_quantity = available if quantity < 0 else quantity
-            cash_sim += DEFAULT_FEE_SCHEDULE.sell_net_proceeds(
-                executed_quantity * prices[code]
-            )
-            remaining_values[code] = max(
-                0.0,
-                remaining_values.get(code, 0.0)
-                - executed_quantity * prices[code],
-            )
-
-        new_codes = [
-            code for code in buy_targets if code not in positions and code in prices
-        ]
-        invested_after_sells = sum(remaining_values.values())
-        desired_new = max(0.0, desired_invested - invested_after_sells)
-        buy_budget = min(cash_sim, desired_new)
-        cash_per_new = buy_budget / len(new_codes) if new_codes else 0.0
-        buy_orders: dict[str, int] = {}
-        skip_reasons: dict[str, str] = {}
-        for code in buy_targets:
-            if code in positions:
-                skip_reasons[code] = "replace_only_existing_position"
-            elif code not in prices:
-                skip_reasons[code] = "missing_open"
-        for code in new_codes:
-            cash_sim = self._try_buy(
-                code=code,
-                requested=int(cash_per_new / prices[code]),
-                prices=prices,
-                limit_prices=limit_prices,
-                cash_sim=cash_sim,
-                buy_orders=buy_orders,
-                skip_reasons=skip_reasons,
-            )
-        if invested_after_sells > desired_invested:
-            skip_reasons["_target_exposure"] = (
-                "replace_only_does_not_trim_retained_positions"
-            )
-        return sell_orders, buy_orders, skip_reasons
+        # Like max(price, limit): a NaN operand never replaces the first item.
+        budget = np.where(limits > price, limits, price)
+        result = _equalize_quantities(
+            quantity, available, values, price, budget, buy_indices,
+            target_mask, keep_mask, sell_mask,
+            minimum, step, account_cash, base_target, band, self.fees.parameters,
+        )
+        sells, buys, buy_order, skipped, cash, cheapest, has_increment = result
+        sell_orders = [(code, amount) for code, amount in zip(codes, sells.tolist()) if amount]
+        # The kernel assigns a unique index at each code's first actual buy.
+        buy_orders = {code: amount for _, code, amount in sorted(
+            (order, code, amount)
+            for order, code, amount in zip(buy_order.tolist(), codes, buys.tolist()) if amount
+        )}
+        reasons = ('', 'below_exchange_minimum_or_concentration_cap', 'insufficient_frozen_cash',
+                   'missing_open', 'within_or_above_target_band')
+        skip_values = skipped.tolist()
+        skip_reasons = {codes[index]: reasons[skip_values[index]]
+                        for index in buy_indices.tolist() if skip_values[index]}
+        return sell_orders, buy_orders, skip_reasons, float(cash), (float(cheapest) if has_increment else None)
 
 
 __all__ = ["DayMarketData", "DayPlanner"]

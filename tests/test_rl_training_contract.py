@@ -1,326 +1,309 @@
-from argparse import Namespace
+import argparse
+from dataclasses import replace
+import json
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
-import torch
 
-import ai.rl.train as train_module
-from ai.bundle import DEPLOYMENT_GATE_NAMES
+from ai.rl import train as train_module
 from ai.rl.train import (
-    MATERIAL_SCORE_IMPROVEMENT,
-    PLATEAU_EVALUATIONS,
-    TrainEvaluationCallback,
-    _TrainCheckpointState,
-    _dynamicity,
-    _initialize_policy_from_static,
-    _record_post_update_evaluation,
-    _select_model_after_training,
-    _technical_convergence,
-    _validate_split_boundaries,
+    CHECKPOINT_SELECTION_OBJECTIVE,
+    LIFECYCLE_CLAIM_FILE,
+    RUN_IDENTITY_VERSION,
+    RUN_IDENTITY_FILE,
+    STATIC_BENCHMARK_FILE,
+    TRAIN_BEST_MODEL_FILE,
+    INITIAL_MODEL_FILE,
+    _training_timesteps_from_rollouts,
+    _assert_model_identity,
+    _assert_verified_resume_compatible,
+    _claim_lifecycle,
+    _resolve_batch_size,
+    _seal_run_identity,
+    _seal_static_benchmark,
+    _validate_static_benchmark,
+    build_parser,
+    train,
 )
-from env.action_schema import ActionSchema
+from ai.bundle import BundleManifest
+from ai.rl.device import require_cuda_device
+from env.metrics import REWARD_SCHEMA_VERSION
 
 
-_DYNAMIC = {
-    "continuous_parameter_dynamic": True,
-    "binary_parameter_dynamic": True,
-    "discrete_parameter_dynamic": True,
-    "enum_parameter_dynamic": True,
-}
+from rl_test_data import write_runtime
 
 
-class _SavingModel:
-    def __init__(self) -> None:
-        self.saved: list[Path] = []
-
-    def save(self, path) -> None:
-        target = Path(path)
-        if target.suffix != ".zip":
-            target = target.with_suffix(".zip")
-        target.write_bytes(b"model")
-        self.saved.append(target)
+@pytest.mark.parametrize("option", ["--diagnostic-cache-migration", "--action-migration-from"])
+def test_removed_migration_cli_is_rejected_before_loading_data(option):
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["--runtime", "must-not-load.npz", option, "old.json"])
 
 
-def _callback(tmp_path: Path, *, initial_score: float = 1.0):
-    callback = TrainEvaluationCallback(
-        episode=SimpleNamespace(),
-        action_schema=SimpleNamespace(),
-        normalizer=SimpleNamespace(),
-        folds=(),
-        output_dir=tmp_path,
-        eval_freq=10,
-        initial_score=initial_score,
-        initial_cash=1_000.0,
-        seed=7,
-    )
-    callback.model = _SavingModel()
-    return callback
+@pytest.fixture
+def synthetic_financial_snapshot_verifier(monkeypatch):
+    """Only synthetic training integrations bypass the real archive verifier."""
+    verifier = Mock(return_value={
+        "manifest_sha256": "a" * 64,
+        "snapshot_sha256": "b" * 64,
+        "financial_identity": {"sha256": "c" * 64},
+        "panel_builder_version": "synthetic-financial-panel-v1",
+        "financial_replay_version": "synthetic-financial-replay-v1",
+        "availability": "synthetic inputs available strictly before decision T",
+        "pit_evidence_limit": "unit fixture only; no real-data PIT certification",
+    })
+    monkeypatch.setattr(train_module, "read_financial_snapshot_manifest", verifier)
+    return verifier
 
 
-def _record(
-    callback: TrainEvaluationCallback,
-    *,
-    score: float,
-    timesteps: int,
-    phase: str = "scheduled",
-    ppo_updates: int = 1,
-):
-    return callback._record_evaluation(
-        timesteps=timesteps,
-        phase=phase,
-        ppo_updates=ppo_updates,
-        score=score,
-        average_exposure=0.75,
-        dynamicity=_DYNAMIC,
-        optimizer={},
-        evaluation={"robust": {"robust_calmar": score}},
-    )
+@pytest.mark.parametrize("version", [
+    "wbr-ppo-run-identity-v56-long-history-actual-actions",
+    "wbr-ppo-run-identity-v58-selected11-three-split-diagnostic",
+    "wbr-ppo-run-identity-v59-resident-split-diagnostic",
+    "wbr-ppo-run-identity-v60-compact-resident-split-diagnostic",
+    "wbr-ppo-run-identity-v68-full-collection-diagnostics",
+    "wbr-ppo-run-identity-v69-full-collection-diagnostic",
+])
+def test_previous_run_identity_is_rejected_before_loading_checkpoint(version):
+    previous = train_module._seal_run_identity({
+        "identity_version": version,
+        "contract": {},
+    })
+    with pytest.raises(ValueError, match="unsupported PPO run identity version"):
+        train_module._validate_run_identity(previous)
 
 
-def _args(**changes):
-    values = {
-        "train_start": "2010-01-01",
-        "train_end": "2018-12-31",
-        "validation_start": "2019-01-01",
-        "validation_end": "2022-12-31",
-        "test_start": "2023-01-01",
-        "test_end": "2026-08-27",
-        "skip_holdout": False,
-    }
-    values.update(changes)
-    return Namespace(**values)
+def test_financial_snapshot_verifier_failure_prevents_split_preparation(tmp_path, monkeypatch):
+    runtime = tmp_path / "runtime.npz"
+    output = tmp_path / "rejected"
+    write_runtime(runtime)
+    # Exercise the actual verifier: a synthetic NPZ has no sealed sidecar.
+    verifier = Mock(wraps=train_module.read_financial_snapshot_manifest)
+    prepare_split = Mock(side_effect=AssertionError("split opened before financial verification"))
+    monkeypatch.setattr(train_module, "read_financial_snapshot_manifest", verifier)
+    monkeypatch.setattr(train_module, "_prepare_split", prepare_split)
+    args = build_parser().parse_args([
+        "--runtime", str(runtime), "--output", str(output), "--device", "cuda",
+    ])
+
+    with pytest.raises(FileNotFoundError, match=r"runtime\.manifest\.json"):
+        train(args)
+
+    verifier.assert_called_once_with(runtime.resolve())
+    prepare_split.assert_not_called()
+    assert not (output / RUN_IDENTITY_FILE).exists()
+    assert not (output / INITIAL_MODEL_FILE).exists()
 
 
-def test_split_boundaries_require_ordered_disjoint_train_validation_test():
-    _validate_split_boundaries(_args())
-
-    with pytest.raises(ValueError, match="strictly ordered and disjoint"):
-        _validate_split_boundaries(_args(validation_start="2018-12-31"))
-    with pytest.raises(ValueError, match="strictly ordered and disjoint"):
-        _validate_split_boundaries(_args(test_start="2022-12-31"))
-
-
-def test_skip_holdout_still_validates_training_interval():
-    _validate_split_boundaries(_args(skip_holdout=True))
-    with pytest.raises(ValueError, match="training split"):
-        _validate_split_boundaries(
-            _args(skip_holdout=True, train_start="2019-01-01")
-        )
-
-
-def test_ppo_actor_starts_at_static_config_but_binary_means_are_explorable():
-    schema = ActionSchema()
-    fixed = schema.encode_static_config(
+def _identity(contract, *, parent=None):
+    return _seal_run_identity(
         {
-            "weights": dict(zip(schema.factor_names, (0.4, 0.9, 0.1, 0.6))),
-            "filter_factors": {name: True for name in schema.filter_names},
-            "buy_n": 20,
-            "sell_m": 25,
-            "cash_reserve_ratio": 0.25,
-            "rebalance": True,
-            "holding_period": 1,
-            "limit_up_protection": True,
-        }
-    )
-    action_net = torch.nn.Linear(3, schema.action_dim)
-    model = SimpleNamespace(policy=SimpleNamespace(action_net=action_net))
-
-    initialized = _initialize_policy_from_static(model, schema, fixed)
-
-    assert schema.decode(initialized) == schema.decode(fixed)
-    assert np.allclose(action_net.weight.detach().numpy(), 0.0)
-    assert np.allclose(action_net.bias.detach().numpy(), initialized)
-    for field in schema.layout:
-        if field.kind == "binary":
-            expected = 0.02 if field.name == "limit_up_protection" else 0.10
-            assert abs(float(initialized[field.index])) == pytest.approx(expected)
-
-
-def test_dynamicity_requires_material_range_and_two_covered_categories():
-    categorical = {
-        "factor_enabled.a": {
-            "unique_count": 2,
-            "coverage": {"False": 0.02, "True": 0.98},
-        },
-        "rebalance_now": {"unique_count": 1, "coverage": {"True": 1.0}},
-        "limit_up_protection": {"unique_count": 1, "coverage": {"True": 1.0}},
-        "buy_n": {"unique_count": 2, "coverage": {"20": 0.8, "25": 0.2}},
-        "sell_m": {"unique_count": 1, "coverage": {"25": 1.0}},
-        "rebalance": {"unique_count": 1, "coverage": {"True": 1.0}},
-    }
-    result = _dynamicity(
-        {
-            "continuous": {
-                "target_exposure": {
-                    "minimum": 0.70,
-                    "maximum": 0.72,
-                    "std": 0.003,
-                }
+            "identity_version": RUN_IDENTITY_VERSION,
+            "contract": contract,
+            "lineage": {
+                "mode": "root" if parent is None else "resume",
+                "parent_identity_sha256": parent,
             },
-            "categorical": categorical,
         }
     )
 
-    assert result == {
-        "continuous_parameter_dynamic": True,
-        "binary_parameter_dynamic": True,
-        "discrete_parameter_dynamic": True,
-        "enum_parameter_dynamic": False,
+
+def test_cli_exposes_only_standard_ppo_throughput_controls():
+    destinations = {action.dest for action in build_parser()._actions}
+
+    assert "n_steps" in destinations
+    assert "train_window_transitions" not in destinations
+    assert "gate_recovery" not in destinations
+    assert "gamma" not in destinations
+    assert "gae_lambda" not in destinations
+    assert "eval_every_rollouts" in destinations
+    assert "device" in destinations
+
+
+def test_rollout_budget_is_an_exact_number_of_complete_vector_rollouts():
+    assert _training_timesteps_from_rollouts(30, 37_896) == 1_136_880
+    assert _training_timesteps_from_rollouts(1, 37_896) == 37_896
+
+
+def test_only_cuda_device_is_accepted_before_identity(monkeypatch):
+    monkeypatch.setattr(train_module.th.cuda, "is_available", lambda: True)
+    assert str(require_cuda_device("cuda")) == "cuda"
+    for device in ("auto", "cpu"):
+        with pytest.raises(ValueError, match="CUDA"):
+            require_cuda_device(device)
+    monkeypatch.setattr(train_module.th.cuda, "is_available", lambda: False)
+    with pytest.raises(RuntimeError, match="CUDA"):
+        require_cuda_device("cuda")
+
+
+@pytest.mark.parametrize("rollout_size,expected", [(1280, 640), (320, 320), (64, 64), (257, 257)])
+def test_automatic_batch_preserves_complete_minibatches_for_worker_counts(rollout_size, expected):
+    batch_size = _resolve_batch_size(0, rollout_size)
+    assert batch_size == expected
+    assert batch_size > 1 and rollout_size % batch_size == 0
+
+
+def test_explicit_batch_remains_authoritative_and_must_partition_rollout():
+    assert _resolve_batch_size(64, 1280) == 64
+    with pytest.raises(ValueError, match="divide"):
+        _resolve_batch_size(256, 320)
+
+
+def test_verified_resume_requires_identical_frozen_contract():
+    parent = _identity({"objective": "net_calmar", "n_steps": 3158})
+    child = _identity(
+        {"objective": "net_calmar", "n_steps": 3158},
+        parent=parent["identity_sha256"],
+    )
+    _assert_verified_resume_compatible(parent, child)
+
+    changed = _identity(
+        {"objective": "relative_baseline", "n_steps": 3158},
+        parent=parent["identity_sha256"],
+    )
+    with pytest.raises(ValueError, match="contract"):
+        _assert_verified_resume_compatible(parent, changed)
+
+
+def test_optimizer_settings_are_part_of_the_frozen_contract():
+    parent = _identity({"learning_rate": 3e-4, "target_kl": 0.03})
+    changed = _identity(
+        {"learning_rate": 1e-4, "target_kl": 0.03},
+        parent=parent["identity_sha256"],
+    )
+    with pytest.raises(ValueError, match="contract"):
+        _assert_verified_resume_compatible(parent, changed)
+
+
+def test_parent_model_identity_is_checked_before_rebinding():
+    parent = _identity({"objective": "net_calmar", "n_steps": 3158})
+    model = SimpleNamespace(
+        wbr_run_identity_version=RUN_IDENTITY_VERSION,
+        wbr_run_identity_sha256=parent["identity_sha256"],
+    )
+    _assert_model_identity(model, parent, label="parent selected checkpoint")
+
+    model.wbr_run_identity_sha256 = "f" * 64
+    with pytest.raises(ValueError, match="parent selected checkpoint"):
+        _assert_model_identity(model, parent, label="parent selected checkpoint")
+
+
+def test_static_benchmark_cache_is_bound_to_frozen_contract_and_tamper_evident():
+    summary = {
+        "metrics": {"calmar": 1.25},
+        "reward_schema_version": REWARD_SCHEMA_VERSION,
     }
-
-
-def test_post_update_evaluation_is_kept_when_scheduled_timestep_matches(tmp_path):
-    callback = _callback(tmp_path)
-    scheduled = _record(
-        callback,
-        score=1.01,
-        timesteps=256,
-        phase="scheduled",
+    cache = _seal_static_benchmark(
+        contract_sha256="a" * 64,
+        train=summary,
+        validation=summary,
     )
-    post_update = _record(
-        callback,
-        score=1.03,
-        timesteps=256,
-        phase="post_update",
-    )
+    validated = _validate_static_benchmark(cache, contract_sha256="a" * 64)
+    assert validated["train"] == summary
 
-    assert scheduled["timesteps"] == post_update["timesteps"] == 256
-    assert [row["phase"] for row in callback.history] == [
-        "scheduled",
-        "post_update",
-    ]
-    assert [row["evaluation_index"] for row in callback.history] == [1, 2]
-    assert callback.best_trained_step == 256
-    assert callback.best_trained_phase == "post_update"
-
-    calls: list[str] = []
-
-    class Probe:
-        def evaluate_current_model(self, *, phase):
-            calls.append(phase)
-            return {"phase": phase}
-
-    assert _record_post_update_evaluation(Probe()) == {"phase": "post_update"}
-    assert calls == ["post_update"]
+    tampered = json.loads(json.dumps(cache))
+    tampered["train"]["metrics"]["calmar"] = 99.0
+    with pytest.raises(ValueError, match="SHA"):
+        _validate_static_benchmark(tampered, contract_sha256="a" * 64)
 
 
-def test_checkpoint_zero_cannot_become_a_best_trained_checkpoint(tmp_path):
-    callback = _callback(tmp_path)
-    row = _record(
-        callback,
-        score=2.0,
-        timesteps=128,
-        ppo_updates=0,
-    )
-
-    assert row["eligible_checkpoint"] is False
-    assert row["improved"] is False
-    assert callback.best_trained_step is None
-    assert not callback.best_path.with_suffix(".zip").exists()
-
-
-def test_no_eligible_checkpoint_saves_final_diagnostic_and_selects_checkpoint_zero(
-    tmp_path,
-    monkeypatch,
-):
-    callback = _callback(tmp_path)
-    checkpoint_zero = tmp_path / "checkpoint_0.zip"
-    checkpoint_zero.write_bytes(b"checkpoint-zero")
-    final_model = _SavingModel()
-    loaded: list[Path] = []
-    selected_model = object()
-
-    def fake_load(path, *, env, device):
-        assert env == "train-env"
-        assert device == "cpu"
-        loaded.append(Path(path))
-        return selected_model
-
-    monkeypatch.setattr(train_module.PPO, "load", staticmethod(fake_load))
-    selected, selection = _select_model_after_training(
-        final_model,
-        callback,
-        "train-env",
-        tmp_path,
-    )
-
-    assert selected is selected_model
-    assert loaded == [checkpoint_zero]
-    assert selection == {
-        "source": "checkpoint_0",
-        "selected_step": 0,
-        "selected_phase": "initial",
-        "best_trained_step": None,
-        "best_trained_phase": None,
-        "trained_final_model": "trained_final_model.zip",
-        "selected_file": "checkpoint_0.zip",
+def test_static_benchmark_is_populated_incrementally():
+    summary = {
+        "metrics": {"calmar": 1.25},
+        "reward_schema_version": REWARD_SCHEMA_VERSION,
     }
-    assert (tmp_path / "trained_final_model.zip").exists()
-    assert not (tmp_path / "best_train_model.zip").exists()
-
-    gates = {name: True for name in DEPLOYMENT_GATE_NAMES}
-    gates["trained_checkpoint_selected"] = False
-    assert _technical_convergence(gates) is False
-    gates["trained_checkpoint_selected"] = True
-    assert _technical_convergence(gates) is True
-    gates[DEPLOYMENT_GATE_NAMES[0]] = False
-    assert _technical_convergence(gates) is False
+    cache = _seal_static_benchmark(
+        contract_sha256="a" * 64,
+        train=summary,
+        validation=None,
+    )
+    validated = _validate_static_benchmark(cache, contract_sha256="a" * 64)
+    assert validated["validation"] is None
 
 
-def test_real_eligible_checkpoint_is_selected_without_final_diagnostic(
-    tmp_path,
-    monkeypatch,
-):
-    callback = _callback(tmp_path)
-    _record(callback, score=1.1, timesteps=512, phase="post_update")
-    final_model = _SavingModel()
-    loaded: list[Path] = []
-    selected_model = object()
 
-    def fake_load(path, *, env, device):
-        loaded.append(Path(path))
-        return selected_model
 
-    monkeypatch.setattr(train_module.PPO, "load", staticmethod(fake_load))
-    selected, selection = _select_model_after_training(
-        final_model,
-        callback,
-        "train-env",
-        tmp_path,
+def test_continuation_claim_cannot_be_reused(tmp_path):
+    path = tmp_path / LIFECYCLE_CLAIM_FILE
+    _claim_lifecycle(
+        path,
+        mode="continuation",
+        run_identity_sha256="a" * 64,
+        child_identity_sha256="b" * 64,
     )
 
-    assert selected is selected_model
-    assert loaded == [tmp_path / "best_train_model.zip"]
-    assert selection["source"] == "best_trained_model"
-    assert selection["selected_step"] == 512
-    assert selection["selected_phase"] == "post_update"
-    assert selection["trained_final_model"] is None
-    assert not (tmp_path / "trained_final_model.zip").exists()
-
-
-def test_plateau_uses_cumulative_material_anchor_not_drifting_best_score():
-    state = _TrainCheckpointState(initial_score=1.0)
-    material_flags = []
-    for evaluation_index, score in enumerate(
-        (1.005, 1.010, 1.015, 1.020001),
-        start=1,
-    ):
-        improved, material_improved = state.observe(
-            score=score,
-            eligible=True,
-            timesteps=evaluation_index * 100,
-            phase="scheduled",
-            evaluation_index=evaluation_index,
+    with pytest.raises(ValueError, match="already"):
+        _claim_lifecycle(
+            path,
+            mode="continuation",
+            child_identity_sha256="c" * 64,
+            run_identity_sha256="a" * 64,
         )
-        assert improved is True
-        material_flags.append(material_improved)
 
-    assert MATERIAL_SCORE_IMPROVEMENT == 0.02
-    assert material_flags == [False, False, False, True]
-    assert state.best_score == pytest.approx(1.020001)
-    assert state.material_best_score == pytest.approx(1.020001)
-    assert state.last_material_improvement_eval == 4
-    assert state.plateau_reached(4 + PLATEAU_EVALUATIONS - 1) is False
-    assert state.plateau_reached(4 + PLATEAU_EVALUATIONS) is True
+
+def test_training_source_declares_the_only_objective_and_standard_ppo():
+    source = Path(train_module.__file__).read_text("utf-8")
+
+    assert CHECKPOINT_SELECTION_OBJECTIVE == "full_validation_calmar"
+    assert "from stable_baselines3 import PPO" in source
+    assert "FoldRobustPPO" not in source
+    assert "TrainGateRecovery" not in source
+    assert "reference_config=" not in source
+    assert "def _json_write" not in source
+    assert ".write_text(" not in source
+    assert "atomic_write_json(" in source
+    assert "PPO_GAMMA = 0.99" in source
+    assert "PPO_GAE_LAMBDA = 0.95" in source
+    assert '"ent_coef": 0.0' in source
+    assert "_pretest_qualification" not in source
+    assert "holdout_mode" not in source
+
+
+def test_parser_requires_runtime_and_keeps_config_as_external_benchmark():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args([])
+    args = build_parser().parse_args(["--runtime", "runtime.npz"])
+
+    assert isinstance(args, argparse.Namespace)
+    assert args.config == "configs/config.json"
+    assert (args.train_start, args.train_end) == ("2004-04-28", "2017-12-31")
+    assert (args.validation_start, args.validation_end) == ("2018-01-01", "2022-12-31")
+    assert (args.test_start, args.test_end) == ("2023-01-01", "2026-08-28")
+    assert args.batch_size == 640
+    assert args.rollouts == 100000
+    assert args.n_steps == 64
+    assert args.n_envs == 20
+    assert args.episode_scope == "full"
+    assert args.eval_every_rollouts == 50
+    assert args.device == "cuda"
+    assert args.learning_rate == pytest.approx(3e-4)
+    assert args.n_epochs == 3
+    assert args.target_kl is None
+    assert args.seed is None
+    assert args.learning_rate_end_fraction == 1.0
+    assert args.training_slippage_rate == args.evaluation_slippage_rate == pytest.approx(0.0025)
+
+
+
+
+def test_failure_before_report_initialization_keeps_original_error(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    def rejected(*_):
+        raise RuntimeError('before initialization')
+    monkeypatch.setattr(train_module, '_train', rejected)
+    with pytest.raises(RuntimeError, match='before initialization'):
+        train(SimpleNamespace(output=str(tmp_path / 'absent')))
+
+
+def test_rejected_output_does_not_overwrite_an_existing_run(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    report = tmp_path / 'training_report.json'
+    report.write_text('{"state":"complete"}', encoding='utf8')
+    def rejected(*_):
+        raise FileExistsError('existing output')
+    monkeypatch.setattr(train_module, '_train', rejected)
+    with pytest.raises(FileExistsError):
+        train(SimpleNamespace(output=str(tmp_path)))
+    assert report.read_text(encoding='utf8') == '{"state":"complete"}'

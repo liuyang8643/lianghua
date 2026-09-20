@@ -15,20 +15,6 @@ class FilterST:
         return np.where(panel["st_mask"], np.nan, 1.0)
 
 
-class FilterStarST:
-    """Exclude *ST when a separate historical mask is available.
-
-    Older runtime files only contain the combined ``st_mask``.  They are
-    intentionally treated conservatively until rebuilt with ``star_st_mask``.
-    """
-
-    hist_days = 0
-
-    def calc_batch(self, panel: dict) -> np.ndarray:
-        mask = panel.get("star_st_mask", panel["st_mask"])
-        return np.where(mask, np.nan, 1.0)
-
-
 class FilterLowPrice:
     """Exclude stocks whose raw open price is below the configured floor."""
 

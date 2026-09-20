@@ -1,6 +1,6 @@
 """科创板（688）与北交所（83/87/43/92）买卖合法性真实数据测试。
 
-用生产 runtime NPZ 里的真实股票 + 真实日期样本，断言 core/legality.LegalityChecker
+用生产 runtime NPZ 里的真实股票 + 真实日期样本，断言唯一生产合法性函数
 （经 conftest 的 `market` fixture 封装）对各涨跌停规则 case 的判定与预期一致。
 
 样本均为 (code, date) 硬编码，注释写明 bar 关键数值（open/preclose/涨跌幅%/st/board），

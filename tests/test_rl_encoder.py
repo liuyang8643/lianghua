@@ -1,272 +1,204 @@
 from __future__ import annotations
-
 from dataclasses import replace
-
+import json
 import numpy as np
 import pytest
-
-from env.contracts import Observation
-from env.encoder import (
-    ObservationEncoder,
-    StaticMarketEncodingCache,
-    TrainOnlyNormalizer,
-)
-from env.observation import ObservationBuilder
-from test_rl_observation import sample_account, synthetic_inputs
+from env.encoder import ObservationEncoder, EncodedObservationSchema, RawMarketStore, TrainOnlyNormalizer
+from env.observation import RAW_MISSING_VALUE
+from offline_data.financial_versions import RAW_FINANCIAL_VALUE_NAMES
+from env.shared_episode import SharedPreparedEpisodeOwner
+from test_rl_observation import synthetic_inputs, sample_account, make_builder
+from rl_test_data import build_episode, fit_normalizer
 
 
-def copy_observation(observation: Observation, **changes) -> Observation:
-    values = {
-        "stock_panel": observation.stock_panel.copy(),
-        "market_panel": observation.market_panel.copy(),
-        "position_panel": observation.position_panel.copy(),
-        "portfolio": observation.portfolio.copy(),
-        "feature_mask": observation.feature_mask.copy(),
-        "stock_mask": observation.stock_mask.copy(),
-        "time_mask": observation.time_mask.copy(),
-        "schema_version": observation.schema_version,
-        "decision_date": observation.decision_date,
-    }
-    values.update(changes)
-    return Observation(**values)
+def fixture_raw():
+    runtime,factors=synthetic_inputs(date_count=10)
+    builder=make_builder(runtime,factors,lookback=4)
+    encoder=ObservationEncoder(builder.schema)
+    store=RawMarketStore.precompute(builder,range(4,9),chunk_rows=2)
+    return runtime,factors,builder,encoder,store
 
 
-def test_encoder_is_deterministic_finite_and_independent_of_stock_count() -> None:
-    runtime, factors = synthetic_inputs()
-    builder = ObservationBuilder(runtime, factors, lookback=4)
-    encoder = ObservationEncoder(builder.schema)
-    observation = builder.build(5, sample_account(runtime))
-
-    first = encoder.encode(observation)
-    second = encoder.encode(observation)
-
-    np.testing.assert_array_equal(first, second)
-    assert first.shape == (encoder.output_dimension,)
-    assert first.dtype == np.float32
-    assert np.isfinite(first).all()
-    assert encoder.output_schema.dimension == len(encoder.output_schema.feature_names)
-    assert len(encoder.output_schema.schema_hash) == 64
-
-    larger_codes = tuple(f"{index:06d}.SZ" for index in range(7))
-    larger_runtime, larger_factors = synthetic_inputs(stock_codes=larger_codes)
-    larger_builder = ObservationBuilder(larger_runtime, larger_factors, lookback=4)
-    larger_encoder = ObservationEncoder(larger_builder.schema)
-    assert larger_encoder.output_dimension == encoder.output_dimension
-    assert larger_encoder.output_schema.feature_names == encoder.output_schema.feature_names
+def test_transport_is_lossless_account_and_local_ref_only():
+    runtime,_,builder,encoder,store=fixture_raw()
+    obs=builder.build(5,sample_account(runtime))
+    encoded=encoder.encode(obs,store=store)
+    schema=encoder.output_schema
+    assert schema.dimension==1+3*4+4+4*15
+    assert encoded[0]==4
+    np.testing.assert_array_equal(encoded[schema.position_slice].reshape(3,4),obs.position_panel)
+    np.testing.assert_array_equal(encoded[schema.portfolio_slice],obs.portfolio)
+    np.testing.assert_array_equal(encoded[schema.history_slice].reshape(4,15),obs.policy_history)
+    assert len(schema.feature_names)==schema.dimension
+    assert EncodedObservationSchema.from_dict(schema.to_dict())==schema
+    assert schema.feature_names[0]=="transport.raw_row_ref"
 
 
-def test_every_registered_panel_and_account_dimension_is_consumed() -> None:
-    runtime, factors = synthetic_inputs()
-    builder = ObservationBuilder(runtime, factors, lookback=4)
-    encoder = ObservationEncoder(builder.schema)
-    observation = builder.build(5, sample_account(runtime))
-    baseline = encoder.encode(observation)
-
-    for feature_index in range(observation.stock_panel.shape[2]):
-        changed_panel = observation.stock_panel.copy()
-        changed_panel[-1, 0, feature_index] += np.float32(0.123 + feature_index / 100.0)
-        changed = encoder.encode(copy_observation(observation, stock_panel=changed_panel))
-        assert not np.array_equal(changed, baseline), f"stock feature {feature_index} was ignored"
-
-    # The oldest row and last stock must contribute as well.
-    changed_panel = observation.stock_panel.copy()
-    changed_panel[0, -1, 0] += 3.0
-    assert not np.array_equal(
-        encoder.encode(copy_observation(observation, stock_panel=changed_panel)), baseline
-    )
-
-    for feature_index in range(observation.market_panel.shape[1]):
-        changed_market = observation.market_panel.copy()
-        changed_market[0, feature_index] += np.float32(0.25)
-        changed = encoder.encode(copy_observation(observation, market_panel=changed_market))
-        assert not np.array_equal(changed, baseline), f"market feature {feature_index} was ignored"
-
-    for feature_index in range(observation.position_panel.shape[1]):
-        changed_positions = observation.position_panel.copy()
-        changed_positions[0, feature_index] += np.float32(0.25)
-        changed = encoder.encode(copy_observation(observation, position_panel=changed_positions))
-        assert not np.array_equal(changed, baseline), f"position feature {feature_index} was ignored"
-
-    for feature_index in range(observation.portfolio.shape[0]):
-        changed_portfolio = observation.portfolio.copy()
-        changed_portfolio[feature_index] += np.float32(0.25)
-        changed = encoder.encode(copy_observation(observation, portfolio=changed_portfolio))
-        assert not np.array_equal(changed, baseline), f"portfolio feature {feature_index} was ignored"
+@pytest.mark.parametrize("dtype", (np.float32, np.float64))
+def test_account_encoding_owns_output_and_keeps_input_dtype_coercion(dtype):
+    runtime,_,builder,encoder,store=fixture_raw()
+    account=builder.build_account(5,sample_account(runtime))
+    account=replace(account,**{name:getattr(account,name).astype(dtype)
+        for name in ("position_panel","portfolio","policy_history")})
+    expected=np.concatenate(([store.row_reference(account.decision_date)],
+        account.position_panel.ravel(),account.portfolio,account.policy_history.ravel())).astype(np.float32)
+    first=encoder.encode_account(account,store)
+    second=encoder.encode_account(account,store)
+    np.testing.assert_array_equal(first,expected)
+    assert first.dtype==np.float32 and first.flags.owndata
+    assert not np.shares_memory(first,second)
+    for name in ("position_panel","portfolio","policy_history"):
+        assert not np.shares_memory(first,getattr(account,name))
+    first[:]=-99
+    np.testing.assert_array_equal(second,expected)
+    np.testing.assert_array_equal(encoder.encode_account(account,store),expected)
 
 
-def test_factor_rank_stock_return_pairing_changes_joint_market_encoding() -> None:
-    runtime, factors = synthetic_inputs()
-    builder = ObservationBuilder(runtime, factors, lookback=4)
-    encoder = ObservationEncoder(builder.schema)
-    observation = builder.build(5, sample_account(runtime))
-    factor_index = builder.schema.stock_feature_names.index(
-        "factor_rank.AmihudIlliquidity"
-    )
-    open_index = builder.schema.stock_feature_names.index("open")
-    preclose_index = builder.schema.stock_feature_names.index("preClose")
-
-    baseline_panel = observation.stock_panel.copy()
-    baseline_panel[-1, :, factor_index] = (0.0, 0.25, 1.0)
-    reordered_panel = baseline_panel.copy()
-    reordered_panel[-1, :, factor_index] = baseline_panel[-1, ::-1, factor_index]
-    stock_returns = (
-        baseline_panel[-1, :, open_index]
-        / baseline_panel[-1, :, preclose_index]
-        - 1.0
-    )
-    assert not np.isclose(
-        baseline_panel[-1, :, factor_index] @ stock_returns,
-        reordered_panel[-1, :, factor_index] @ stock_returns,
-    )
-    np.testing.assert_array_equal(
-        np.sort(baseline_panel[-1, :, factor_index]),
-        np.sort(reordered_panel[-1, :, factor_index]),
-    )
-    baseline_observation = copy_observation(
-        observation,
-        stock_panel=baseline_panel,
-    )
-    reordered_observation = copy_observation(
-        observation,
-        stock_panel=reordered_panel,
-    )
-
-    baseline_encoding = encoder.encode_market(baseline_observation)
-    reordered_encoding = encoder.encode_market(reordered_observation)
-
-    assert not np.array_equal(baseline_encoding, reordered_encoding)
-    changed_names = {
-        encoder.output_schema.feature_names[index]
-        for index in np.flatnonzero(baseline_encoding != reordered_encoding)
-    }
-    assert any(name.startswith("factor_joint.AmihudIlliquidity") for name in changed_names)
+def test_raw_store_windows_match_same_live_observation_path():
+    runtime,_,builder,encoder,store=fixture_raw()
+    for day in range(4,9):
+        obs=builder.build(day,sample_account(runtime,day))
+        raw,pit,valid=store.window(store.row_reference(obs.decision_date))
+        np.testing.assert_array_equal(raw,obs.stock_panel)
+        np.testing.assert_array_equal(pit,obs.pit_universe_mask)
+        np.testing.assert_array_equal(valid,obs.time_mask)
+        live=RawMarketStore.from_observation(obs,encoder)
+        compact=encoder.encode(obs,store=live)
+        live_raw,live_pit,live_valid=live.window(int(compact[0]))
+        np.testing.assert_array_equal(live_raw,raw)
+        np.testing.assert_array_equal(live_pit,pit)
+        np.testing.assert_array_equal(live_valid,valid)
+    with pytest.raises(ValueError,match="outside"):
+        store.window(store.decision_start-1)
+    with pytest.raises(ValueError,match="outside"):
+        store.window(store.decision_stop)
+    with pytest.raises(ValueError,match="outside"):
+        store.window(float(store.decision_start))
 
 
-def test_holding_same_position_on_different_factor_stock_changes_joint_account_encoding() -> None:
-    runtime, factors = synthetic_inputs()
-    builder = ObservationBuilder(runtime, factors, lookback=4)
-    encoder = ObservationEncoder(builder.schema)
-    cache = StaticMarketEncodingCache.precompute(builder, encoder, (5,))
-    first = builder.build_account(5, sample_account(runtime))
-    moved_positions = np.zeros_like(first.position_panel)
-    moved_positions[2] = first.position_panel[0]
-    second = replace(first, position_panel=moved_positions)
-    np.testing.assert_array_equal(
-        np.sort(first.position_panel, axis=0),
-        np.sort(second.position_panel, axis=0),
-    )
-
-    first_account = encoder.encode_account(first)
-    second_account = encoder.encode_account(second)
-    first_full = cache.encode_account_state(first, encoder)
-    second_full = cache.encode_account_state(second, encoder)
-
-    assert not np.array_equal(first_account, second_account)
-    np.testing.assert_array_equal(
-        first_full[: encoder.market_dimension],
-        second_full[: encoder.market_dimension],
-    )
-    assert not np.array_equal(first_full, second_full)
-    changed_names = {
-        encoder.output_schema.feature_names[encoder.market_dimension + index]
-        for index in np.flatnonzero(first_account != second_account)
-    }
-    assert any(name.startswith("account_factor.") for name in changed_names)
+def test_raw_store_preserves_early_padding_and_readonly_arrays():
+    runtime,factors=synthetic_inputs()
+    builder=make_builder(runtime,factors,lookback=12)
+    store=RawMarketStore.precompute(builder,range(0,5))
+    raw,pit,valid=store.window(0)
+    np.testing.assert_array_equal(raw,builder.build_static(0).stock_panel)
+    assert valid.tolist()==[False]*11+[True]
+    assert not pit[:-1].any()
+    for array in (store.raw_rows,store.pit_universe_mask,store.row_valid):
+        assert not array.flags.writeable
 
 
-def test_future_and_t_post_open_mutations_do_not_change_encoding() -> None:
-    runtime, factors = synthetic_inputs()
-    baseline_builder = ObservationBuilder(runtime, factors, lookback=4)
-    encoder = ObservationEncoder(baseline_builder.schema)
-    baseline = encoder.encode(
-        baseline_builder.build(5, sample_account(runtime))
-    )
-
-    runtime2, factors2 = synthetic_inputs()
-    for field in ("high", "low", "close", "volume", "amount", "total_share"):
-        runtime2.data[field][5:] = 123_456.0
-    factors2.ranks[6:] = 0.999
-    changed_builder = ObservationBuilder(runtime2, factors2, lookback=4)
-    changed = encoder.encode(
-        changed_builder.build(5, sample_account(runtime2))
-    )
-    np.testing.assert_array_equal(changed, baseline)
+@pytest.mark.parametrize("bad",[np.nan,np.inf,-np.inf])
+def test_raw_store_rejects_undeclared_missing_and_nonfinite(bad):
+    *_,store=fixture_raw()
+    raw=store.raw_rows.copy()
+    raw[0,0,0]=bad
+    with pytest.raises(ValueError,match="sentinel"):
+        replace(store,raw_rows=raw)
 
 
-def test_static_market_cache_matches_direct_encoding_exactly() -> None:
-    runtime, factors = synthetic_inputs()
-    builder = ObservationBuilder(runtime, factors, lookback=4)
-    encoder = ObservationEncoder(builder.schema)
-    cache = StaticMarketEncodingCache.precompute(
-        builder,
-        encoder,
-        (4, 5, 6),
-        chunk_rows=2,
-    )
-    account = sample_account(runtime, 5)
-    account_part = builder.build_account(5, account)
-
-    cached = cache.encode_account_state(account_part, encoder)
-    direct = encoder.encode(builder.build(5, account))
-
-    np.testing.assert_array_equal(cached, direct)
-    with pytest.raises(ValueError, match="decision date mismatch"):
-        cache.market_for(5, decision_date="2099-01-01", encoder=encoder)
+def test_signed_raw_financial_values_and_reserved_missing_survive_transport():
+    *_,store=fixture_raw()
+    raw=store.raw_rows.copy()
+    column=store.schema.stock_feature_names.index(RAW_FINANCIAL_VALUE_NAMES[0])
+    raw[0,:,column]=[-0.5,-2.0,RAW_MISSING_VALUE]
+    restored=replace(store,raw_rows=raw)
+    np.testing.assert_array_equal(restored.raw_rows[0,:,column],raw[0,:,column])
 
 
-def test_encoder_fails_fast_on_schema_or_shape_mismatch() -> None:
-    runtime, factors = synthetic_inputs()
-    builder = ObservationBuilder(runtime, factors, lookback=4)
-    encoder = ObservationEncoder(builder.schema)
-    observation = builder.build(5, sample_account(runtime))
+def test_normalizer_only_training_per_field_no_center_clip_or_stock_scales(tmp_path):
+    *_,encoder,store=fixture_raw()
+    norm=TrainOnlyNormalizer.fit(store,encoder.output_schema,dataset_role="train",initial_cash=1e6)
+    assert norm.stock_scale.shape==(37,)
+    assert norm.position_scale.shape==(4,)
+    assert norm.portfolio_scale.tolist()==[1e6,1e6,1e6,1]
+    assert norm.history_scale.shape==(15,)
+    assert not hasattr(norm,"mean") and not hasattr(norm,"clip") and not hasattr(norm,"transform")
+    for i,name in enumerate(encoder.output_schema.stock_feature_names):
+        if name in ("st_mask","price_buy_allowed","price_sell_allowed"):
+            assert norm.stock_scale[i]==1
+    expected=np.sqrt(np.square(store.raw_rows[store.decision_start:store.decision_stop,:,0].astype(np.float64)).mean())
+    assert norm.stock_scale[0]==pytest.approx(expected)
+    with pytest.raises(ValueError,match="sealed train"):
+        TrainOnlyNormalizer.fit(store,encoder.output_schema,dataset_role="validation",initial_cash=1e6)
+    path=tmp_path/"normalizer.json"
+    norm.save(path)
+    restored=TrainOnlyNormalizer.load(path,expected_schema=encoder.output_schema)
+    assert restored.state_hash==norm.state_hash
+    payload=json.loads(path.read_text())
+    payload["stock_scale"][0]+=1
+    with pytest.raises(ValueError,match="hash"):
+        TrainOnlyNormalizer.from_dict(payload)
 
-    wrong_schema = copy_observation(observation, schema_version="other-schema")
-    with pytest.raises(ValueError, match="schema identifier"):
-        encoder.encode(wrong_schema)
 
-    wrong_shape = copy_observation(
-        observation,
-        stock_panel=observation.stock_panel[:, :-1],
-        feature_mask=observation.feature_mask[:, :-1],
-        stock_mask=observation.stock_mask[:, :-1],
-        position_panel=observation.position_panel[:-1],
-    )
-    with pytest.raises(ValueError, match="stock_panel shape mismatch"):
-        encoder.encode(wrong_shape)
+def test_normalizer_excludes_pretraining_rows_missing_and_future_nonmembers():
+    runtime,factors=synthetic_inputs(date_count=10)
+    runtime.data["listing_age"][:,2]=-1
+    runtime.data["open"][:4]=99999
+    runtime.data["open"][4:,2]=1e20
+    runtime.data["amount"][:]=np.nan
+    runtime.data["volume"][:]=0
+    builder=make_builder(runtime,factors,lookback=4)
+    encoder=ObservationEncoder(builder.schema)
+    store=RawMarketStore.precompute(builder,range(4,9))
+    norm=TrainOnlyNormalizer.fit(store,encoder.output_schema,dataset_role="train",initial_cash=1e6)
+    expected=np.sqrt(np.square(runtime.data["open"][4:9,:2].astype(np.float64)).mean())
+    assert norm.stock_scale[builder.schema.stock_feature_names.index("open")]==pytest.approx(expected)
+    assert norm.stock_scale[builder.schema.stock_feature_names.index("amount_lag1")]==1
+    assert norm.stock_scale[builder.schema.stock_feature_names.index("volume_lag1")]==1
 
 
-def test_train_only_normalizer_round_trip_and_role_guard(tmp_path) -> None:
-    runtime, factors = synthetic_inputs()
-    builder = ObservationBuilder(runtime, factors, lookback=4)
-    encoder = ObservationEncoder(builder.schema)
-    account = sample_account(runtime, 5)
-    base = encoder.encode(builder.build(5, account))
-    rows = np.stack((base, base + 0.25, base - 0.5))
+def test_compact_shared_store_references_and_raw_rows_remain_identical(tmp_path):
+    episode=build_episode(tmp_path/"runtime.npz")
+    compact=episode.compact_for_replay()
+    assert compact.market_store.decision_start==episode.market_store.decision_start
+    assert compact.market_store.decision_stop==episode.market_store.decision_stop
+    np.testing.assert_array_equal(compact.market_store.raw_rows,episode.market_store.raw_rows)
+    assert compact.encoder.output_schema.identifier==episode.encoder.output_schema.identifier
+    with SharedPreparedEpisodeOwner.create(episode) as owner:
+        assert owner.descriptor.raw_encoder_schema==episode.encoder.output_schema.identifier
+        with owner.descriptor.attach() as attached:
+            shared=attached.episode
+            assert shared.market_store.decision_start==episode.market_store.decision_start
+            np.testing.assert_array_equal(shared.market_store.raw_rows,episode.market_store.raw_rows)
+            assert not shared.market_store.raw_rows.flags.writeable
+            for date in episode.market_store.decision_dates:
+                assert shared.market_store.row_reference(date)==episode.market_store.row_reference(date)
+            assert fit_normalizer(shared).state_hash==fit_normalizer(episode).state_hash
 
-    with pytest.raises(ValueError, match="training split"):
-        TrainOnlyNormalizer.fit(
-            rows,
-            encoder.output_schema,
-            dataset_role="validation",
-        )
 
-    normalizer = TrainOnlyNormalizer.fit(
-        rows,
-        encoder.output_schema,
-        dataset_role="train",
-    )
-    transformed = normalizer.transform(rows)
-    assert transformed.shape == rows.shape
-    assert np.isfinite(transformed).all()
+def test_raw_store_size_is_rows_not_overlapping_windows():
+    runtime,_,builder,encoder,store=fixture_raw()
+    assert store.raw_rows.shape==(8,3,37)
+    assert encoder.output_dimension<4*3*37
+    assert not hasattr(store,"market_encodings")
 
-    path = tmp_path / "normalizer.json"
-    normalizer.save(path)
-    loaded = TrainOnlyNormalizer.load(path, expected_schema=encoder.output_schema)
-    np.testing.assert_array_equal(loaded.mean, normalizer.mean)
-    np.testing.assert_array_equal(loaded.scale, normalizer.scale)
-    np.testing.assert_array_equal(loaded.transform(rows), transformed)
 
-    tampered = normalizer.to_dict()
-    tampered["clip"] = 1.0
-    with pytest.raises(ValueError, match="state hash"):
-        TrainOnlyNormalizer.from_dict(tampered)
+def test_future_listings_do_not_change_raw_members_or_field_scales():
+    runtime,factors=synthetic_inputs(date_count=10)
+    extended,extended_factors=synthetic_inputs(date_count=10,
+        stock_codes=runtime.stock_codes+("600099.SH",))
+    for name,array in runtime.data.items():
+        extended.data[name][...,:3]=array
+    extended.data["listing_age"][:,-1]=-1
+    for name in ("ranks","validity","filters"):
+        getattr(extended_factors,name)[...,:3]=getattr(factors,name)
+    base_builder=make_builder(runtime,factors)
+    extra_builder=make_builder(extended,extended_factors)
+    base=RawMarketStore.precompute(base_builder,range(4,9))
+    extra=RawMarketStore.precompute(extra_builder,range(4,9))
+    np.testing.assert_array_equal(base.raw_rows,extra.raw_rows[:,:3])
+    assert not extra.raw_rows[:,-1].any()
+    normalizers=[TrainOnlyNormalizer.fit(store,ObservationEncoder(store.schema).output_schema,
+        dataset_role="train",initial_cash=1e6) for store in (base,extra)]
+    for field in ("stock_scale","position_scale","portfolio_scale","history_scale"):
+        np.testing.assert_array_equal(getattr(normalizers[0],field),getattr(normalizers[1],field))
+
+
+def test_prepared_episode_rejects_misbound_store_schema_and_dates(tmp_path):
+    episode=build_episode(tmp_path/"runtime.npz")
+    store=episode.market_store
+    with pytest.raises(ValueError,match="schemas differ"):
+        replace(episode,market_store=replace(store,schema=replace(store.schema,action_schema_hash="f"*64)))
+    with pytest.raises(ValueError,match="calendar"):
+        replace(episode,market_store=replace(store,decision_dates=store.decision_dates[::-1]))

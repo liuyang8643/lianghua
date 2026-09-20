@@ -4,48 +4,77 @@ import numpy as np
 import pytest
 
 from env.metrics import (
-    interval_rewards,
+    CALMAR_DRAWDOWN_EPSILON,
+    MAX_DRAWDOWN_PENALTY_WEIGHT,
+    EpisodeRewardState,
+    REWARD_SCHEMA_VERSION,
+    StreamingPerformanceState,
     performance_from_log_rewards,
-    robust_calmar,
 )
 
 
-def test_metrics_use_compounded_open_to_open_log_rewards():
-    rewards = np.log1p(np.asarray((0.10, -0.05, 0.02)))
-    metrics = performance_from_log_rewards(rewards)
+def test_reward_is_positive_horizon_scaling_of_annualized_objective():
+    returns = np.asarray((0.02, -0.01, 0.03, -0.005), dtype=np.float64)
+    state = EpisodeRewardState.initial(len(returns))
+    rewards = []
+    previous_max_drawdown = 0.0
+    previous_annualized_return = 0.0
+    for value in returns:
+        state, reward = state.advance(float(np.log1p(value)))
+        rewards.append(reward.reward)
+        assert reward.annualized_return_increment == pytest.approx(
+            reward.metrics.annualized_return - previous_annualized_return
+        )
+        assert reward.drawdown_increment_penalty == pytest.approx(
+            MAX_DRAWDOWN_PENALTY_WEIGHT
+            * (reward.metrics.max_drawdown - previous_max_drawdown)
+        )
+        previous_annualized_return = reward.metrics.annualized_return
+        previous_max_drawdown = reward.metrics.max_drawdown
 
-    assert metrics.total_return == pytest.approx(1.10 * 0.95 * 1.02 - 1.0)
-    assert metrics.max_drawdown == pytest.approx(0.05)
-    assert metrics.transition_count == 3
-    assert math.isfinite(metrics.sharpe)
-
-
-def test_interval_requires_both_ends_inside_the_fold():
-    rewards = np.asarray((0.1, 0.2, 0.3))
-    decision = ("2020-12-31", "2021-01-01", "2021-01-02")
-    following = ("2021-01-01", "2021-01-02", "2021-01-03")
-
-    selected = interval_rewards(
-        rewards,
-        decision,
-        following,
-        "2021-01-01",
-        "2021-01-02",
+    final_metrics = performance_from_log_rewards(np.log1p(returns))
+    assert sum(rewards) == pytest.approx(
+        len(returns) / 252 * (final_metrics.annualized_return - final_metrics.max_drawdown)
     )
-    np.testing.assert_array_equal(selected, np.asarray((0.2,)))
-
-
-def test_robust_calmar_reports_full_and_each_sealed_fold():
-    simple = np.asarray((0.02, -0.01, 0.03, -0.02, 0.01, 0.01))
-    rewards = np.log1p(simple)
-    decision = tuple(f"2020-01-0{day}" for day in range(1, 7))
-    following = tuple(f"2020-01-0{day}" for day in range(2, 8))
-
-    result = robust_calmar(
-        rewards,
-        decision,
-        following,
-        (("2020-01-01", "2020-01-03"), ("2020-01-03", "2020-01-05")),
+    assert state.is_complete
+    assert (
+        REWARD_SCHEMA_VERSION
+        == "horizon-balanced-return-incremental-max-drawdown-v4"
     )
-    assert len(result["folds"]) == 2
-    assert result["full"]["transition_count"] == 6
+
+
+def test_prefix_annualization_zero_pads_unobserved_tail():
+    state = StreamingPerformanceState.initial(252).advance(math.log1p(0.10))
+    metrics = state.performance()
+
+    assert metrics.total_return == pytest.approx(0.10)
+    assert metrics.annualized_return == pytest.approx(0.10)
+    assert metrics.transition_count == 252
+
+
+def test_reward_compensates_horizon_scale_without_changing_metrics():
+    rewards = []
+    for horizon in (20, 252, 2520):
+        _, reward = EpisodeRewardState.initial(horizon).advance(1e-5)
+        rewards.append(reward.reward)
+        assert reward.horizon_scale == pytest.approx(horizon / 252)
+        assert reward.metrics.total_return == pytest.approx(math.expm1(1e-5))
+        assert reward.reward == pytest.approx(horizon / 252 * math.expm1(252e-5 / horizon))
+    assert max(rewards) / min(rewards) < 1.0001
+
+
+def test_calmar_is_finite_with_explicit_zero_drawdown_convention():
+    metrics = performance_from_log_rewards(np.log1p(np.full(10, 0.001)))
+
+    assert metrics.max_drawdown == 0.0
+    assert metrics.calmar == pytest.approx(
+        metrics.annualized_return / CALMAR_DRAWDOWN_EPSILON
+    )
+    assert math.isfinite(metrics.calmar)
+
+
+def test_reward_state_rejects_non_finite_net_returns():
+    state = EpisodeRewardState.initial(2)
+
+    with pytest.raises(ValueError, match="finite"):
+        state.advance(float("nan"))
