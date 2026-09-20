@@ -1,12 +1,14 @@
 # WBR 目标架构与开发准则
 
+收敛实验记录（2026-09-20）：commit a07f38b 曾新增 `--log-std-init` 与 `--advantage-baseline synchronized_env_row_mean`（run identity v88）作为 0.0025 滑点下 Calmar 随机游走的对照实验 A；该实验代码已由用户回退，工作树恢复为 v87 基线，两次 expA 启动均未完成任何训练轮次（目录保留于 artifacts/rl/ppo11_expA_*）。后续收敛优化以本快照为起点重新实施并另行记录。
+
 最新调仓覆盖（2026-09-19）：用户撤回关闭再平衡的要求，恢复唯一daily_equalize_then_cash_sweep实现及environment v36/planner v6，与当前冻结训练一致。超配减仓、低配补买、排名换股和现金sweep保留；单边滑点仍为0.0025。
 
 最新费用覆盖（2026-09-19）：GA、PPO rollout、全部评估和当前静态基准统一单边slippage_rate=0.0025，唯一默认值由env.fees.FeeSchedule定义，PPO CLI引用该值。佣金、过户费、印花税不变；旧0.001运行保留审计，不沿旧费用身份续训。
 
 最新用户覆盖（2026-09-19）：GA与PPO默认rollout worker统一20，由configs.training.DEFAULT_ROLLOUT_WORKERS定义。PPO默认episode_scope=full，账户从完整训练期起点连续推进到终点后才reset；n_steps=64保持，每个环境采64条后执行PPO更新，不要求先采完整训练期才更新。此次新训练沿用batch640、3epochs、固定3e-4及每50轮三段评估，使用新随机root并封存full采样身份。
 
-当前PPO默认：100000轮、20env、n_steps=64、batch_size=640、n_epochs=3、固定learning_rate=3e-4、gamma=0.99、gae_lambda=0.95、target_kl=None、seed=None。其余算法设置继承SB3；标准DiagGaussianDistribution、Linear mean、log_std_init=0，环境动作裁剪到Box[-1,1]后由唯一ActionSchema映射到11个[0,1]权重与[0,0.2]换股比例。
+当前PPO默认：100000轮、20env、n_steps=64、batch_size=640、n_epochs=3、固定learning_rate=3e-4、gamma=0.99、gae_lambda=0.95、target_kl=None、seed=None。其余算法设置继承SB3；标准DiagGaussianDistribution、Linear mean、log_std_init默认0（实验可覆盖）、环境动作裁剪到Box[-1,1]后由唯一ActionSchema映射到11个[0,1]权重与[0,0.2]换股比例。
 
 PPO只保留固定周期评估：随机初始化、第50/100/150…轮及结束时，用同一checkpoint分别回放训练、验证、测试完整周期。每个split只准备一次并驻留只读共享内存，评估按顺序串行执行。仅按验证Calmar选模，测试仅诊断，不参与梯度、训练奖励或选模；静态配置仅作参考。没有训练成绩门槛、解封状态、一次测试限制或Calmar 1.5资格门槛。已反复观察的测试期不称为盲测。保留有限值、满仓、数据因果、schema/source/hash及同身份线性续训检查。
 

@@ -31,7 +31,6 @@ from ai.rl.train import (
 from ai.bundle import BundleManifest
 from ai.rl.device import require_cuda_device
 from env.metrics import REWARD_SCHEMA_VERSION
-from utils.atomic_file import file_sha256
 
 
 from rl_test_data import write_runtime
@@ -46,10 +45,9 @@ def test_removed_migration_cli_is_rejected_before_loading_data(option):
 @pytest.fixture
 def synthetic_financial_snapshot_verifier(monkeypatch):
     """Only synthetic training integrations bypass the real archive verifier."""
-    verifier = Mock(side_effect=lambda runtime_path: {
+    verifier = Mock(return_value={
         "manifest_sha256": "a" * 64,
-        # The completion guard re-hashes the runtime file against this value.
-        "snapshot_sha256": file_sha256(Path(runtime_path)),
+        "snapshot_sha256": "b" * 64,
         "financial_identity": {"sha256": "c" * 64},
         "panel_builder_version": "synthetic-financial-panel-v1",
         "financial_replay_version": "synthetic-financial-replay-v1",
