@@ -18,7 +18,8 @@ def _current_static_config() -> dict:
 def test_action_layout_and_box_bounds_are_stable():
     schema = ActionSchema()
 
-    assert schema.schema_version == "day-config-v19-closed-unit-weights"
+    assert schema.schema_version == "day-config-v20-turnover-floor"
+    assert (schema.layout[-1].minimum, schema.layout[-1].maximum) == (0.05, 0.2)
     assert schema.action_dim == 12
     assert schema.action_names == (
         *(f"factor_weight.{name}" for name in CORE_FACTOR_NAMES),
@@ -38,8 +39,8 @@ def test_decode_handles_boundaries_with_fixed_controls():
     low_action[0] = -0.5
     low = schema.decode(low_action)
     assert low.buy_n == 50
-    assert low.turnover_rate == 0.0
-    assert low.replacement_limit == 0
+    assert low.turnover_rate == 0.05  # production floor: always examine the two worst holdings
+    assert low.replacement_limit == 2
     assert low.limit_up_protection is True
     assert low.rebalance_band_pct == 0.01
     assert low.single_buy_pct == pytest.approx(1.0 / low.buy_n)
@@ -65,7 +66,7 @@ def test_turnover_is_continuous_and_roundtrips_without_a_codebook():
         action[-1] = coordinate
         decoded = schema.decode(action)
         assert decoded.buy_n == 50 and decoded.single_buy_pct == .02
-        assert decoded.turnover_rate == pytest.approx((float(coordinate) + 1.0) / 10.0, abs=6e-8)
+        assert decoded.turnover_rate == pytest.approx(0.05 + (float(coordinate) + 1.0) / 2.0 * 0.15, abs=6e-8)
         np.testing.assert_array_equal(schema.encode(schema.canonicalize_day_config(decoded)), schema.encode(decoded))
         rates.append(decoded.turnover_rate)
     assert len(set(rates)) == 301
@@ -76,9 +77,9 @@ def test_turnover_is_continuous_and_roundtrips_without_a_codebook():
 def test_turnover_rate_is_independent_of_fixed_portfolio_size():
     small, large = ActionSchema(), ActionSchema(fixed_buy_n=300)
     action = np.zeros(small.action_dim, dtype=np.float32)
-    action[-1] = 0.25  # exactly representable 12.5%, independent of buy_n
+    action[-1] = 0.0  # unit 0.5 -> 0.05 + 0.5 * 0.15 = 12.5%, independent of buy_n
     left, right = small.decode(action), large.decode(action)
-    assert left.turnover_rate == right.turnover_rate == 0.125
+    assert left.turnover_rate == right.turnover_rate == pytest.approx(0.125)
     assert left.replacement_limit == 6
     assert right.replacement_limit == 37
     assert small.action_dim == large.action_dim == 12

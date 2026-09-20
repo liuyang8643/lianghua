@@ -32,7 +32,7 @@ def test_current4_is_the_only_ga_profile_and_uses_production_vocabulary():
     assert "seed_weights" not in profile
     assert set(get_profile_weight_search_spaces()) == set(ActionSchema().factor_names)
     assert profile["search_spaces"] == {
-        "turnover_rate": [0.0, 0.2],
+        "turnover_rate": [0.05, 0.2],
     }
     with pytest.raises(ValueError, match="only supports"):
         get_profile("v9_dual_shadow")

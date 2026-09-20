@@ -59,11 +59,15 @@ class ActionSchema:
     factor_names: tuple[str, ...] = CORE_FACTOR_NAMES
     filter_names: tuple[str, ...] = CORE_FILTER_NAMES
     fixed_buy_n: int = FIXED_BUY_N
+    # 2026-09-21 user override: the production turnover action explores [0.05, 0.2] so the
+    # policy always examines at least floor(buy_n*0.05)=2 worst holdings; the X=0/1 region was a
+    # low-Calmar trap (train Calmar 0.31~0.65) that noisy early PPO gradients drifted into.
+    turnover_minimum: float = 0.05
     turnover_maximum: float = 0.2
     fixed_filter_flags: tuple[bool, ...] = (True, True)
     fixed_limit_up_protection: bool = True
     fixed_rebalance_band_pct: float = 0.01
-    schema_version: str = "day-config-v19-closed-unit-weights"
+    schema_version: str = "day-config-v20-turnover-floor"
     _layout: tuple[ActionField, ...] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -78,6 +82,10 @@ class ActionSchema:
             raise ValueError("fixed_buy_n must be a positive int")
         if isinstance(self.turnover_maximum, bool) or not math.isfinite(self.turnover_maximum) or not 0 < self.turnover_maximum <= 1:
             raise ValueError("turnover_maximum must be finite and in (0, 1]")
+        if (isinstance(self.turnover_minimum, bool) or not math.isfinite(self.turnover_minimum)
+                or not 0 <= self.turnover_minimum < self.turnover_maximum):
+            raise ValueError("turnover_minimum must be finite and in [0, turnover_maximum)")
+        object.__setattr__(self, "turnover_minimum", float(self.turnover_minimum))
         object.__setattr__(self, "turnover_maximum", float(self.turnover_maximum))
         if len(self.fixed_filter_flags) != len(self.filter_names) or any(
             type(value) is not bool for value in self.fixed_filter_flags
@@ -93,7 +101,8 @@ class ActionSchema:
         layout: list[ActionField] = []
         for name in self.factor_names:
             layout.append(ActionField(len(layout), f"factor_weight.{name}", "continuous", 0.0, 1.0))
-        layout.append(ActionField(len(layout), "turnover_rate", "continuous", 0.0, self.turnover_maximum))
+        layout.append(ActionField(len(layout), "turnover_rate", "continuous",
+                                  self.turnover_minimum, self.turnover_maximum))
         object.__setattr__(self, "_layout", tuple(layout))
 
     @property
@@ -121,6 +130,7 @@ class ActionSchema:
             "factor_names": list(self.factor_names),
             "filter_names": list(self.filter_names),
             "fixed_buy_n": self.fixed_buy_n,
+            "turnover_minimum": self.turnover_minimum,
             "turnover_maximum": self.turnover_maximum,
             "replacement_rule": "count(canonical_box_float32(rate) >= canonical_box_float32(k/buy_n), k=1..buy_n); worst-held-only; outside-full-PIT-top-buy_n",
             "canonical_precision": {
@@ -167,6 +177,7 @@ class ActionSchema:
             factor_names=tuple(str(value) for value in payload["factor_names"]),
             filter_names=tuple(str(value) for value in payload["filter_names"]),
             fixed_buy_n=int(payload["fixed_buy_n"]),
+            turnover_minimum=payload["turnover_minimum"],
             turnover_maximum=payload["turnover_maximum"],
             fixed_filter_flags=tuple(bool(value) for value in payload["fixed_filter_flags"]),
             fixed_limit_up_protection=bool(payload["fixed_limit_up_protection"]),

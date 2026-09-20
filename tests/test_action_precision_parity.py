@@ -17,15 +17,23 @@ from env.gym_adapter import WBRGymEnv
 from test_backtest_lightweight import canonical_episode, assert_trace_equal
 
 
+def _turnover_unit(schema: ActionSchema, rate: float) -> float:
+    """Field-relative unit coordinate of a physical turnover rate."""
+    field = schema.layout[-1]
+    return (rate - field.minimum) / (field.maximum - field.minimum)
+
+
 @pytest.mark.parametrize("buy_n", [50, 300])
 def test_all_integer_boundaries_have_identical_static_ga_and_ppo_counts(buy_n):
     schema = ActionSchema(fixed_buy_n=buy_n)
     raw_base = schema.decode(np.zeros(schema.action_dim))
-    maximum_count = int(buy_n * schema.layout[-1].maximum)
-    parameters = th.full((maximum_count + 1, schema.action_dim), 0.5)
-    parameters[:, 11] = th.arange(maximum_count + 1) / maximum_count
+    field = schema.layout[-1]
+    counts = [count for count in range(buy_n + 1) if field.minimum <= count / buy_n <= field.maximum]
+    assert len(counts) >= 2
+    parameters = th.full((len(counts), schema.action_dim), 0.5)
+    parameters[:, 11] = th.tensor([_turnover_unit(schema, count / buy_n) for count in counts])
     actions = DiagGaussianDistribution(schema.action_dim).proba_distribution(2 * parameters - 1, th.zeros(schema.action_dim)).mode().clamp(-1, 1).numpy()
-    for count, action in enumerate(actions):
+    for count, action in zip(counts, actions):
         literal_rate = count / buy_n
         raw_static = replace(raw_base, turnover_rate=literal_rate)
         ga = schema.canonicalize_day_config(raw_static)
@@ -97,19 +105,21 @@ def test_real_float32_state_head_and_ga_use_identical_projected_values():
     raw = head(th.randn(64, 16)).detach().clamp(-1, 1)
     parameters = (raw + 1) / 2
     actions = raw.numpy()
+    field = schema.layout[-1]
     for modes, action in zip(parameters.numpy(), actions):
-        genes = build_individual_config(turnover_rate=float(modes[-1]) * schema.layout[-1].maximum,
+        genes = build_individual_config(
+            turnover_rate=field.minimum + float(modes[-1]) * (field.maximum - field.minimum),
             weights=dict(zip(schema.factor_names, map(float, modes[:-1]))))
         assert schema.from_serialized_day_config(genes) == schema.decode(action)
 
 
-@pytest.mark.parametrize("rate", [0.0, 0.02, 0.06, 0.1, 0.12, 0.2])
+@pytest.mark.parametrize("rate", [0.05, 0.06, 0.1, 0.12, 0.2])
 def test_same_canonical_ga_and_ppo_actions_produce_identical_complete_account_paths(canonical_episode, rate):
     schema = ActionSchema()
     config = schema.from_serialized_day_config(build_individual_config(turnover_rate=rate,
         weights=dict.fromkeys(schema.factor_names, 0.5)))
     parameters = th.full((1, schema.action_dim), 0.5)
-    parameters[0, schema.action_dim - 1] = rate / schema.layout[-1].maximum
+    parameters[0, schema.action_dim - 1] = _turnover_unit(schema, rate)
     action = DiagGaussianDistribution(schema.action_dim).proba_distribution(2 * parameters - 1, th.zeros(schema.action_dim)).mode().clamp(-1, 1).numpy()[0]
     ga_trace = run_day_config_episode(EpisodeSession(canonical_episode), lambda _: config)
     ppo_trace = run_episode(WBRGymEnv(canonical_episode), lambda _: action)
@@ -128,7 +138,7 @@ def test_static_parser_fixed_providers_ga_and_ppo_share_canonical_execution(cano
 
     ga = schema.from_serialized_day_config(build_individual_config(
         turnover_rate=payload["turnover_rate"], weights=dict(config.factor_weights)))
-    modes = th.tensor([[*config.factor_weights.values(), payload["turnover_rate"] / schema.layout[-1].maximum]])
+    modes = th.tensor([[*config.factor_weights.values(), _turnover_unit(schema, payload["turnover_rate"])]])
     parameters = modes
     action = DiagGaussianDistribution(schema.action_dim).proba_distribution(2 * parameters - 1, th.zeros(schema.action_dim)).mode().clamp(-1, 1).numpy()[0]
     assert config == ga == schema.decode(action)
@@ -155,11 +165,11 @@ def test_serialized_day_config_restore_keeps_exact_dto_values():
     assert schema.from_serialized_day_config(schema.to_static_config(config)) == config
 
 
-@pytest.mark.parametrize("rate", [0.0, 0.2])
+@pytest.mark.parametrize("rate", [0.05, 0.2])
 def test_all_zero_weights_share_ga_ppo_static_and_account_paths(canonical_episode, rate):
     schema = ActionSchema()
     action = np.full(schema.action_dim, -1.0, dtype=np.float32)
-    action[-1] = rate * 10 - 1
+    action[-1] = 2 * _turnover_unit(schema, rate) - 1
     config = schema.decode(action)
     assert not any(config.factor_enabled.values())
     genes = build_individual_config(turnover_rate=rate,

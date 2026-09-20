@@ -110,7 +110,7 @@ def build(args):
     def replay(name, batch, config_payload):
         episode = PreparedEpisode.build(runtime, batch, encode_observations=False, prefilter_n=payload['prefilter_n'])
         schema = ActionSchema(factor_names=batch.factor_names, filter_names=batch.filter_names,
-            fixed_buy_n=config_payload["buy_n"], turnover_maximum=1.0)
+            fixed_buy_n=config_payload["buy_n"], turnover_minimum=0.0, turnover_maximum=1.0)
         session = EpisodeSession(episode, action_schema=schema)
         config = session.action_schema.from_static_config(config_payload)
         trace = run_day_config_episode(session, lambda _: config)

@@ -95,7 +95,7 @@ def run_monthly_video_replay(runtime: RuntimeSlice, scores: np.ndarray, *, name:
 
     def config(n):
         n = max(1, int(n))
-        schema = ActionSchema(factor_names=(name,), fixed_buy_n=n, turnover_maximum=1.0,
+        schema = ActionSchema(factor_names=(name,), fixed_buy_n=n, turnover_minimum=0.0, turnover_maximum=1.0,
                               fixed_filter_flags=(False, False), fixed_limit_up_protection=False,
                               fixed_rebalance_band_pct=0.0,
                               schema_version="video-monthly-selection-v4-continuous-turnover")

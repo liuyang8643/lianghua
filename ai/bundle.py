@@ -13,7 +13,7 @@ from typing import Iterable, Mapping
 from utils.atomic_file import atomic_write_json, file_sha256
 
 
-BUNDLE_VERSION = "wbr-policy-bundle-v44-periodic-evaluation"
+BUNDLE_VERSION = "wbr-policy-bundle-v45-turnover-floor"
 MANIFEST_FILE = "manifest.json"
 DEPLOYMENT_GATE_NAMES = (
     "trained_checkpoint_selected",

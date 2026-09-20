@@ -236,7 +236,7 @@ def main() -> None:
         episode = PreparedEpisode.build(runtime, batch, decision_start=first,
                                         encode_observations=False, prefilter_n=payload["prefilter_n"])
         research_schema = (ActionSchema(factor_names=batch.factor_names, filter_names=batch.filter_names,
-                                        fixed_buy_n=10, turnover_maximum=1.0,
+                                        fixed_buy_n=10, turnover_minimum=0.0, turnover_maximum=1.0,
                                         schema_version="day-config-bilibili-smallcap-v3-continuous-turnover")
                            if args.family == "smallcap" and name != "WBR_static_baseline" else None)
         session = EpisodeSession(episode, action_schema=research_schema)

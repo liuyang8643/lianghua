@@ -7,8 +7,10 @@ from stable_baselines3.common.distributions import DiagGaussianDistribution
 from env.action_schema import ActionSchema
 
 
-def test_endpoint_mode_can_disable_factor_and_check_at_most_ten_holdings():
+def test_endpoint_mode_can_disable_factor_and_check_between_two_and_ten_holdings():
     schema = ActionSchema()
+    field = schema.layout[-1]
+    assert (field.minimum, field.maximum) == (0.05, 0.2)
     modes = torch.full((2, schema.action_dim), 0.5)
     modes[:, 0] = 0.0
     modes[:, 1] = 1.0
@@ -17,7 +19,8 @@ def test_endpoint_mode_can_disable_factor_and_check_at_most_ten_holdings():
     actions = law.mode()
     assert torch.isfinite(law.log_prob(actions)).all()
     np.testing.assert_array_equal(actions[:, -1].numpy(), [-1.0, 1.0])
-    for row, replacements in zip(actions.numpy(), (0, 10)):
+    # The production floor always examines the two worst holdings; the ceiling checks ten.
+    for row, replacements in zip(actions.numpy(), (2, 10)):
         config = schema.decode(row)
         assert config.replacement_limit == replacements
         assert config.factor_weights[schema.factor_names[0]] == 0.0
@@ -47,4 +50,24 @@ def test_turnover_range_is_explicit_and_hash_sealed(upper):
 @pytest.mark.parametrize("upper", [0., -0.1, 1.01, float("nan"), float("inf"), True])
 def test_invalid_turnover_upper_bound_is_rejected(upper):
     with pytest.raises(ValueError):
-        ActionSchema(turnover_maximum=upper)
+        ActionSchema(turnover_minimum=0.0, turnover_maximum=upper)
+
+
+@pytest.mark.parametrize("lower", [-0.01, 0.2, 0.25, float("nan"), True])
+def test_invalid_turnover_floor_is_rejected(lower):
+    with pytest.raises(ValueError):
+        ActionSchema(turnover_minimum=lower, turnover_maximum=0.2)
+
+
+def test_turnover_floor_is_hash_sealed_and_decodes_from_box_minimum():
+    schema = ActionSchema()
+    floored = ActionSchema(turnover_minimum=0.0)
+    assert schema.schema_hash != floored.schema_hash
+    assert schema.decode(-np.ones(schema.action_dim)).turnover_rate == 0.05
+    assert floored.decode(-np.ones(schema.action_dim)).turnover_rate == 0.0
+    payload = schema.to_dict()
+    del payload["turnover_minimum"]
+    with pytest.raises(KeyError):
+        ActionSchema.from_dict(payload)
+    with pytest.raises(ValueError):
+        schema.validate_day_config(floored.decode(-np.ones(schema.action_dim)))
