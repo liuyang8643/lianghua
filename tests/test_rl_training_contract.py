@@ -31,6 +31,7 @@ from ai.rl.train import (
 from ai.bundle import BundleManifest
 from ai.rl.device import require_cuda_device
 from env.metrics import REWARD_SCHEMA_VERSION
+from utils.atomic_file import file_sha256
 
 
 from rl_test_data import write_runtime
@@ -45,9 +46,10 @@ def test_removed_migration_cli_is_rejected_before_loading_data(option):
 @pytest.fixture
 def synthetic_financial_snapshot_verifier(monkeypatch):
     """Only synthetic training integrations bypass the real archive verifier."""
-    verifier = Mock(return_value={
+    verifier = Mock(side_effect=lambda runtime_path: {
         "manifest_sha256": "a" * 64,
-        "snapshot_sha256": "b" * 64,
+        # The completion guard re-hashes the runtime file against this value.
+        "snapshot_sha256": file_sha256(Path(runtime_path)),
         "financial_identity": {"sha256": "c" * 64},
         "panel_builder_version": "synthetic-financial-panel-v1",
         "financial_replay_version": "synthetic-financial-replay-v1",
@@ -278,9 +280,11 @@ def test_parser_requires_runtime_and_keeps_config_as_external_benchmark():
     assert args.episode_scope == "full"
     assert args.eval_every_rollouts == 50
     assert args.device == "cuda"
-    assert args.learning_rate == pytest.approx(3e-4)
+    assert args.learning_rate == pytest.approx(1e-3)
     assert args.n_epochs == 3
-    assert args.target_kl is None
+    assert args.target_kl == pytest.approx(0.03)
+    assert args.log_std_init == pytest.approx(-1.6)
+    assert args.advantage_baseline == "synchronized_env_row_mean"
     assert args.seed is None
     assert args.learning_rate_end_fraction == 1.0
     assert args.training_slippage_rate == args.evaluation_slippage_rate == pytest.approx(0.0025)

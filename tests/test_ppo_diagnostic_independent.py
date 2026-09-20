@@ -11,6 +11,7 @@ from ai.ga import build_individual_config
 from ai.rl.device import load_cuda_ppo
 from ai.rl import train as training
 from env.backtest import EpisodeSession, run_day_config_episode
+from utils.atomic_file import file_sha256
 from rl_test_data import write_runtime
 
 
@@ -26,8 +27,9 @@ def test_changed_test_scores_cannot_change_learner_or_validation_selection(tmp_p
     """
     runtime = tmp_path / "runtime.npz"
     write_runtime(runtime)
-    monkeypatch.setattr(training, "read_financial_snapshot_manifest", lambda _path: {
-        "manifest_sha256": "a" * 64, "snapshot_sha256": "b" * 64,
+    monkeypatch.setattr(training, "read_financial_snapshot_manifest", lambda path: {
+        # The completion guard re-hashes the runtime file against this value.
+        "manifest_sha256": "a" * 64, "snapshot_sha256": file_sha256(Path(path)),
         "financial_identity": {"sha256": "c" * 64},
         "panel_builder_version": "synthetic-only", "financial_replay_version": "synthetic-only",
         "availability": "synthetic fixture", "pit_evidence_limit": "not a real archive certification",
@@ -90,6 +92,7 @@ def test_changed_test_scores_cannot_change_learner_or_validation_selection(tmp_p
             "--seed", "2345", "--rollouts", "3", "--n-envs", "1", "--n-steps", "4", "--batch-size", "4",
             "--n-epochs", "1", "--eval-every-rollouts", "1", "--min-episode-transitions", "1",
             "--lookback", "4", "--rollout-backend", "dummy", "--backtest-workers", "1", "--device", "cuda",
+            "--advantage-baseline", "none",  # single env cannot use the synchronized row-mean baseline
         ])
         assert training.train(args) == output.resolve()
         curves = json.loads((output / "evaluation_curves.json").read_text("utf-8"))

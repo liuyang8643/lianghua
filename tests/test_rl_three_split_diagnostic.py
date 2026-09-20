@@ -26,6 +26,7 @@ def test_three_split_schedule_shared_sha_and_validation_only_selection(
         "--rollouts", "3", "--eval-every-rollouts", "2", "--n-steps", "4",
         "--n-envs", "1", "--rollout-backend", "dummy", "--backtest-workers", "1",
         "--batch-size", "4", "--n-epochs", "5", "--min-episode-transitions", "1",
+        "--advantage-baseline", "none",
         "--evaluation-execution", execution,
         "--learning-rate", "0.0003", "--learning-rate-end-fraction", "0.1",
     ])
@@ -117,6 +118,7 @@ def test_default_unseeded_root_can_resume_same_contract(tmp_path, synthetic_fina
         "--rollouts", "1", "--n-envs", "1", "--n-steps", "4", "--batch-size", "4",
         "--n-epochs", "1", "--min-episode-transitions", "1", "--lookback", "4",
         "--rollout-backend", "dummy", "--backtest-workers", "1", "--device", "cuda",
+        "--advantage-baseline", "none",
     ])
     assert args.seed is None
     parent = training.train(args)

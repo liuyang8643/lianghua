@@ -97,9 +97,13 @@ ACTOR_NET_ARCH: tuple[int, ...] = ()
 CRITIC_NET_ARCH = (64, 32)
 PPO_GAMMA = 0.99
 PPO_GAE_LAMBDA = 0.95
-DEFAULT_LOG_STD_INIT = 0.0
+# 2026-09-21 收敛对照（E1/E2/E3）后的默认值：Box std 0.2 的初始探索 + 同步环境行均值基线
+# + lr 1e-3/target_kl 0.03；旧默认（std 1、无基线、lr 3e-4）在 0.0025 滑点下训练 Calmar 随机游走。
+DEFAULT_LOG_STD_INIT = -1.6
 ADVANTAGE_BASELINES = ("none", "synchronized_env_row_mean")
-DEFAULT_ADVANTAGE_BASELINE = "none"
+DEFAULT_ADVANTAGE_BASELINE = "synchronized_env_row_mean"
+DEFAULT_LEARNING_RATE = 1e-3
+DEFAULT_TARGET_KL = 0.03
 
 
 def scheduled_learning_rate(initial: float, end_fraction: float, decay_start: float,
@@ -1659,10 +1663,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--evaluation-execution", choices=("blocking", "overlap"),
                         default="blocking", help="overlap one frozen CUDA train replay with the CUDA learner")
     parser.add_argument("--n-epochs", type=int, default=3)
-    parser.add_argument("--learning-rate", type=float, default=3e-4)
+    parser.add_argument("--learning-rate", type=float, default=DEFAULT_LEARNING_RATE)
     parser.add_argument("--learning-rate-end-fraction", type=float, default=1.0)
     parser.add_argument("--learning-rate-decay-start", type=float, default=0.2)
-    parser.add_argument("--target-kl", type=float, default=None)
+    parser.add_argument("--target-kl", type=float, default=DEFAULT_TARGET_KL)
     parser.add_argument("--log-std-init", type=float, default=DEFAULT_LOG_STD_INIT,
                         help="initial log standard deviation of the SB3 Gaussian head in Box coordinates")
     parser.add_argument("--advantage-baseline", choices=ADVANTAGE_BASELINES, default=DEFAULT_ADVANTAGE_BASELINE,

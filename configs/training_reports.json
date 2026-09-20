@@ -1,6 +1,20 @@
 {
   "runs": [
     {
+      "id": "ppo11_e4_long4000_lr1e3_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_e4_long4000_lr1e3_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_e4_long4000_lr1e3_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e4_long4000_lr1e3_20260921/monitor/cache"
+    },
+    {
+      "id": "ppo11_e3_lowstd_rowmean_lr1e3_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_e3_lowstd_rowmean_lr1e3_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_e3_lowstd_rowmean_lr1e3_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e3_lowstd_rowmean_lr1e3_20260921/monitor/cache"
+    },
+    {
       "id": "ppo11_e2_lowstd_only_20260920",
       "algorithm": "PPO",
       "output_dir": "../artifacts/rl/ppo11_e2_lowstd_only_20260920/run",

@@ -112,7 +112,7 @@ def test_environment_manifest_freezes_dense_incremental_drawdown_semantics(episo
     )
 
     assert ENVIRONMENT_SCHEMA_VERSION == (
-        "wbr-ppo-environment-v37-retain-drift-cash-sweep"
+        "wbr-ppo-environment-v36-closed-unit-weights"
     )
     assert manifest["prefilter"] == {
         "n": 300,

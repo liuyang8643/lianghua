@@ -46,7 +46,7 @@ def test_real_blocking_and_overlap_preserve_policy_optimizer_rng_and_train_curve
             "--batch-size", "4", "--n-epochs", "2", "--device", "cuda",
             "--min-episode-transitions", "1", "--verbose", "0",
             "--eval-every-rollouts", "1", "--evaluation-execution", mode,
-            "--seed", "2345",
+            "--seed", "2345", "--advantage-baseline", "none",
         ])
         assert train(args) == output.resolve()
         outputs.append(output)
