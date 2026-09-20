@@ -1,6 +1,6 @@
 # WBR 目标架构与开发准则
 
-收敛实验记录（2026-09-20）：commit a07f38b 曾新增 `--log-std-init` 与 `--advantage-baseline synchronized_env_row_mean`（run identity v88）作为 0.0025 滑点下 Calmar 随机游走的对照实验 A；该实验代码已由用户回退，工作树恢复为 v87 基线，两次 expA 启动均未完成任何训练轮次（目录保留于 artifacts/rl/ppo11_expA_*）。后续收敛优化以本快照为起点重新实施并另行记录。
+最新收敛优化覆盖（2026-09-20）：针对 0.0025 滑点下 PPO 训练 Calmar 随机游走（诊断：Box std≈0.92 不收缩、33～59% 采样坐标被裁到端点、确定性换股漂向 X=0 悬崖、critic explained_variance≈0、20 个同步环境共享同日市场冲击、approx_kl≈0.001/clip_fraction≈0），重新实施 CLI `--log-std-init`（默认 0）与 `--advantage-baseline`（`none`|`synchronized_env_row_mean`，默认 none）。`synchronized_env_row_mean` 仅在 `--episode-scope full` 且 n_envs≥2 时可用：GAE 之后对每个 buffer 行跨环境去均值，returns 与 clipped surrogate 不变。run identity v88；旧 checkpoint 不可同身份续训；CLI 默认未改。冻结源码启动统一使用 `scripts/launch_ppo_frozen.ps1`，其入口必须带 `__main__` 守卫，否则 spawn 的 rollout worker 会以父进程 argv 重跑 train() 并因输出目录非空崩溃（此前两次 expA 均因此卡死）。对照实验 E1（`log_std_init=-1.6` + `synchronized_env_row_mean`、seed 20260920、800 轮）训练 Calmar 0.520→1.058 近似单调爬升（最后 5 点 1.020±0.028，验证最高 0.910、测试 0.78），同预算旧默认运行为 0.31～0.79 随机游走；训练期 `approx_kl≈0.007`、`clip_fraction≈0.03～0.04`、std 0.20→0.19；critic explained_variance 仍≈0，换股稳定在 0.07（X=3），确定性权重跨日期标准差≤0.024（策略仍近似静态）。800 轮短训只证明优化稳定性，不是收益验收；消融 E2（仅低探索）用于归因，记录于 artifacts/rl/ppo11_e1_*、ppo11_e2_*。
 
 最新调仓覆盖（2026-09-19）：用户撤回关闭再平衡的要求，恢复唯一daily_equalize_then_cash_sweep实现及environment v36/planner v6，与当前冻结训练一致。超配减仓、低配补买、排名换股和现金sweep保留；单边滑点仍为0.0025。
 

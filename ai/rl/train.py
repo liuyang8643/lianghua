@@ -29,6 +29,7 @@ import numpy as np
 import torch as th
 from offline_data.financial_snapshot import read_financial_snapshot_manifest
 from stable_baselines3 import PPO
+from stable_baselines3.common.buffers import RolloutBuffer
 from stable_baselines3.common.utils import FloatSchedule
 from stable_baselines3.common.env_checker import check_env
 
@@ -36,6 +37,7 @@ from ai.bundle import (
     policy_source_sha256,
 )
 from utils.atomic_file import atomic_write_json, file_sha256
+from ai.rl.advantage import ADVANTAGE_BASELINE_VERSION, SynchronizedEnvBaselineRolloutBuffer
 from ai.rl.evaluation import (
     BacktestRequest,
     FixedConfigProvider,
@@ -95,6 +97,9 @@ ACTOR_NET_ARCH: tuple[int, ...] = ()
 CRITIC_NET_ARCH = (64, 32)
 PPO_GAMMA = 0.99
 PPO_GAE_LAMBDA = 0.95
+DEFAULT_LOG_STD_INIT = 0.0
+ADVANTAGE_BASELINES = ("none", "synchronized_env_row_mean")
+DEFAULT_ADVANTAGE_BASELINE = "none"
 
 
 def scheduled_learning_rate(initial: float, end_fraction: float, decay_start: float,
@@ -103,7 +108,7 @@ def scheduled_learning_rate(initial: float, end_fraction: float, decay_start: fl
     progress = min(1.0, max(0.0, completed / total))
     phase = max(0.0, (progress - decay_start) / (1.0 - decay_start))
     return initial * (1.0 - (1.0 - end_fraction) * phase)
-RUN_IDENTITY_VERSION = "wbr-ppo-run-identity-v87-periodic-three-split"
+RUN_IDENTITY_VERSION = "wbr-ppo-run-identity-v88-exploration-scale-advantage-baseline"
 EVALUATION_CACHE_PROTOCOL = {"prepared_splits": "lazy_once_shared_readonly_until_exit",
                              "evaluation_execution": "serial", "release": "ExitStack",
                              "replay_storage": "full_history_precompute_then_causal_history_projection"}
@@ -837,7 +842,14 @@ def _build_run_identity(
             "typed_distribution": TYPED_ACTION_DISTRIBUTION_VERSION,
             "weight_mode": "(clip(gaussian_mean,-1,1)+1)/2",
             "state_head": "SB3 Linear Gaussian mean head; orthogonal gain 0.01, zero bias",
-            "exploration": "SB3 DiagGaussianDistribution; trainable log_std initialized to 0",
+            "exploration": "SB3 DiagGaussianDistribution; trainable state-independent log_std",
+            "log_std_init": args.log_std_init,
+            "advantage_baseline": {
+                "mode": args.advantage_baseline,
+                "version": ADVANTAGE_BASELINE_VERSION if args.advantage_baseline != "none" else None,
+                "scope": ("after_gae_before_minibatch_normalization; returns and clipped surrogate unchanged"
+                          if args.advantage_baseline != "none" else "sb3_default"),
+            },
             "action_execution": "SB3 clips samples to Box; rollout buffer retains raw Gaussian samples and likelihoods",
             "training_execution_fees": {
                 "commission_rate": DEFAULT_FEE_SCHEDULE.commission_rate,
@@ -1201,7 +1213,10 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
         "raw_panel_config": dict(RAW_PANEL_CONFIG),
         "action_schema": action_schema.to_dict(),
         "encoded_schema": train_episode.encoder.output_schema.to_dict(),
+        "log_std_init": args.log_std_init,
     }
+    rollout_buffer_class = (SynchronizedEnvBaselineRolloutBuffer
+                            if args.advantage_baseline == "synchronized_env_row_mean" else None)
     if parent_model is None:
         model = PPO(
             TypedActorCriticPolicy,
@@ -1215,6 +1230,7 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
             ent_coef=0.0,
             target_kl=args.target_kl,
             policy_kwargs=policy_kwargs,
+            rollout_buffer_class=rollout_buffer_class,
             verbose=args.verbose,
             seed=args.seed,
             device=learner_device,
@@ -1224,6 +1240,8 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
 
     else:
         model = parent_model
+        if type(model.rollout_buffer) is not (rollout_buffer_class or RolloutBuffer):
+            raise ValueError("resumed checkpoint uses a different advantage baseline than requested")
         model.set_env(rollout_environment.vec_env, force_reset=True)
         model.learning_rate = args.learning_rate
         model.n_steps = n_steps
@@ -1542,6 +1560,8 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
         'n_epochs': args.n_epochs,
         'learning_rate': args.learning_rate,
         'target_kl': args.target_kl,
+        'log_std_init': args.log_std_init,
+        'advantage_baseline': args.advantage_baseline,
         'learner_device': learner_device,
         'complete_train_evaluation_every_rollouts': args.eval_every_rollouts,
         'evaluation_execution': args.evaluation_execution,
@@ -1643,6 +1663,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate-end-fraction", type=float, default=1.0)
     parser.add_argument("--learning-rate-decay-start", type=float, default=0.2)
     parser.add_argument("--target-kl", type=float, default=None)
+    parser.add_argument("--log-std-init", type=float, default=DEFAULT_LOG_STD_INIT,
+                        help="initial log standard deviation of the SB3 Gaussian head in Box coordinates")
+    parser.add_argument("--advantage-baseline", choices=ADVANTAGE_BASELINES, default=DEFAULT_ADVANTAGE_BASELINE,
+                        help="synchronized_env_row_mean centers GAE advantages across the lockstep "
+                             "environments of each buffer row (requires --episode-scope full)")
     parser.add_argument("--lookback", type=int, default=DEFAULT_LOOKBACK)
     parser.add_argument("--episode-scope", choices=("random", "full"), default="full",
                         help="random contiguous windows or repeated complete training-period episodes")
@@ -1695,6 +1720,12 @@ def _validate_cli(args: argparse.Namespace) -> None:
         raise ValueError("learning-rate schedule fractions are invalid")
     if args.target_kl is not None and (not math.isfinite(args.target_kl) or args.target_kl <= 0.0):
         raise ValueError("target_kl must be finite and positive")
+    if not math.isfinite(args.log_std_init):
+        raise ValueError("log_std_init must be finite")
+    if args.advantage_baseline == "synchronized_env_row_mean" and (
+        args.episode_scope != "full" or args.n_envs < 2
+    ):
+        raise ValueError("synchronized_env_row_mean baseline requires --episode-scope full and at least two envs")
     if (
         not math.isfinite(args.training_slippage_rate)
         or args.training_slippage_rate < 0.0
