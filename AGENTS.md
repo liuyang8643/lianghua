@@ -4,6 +4,8 @@
 
 用户同日追加授权：生产换股动作探索范围改为 [0.05, 0.2]（ActionSchema v20 `day-config-v20-turnover-floor`，新增 `turnover_minimum` 并写入 schema hash 与 layout），固定 buy_n=50 下每日至少检查 floor(50×0.05)=2 只最差持仓，禁止策略靠 X=0/1 "不换股"取巧；权重仍可由 actor 缓慢变化实现少调仓。研究入口（calendar_replay、style_phase_research、bilibili smallcap）显式声明 `turnover_minimum=0.0, turnover_maximum=1.0` 保持原语义。environment v37、bundle v45、PPO identity v89；GA 采样与搜索范围自动读取同一 layout。旧 v19 checkpoint/GA 种群/历史坐标不可续入。用户验收标准：PPO 训练期至少快速收敛到 GA 水平（0.0025 滑点下 GA 训练 Calmar 1.50），再显著超越；当前静态化策略（权重跨日期 std≤0.02）最多逼近 GA，超越依赖状态路径真正被利用，属下一阶段假设。
 
+E4（v19、新默认、seed 20260921、4000 轮 / 512 万 transitions）：训练 Calmar 峰值 1.430（3000 轮）、终值 1.344、最后 5 点 1.311±0.025，在 1.30～1.43 平台，未达 GA 1.50；验证 0.55～0.71、测试 0.57～0.75；std 收缩至 0.10，末段权重跨日期 std 升至 0.03～0.04（状态路径开始微弱起作用）。收敛后的静态权重与 GA 冠军方向一致但 Reversal/BiliA 明显偏低——在 γ=0.99、λ=0.95、n_steps=64 下 GAE 有效信用窗口约 17～30 日，长周期兑现的因子被系统性低估，这是与 GA 全周期配对评估的结构差异。据此新增 CLI `--gae-lambda`（默认仍 0.95，写入 identity），E5 以 v20 schema + λ=0.98 + n_steps=128（batch 640）+ 2500 轮检验信用窗口假设。
+
 最新调仓覆盖（2026-09-19）：用户撤回关闭再平衡的要求，恢复唯一daily_equalize_then_cash_sweep实现及environment v36/planner v6，与当前冻结训练一致。超配减仓、低配补买、排名换股和现金sweep保留；单边滑点仍为0.0025。
 
 最新费用覆盖（2026-09-19）：GA、PPO rollout、全部评估和当前静态基准统一单边slippage_rate=0.0025，唯一默认值由env.fees.FeeSchedule定义，PPO CLI引用该值。佣金、过户费、印花税不变；旧0.001运行保留审计，不沿旧费用身份续训。

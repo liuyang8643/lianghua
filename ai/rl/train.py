@@ -817,7 +817,7 @@ def _build_run_identity(
             "objective": "horizon_scaled_annualized_return_minus_max_drawdown",
             "checkpoint_selection": CHECKPOINT_SELECTION_OBJECTIVE,
             "gamma": PPO_GAMMA,
-            "gae_lambda": PPO_GAE_LAMBDA,
+            "gae_lambda": args.gae_lambda,
             "ent_coef": 0.0,
             "n_steps": n_steps,
             "collection_scope": "complete_episode" if args.n_steps == 0 else "fixed_transition_count",
@@ -1230,7 +1230,7 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
             batch_size=batch_size,
             n_epochs=args.n_epochs,
             gamma=PPO_GAMMA,
-            gae_lambda=PPO_GAE_LAMBDA,
+            gae_lambda=args.gae_lambda,
             ent_coef=0.0,
             target_kl=args.target_kl,
             policy_kwargs=policy_kwargs,
@@ -1252,7 +1252,7 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
         model.batch_size = batch_size
         model.n_epochs = args.n_epochs
         model.gamma = PPO_GAMMA
-        model.gae_lambda = PPO_GAE_LAMBDA
+        model.gae_lambda = args.gae_lambda
         model.ent_coef = 0.0
         model.target_kl = args.target_kl
     require_cuda_model(model)
@@ -1570,7 +1570,7 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
         'complete_train_evaluation_every_rollouts': args.eval_every_rollouts,
         'evaluation_execution': args.evaluation_execution,
         'gamma': PPO_GAMMA,
-        'gae_lambda': PPO_GAE_LAMBDA,
+        'gae_lambda': args.gae_lambda,
         'ent_coef': 0.0,
     }
     if validation_selector is None:
@@ -1667,6 +1667,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate-end-fraction", type=float, default=1.0)
     parser.add_argument("--learning-rate-decay-start", type=float, default=0.2)
     parser.add_argument("--target-kl", type=float, default=DEFAULT_TARGET_KL)
+    parser.add_argument("--gae-lambda", type=float, default=PPO_GAE_LAMBDA,
+                        help="GAE lambda; with gamma it sets the per-step credit window of the advantage")
     parser.add_argument("--log-std-init", type=float, default=DEFAULT_LOG_STD_INIT,
                         help="initial log standard deviation of the SB3 Gaussian head in Box coordinates")
     parser.add_argument("--advantage-baseline", choices=ADVANTAGE_BASELINES, default=DEFAULT_ADVANTAGE_BASELINE,
@@ -1724,6 +1726,8 @@ def _validate_cli(args: argparse.Namespace) -> None:
         raise ValueError("learning-rate schedule fractions are invalid")
     if args.target_kl is not None and (not math.isfinite(args.target_kl) or args.target_kl <= 0.0):
         raise ValueError("target_kl must be finite and positive")
+    if not 0.0 <= args.gae_lambda <= 1.0:
+        raise ValueError("gae_lambda must be in [0, 1]")
     if not math.isfinite(args.log_std_init):
         raise ValueError("log_std_init must be finite")
     if args.advantage_baseline == "synchronized_env_row_mean" and (

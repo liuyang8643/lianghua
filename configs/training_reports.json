@@ -1,6 +1,13 @@
 {
   "runs": [
     {
+      "id": "ppo11_e5_v20floor_lam098_n128_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_e5_v20floor_lam098_n128_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_e5_v20floor_lam098_n128_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e5_v20floor_lam098_n128_20260921/monitor/cache"
+    },
+    {
       "id": "ppo11_e4_long4000_lr1e3_20260921",
       "algorithm": "PPO",
       "output_dir": "../artifacts/rl/ppo11_e4_long4000_lr1e3_20260921/run",
