@@ -70,6 +70,38 @@ def test_policy_forward_evaluate_standard_ppo_update_and_reload(tmp_path):
         th.testing.assert_close(restored.policy.state_dict()[key], value, rtol=0, atol=0)
 
 
+def test_antithetic_exploration_mirrors_pairs_and_keeps_exact_gaussian_log_prob(tmp_path):
+    schema = ActionSchema()
+    episode = build_episode(tmp_path / "runtime.npz")
+    normalizer = fit_normalizer(episode)
+    env = WBRGymEnv(episode, normalizer=normalizer, include_critic_context=True)
+    model = PPO(TypedActorCriticPolicy, env, n_steps=8, batch_size=8, n_epochs=1, seed=7, device="cuda",
+                policy_kwargs={"action_schema": schema.to_dict(), "antithetic_exploration": True,
+                               "action_head_gain": 0.5,
+                               "encoded_schema": episode.encoder.output_schema.to_dict(), "net_arch": dict(vf=[16])})
+    model.policy.bind_market_store(episode.market_store, normalizer)
+    assert model.policy.antithetic_exploration is True and model.policy.action_head_gain == 0.5
+    initial, _ = env.reset()
+    observations = th.tensor(np.repeat(initial[None], 6, axis=0), device="cuda")
+    model.policy.set_training_mode(False)
+    actions, values, log_prob = model.policy(observations)
+    mean = model.policy.action_net(model.policy.mlp_extractor.forward_actor(observations[:, :model.policy.actor_observation_dim]))
+    noise = actions - mean
+    # identical observations -> identical means; the second half mirrors the first half's noise
+    th.testing.assert_close(noise[3:], -noise[:3], rtol=0, atol=1e-6)
+    _, evaluated_log_prob, _ = model.policy.evaluate_actions(observations, actions)
+    th.testing.assert_close(log_prob, evaluated_log_prob)
+    deterministic, _, _ = model.policy(observations, deterministic=True)
+    th.testing.assert_close(deterministic, mean)
+    path = tmp_path / "antithetic_policy"
+    model.save(path)
+    restored = load_cuda_ppo(path, env=env)
+    assert restored.policy.antithetic_exploration is True and restored.policy.action_head_gain == 0.5
+    # odd batch sizes fall back to one unpaired draw
+    odd_actions, _, odd_log_prob = model.policy(observations[:5])
+    assert odd_actions.shape == (5, schema.action_dim) and th.isfinite(odd_log_prob).all()
+
+
 def test_critic_context_is_isolated_from_actor_outputs_and_gradients(tmp_path):
     schema = ActionSchema()
     episode = build_episode(tmp_path / "runtime.npz")

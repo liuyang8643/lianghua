@@ -67,9 +67,13 @@ class TypedActorCriticPolicy(ActorCriticPolicy):
         encoded_schema: Mapping[str, object],
         raw_panel_config: Mapping[str, int] | None = None,
         action_head_gain: float = 0.01,
+        antithetic_exploration: bool = False,
         **kwargs: Any,
     ) -> None:
         device = require_cuda_device()
+        if type(antithetic_exploration) is not bool:
+            raise TypeError("antithetic_exploration must be bool")
+        self.antithetic_exploration = antithetic_exploration
         if not isinstance(action_head_gain, (int, float)) or isinstance(action_head_gain, bool) or not (
             action_head_gain > 0.0 and np.isfinite(action_head_gain)
         ):
@@ -147,6 +151,30 @@ class TypedActorCriticPolicy(ActorCriticPolicy):
         self._frozen_actor_graph = None
         self._frozen_actor_key = None
 
+    def forward(self, obs: th.Tensor, deterministic: bool = False) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+        """SB3 forward with optional antithetic (mirrored) exploration noise across the batch.
+
+        With ``antithetic_exploration`` the rollout batch of N lock-step environments draws N/2
+        Gaussian perturbations and applies each once with sign +1 and once with sign -1. Every
+        environment's action is still an exact draw from its own N(mean, std) marginal, so the
+        stored log-probabilities and the clipped PPO surrogate are unchanged; only the paired
+        structure reduces the variance of the row-mean-centered advantage (antithetic variates).
+        """
+        if deterministic or not self.antithetic_exploration:
+            return super().forward(obs, deterministic=deterministic)
+        features = self.extract_features(obs)
+        latent_pi, latent_vf = self.mlp_extractor(features)
+        values = self.value_net(latent_vf)
+        distribution = self._get_action_dist_from_latent(latent_pi)
+        mean = distribution.distribution.mean
+        std = distribution.distribution.stddev
+        half, odd = divmod(mean.shape[0], 2)
+        noise = th.randn((half + odd, mean.shape[1]), device=mean.device, dtype=mean.dtype)
+        mirrored = th.cat((noise, -noise[:half]), dim=0)
+        actions = mean + std * mirrored
+        log_prob = distribution.log_prob(actions)
+        return actions.reshape((-1, *self.action_space.shape)), values, log_prob
+
     def train(self, mode: bool = True):
         if mode:
             self._invalidate_frozen_actor()
@@ -185,6 +213,7 @@ class TypedActorCriticPolicy(ActorCriticPolicy):
         parameters["encoded_schema"] = dict(self.encoded_schema)
         parameters["raw_panel_config"] = dict(self.raw_panel_config)
         parameters["action_head_gain"] = self.action_head_gain
+        parameters["antithetic_exploration"] = self.antithetic_exploration
         return parameters
 
     def bind_market_store(self, store, normalizer) -> None:

@@ -850,6 +850,7 @@ def _build_run_identity(
             "weight_mode": "(clip(gaussian_mean,-1,1)+1)/2",
             "state_head": "SB3 Linear Gaussian mean head; orthogonal init, zero bias",
             "action_head_gain": args.action_head_gain,
+            "antithetic_exploration": args.antithetic_exploration,
             "exploration": "SB3 DiagGaussianDistribution; trainable state-independent log_std",
             "log_std_init": args.log_std_init,
             "advantage_baseline": {
@@ -1242,6 +1243,7 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
         "encoded_schema": train_episode.encoder.output_schema.to_dict(),
         "log_std_init": args.log_std_init,
         "action_head_gain": args.action_head_gain,
+        "antithetic_exploration": args.antithetic_exploration,
     }
     rollout_buffer_class = (SynchronizedEnvBaselineRolloutBuffer
                             if args.advantage_baseline == "synchronized_env_row_mean" else None)
@@ -1675,6 +1677,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="GAE lambda; with gamma it sets the per-step credit window of the advantage")
     parser.add_argument("--action-head-gain", type=float, default=0.01,
                         help="orthogonal init gain of the Gaussian mean head (SB3 default 0.01)")
+    parser.add_argument("--antithetic-exploration", action="store_true",
+                        help="mirror Gaussian exploration noise across paired lock-step environments "
+                             "(variance reduction; each env still samples its own N(mean, std))")
     parser.add_argument("--ent-coef", type=float, default=0.0,
                         help="SB3 entropy bonus; >0 counteracts the monotone shrink of the Gaussian std")
     parser.add_argument("--log-std-init", type=float, default=DEFAULT_LOG_STD_INIT,
@@ -1742,6 +1747,8 @@ def _validate_cli(args: argparse.Namespace) -> None:
         raise ValueError("ent_coef must be finite and non-negative")
     if not math.isfinite(args.action_head_gain) or args.action_head_gain <= 0.0:
         raise ValueError("action_head_gain must be finite and positive")
+    if args.antithetic_exploration and (args.episode_scope != "full" or args.n_envs < 2):
+        raise ValueError("antithetic exploration requires --episode-scope full and at least two envs")
     if not math.isfinite(args.log_std_init):
         raise ValueError("log_std_init must be finite")
     if args.advantage_baseline == "synchronized_env_row_mean" and (
