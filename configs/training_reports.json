@@ -15,18 +15,18 @@
       "trace_dir": "../artifacts/rl/ppo11_e15_headgain01_20260921/monitor/cache"
     },
     {
-      "id": "ppo11_e13_epoch1_lr3e3_20260921",
-      "algorithm": "PPO",
-      "output_dir": "../artifacts/rl/ppo11_e13_epoch1_lr3e3_20260921/run",
-      "log_path": "../artifacts/rl/ppo11_e13_epoch1_lr3e3_20260921/stdout.log",
-      "trace_dir": "../artifacts/rl/ppo11_e13_epoch1_lr3e3_20260921/monitor/cache"
-    },
-    {
       "id": "ppo11_e14_headgain1_20260921",
       "algorithm": "PPO",
       "output_dir": "../artifacts/rl/ppo11_e14_headgain1_20260921/run",
       "log_path": "../artifacts/rl/ppo11_e14_headgain1_20260921/stdout.log",
       "trace_dir": "../artifacts/rl/ppo11_e14_headgain1_20260921/monitor/cache"
+    },
+    {
+      "id": "ppo11_e13_epoch1_lr3e3_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_e13_epoch1_lr3e3_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_e13_epoch1_lr3e3_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e13_epoch1_lr3e3_20260921/monitor/cache"
     },
     {
       "id": "ppo11_e12_envs20_epoch1_20260921",
@@ -50,55 +50,6 @@
       "trace_dir": "../artifacts/rl/ppo11_e8_v20_entcoef0003_20260921/monitor/cache"
     },
     {
-      "id": "ppo11_e4_long4000_lr1e3_20260921",
-      "algorithm": "PPO",
-      "output_dir": "../artifacts/rl/ppo11_e4_long4000_lr1e3_20260921/run",
-      "log_path": "../artifacts/rl/ppo11_e4_long4000_lr1e3_20260921/stdout.log",
-      "trace_dir": "../artifacts/rl/ppo11_e4_long4000_lr1e3_20260921/monitor/cache"
-    },
-    {
-      "id": "ppo11_e5_v20floor_lam098_n128_20260921",
-      "algorithm": "PPO",
-      "output_dir": "../artifacts/rl/ppo11_e5_v20floor_lam098_n128_20260921/run",
-      "log_path": "../artifacts/rl/ppo11_e5_v20floor_lam098_n128_20260921/stdout.log",
-      "trace_dir": "../artifacts/rl/ppo11_e5_v20floor_lam098_n128_20260921/monitor/cache"
-    },
-    {
-      "id": "ppo11_e3_lowstd_rowmean_lr1e3_20260921",
-      "algorithm": "PPO",
-      "output_dir": "../artifacts/rl/ppo11_e3_lowstd_rowmean_lr1e3_20260921/run",
-      "log_path": "../artifacts/rl/ppo11_e3_lowstd_rowmean_lr1e3_20260921/stdout.log",
-      "trace_dir": "../artifacts/rl/ppo11_e3_lowstd_rowmean_lr1e3_20260921/monitor/cache"
-    },
-    {
-      "id": "ppo11_e1_lowstd_rowmean_20260920",
-      "algorithm": "PPO",
-      "output_dir": "../artifacts/rl/ppo11_e1_lowstd_rowmean_20260920/run",
-      "log_path": "../artifacts/rl/ppo11_e1_lowstd_rowmean_20260920/stdout.log",
-      "trace_dir": "../artifacts/rl/ppo11_e1_lowstd_rowmean_20260920/monitor/cache"
-    },
-    {
-      "id": "ppo11_e2_lowstd_only_20260920",
-      "algorithm": "PPO",
-      "output_dir": "../artifacts/rl/ppo11_e2_lowstd_only_20260920/run",
-      "log_path": "../artifacts/rl/ppo11_e2_lowstd_only_20260920/stdout.log",
-      "trace_dir": "../artifacts/rl/ppo11_e2_lowstd_only_20260920/monitor/cache"
-    },
-    {
-      "id": "ppo11_full_period20_slippage25_20260920b",
-      "algorithm": "PPO",
-      "output_dir": "../artifacts/rl/ppo11_full_period20_slippage25_20260920b/run",
-      "log_path": "../artifacts/rl/ppo11_full_period20_slippage25_20260920b/stdout.log",
-      "trace_dir": "../artifacts/rl/ppo11_full_period20_slippage25_20260920b/monitor/cache"
-    },
-    {
-      "id": "ga11_batch1_20260919_234026_506",
-      "algorithm": "GA",
-      "output_dir": "../artifacts/ga/ga11_batch1_20260919_234026_506/run",
-      "log_path": "../artifacts/ga/ga11_batch1_20260919_234026_506/stdout.log",
-      "trace_dir": "../artifacts/ga/ga11_batch1_20260919_234026_506/monitor/cache"
-    },
-    {
       "id": "ppo11_e7_v20_entcoef002_20260921",
       "algorithm": "PPO",
       "output_dir": "../artifacts/rl/ppo11_e7_v20_entcoef002_20260921/run",
@@ -113,11 +64,74 @@
       "trace_dir": "../artifacts/rl/ppo11_e6_resume_e5_20260921/monitor/cache"
     },
     {
+      "id": "ppo11_e5_v20floor_lam098_n128_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_e5_v20floor_lam098_n128_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_e5_v20floor_lam098_n128_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e5_v20floor_lam098_n128_20260921/monitor/cache"
+    },
+    {
+      "id": "ppo11_e4_long4000_lr1e3_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_e4_long4000_lr1e3_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_e4_long4000_lr1e3_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e4_long4000_lr1e3_20260921/monitor/cache"
+    },
+    {
+      "id": "ppo11_e3_lowstd_rowmean_lr1e3_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_e3_lowstd_rowmean_lr1e3_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_e3_lowstd_rowmean_lr1e3_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e3_lowstd_rowmean_lr1e3_20260921/monitor/cache"
+    },
+    {
+      "id": "ppo11_e2_lowstd_only_20260920",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_e2_lowstd_only_20260920/run",
+      "log_path": "../artifacts/rl/ppo11_e2_lowstd_only_20260920/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e2_lowstd_only_20260920/monitor/cache"
+    },
+    {
+      "id": "ppo11_e1_lowstd_rowmean_20260920",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_e1_lowstd_rowmean_20260920/run",
+      "log_path": "../artifacts/rl/ppo11_e1_lowstd_rowmean_20260920/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e1_lowstd_rowmean_20260920/monitor/cache"
+    },
+    {
+      "id": "ppo11_p1_snr_gamma09_lam08_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_p1_snr_gamma09_lam08_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_p1_snr_gamma09_lam08_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_p1_snr_gamma09_lam08_20260921/monitor/cache"
+    },
+    {
+      "id": "ppo11_p2_snr_envs40_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_p2_snr_envs40_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_p2_snr_envs40_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_p2_snr_envs40_20260921/monitor/cache"
+    },
+    {
+      "id": "ppo11_full_period20_slippage25_20260920b",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_full_period20_slippage25_20260920b/run",
+      "log_path": "../artifacts/rl/ppo11_full_period20_slippage25_20260920b/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_full_period20_slippage25_20260920b/monitor/cache"
+    },
+    {
       "id": "ppo11_full_period20_slippage25_20260920",
       "algorithm": "PPO",
       "output_dir": "../artifacts/rl/ppo11_full_period20_slippage25_20260920/run",
       "log_path": "../artifacts/rl/ppo11_full_period20_slippage25_20260920/stdout.log",
       "trace_dir": "../artifacts/rl/ppo11_full_period20_slippage25_20260920/monitor/cache"
+    },
+    {
+      "id": "ga11_batch1_20260919_234026_506",
+      "algorithm": "GA",
+      "output_dir": "../artifacts/ga/ga11_batch1_20260919_234026_506/run",
+      "log_path": "../artifacts/ga/ga11_batch1_20260919_234026_506/stdout.log",
+      "trace_dir": "../artifacts/ga/ga11_batch1_20260919_234026_506/monitor/cache"
     },
     {
       "id": "ga11_batch1_20260919_233802_515",
@@ -391,20 +405,6 @@
       "output_dir": "../artifacts/rl/selected10_resume_three_splits_20260913/run",
       "log_path": "../artifacts/rl/selected10_resume_three_splits_20260913/stdout.log",
       "trace_dir": "../artifacts/rl/selected10_resume_three_splits_20260913/monitor/cache"
-    },
-    {
-      "id": "ppo11_p1_snr_gamma09_lam08_20260921",
-      "algorithm": "PPO",
-      "output_dir": "../artifacts/rl/ppo11_p1_snr_gamma09_lam08_20260921/run",
-      "log_path": "../artifacts/rl/ppo11_p1_snr_gamma09_lam08_20260921/stdout.log",
-      "trace_dir": "../artifacts/rl/ppo11_p1_snr_gamma09_lam08_20260921/monitor/cache"
-    },
-    {
-      "id": "ppo11_p2_snr_envs40_20260921",
-      "algorithm": "PPO",
-      "output_dir": "../artifacts/rl/ppo11_p2_snr_envs40_20260921/run",
-      "log_path": "../artifacts/rl/ppo11_p2_snr_envs40_20260921/stdout.log",
-      "trace_dir": "../artifacts/rl/ppo11_p2_snr_envs40_20260921/monitor/cache"
     }
   ]
 }

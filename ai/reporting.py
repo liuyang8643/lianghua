@@ -340,7 +340,10 @@ class ReportReader:
         self._sampled_series = {}
         self._latest_distribution = None
 
-    def snapshot(self) -> dict:
+    # Sections that only the dashboard's detail tabs consume; card/curve views never read them.
+    DETAIL_ONLY_FIELDS = ('actions', 'diagnostics', 'diagnostic_records', 'logs', 'latest_distribution')
+
+    def snapshot(self, *, detail: bool = True) -> dict:
         with self._lock:
             path = self.run_dir / 'training_report.json'
             stat = path.stat()
@@ -350,8 +353,17 @@ class ReportReader:
                 if report['schema_version'] != REPORT_SCHEMA_VERSION or report['algorithm'] != self.algorithm:
                     raise ValueError('Training report schema or algorithm mismatch; migrate historical artifacts once')
                 self._report, self._signature = report, signature
-            report = copy.deepcopy(self._report)
+            if detail:
+                report = copy.deepcopy(self._report)
+            else:
+                # Card/curve payload: share the immutable cached sections, copy only what is mutated below.
+                report = {key: ([] if isinstance(value, list) else {} if isinstance(value, dict) else None)
+                          if key in self.DETAIL_ONLY_FIELDS else value
+                          for key, value in self._report.items()}
+                report['progress'] = dict(report['progress'])
+                report['protocol'] = dict(report['protocol'])
             report['id'] = self.run_id
+            report['detail_loaded'] = detail
             if report['state'] in ('running', 'preparing') and process_alive(report['process_pid']) is False:
                 report['state'], report['state_label'] = 'stopped', '训练已停止'
             if report['state'] in ('running', 'preparing'):
@@ -360,6 +372,9 @@ class ReportReader:
                         0.0, time.time() - psutil.Process(report['process_pid']).create_time())
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
+            if not detail:
+                report['protocol']['diagnostic_sampling'] = 'bucket_minmax_max1000_points_per_series_evaluations_not_sampled'
+                return report
             self._diagnostics.update()
             if self._diagnostic_generation != self._diagnostics.generation:
                 self._diagnostic_generation = self._diagnostics.generation

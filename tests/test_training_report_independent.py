@@ -87,7 +87,7 @@ def http_report():
             raise ValueError("unknown run")
 
     reports = SimpleNamespace(
-        snapshot=lambda: {"runs": [], "schema_version": "training-report-v2"},
+        snapshot=lambda detail=None: {"runs": [], "schema_version": "training-report-v2"},
         require_run=require, traces={"ppo": store},
         csv=lambda key: b"run,split,calmar\r\nppo,train,0.9\r\n",
     )

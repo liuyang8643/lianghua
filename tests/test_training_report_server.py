@@ -25,8 +25,8 @@ class FakeReader:
     def __init__(self, output_dir, run_id, algorithm, *, log_path):
         self.id, self.algorithm = run_id, algorithm
 
-    def snapshot(self):
-        return {'id': self.id, 'algorithm': self.algorithm, 'progress': {'unit': '轮'},
+    def snapshot(self, *, detail=True):
+        return {'id': self.id, 'algorithm': self.algorithm, 'progress': {'unit': '轮'}, 'detail_loaded': detail,
                 'evaluations': [{'step': 12, 'split': 'validation', 'artifact_id': 'model-a',
                     'role': 'diagnostic', 'eligible': False, 'elapsed_seconds': None,
                     'metrics': {'calmar': .65, 'max_drawdown': .2}}]}
@@ -88,20 +88,36 @@ def test_duplicate_run_ids_are_rejected(monkeypatch, tmp_path):
         report_server.Reports({'runs': [entry, entry]}, tmp_path)
 
 
-def test_status_only_reads_eight_newest_reports(monkeypatch, tmp_path):
+def test_status_shows_all_runs_by_default_and_trims_detail_sections_to_selected(monkeypatch, tmp_path):
     visited = []
     class Reader(FakeReader):
         def __init__(self, output_dir, key, algorithm, **kwargs):
             self.key = key
-        def snapshot(self):
+        def snapshot(self, *, detail=True):
             visited.append(self.key)
-            return {'id': self.key}
+            full = {'id': self.key, 'evaluations': [1], 'actions': [1, 2], 'diagnostics': {'a': 1},
+                    'diagnostic_records': [3], 'logs': ['x'], 'latest_distribution': {'b': 2}}
+            if detail:
+                return {**full, 'detail_loaded': True}
+            return {**{k: ([] if isinstance(v, list) else {}) if k in ('actions', 'diagnostics', 'diagnostic_records', 'logs', 'latest_distribution') else v
+                       for k, v in full.items()}, 'detail_loaded': False}
     monkeypatch.setattr(report_server, 'ReportReader', Reader)
     entries = [{'id': f'run{i}', 'algorithm': 'PPO', 'output_dir': f'run{i}',
                 'log_path': f'run{i}.log', 'trace_dir': f'cache{i}'} for i in range(12)]
     reports = report_server.Reports({'runs': entries}, tmp_path)
-    assert len(reports.snapshot()['runs']) == 8
-    assert visited == [f'run{i}' for i in range(8)]
+    rows = reports.snapshot(detail='run3')['runs']
+    assert [row['id'] for row in rows] == [f'run{i}' for i in range(12)]
+    assert visited == [f'run{i}' for i in range(12)]
+    selected = next(row for row in rows if row['id'] == 'run3')
+    assert selected['detail_loaded'] is True and selected['actions'] == [1, 2] and selected['diagnostics'] == {'a': 1}
+    other = next(row for row in rows if row['id'] == 'run0')
+    assert other['detail_loaded'] is False and other['evaluations'] == [1]
+    assert other['actions'] == [] and other['diagnostics'] == {} and other['logs'] == [] and other['latest_distribution'] == {}
+    # --max-runs narrows the registry window from the newest entry
+    limited = report_server.Reports({'runs': entries}, tmp_path, max_runs=5)
+    assert [row['id'] for row in limited.snapshot()['runs']] == [f'run{i}' for i in range(5)]
+    with pytest.raises(ValueError):
+        report_server.Reports({'runs': entries}, tmp_path, max_runs=0)
 
 
 def test_preparing_report_has_live_elapsed_and_truncated_stage_log(tmp_path):

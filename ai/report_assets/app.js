@@ -201,15 +201,17 @@ async function refresh() {
   if (refreshing) return;
   refreshing = true;
   try {
-    const data = await request('/api/status');
+    // Only the selected run carries its heavy detail sections; other runs arrive card/curve-sized.
+    let data = await request(`/api/status${selectedId ? `?detail=${encodeURIComponent(selectedId)}` : ''}`);
     if (data.schema_version !== 'training-report-v2') throw new Error('报告数据版本不匹配');
+    if (data.runs.length && !data.runs.some(run => run.id === selectedId)) {
+      selectedId = data.runs[0].id; resetTrace();
+      data = await request(`/api/status?detail=${encodeURIComponent(selectedId)}`);
+    }
     snapshot = data;
     $('empty-runs').hidden = data.runs.length > 0;
     $('report').hidden = !data.runs.length;
-    if (data.runs.length) {
-      if (!data.runs.some(run => run.id === selectedId)) { selectedId = data.runs[0].id; resetTrace(); }
-      render();
-    }
+    if (data.runs.length) render();
     $('connection-error').hidden = true;
     $('connection').textContent = paused ? '已暂停自动刷新' : '已连接 · 每 5 秒刷新';
     $('updated').textContent = `${new Date().toLocaleString('zh-CN')} 更新`;
@@ -282,7 +284,7 @@ async function loadTrace() {
   } finally { traceLoading = false; $('load-trace').disabled = !$('checkpoint').value; }
 }
 document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => activateTab(button.dataset.tab)));
-$('run-select').addEventListener('change', event => { selectedId = event.target.value; evaluationLimit = 100; resetTrace(); render(); });
+$('run-select').addEventListener('change', async event => { selectedId = event.target.value; evaluationLimit = 100; resetTrace(); render(); await refresh(); });
 $('metric').addEventListener('change', () => renderOverview(currentRun()));
 $('diagnostic-group').addEventListener('change', () => renderDiagnostics(currentRun()));
 $('more-evaluations').addEventListener('click', () => { evaluationLimit += 100; renderOverview(currentRun()); });

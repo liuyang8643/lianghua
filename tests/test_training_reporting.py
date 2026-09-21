@@ -70,6 +70,28 @@ def test_selection_is_joined_by_checkpoint_not_step_or_score(tmp_path):
     assert report['evaluations'][-1]['eligible'] is False
 
 
+def test_card_snapshot_omits_detail_sections_without_touching_diagnostics(tmp_path, monkeypatch):
+    run = ppo(tmp_path)
+    append_training_diagnostic(run, algorithm='PPO', step=1, timesteps=16,
+        scalars={'loss': {'label': 'Loss', 'value': 0.5}}, details={})
+    reader = ReportReader(tmp_path / 'run', 'ppo', 'PPO', log_path=tmp_path / 'stdout.log')
+    full = reader.snapshot()
+    assert full['detail_loaded'] is True and full['diagnostics']['loss']['points'] == [[1, 0.5]]
+    original = Path.open
+    def guarded(self, *args, **kwargs):
+        if self == run / 'training_diagnostics.jsonl':
+            pytest.fail('card snapshots must not read diagnostics')
+        return original(self, *args, **kwargs)
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, 'open', guarded)
+        slim = reader.snapshot(detail=False)
+    assert slim['detail_loaded'] is False
+    assert slim['evaluations'] == full['evaluations'] and slim['progress']['current'] == full['progress']['current']
+    assert slim['diagnostics'] == {} and slim['actions'] == [] and slim['logs'] == [] and slim['diagnostic_records'] == []
+    # the shared cached sections were not mutated by the slim path
+    assert reader.snapshot()['diagnostics']['loss']['points'] == [[1, 0.5]]
+
+
 def test_incremental_diagnostics_partial_lines_and_extrema(tmp_path, monkeypatch):
     run = ppo(tmp_path)
     for i in range(3000):

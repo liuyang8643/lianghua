@@ -20,7 +20,10 @@ ASSETS = Path(__file__).with_name('report_assets')
 
 
 class Reports:
-    def __init__(self, config: dict, base: Path):
+    def __init__(self, config: dict, base: Path, *, max_runs: int | None = None):
+        if max_runs is not None and max_runs <= 0:
+            raise ValueError('max_runs must be positive when given')
+        self.max_runs = max_runs
         self.readers = {}
         self.traces = {}
         self.lock = threading.RLock()
@@ -40,10 +43,15 @@ class Reports:
             raise ValueError('未找到指定运行')
         return self.readers[key]
 
-    def snapshot(self) -> dict:
+    def snapshot(self, detail: str | None = None) -> dict:
         with self.lock:
-            # Registry order is newest first; do not load older report payloads.
-            rows = [reader.snapshot() for reader in list(self.readers.values())[:8]]
+            # Registry order is newest first; snapshots are mtime-cached per run, so every
+            # registered run is shown unless --max-runs narrows the dashboard. Only the
+            # selected run carries its heavy detail sections; the others are card/curve-sized.
+            items = list(self.readers.items())
+            if self.max_runs is not None:
+                items = items[:self.max_runs]
+            rows = [reader.snapshot(detail=(key == detail)) for key, reader in items]
             return {'schema_version': REPORT_SCHEMA_VERSION, 'updated_at': datetime.now(timezone.utc).isoformat(), 'runs': rows}
 
     def csv(self, key: str | None) -> bytes:
@@ -97,7 +105,7 @@ def make_handler(reports: Reports):
             path = parsed.path
             try:
                 if path == '/api/status':
-                    return self.respond(reports.snapshot())
+                    return self.respond(reports.snapshot(detail=query.get('detail', [None])[0]))
                 if path == '/api/evaluations.csv':
                     return self.respond(reports.csv(query.get('run', [None])[0]), mime='text/csv; charset=utf-8', download=True)
                 if path in ('/api/checkpoints', '/api/trace', '/api/markets'):
@@ -136,10 +144,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, required=True, help='JSON run list; relative paths resolve against this file')
     parser.add_argument('--port', type=int, default=8766)
+    parser.add_argument('--max-runs', type=int, default=None,
+                        help='show only the first N registered runs (default: all)')
     args = parser.parse_args()
     config_path = args.config.resolve()
     config = json.loads(config_path.read_text(encoding='utf-8-sig'))
-    reports = Reports(config, config_path.parent)
+    reports = Reports(config, config_path.parent, max_runs=args.max_runs)
     server = ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(reports))
     print(json.dumps({'url': f'http://127.0.0.1:{server.server_port}', 'runs': list(reports.readers)}), flush=True)
     server.serve_forever()
