@@ -1,6 +1,13 @@
 {
   "runs": [
     {
+      "id": "ppo11_e10_envs40_epoch1_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_e10_envs40_epoch1_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_e10_envs40_epoch1_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e10_envs40_epoch1_20260921/monitor/cache"
+    },
+    {
       "id": "ppo11_e9_rewardv5_logret_20260921",
       "algorithm": "PPO",
       "output_dir": "../artifacts/rl/ppo11_e9_rewardv5_logret_20260921/run",
@@ -356,6 +363,20 @@
       "output_dir": "../artifacts/rl/selected10_resume_three_splits_20260913/run",
       "log_path": "../artifacts/rl/selected10_resume_three_splits_20260913/stdout.log",
       "trace_dir": "../artifacts/rl/selected10_resume_three_splits_20260913/monitor/cache"
+    },
+    {
+      "id": "ppo11_p1_snr_gamma09_lam08_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_p1_snr_gamma09_lam08_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_p1_snr_gamma09_lam08_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_p1_snr_gamma09_lam08_20260921/monitor/cache"
+    },
+    {
+      "id": "ppo11_p2_snr_envs40_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_p2_snr_envs40_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_p2_snr_envs40_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_p2_snr_envs40_20260921/monitor/cache"
     }
   ]
 }
