@@ -1,11 +1,11 @@
 {
   "runs": [
     {
-      "id": "ppo11_e10_envs40_epoch1_20260921",
+      "id": "ppo11_e12_envs20_epoch1_20260921",
       "algorithm": "PPO",
-      "output_dir": "../artifacts/rl/ppo11_e10_envs40_epoch1_20260921/run",
-      "log_path": "../artifacts/rl/ppo11_e10_envs40_epoch1_20260921/stdout.log",
-      "trace_dir": "../artifacts/rl/ppo11_e10_envs40_epoch1_20260921/monitor/cache"
+      "output_dir": "../artifacts/rl/ppo11_e12_envs20_epoch1_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_e12_envs20_epoch1_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e12_envs20_epoch1_20260921/monitor/cache"
     },
     {
       "id": "ppo11_e9_rewardv5_logret_20260921",
