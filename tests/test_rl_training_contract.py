@@ -118,8 +118,8 @@ def test_cli_exposes_only_standard_ppo_throughput_controls():
     assert "n_steps" in destinations
     assert "train_window_transitions" not in destinations
     assert "gate_recovery" not in destinations
-    assert "gamma" not in destinations
-    # gae_lambda is an explicit credit-window experiment knob (2026-09-21); its value is sealed in the identity.
+    # gamma/gae_lambda are explicit credit-window experiment knobs (2026-09-21); values are sealed in the identity.
+    assert "gamma" in destinations
     assert "gae_lambda" in destinations
     assert "eval_every_rollouts" in destinations
     assert "device" in destinations

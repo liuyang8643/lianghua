@@ -816,7 +816,7 @@ def _build_run_identity(
             "policy": "ai.rl.typed_policy.TypedActorCriticPolicy",
             "objective": "horizon_scaled_annualized_log_return_minus_max_drawdown",
             "checkpoint_selection": CHECKPOINT_SELECTION_OBJECTIVE,
-            "gamma": PPO_GAMMA,
+            "gamma": args.gamma,
             "gae_lambda": args.gae_lambda,
             "ent_coef": args.ent_coef,
             "n_steps": n_steps,
@@ -1229,7 +1229,7 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
             n_steps=n_steps,
             batch_size=batch_size,
             n_epochs=args.n_epochs,
-            gamma=PPO_GAMMA,
+            gamma=args.gamma,
             gae_lambda=args.gae_lambda,
             ent_coef=args.ent_coef,
             target_kl=args.target_kl,
@@ -1251,7 +1251,7 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
         model.n_steps = n_steps
         model.batch_size = batch_size
         model.n_epochs = args.n_epochs
-        model.gamma = PPO_GAMMA
+        model.gamma = args.gamma
         model.gae_lambda = args.gae_lambda
         model.ent_coef = args.ent_coef
         model.target_kl = args.target_kl
@@ -1569,7 +1569,7 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
         'learner_device': learner_device,
         'complete_train_evaluation_every_rollouts': args.eval_every_rollouts,
         'evaluation_execution': args.evaluation_execution,
-        'gamma': PPO_GAMMA,
+        'gamma': args.gamma,
         'gae_lambda': args.gae_lambda,
         'ent_coef': args.ent_coef,
     }
@@ -1667,6 +1667,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate-end-fraction", type=float, default=1.0)
     parser.add_argument("--learning-rate-decay-start", type=float, default=0.2)
     parser.add_argument("--target-kl", type=float, default=DEFAULT_TARGET_KL)
+    parser.add_argument("--gamma", type=float, default=PPO_GAMMA,
+                        help="discount; with gae_lambda it sets the per-step credit window of the advantage")
     parser.add_argument("--gae-lambda", type=float, default=PPO_GAE_LAMBDA,
                         help="GAE lambda; with gamma it sets the per-step credit window of the advantage")
     parser.add_argument("--ent-coef", type=float, default=0.0,
@@ -1730,6 +1732,8 @@ def _validate_cli(args: argparse.Namespace) -> None:
         raise ValueError("target_kl must be finite and positive")
     if not 0.0 <= args.gae_lambda <= 1.0:
         raise ValueError("gae_lambda must be in [0, 1]")
+    if not 0.0 < args.gamma <= 1.0:
+        raise ValueError("gamma must be in (0, 1]")
     if not math.isfinite(args.ent_coef) or args.ent_coef < 0.0:
         raise ValueError("ent_coef must be finite and non-negative")
     if not math.isfinite(args.log_std_init):
