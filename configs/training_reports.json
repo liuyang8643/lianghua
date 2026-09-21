@@ -1,11 +1,18 @@
 {
   "runs": [
     {
-      "id": "ppo11_e14_headgain1_20260921",
+      "id": "ppo11_e16_antithetic_20260922",
       "algorithm": "PPO",
-      "output_dir": "../artifacts/rl/ppo11_e14_headgain1_20260921/run",
-      "log_path": "../artifacts/rl/ppo11_e14_headgain1_20260921/stdout.log",
-      "trace_dir": "../artifacts/rl/ppo11_e14_headgain1_20260921/monitor/cache"
+      "output_dir": "../artifacts/rl/ppo11_e16_antithetic_20260922/run",
+      "log_path": "../artifacts/rl/ppo11_e16_antithetic_20260922/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e16_antithetic_20260922/monitor/cache"
+    },
+    {
+      "id": "ppo11_e15_headgain01_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_e15_headgain01_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_e15_headgain01_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e15_headgain01_20260921/monitor/cache"
     },
     {
       "id": "ppo11_e13_epoch1_lr3e3_20260921",
@@ -13,6 +20,13 @@
       "output_dir": "../artifacts/rl/ppo11_e13_epoch1_lr3e3_20260921/run",
       "log_path": "../artifacts/rl/ppo11_e13_epoch1_lr3e3_20260921/stdout.log",
       "trace_dir": "../artifacts/rl/ppo11_e13_epoch1_lr3e3_20260921/monitor/cache"
+    },
+    {
+      "id": "ppo11_e14_headgain1_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_e14_headgain1_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_e14_headgain1_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e14_headgain1_20260921/monitor/cache"
     },
     {
       "id": "ppo11_e12_envs20_epoch1_20260921",
