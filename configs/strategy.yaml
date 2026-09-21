@@ -1,4 +1,4 @@
-version: 2026-09-15-selected11-long-holdout
+version: 2026-09-22-selected12-amihud-hold20
 default_profile: current4
 mode_configs:
   debug:
@@ -13,7 +13,7 @@ mode_configs:
     desc: GA 优化模式
 profiles:
   current4:
-    desc: 十一因子词表；静态基准沿用原配置，新增异常毛利润权重为零
+    desc: 十二因子词表（新增修正版 Amihud 非流动性）；静态基准沿用原配置，新增因子权重为零；固定持仓 20 只
     factor_classes:
     - TrueMarketCap
     - VolumeCV
@@ -26,6 +26,7 @@ profiles:
     - LowCashOutflowProfitGrowthSpread
     - HighOperatingProfitRevenueGrowthSpread
     - HighAbnormalGrossProfit
+    - CompletedAmihudIlliquidity20
     filter_factor_classes:
     - FilterST
     - FilterLowPrice

@@ -15,8 +15,8 @@ from env.contracts import Observation
 from env.observation import (AccountObservation, ObservationBuilder, ObservationSchema, _canonical_hash,
                              RAW_MISSING_VALUE, HISTORICAL_STOCK_FEATURE_NAMES, LATEST_STOCK_FEATURE_NAMES)
 
-ENCODER_SCHEMA_VERSION = "wbr-raw-observation-transport-v21-source-state"
-NORMALIZER_VERSION = "wbr-train-field-normalizer-v13-signed-source-state"
+ENCODER_SCHEMA_VERSION = "wbr-raw-observation-transport-v22-source-state-12factors"
+NORMALIZER_VERSION = "wbr-train-field-normalizer-v14-12factors"
 
 @dataclass(frozen=True)
 class EncodedObservationSchema:

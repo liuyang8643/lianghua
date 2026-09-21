@@ -158,11 +158,13 @@ def test_fixed_backtest_is_elementwise_the_same_env_session(
             + row["slippage"]
         )
     assert all(result["full_investment_contract"])
-    # Only 30 stocks exist in this fixture; fixed buy_n=50 caps each at 2%.
-    assert all(0.58 < exposure < 0.60 for exposure in result["daily_exposures"])
-    assert set(result["trace"].residual_cash_reasons) == {
-        "concentration_or_lot_capacity_exhausted"
-    }
+    # 30 stocks exist in this fixture; fixed buy_n=20 (5% each) can be filled from them, so the
+    # account is essentially fully invested and only lot rounding leaves residual cash.
+    exposures = np.asarray(result["daily_exposures"])
+    assert exposures.min() > 0.9, (exposures.min(), exposures.max(), set(result["trace"].residual_cash_reasons))
+    assert set(result["trace"].residual_cash_reasons) <= {
+        "concentration_or_lot_capacity_exhausted", "below_next_legal_frozen_lot_cost",
+    }, set(result["trace"].residual_cash_reasons)
 
 
 def test_trace_actions_are_owned_float32_and_independent_between_runs(canonical_episode):

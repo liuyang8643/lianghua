@@ -14,7 +14,7 @@ from factor.library.bilibili import calculate_lifetime_state, LIFETIME_STATE_NAM
 from offline_data.financial_versions import RAW_FINANCIAL_VALUE_NAMES, RAW_FINANCIAL_TIME_NAMES, RAW_FINANCIAL_PERIOD_NAMES, RAW_FINANCIAL_STATE_VERSION
 
 DEFAULT_LOOKBACK = 64
-OBSERVATION_SCHEMA_VERSION = "wbr-observation-v21-source-state-no-factors"
+OBSERVATION_SCHEMA_VERSION = "wbr-observation-v22-source-state-12factors"
 RAW_MISSING_VALUE = np.float32(-np.finfo(np.float32).max)
 CURRENT_RUNTIME_FIELDS = ("open", "preClose", "st_mask")
 LAGGED_RUNTIME_FIELDS = ("open", "high", "low", "close", "volume", "amount", "preClose", "total_share")

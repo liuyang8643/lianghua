@@ -8,7 +8,7 @@ from typing import Any, Literal
 import numpy as np
 
 
-FACTOR_SCHEMA_VERSION = "wbr.production-factors.v9-selected11-momentum-interior-gaps"
+FACTOR_SCHEMA_VERSION = "wbr.production-factors.v10-selected12-completed-amihud"
 
 
 @dataclass(frozen=True, slots=True)

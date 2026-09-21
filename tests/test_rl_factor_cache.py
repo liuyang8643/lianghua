@@ -79,7 +79,7 @@ def test_production_vocabulary_metadata_and_cache_layout(tmp_path):
 
     batch = precompute_factors(runtime)
 
-    assert batch.schema_version == "wbr.production-factors.v9-selected11-momentum-interior-gaps"
+    assert batch.schema_version == "wbr.production-factors.v10-selected12-completed-amihud"
     assert batch.factor_names == PRODUCTION_FACTOR_NAMES
     assert batch.filter_names == PRODUCTION_FILTER_NAMES
     assert tuple(item.metadata.name for item in PRODUCTION_FACTORS) == (
@@ -94,6 +94,7 @@ def test_production_vocabulary_metadata_and_cache_layout(tmp_path):
         "LowCashOutflowProfitGrowthSpread",
         "HighOperatingProfitRevenueGrowthSpread",
         "HighAbnormalGrossProfit",
+        "CompletedAmihudIlliquidity20",
     )
     assert [item.metadata.required_fields for item in PRODUCTION_FACTORS] == [
         ("open", "total_share"),
@@ -109,20 +110,21 @@ def test_production_vocabulary_metadata_and_cache_layout(tmp_path):
         ("abnormal_revenue_quarter", "abnormal_cost_quarter", "abnormal_sales_cash_quarter",
          "abnormal_revenue_prior_year_quarter", "abnormal_cost_prior_year_quarter",
          "abnormal_sales_cash_prior_year_quarter", "abnormal_total_assets"),
+        ("close", "preClose", "amount"),
     ]
     assert [item.metadata.hist_days for item in PRODUCTION_FACTORS] == [
-        1, 20, 60, 20, 252, 100_000, 100_000, 1, 0, 0, 0,
+        1, 20, 60, 20, 252, 100_000, 100_000, 1, 0, 0, 0, 20,
     ]
     assert [item.metadata.lagged_fields for item in PRODUCTION_FACTORS] == [
-        ("total_share",), (), (), (), (), (), (), ("total_share",), (), (), (),
+        ("total_share",), (), (), (), (), (), (), ("total_share",), (), (), (), (),
     ]
     assert [item.metadata.score_semantics for item in PRODUCTION_FACTORS] == [
-        *("continuous",) * 7, "binary", "continuous", "continuous", "continuous",
+        *("continuous",) * 7, "binary", "continuous", "continuous", "continuous", "continuous",
     ]
     assert all(len(item.metadata.implementation_hash) == 64 for item in PRODUCTION_FACTORS)
     assert all(item.metadata.version for item in PRODUCTION_FACTORS)
 
-    expected = (runtime.n_dates, 11, runtime.n_stocks)
+    expected = (runtime.n_dates, 12, runtime.n_stocks)
     assert batch.raw.shape == expected
     assert batch.ranks.shape == expected
     assert batch.validity.shape == expected
@@ -137,9 +139,9 @@ def test_production_vocabulary_metadata_and_cache_layout(tmp_path):
     assert batch.filters.flags.c_contiguous and not batch.filters.flags.writeable
 
     day = batch.day(runtime.decision_start)
-    assert day.raw.shape == (11, runtime.n_stocks)
-    assert day.ranks.shape == (11, runtime.n_stocks)
-    assert day.validity.shape == (11, runtime.n_stocks)
+    assert day.raw.shape == (12, runtime.n_stocks)
+    assert day.ranks.shape == (12, runtime.n_stocks)
+    assert day.validity.shape == (12, runtime.n_stocks)
     assert day.filters.shape == (2, runtime.n_stocks)
     np.testing.assert_array_equal(day.validity, np.isfinite(day.raw))
     assert day.validity[[0, 1, 2, 3, 5, 6, 7, 8, 9, 10]].all()

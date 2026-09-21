@@ -12,7 +12,7 @@ from factor_db.factors.TrueMarketCap import TrueMarketCap
 from factor_db.factors.VolumeCV import VolumeCV
 from factor_db.factors.filter import FilterLowPrice, FilterST
 from factor.library import (
-    CompletedReversal20, CompletedMomentum252Skip21,
+    CompletedAmihudIlliquidity20, CompletedReversal20, CompletedMomentum252Skip21,
 )
 from factor.library.bilibili import (
     BiliAdjustedIssueDiscount, BiliHighLifetimeRangeRatio,
@@ -46,6 +46,7 @@ PRODUCTION_FACTOR_NAMES = (
     "LowCashOutflowProfitGrowthSpread",
     "HighOperatingProfitRevenueGrowthSpread",
     "HighAbnormalGrossProfit",
+    "CompletedAmihudIlliquidity20",
 )
 PRODUCTION_FILTER_NAMES = ("FilterST", "FilterLowPrice")
 
@@ -145,6 +146,11 @@ PRODUCTION_FACTORS: tuple[FactorDefinition, ...] = (
         HighAbnormalGrossProfit,
         version=ABNORMAL_GROSS_PROFIT_VERSION,
         required_fields=ABNORMAL_GROSS_PROFIT_PANEL_FIELDS,
+    ),
+    _definition(
+        CompletedAmihudIlliquidity20,
+        version="completed-official-abs-return-per-1e8-amount-v1-min-amount-1e5-min15",
+        required_fields=("close", "preClose", "amount"),
     ),
 )
 

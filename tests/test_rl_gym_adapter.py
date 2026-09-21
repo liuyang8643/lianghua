@@ -31,7 +31,7 @@ def test_gym_adapter_passes_checker_and_has_one_domain_session(episode):
     assert not hasattr(env, "_simulator")
     assert env.session._planner is not None
     assert env.session._simulator is not None
-    assert env.action_space.shape == (12,)
+    assert env.action_space.shape == (13,)
     assert env.action_space.dtype == np.float32
     low, high = env.action_schema.space_bounds
     np.testing.assert_array_equal(env.action_space.low, low)
@@ -113,7 +113,7 @@ def test_environment_manifest_freezes_dense_incremental_drawdown_semantics(episo
     )
 
     assert ENVIRONMENT_SCHEMA_VERSION == (
-        "wbr-ppo-environment-v38-log-return-reward"
+        "wbr-ppo-environment-v39-amihud12-hold20"
     )
     assert manifest["prefilter"] == {
         "n": 300,

@@ -87,7 +87,7 @@ def test_ga_samples_every_current4_weight_and_roundtrips_action_schema():
     assert all(0 <= weight <= 1 for config in configs for weight in config["weights"].values())
     assert any(sum(config["weights"].values()) > 1.0 for config in configs)
     assert all(any(config["factor_enabled"].values()) for config in configs)
-    assert all(config["buy_n"] == 50 for config in configs)
+    assert all(config["buy_n"] == 20 for config in configs)
     assert all(0.0 <= config["turnover_rate"] <= 0.2 for config in configs)
     assert len({config["turnover_rate"] for config in configs}) == len(configs)
     assert any(config["turnover_rate"] * 50 != int(config["turnover_rate"] * 50) for config in configs)

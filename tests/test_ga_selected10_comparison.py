@@ -18,7 +18,7 @@ def test_sampling_and_breeding_preserve_exact_unit_weights():
     random.seed(20260914)
     schema = ActionSchema()
     config = build_individual_config(weights=dict.fromkeys(schema.factor_names, 0.5))
-    assert list(canonicalize_ga_genes(config)[1].factor_weights.values()) == [0.5]*11
+    assert list(canonicalize_ga_genes(config)[1].factor_weights.values()) == [0.5]*12
     initial = generate_initial_configs(64)
     results = [{'individual_config': c, 'calmar': i/10} for i,c in enumerate(initial)]
     population = ga_optimizer(results, {}, population_size=32)

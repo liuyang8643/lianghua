@@ -18,7 +18,9 @@ from factor.registry import PRODUCTION_FACTOR_NAMES, PRODUCTION_FILTER_NAMES
 
 CORE_FACTOR_NAMES = PRODUCTION_FACTOR_NAMES
 CORE_FILTER_NAMES = PRODUCTION_FILTER_NAMES
-FIXED_BUY_N = 50
+# 2026-09-22 user override: production holds 20 names (was 50). With turnover in [0.05, 0.2]
+# the daily worst-holding check set is floor(20*rate) = 1..4 positions; single_buy_pct = 1/20.
+FIXED_BUY_N = 20
 SERIALIZED_DAY_CONFIG_FIELDS = (
     "weights",
     "factor_enabled",
@@ -67,7 +69,7 @@ class ActionSchema:
     fixed_filter_flags: tuple[bool, ...] = (True, True)
     fixed_limit_up_protection: bool = True
     fixed_rebalance_band_pct: float = 0.01
-    schema_version: str = "day-config-v20-turnover-floor"
+    schema_version: str = "day-config-v21-amihud12-hold20"
     _layout: tuple[ActionField, ...] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:

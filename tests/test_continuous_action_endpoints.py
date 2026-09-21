@@ -19,8 +19,8 @@ def test_endpoint_mode_can_disable_factor_and_check_between_two_and_ten_holdings
     actions = law.mode()
     assert torch.isfinite(law.log_prob(actions)).all()
     np.testing.assert_array_equal(actions[:, -1].numpy(), [-1.0, 1.0])
-    # The production floor always examines the two worst holdings; the ceiling checks ten.
-    for row, replacements in zip(actions.numpy(), (2, 10)):
+    # With 20 holdings the production floor examines the worst holding; the ceiling checks four.
+    for row, replacements in zip(actions.numpy(), (1, 4)):
         config = schema.decode(row)
         assert config.replacement_limit == replacements
         assert config.factor_weights[schema.factor_names[0]] == 0.0
@@ -36,7 +36,7 @@ def test_turnover_range_is_explicit_and_hash_sealed(upper):
     assert ActionSchema.from_dict(schema.to_dict()) == schema
     config = schema.decode(np.ones(schema.action_dim))
     assert config.turnover_rate == upper
-    assert config.replacement_limit == int(50 * upper)
+    assert config.replacement_limit == int(20 * upper)
     payload = schema.to_dict()
     del payload["turnover_maximum"]
     with pytest.raises(KeyError):

@@ -18,9 +18,10 @@ def _assert_actions(actions, schema):
 
 
 def test_gaussian_raw_likelihood_is_not_likelihood_of_clipped_action():
-    mean = th.full((4, 12), -3., requires_grad=True)
-    log_std = th.zeros(12, requires_grad=True)
-    law = DiagGaussianDistribution(12).proba_distribution(mean, log_std)
+    dim = ActionSchema().action_dim
+    mean = th.full((4, dim), -3., requires_grad=True)
+    log_std = th.zeros(dim, requires_grad=True)
+    law = DiagGaussianDistribution(dim).proba_distribution(mean, log_std)
     raw = mean.detach().clone()
     expected = th.distributions.Normal(mean, log_std.exp()).log_prob(raw).sum(-1)
     th.testing.assert_close(law.log_prob(raw), expected)

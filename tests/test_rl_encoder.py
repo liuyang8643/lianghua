@@ -24,11 +24,11 @@ def test_transport_is_lossless_account_and_local_ref_only():
     obs=builder.build(5,sample_account(runtime))
     encoded=encoder.encode(obs,store=store)
     schema=encoder.output_schema
-    assert schema.dimension==1+3*4+4+4*15
+    assert schema.dimension==1+3*4+4+4*16
     assert encoded[0]==4
     np.testing.assert_array_equal(encoded[schema.position_slice].reshape(3,4),obs.position_panel)
     np.testing.assert_array_equal(encoded[schema.portfolio_slice],obs.portfolio)
-    np.testing.assert_array_equal(encoded[schema.history_slice].reshape(4,15),obs.policy_history)
+    np.testing.assert_array_equal(encoded[schema.history_slice].reshape(4,16),obs.policy_history)
     assert len(schema.feature_names)==schema.dimension
     assert EncodedObservationSchema.from_dict(schema.to_dict())==schema
     assert schema.feature_names[0]=="transport.raw_row_ref"
@@ -112,7 +112,7 @@ def test_normalizer_only_training_per_field_no_center_clip_or_stock_scales(tmp_p
     assert norm.stock_scale.shape==(37,)
     assert norm.position_scale.shape==(4,)
     assert norm.portfolio_scale.tolist()==[1e6,1e6,1e6,1]
-    assert norm.history_scale.shape==(15,)
+    assert norm.history_scale.shape==(16,)
     assert not hasattr(norm,"mean") and not hasattr(norm,"clip") and not hasattr(norm,"transform")
     for i,name in enumerate(encoder.output_schema.stock_feature_names):
         if name in ("st_mask","price_buy_allowed","price_sell_allowed"):

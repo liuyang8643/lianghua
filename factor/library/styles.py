@@ -79,6 +79,42 @@ class CompletedMomentum252Skip21:
             return np.expm1(completed)
 
 
+class CompletedAmihudIlliquidity20:
+    """Mean |official simple return| / (amount / 1e8) over completed [T-20, T).
+
+    Corrected Amihud illiquidity (2026-09-22). The legacy version divided by
+    ``amount_known / 1e8`` without a validity gate, so a zero or near-zero
+    amount (suspension day, single-lot print) produced ``inf`` or values many
+    orders of magnitude above the cross-section, and ``np.cumsum`` propagated
+    that ``inf`` through every later window. Here a day contributes only when
+    the official return and the amount are finite and ``amount >= min_amount``
+    (1e5 CNY); other days are missing, at least 15 of 20 completed days must be
+    valid, and the window mean is reported. Scoring and the actor consume the
+    cross-sectional rank, so the finite scale is all that must be sound.
+    """
+
+    hist_days = 20
+    min_valid_days = 15
+    min_amount = 1e5
+    pre_ranked = False
+    requires_full_history = False
+
+    def calc_batch(self, panel: dict) -> np.ndarray:
+        close, pre_close, amount = _matrices(panel, "close", "preClose", "amount")
+        log_returns = _official_log_returns(close, pre_close)
+        valid = np.isfinite(log_returns) & np.isfinite(amount) & (amount >= self.min_amount)
+        daily = np.full(close.shape, np.nan, dtype=np.float64)
+        with np.errstate(over="ignore", invalid="ignore"):
+            np.divide(np.abs(np.expm1(log_returns)), amount / 1e8, out=daily, where=valid)
+        daily[~np.isfinite(daily)] = np.nan
+        counts = completed_finite_window_sum(np.isfinite(daily).astype(np.float64), self.hist_days)
+        total = completed_finite_window_sum(daily, self.hist_days, min_count=self.min_valid_days)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            result = total / counts
+        result[~np.isfinite(result)] = np.nan
+        return result
+
+
 class CompletedAmountImbalance20:
     """Completed 20-day signed amount divided by total amount, in [-1, 1].
 

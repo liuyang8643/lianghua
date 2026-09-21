@@ -82,11 +82,11 @@ def _config(names, weights):
 
 
 def test_selected11_vocabulary_metadata_and_schema(runtime):
-    assert PRODUCTION_FACTOR_NAMES == SELECTED7 + FINANCIAL_NAMES + ("HighAbnormalGrossProfit",)
+    assert PRODUCTION_FACTOR_NAMES == SELECTED7 + FINANCIAL_NAMES + ("HighAbnormalGrossProfit", "CompletedAmihudIlliquidity20")
     assert tuple(item.metadata.name for item in PRODUCTION_FACTORS) == PRODUCTION_FACTOR_NAMES
-    assert FACTOR_SCHEMA_VERSION == "wbr.production-factors.v9-selected11-momentum-interior-gaps"
+    assert FACTOR_SCHEMA_VERSION == "wbr.production-factors.v10-selected12-completed-amihud"
     assert tuple(item.metadata.hist_days for item in PRODUCTION_FACTORS) == (
-        1, 20, 60, 20, 252, 100000, 100000, 1, 0, 0, 0,
+        1, 20, 60, 20, 252, 100000, 100000, 1, 0, 0, 0, 20,
     )
     binary = get_factor_definition(FINANCIAL_NAMES[0]).metadata
     assert binary.score_semantics == "binary"
@@ -98,7 +98,7 @@ def test_selected11_vocabulary_metadata_and_schema(runtime):
         assert len(definition.metadata.implementation_hash) == 64
     batch = precompute_factors(runtime)
     assert batch.schema_version == FACTOR_SCHEMA_VERSION
-    assert batch.raw.shape == batch.ranks.shape == batch.validity.shape == (280, 11, 6)
+    assert batch.raw.shape == batch.ranks.shape == batch.validity.shape == (280, 12, 6)
     assert batch.raw.dtype == batch.ranks.dtype == np.float32
     assert batch.validity.dtype == np.bool_
     for values in (batch.raw, batch.ranks, batch.validity, batch.filters):
@@ -245,7 +245,7 @@ def test_eleven_factor_scores_use_env_weighted_sum_without_binary_filtering(runt
     profit[:, 2:] = [-1, 0, 1e8, 2e8]
     batch = precompute_factors(_changed(runtime, financial_profit_ttm=profit))
     assert batch.validity[260].all()
-    weights = tuple((index + 1) / 20 for index in range(11))
+    weights = tuple((index + 1) / 20 for index in range(len(batch.factor_names)))
     config = _config(batch.factor_names, weights)
     ranks = dict(zip(batch.factor_names, batch.ranks[260]))
     validity = dict(zip(batch.factor_names, batch.validity[260]))
@@ -402,14 +402,15 @@ def test_new_abnormal_factor_reuses_research_formula_and_already_known_rows(runt
     baseline = precompute_factors(runtime)
     changed = precompute_factors(_changed(runtime, **fields))
     np.testing.assert_array_equal(baseline.raw[:260], changed.raw[:260])
-    assert changed.raw[260, -1, 0] == np.float32(.02)
-    assert np.isnan(changed.raw[261:, -1]).all()
-    assert not changed.validity[261:, -1].any()
-    assert not changed.ranks[261:, -1].any()
+    abnormal = baseline.factor_names.index("HighAbnormalGrossProfit")
+    assert changed.raw[260, abnormal, 0] == np.float32(.02)
+    assert np.isnan(changed.raw[261:, abnormal]).all()
+    assert not changed.validity[261:, abnormal].any()
+    assert not changed.ranks[261:, abnormal].any()
 
 
 def test_new_factor_preserves_all_original_ten_values_and_zero_weight_scores(runtime):
-    old = precompute_factors(runtime, definitions=PRODUCTION_FACTORS[:-1])
+    old = precompute_factors(runtime, definitions=PRODUCTION_FACTORS[:10])
     new = precompute_factors(runtime)
     for name in ("raw", "ranks", "validity"):
         np.testing.assert_array_equal(getattr(old, name), getattr(new, name)[:, :10])
@@ -422,7 +423,7 @@ def test_new_factor_preserves_all_original_ten_values_and_zero_weight_scores(run
     missing = precompute_factors(_changed(runtime, **fields))
     new_scores = score_factor_ranks(dict(zip(missing.factor_names, missing.ranks[260])),
                                     dict(zip(missing.factor_names, missing.validity[260])),
-                                    _config(missing.factor_names, weights + (0.,)), runtime.n_stocks)
+                                    _config(missing.factor_names, weights + (0., 0.)), runtime.n_stocks)
     np.testing.assert_array_equal(old_scores, new_scores)
 
 
@@ -434,7 +435,7 @@ def test_abnormal_future_nonmember_values_do_not_change_member_ranks(runtime):
     revenue[:, -1] = 1e30
     changed = precompute_factors(_changed(runtime, listing_age=ages, abnormal_revenue_quarter=revenue))
     np.testing.assert_array_equal(baseline.ranks[:, :, :-1], changed.ranks[:, :, :-1])
-    assert not changed.ranks[:, -1, -1].any()
+    assert not changed.ranks[:, baseline.factor_names.index("HighAbnormalGrossProfit"), -1].any()
 
 
 @pytest.mark.parametrize("field", ABNORMAL_GROSS_PROFIT_PANEL_FIELDS)
@@ -453,5 +454,7 @@ def test_static_configuration_appends_zero_without_replacing_old_vocabulary():
     payload = json.loads(Path("configs/config.json").read_text(encoding="utf-8"))["individual_config"]
     assert tuple(payload["weights"]) == PRODUCTION_FACTOR_NAMES
     assert payload["weights"]["HighAbnormalGrossProfit"] == 0.
+    assert payload["weights"]["CompletedAmihudIlliquidity20"] == 0.
+    assert payload["buy_n"] == 20 and payload["single_buy_pct"] == 0.05
     strategy = yaml.safe_load(Path("configs/strategy.yaml").read_text(encoding="utf-8"))
     assert tuple(strategy["profiles"]["current4"]["factor_classes"]) == PRODUCTION_FACTOR_NAMES

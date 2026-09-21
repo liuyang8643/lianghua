@@ -63,7 +63,7 @@ from offline_data import RUNTIME_FIELDS, RuntimeSlice, load_runtime_slice
 from offline_data.contracts import ReplayProjection
 
 
-ENVIRONMENT_SCHEMA_VERSION = "wbr-ppo-environment-v38-log-return-reward"
+ENVIRONMENT_SCHEMA_VERSION = "wbr-ppo-environment-v39-amihud12-hold20"
 CRITIC_CONTEXT_SCHEMA_VERSION = (
     "dense-return-incremental-drawdown-critic-context-v5"
 )

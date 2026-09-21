@@ -115,7 +115,7 @@ def scheduled_learning_rate(initial: float, end_fraction: float, decay_start: fl
     progress = min(1.0, max(0.0, completed / total))
     phase = max(0.0, (progress - decay_start) / (1.0 - decay_start))
     return initial * (1.0 - (1.0 - end_fraction) * phase)
-RUN_IDENTITY_VERSION = "wbr-ppo-run-identity-v90-log-return-reward"
+RUN_IDENTITY_VERSION = "wbr-ppo-run-identity-v91-amihud12-hold20"
 EVALUATION_CACHE_PROTOCOL = {"prepared_splits": "eager_once_before_rollout_workers_shared_readonly_until_exit",
                              "evaluation_execution": "serial", "release": "ExitStack",
                              "replay_storage": "full_history_precompute_then_causal_history_projection"}

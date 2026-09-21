@@ -156,7 +156,7 @@ def test_full_raw_vocabulary_has_no_statistical_market_panel():
     assert not any(name.startswith(("factor_rank.", "filter_pass.")) for name in builder.schema.stock_feature_names)
     assert obs.position_panel.shape==(3,4)
     assert obs.portfolio.shape==(4,)
-    assert obs.policy_history.shape==(4,15)
+    assert obs.policy_history.shape==(4,16)  # valid + 12 weights + turnover + gross turnover + cost
     assert not hasattr(obs,"market_panel")
     assert not any(name in builder.schema.stock_feature_names for name in QUARANTINED_RUNTIME_FIELDS)
     assert ObservationSchema.from_dict(builder.schema.to_dict())==builder.schema

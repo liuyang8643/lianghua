@@ -23,7 +23,7 @@ def _turnover_unit(schema: ActionSchema, rate: float) -> float:
     return (rate - field.minimum) / (field.maximum - field.minimum)
 
 
-@pytest.mark.parametrize("buy_n", [50, 300])
+@pytest.mark.parametrize("buy_n", [20, 300])
 def test_all_integer_boundaries_have_identical_static_ga_and_ppo_counts(buy_n):
     schema = ActionSchema(fixed_buy_n=buy_n)
     raw_base = schema.decode(np.zeros(schema.action_dim))
@@ -31,7 +31,7 @@ def test_all_integer_boundaries_have_identical_static_ga_and_ppo_counts(buy_n):
     counts = [count for count in range(buy_n + 1) if field.minimum <= count / buy_n <= field.maximum]
     assert len(counts) >= 2
     parameters = th.full((len(counts), schema.action_dim), 0.5)
-    parameters[:, 11] = th.tensor([_turnover_unit(schema, count / buy_n) for count in counts])
+    parameters[:, schema.action_dim - 1] = th.tensor([_turnover_unit(schema, count / buy_n) for count in counts])
     actions = DiagGaussianDistribution(schema.action_dim).proba_distribution(2 * parameters - 1, th.zeros(schema.action_dim)).mode().clamp(-1, 1).numpy()
     for count, action in zip(counts, actions):
         literal_rate = count / buy_n
@@ -46,14 +46,14 @@ def test_all_integer_boundaries_have_identical_static_ga_and_ppo_counts(buy_n):
         physical_thresholds = encode_unit_action(np.arange(1, buy_n + 1) / buy_n)
         expected = int(np.count_nonzero(encode_unit_action(ga.turnover_rate) >= physical_thresholds))
         assert ga.replacement_limit == ppo.replacement_limit == expected
-        if buy_n == 50:
+        if buy_n == 20:
             assert expected == count
             generated = build_individual_config(turnover_rate=literal_rate,
                 weights=dict.fromkeys(schema.factor_names, 0.5))
             assert schema.from_serialized_day_config(generated) == ppo
 
 
-@pytest.mark.parametrize("buy_n", [50, 300])
+@pytest.mark.parametrize("buy_n", [20, 300])
 def test_threshold_neighbors_obey_declared_precision_without_epsilon(buy_n):
     thresholds = encode_unit_action(np.arange(1, buy_n + 1, dtype=np.float64) / buy_n)
     for count in range(1, buy_n + 1):
@@ -134,7 +134,7 @@ def test_static_parser_fixed_providers_ga_and_ppo_share_canonical_execution(cano
     payload["turnover_rate"] = 0.12
     config = schema.from_static_config(payload)
     assert config == schema.canonicalize_day_config(config)
-    assert config.replacement_limit == 6
+    assert config.replacement_limit == 2  # floor(20 * 0.12)
 
     ga = schema.from_serialized_day_config(build_individual_config(
         turnover_rate=payload["turnover_rate"], weights=dict(config.factor_weights)))

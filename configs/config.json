@@ -16,10 +16,11 @@
       "PBBelowTwoROEAbove10Signal": 0.0,
       "LowCashOutflowProfitGrowthSpread": 0.0,
       "HighOperatingProfitRevenueGrowthSpread": 0.0,
-      "HighAbnormalGrossProfit": 0.0
+      "HighAbnormalGrossProfit": 0.0,
+      "CompletedAmihudIlliquidity20": 0.0
     },
-    "buy_n": 50,
-    "single_buy_pct": 0.02,
+    "buy_n": 20,
+    "single_buy_pct": 0.05,
     "prefilter_n": 300,
     "limit_up_protection": true,
     "rebalance_band_pct": 0.01,

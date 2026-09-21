@@ -95,7 +95,7 @@ def test_standalone_actual_synthetic_accounts_keep_holdouts_out_of_selection(exp
     assert "ppo_reference_identity" not in comparison.identity
     assert "ppo_contract" not in comparison.identity
     assert comparison.identity["evaluation_contract"]["splits"] == SPLITS
-    assert len(comparison.identity["genes"]) == 12
+    assert len(comparison.identity["genes"]) == 13  # 12 factor weights + turnover_rate
     assert comparison.identity["test_role"] == "repeated_diagnostic_only_never_selection"
     assert comparison.identity["deployment_bundle"] is False
     baseline_calls = len(calls)

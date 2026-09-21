@@ -29,7 +29,7 @@ from trade.runtime import LiveDecision
 from utils.atomic_file import atomic_write_json
 
 
-JOURNAL_VERSION = "wbr-live-decision-journal-v9-raw-panel"
+JOURNAL_VERSION = "wbr-live-decision-journal-v10-amihud12-hold20"
 
 
 def _json_ready(value: object) -> object:

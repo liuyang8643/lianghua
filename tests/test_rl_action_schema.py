@@ -18,16 +18,16 @@ def _current_static_config() -> dict:
 def test_action_layout_and_box_bounds_are_stable():
     schema = ActionSchema()
 
-    assert schema.schema_version == "day-config-v20-turnover-floor"
+    assert schema.schema_version == "day-config-v21-amihud12-hold20"
     assert (schema.layout[-1].minimum, schema.layout[-1].maximum) == (0.05, 0.2)
-    assert schema.action_dim == 12
+    assert schema.action_dim == 13
     assert schema.action_names == (
         *(f"factor_weight.{name}" for name in CORE_FACTOR_NAMES),
         "turnover_rate",
     )
     low, high = schema.space_bounds
-    np.testing.assert_array_equal(low, np.full(12, -1.0, dtype=np.float32))
-    np.testing.assert_array_equal(high, np.full(12, 1.0, dtype=np.float32))
+    np.testing.assert_array_equal(low, np.full(13, -1.0, dtype=np.float32))
+    np.testing.assert_array_equal(high, np.full(13, 1.0, dtype=np.float32))
     assert low.dtype == high.dtype == np.float32
 
 
@@ -38,24 +38,24 @@ def test_decode_handles_boundaries_with_fixed_controls():
     assert not any(schema.decode(low_action).factor_enabled.values())
     low_action[0] = -0.5
     low = schema.decode(low_action)
-    assert low.buy_n == 50
-    assert low.turnover_rate == 0.05  # production floor: always examine the two worst holdings
-    assert low.replacement_limit == 2
+    assert low.buy_n == 20
+    assert low.turnover_rate == 0.05  # production floor: always examine the worst holding
+    assert low.replacement_limit == 1
     assert low.limit_up_protection is True
     assert low.rebalance_band_pct == 0.01
     assert low.single_buy_pct == pytest.approx(1.0 / low.buy_n)
-    assert tuple(low.factor_enabled.values()) == (True,) + (False,) * 10
-    assert tuple(low.factor_weights.values()) == pytest.approx((0.25,) + (0.0,) * 10)
+    assert tuple(low.factor_enabled.values()) == (True,) + (False,) * 11
+    assert tuple(low.factor_weights.values()) == pytest.approx((0.25,) + (0.0,) * 11)
 
     high = schema.decode(np.full(schema.action_dim, 1.0, dtype=np.float32))
-    assert high.buy_n == 50
+    assert high.buy_n == 20
     assert high.turnover_rate == pytest.approx(0.2)
-    assert high.replacement_limit == 10
+    assert high.replacement_limit == 4
     assert high.limit_up_protection is True
     assert high.rebalance_band_pct == 0.01
     assert high.single_buy_pct == pytest.approx(1.0 / high.buy_n)
     assert all(high.factor_enabled.values())
-    assert tuple(high.factor_weights.values()) == pytest.approx((1.0,) * 11)
+    assert tuple(high.factor_weights.values()) == pytest.approx((1.0,) * 12)
 
 
 def test_turnover_is_continuous_and_roundtrips_without_a_codebook():
@@ -65,7 +65,7 @@ def test_turnover_is_continuous_and_roundtrips_without_a_codebook():
         action = np.zeros(schema.action_dim, dtype=np.float32)
         action[-1] = coordinate
         decoded = schema.decode(action)
-        assert decoded.buy_n == 50 and decoded.single_buy_pct == .02
+        assert decoded.buy_n == 20 and decoded.single_buy_pct == .05
         assert decoded.turnover_rate == pytest.approx(0.05 + (float(coordinate) + 1.0) / 2.0 * 0.15, abs=6e-8)
         np.testing.assert_array_equal(schema.encode(schema.canonicalize_day_config(decoded)), schema.encode(decoded))
         rates.append(decoded.turnover_rate)
@@ -80,9 +80,9 @@ def test_turnover_rate_is_independent_of_fixed_portfolio_size():
     action[-1] = 0.0  # unit 0.5 -> 0.05 + 0.5 * 0.15 = 12.5%, independent of buy_n
     left, right = small.decode(action), large.decode(action)
     assert left.turnover_rate == right.turnover_rate == pytest.approx(0.125)
-    assert left.replacement_limit == 6
+    assert left.replacement_limit == 2
     assert right.replacement_limit == 37
-    assert small.action_dim == large.action_dim == 12
+    assert small.action_dim == large.action_dim == 13
 
 
 def test_schema_payload_rejects_removed_discrete_metadata():
@@ -123,13 +123,14 @@ def test_current_config_roundtrips_without_any_exposure_control():
             "LowCashOutflowProfitGrowthSpread": 0.0,
             "HighOperatingProfitRevenueGrowthSpread": 0.0,
             "HighAbnormalGrossProfit": 0.0,
+            "CompletedAmihudIlliquidity20": 0.0,
         }
     )
-    assert tuple(expected.factor_enabled.values()) == (True,) * 3 + (False,) * 8
+    assert tuple(expected.factor_enabled.values()) == (True,) * 3 + (False,) * 9
     assert all(expected.filter_flags.values())
-    assert expected.buy_n == 50
+    assert expected.buy_n == 20
     assert expected.turnover_rate == pytest.approx(0.1, abs=6e-8)
-    assert expected.replacement_limit == 5
+    assert expected.replacement_limit == 2
     assert schema.canonicalize_day_config(expected) == expected
     assert expected.limit_up_protection is True
     assert expected.rebalance_band_pct == pytest.approx(0.01)
