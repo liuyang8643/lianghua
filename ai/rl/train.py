@@ -113,7 +113,7 @@ def scheduled_learning_rate(initial: float, end_fraction: float, decay_start: fl
     phase = max(0.0, (progress - decay_start) / (1.0 - decay_start))
     return initial * (1.0 - (1.0 - end_fraction) * phase)
 RUN_IDENTITY_VERSION = "wbr-ppo-run-identity-v90-log-return-reward"
-EVALUATION_CACHE_PROTOCOL = {"prepared_splits": "lazy_once_shared_readonly_until_exit",
+EVALUATION_CACHE_PROTOCOL = {"prepared_splits": "eager_once_before_rollout_workers_shared_readonly_until_exit",
                              "evaluation_execution": "serial", "release": "ExitStack",
                              "replay_storage": "full_history_precompute_then_causal_history_projection"}
 EVALUATION_PROTOCOL = {
@@ -1109,6 +1109,25 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
         )
         shutil.copyfile(parent_normalizer, normalizer_path)
 
+    # Prepare both holdout splits before any rollout worker exists. The transient factor
+    # precompute (two ~1.8 GiB caches per split) used to run at the first evaluation while
+    # 20 workers already held their private memory, which pushed the machine over its commit
+    # limit (MemoryError in precompute_factors, 2026-09-21). Each split is still prepared once
+    # and stays resident read-only until exit; only the moment of preparation moved earlier.
+    def _prepare_resident_holdout(name: str, start: str, end: str) -> ResidentPreparedEpisode:
+        _, split_factors, prepared = _prepare_split(
+            runtime_path, start, end, lookback=args.lookback, prefilter_n=prefilter_n,
+            action_schema=action_schema)
+        if split_factors.schema_hash != train_factors.schema_hash:
+            raise ValueError(f"{name} factor schema differs from training")
+        atomic_write_json(output_dir / f"factor_coverage_{name}.json", prepared.factor_coverage)
+        return resources.enter_context(ResidentPreparedEpisode(prepared))
+
+    validation_owner: ResidentPreparedEpisode = _prepare_resident_holdout(
+        "validation", args.validation_start, args.validation_end)
+    test_owner: ResidentPreparedEpisode = _prepare_resident_holdout(
+        "test", args.test_start, args.test_end)
+
     probe = WBRGymEnv(
         train_episode,
         action_schema=action_schema,
@@ -1281,30 +1300,18 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
     validation_curve: list[dict[str, object]] = []
     test_curve: list[dict[str, object]] = []
     static_test: Mapping[str, object] | None = None
-    validation_owner: ResidentPreparedEpisode | None = None
-    test_owner: ResidentPreparedEpisode | None = None
     validation_selector: ValidationCalmarSelector | None = None
     static_validation: Mapping[str, object] | None = None
     initial_evaluation: dict[str, object] | None = None
-    resident_splits = {"train": train_evaluation_descriptor.shared_memory_bytes}
+    resident_splits = {
+        "train": train_evaluation_descriptor.shared_memory_bytes,
+        "validation": validation_owner.descriptor.shared_memory_bytes,
+        "test": test_owner.descriptor.shared_memory_bytes,
+    }
     def prepare_validation() -> None:
-        nonlocal validation_selector, static_validation, validation_owner
+        nonlocal validation_selector, static_validation
         if validation_selector is not None:
             return
-        _, validation_factors, prepared_validation = _prepare_split(
-            runtime_path,
-            args.validation_start,
-            args.validation_end,
-            lookback=args.lookback,
-            prefilter_n=prefilter_n,
-            action_schema=action_schema,
-        )
-        atomic_write_json(output_dir / "factor_coverage_validation.json", prepared_validation.factor_coverage)
-        if validation_factors.schema_hash != train_factors.schema_hash:
-            raise ValueError("validation factor schema differs from training")
-        validation_owner = resources.enter_context(ResidentPreparedEpisode(prepared_validation))
-        del _, validation_factors, prepared_validation
-        resident_splits["validation"] = validation_owner.descriptor.shared_memory_bytes
         cached_validation = static_benchmark.get("validation")
         if isinstance(cached_validation, Mapping):
             static_validation = cached_validation
@@ -1348,18 +1355,8 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
         })
 
     def evaluate_test(snapshot: FrozenEvaluationCheckpoint, phase: str) -> dict[str, object]:
-        nonlocal static_test, test_owner
+        nonlocal static_test
         publish_evaluation_curves(pending={"split": "test", "checkpoint_sha256": snapshot.sha256})
-        if test_owner is None:
-            _, test_factors, test_episode = _prepare_split(
-                runtime_path, args.test_start, args.test_end, lookback=args.lookback, prefilter_n=prefilter_n,
-                action_schema=action_schema)
-            if test_factors.schema_hash != train_factors.schema_hash:
-                raise ValueError("diagnostic test factor schema differs from training")
-            atomic_write_json(output_dir / "factor_coverage_test.json", test_episode.factor_coverage)
-            test_owner = resources.enter_context(ResidentPreparedEpisode(test_episode))
-            del _, test_factors, test_episode
-            resident_splits["test"] = test_owner.descriptor.shared_memory_bytes
         if static_test is None:
             static_test = _trace_summary(_backtest_provider(
                 test_owner.descriptor, action_schema, normalizer, task_id="static_diagnostic_test",

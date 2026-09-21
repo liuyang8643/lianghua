@@ -40,9 +40,9 @@ def test_three_split_schedule_shared_sha_and_validation_only_selection(
 
     def prepare(path, start, end, **kwargs):
         split = {args.train_start: "train", args.validation_start: "validation", args.test_start: "test"}[start]
-        if split != "train":
-            pending = json.loads((output / "evaluation_curves.json").read_text("utf8"))["pending"]
-            assert pending["split"] == split
+        # Holdout splits are prepared eagerly before rollout workers exist (memory peak control),
+        # so no evaluation can be pending yet.
+        assert not (output / "evaluation_curves.json").exists()
         preparation.append(split)
         return original_prepare(path, start, end, **kwargs)
 
