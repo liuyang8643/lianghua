@@ -1,6 +1,13 @@
 {
   "runs": [
     {
+      "id": "ppo11_f1_amihud12_hold20_100k_20260922",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_f1_amihud12_hold20_100k_20260922/run",
+      "log_path": "../artifacts/rl/ppo11_f1_amihud12_hold20_100k_20260922/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_f1_amihud12_hold20_100k_20260922/monitor/cache"
+    },
+    {
       "id": "ppo11_e16_antithetic_20260922",
       "algorithm": "PPO",
       "output_dir": "../artifacts/rl/ppo11_e16_antithetic_20260922/run",
