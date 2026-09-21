@@ -282,8 +282,8 @@ def test_parser_requires_runtime_and_keeps_config_as_external_benchmark():
     assert args.episode_scope == "full"
     assert args.eval_every_rollouts == 50
     assert args.device == "cuda"
-    assert args.learning_rate == pytest.approx(1e-3)
-    assert args.n_epochs == 3
+    assert args.learning_rate == pytest.approx(3e-3)
+    assert args.n_epochs == 1
     assert args.target_kl == pytest.approx(0.03)
     assert args.log_std_init == pytest.approx(-1.6)
     assert args.advantage_baseline == "synchronized_env_row_mean"

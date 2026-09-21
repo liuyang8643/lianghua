@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any, Mapping
 
 from gymnasium import spaces
@@ -65,9 +66,15 @@ class TypedActorCriticPolicy(ActorCriticPolicy):
         action_schema: ActionSchema | Mapping[str, object] | None = None,
         encoded_schema: Mapping[str, object],
         raw_panel_config: Mapping[str, int] | None = None,
+        action_head_gain: float = 0.01,
         **kwargs: Any,
     ) -> None:
         device = require_cuda_device()
+        if not isinstance(action_head_gain, (int, float)) or isinstance(action_head_gain, bool) or not (
+            action_head_gain > 0.0 and np.isfinite(action_head_gain)
+        ):
+            raise ValueError("action_head_gain must be a positive finite number")
+        self.action_head_gain = float(action_head_gain)
         schema = (
             ActionSchema.from_dict(action_schema)
             if isinstance(action_schema, Mapping)
@@ -97,6 +104,11 @@ class TypedActorCriticPolicy(ActorCriticPolicy):
                 lr_schedule,
                 **kwargs,
             )
+        if self.ortho_init and self.action_head_gain != 0.01:
+            # SB3 hard-codes orthogonal gain 0.01 for the mean head. A larger gain lets the
+            # state-dependent latent reach the action from the first update (2026-09-21 probe);
+            # the same nn.Parameter objects stay registered in the optimizer.
+            self.action_net.apply(partial(self.init_weights, gain=self.action_head_gain))
         self._frozen_actor_graph = None
         self._frozen_actor_key = None
 
@@ -172,6 +184,7 @@ class TypedActorCriticPolicy(ActorCriticPolicy):
         parameters["action_schema"] = self.typed_action_schema.to_dict()
         parameters["encoded_schema"] = dict(self.encoded_schema)
         parameters["raw_panel_config"] = dict(self.raw_panel_config)
+        parameters["action_head_gain"] = self.action_head_gain
         return parameters
 
     def bind_market_store(self, store, normalizer) -> None:

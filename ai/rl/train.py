@@ -102,7 +102,10 @@ PPO_GAE_LAMBDA = 0.95
 DEFAULT_LOG_STD_INIT = -1.6
 ADVANTAGE_BASELINES = ("none", "synchronized_env_row_mean")
 DEFAULT_ADVANTAGE_BASELINE = "synchronized_env_row_mean"
-DEFAULT_LEARNING_RATE = 1e-3
+# 2026-09-21 E13: one epoch per rollout with lr 3e-3 reaches the 1.3 training-Calmar plateau in
+# ~750 rollouts (~45 min) versus ~2500 rollouts for 3 epochs @ 1e-3; per-update KL stays ~0.004.
+DEFAULT_LEARNING_RATE = 3e-3
+DEFAULT_N_EPOCHS = 1
 DEFAULT_TARGET_KL = 0.03
 
 
@@ -845,7 +848,8 @@ def _build_run_identity(
             "critic_net": list(CRITIC_NET_ARCH),
             "typed_distribution": TYPED_ACTION_DISTRIBUTION_VERSION,
             "weight_mode": "(clip(gaussian_mean,-1,1)+1)/2",
-            "state_head": "SB3 Linear Gaussian mean head; orthogonal gain 0.01, zero bias",
+            "state_head": "SB3 Linear Gaussian mean head; orthogonal init, zero bias",
+            "action_head_gain": args.action_head_gain,
             "exploration": "SB3 DiagGaussianDistribution; trainable state-independent log_std",
             "log_std_init": args.log_std_init,
             "advantage_baseline": {
@@ -1237,6 +1241,7 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
         "action_schema": action_schema.to_dict(),
         "encoded_schema": train_episode.encoder.output_schema.to_dict(),
         "log_std_init": args.log_std_init,
+        "action_head_gain": args.action_head_gain,
     }
     rollout_buffer_class = (SynchronizedEnvBaselineRolloutBuffer
                             if args.advantage_baseline == "synchronized_env_row_mean" else None)
@@ -1659,7 +1664,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--evaluation-execution", choices=("blocking", "overlap"),
                         default="blocking", help="overlap one frozen CUDA train replay with the CUDA learner")
-    parser.add_argument("--n-epochs", type=int, default=3)
+    parser.add_argument("--n-epochs", type=int, default=DEFAULT_N_EPOCHS)
     parser.add_argument("--learning-rate", type=float, default=DEFAULT_LEARNING_RATE)
     parser.add_argument("--learning-rate-end-fraction", type=float, default=1.0)
     parser.add_argument("--learning-rate-decay-start", type=float, default=0.2)
@@ -1668,6 +1673,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="discount; with gae_lambda it sets the per-step credit window of the advantage")
     parser.add_argument("--gae-lambda", type=float, default=PPO_GAE_LAMBDA,
                         help="GAE lambda; with gamma it sets the per-step credit window of the advantage")
+    parser.add_argument("--action-head-gain", type=float, default=0.01,
+                        help="orthogonal init gain of the Gaussian mean head (SB3 default 0.01)")
     parser.add_argument("--ent-coef", type=float, default=0.0,
                         help="SB3 entropy bonus; >0 counteracts the monotone shrink of the Gaussian std")
     parser.add_argument("--log-std-init", type=float, default=DEFAULT_LOG_STD_INIT,
@@ -1733,6 +1740,8 @@ def _validate_cli(args: argparse.Namespace) -> None:
         raise ValueError("gamma must be in (0, 1]")
     if not math.isfinite(args.ent_coef) or args.ent_coef < 0.0:
         raise ValueError("ent_coef must be finite and non-negative")
+    if not math.isfinite(args.action_head_gain) or args.action_head_gain <= 0.0:
+        raise ValueError("action_head_gain must be finite and positive")
     if not math.isfinite(args.log_std_init):
         raise ValueError("log_std_init must be finite")
     if args.advantage_baseline == "synchronized_env_row_mean" and (

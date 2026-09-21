@@ -10,5 +10,5 @@ def test_removed_evaluation_modes_are_rejected(flags):
 def test_periodic_defaults():
     args = build_parser().parse_args(["--runtime", "unused"])
     assert args.eval_every_rollouts == 50
-    assert args.learning_rate == 1e-3 and args.target_kl == 0.03
-    assert args.n_steps == 64 and args.batch_size == 640 and args.n_epochs == 3
+    assert args.learning_rate == 3e-3 and args.target_kl == 0.03
+    assert args.n_steps == 64 and args.batch_size == 640 and args.n_epochs == 1
