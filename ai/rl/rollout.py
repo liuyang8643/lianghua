@@ -12,39 +12,30 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 import multiprocessing as mp
 from multiprocessing.connection import Connection, wait
-import os
 import time
-import traceback
 from typing import Any, Literal, Mapping
 import warnings
 
-SINGLE_THREAD_ENVIRONMENT = {
-    "OMP_NUM_THREADS": "1",
-    "MKL_NUM_THREADS": "1",
-    "OPENBLAS_NUM_THREADS": "1",
-    "NUMEXPR_NUM_THREADS": "1",
-    "BLIS_NUM_THREADS": "1",
-    "VECLIB_MAXIMUM_THREADS": "1",
-}
-for _thread_environment_name, _thread_environment_value in (
-    SINGLE_THREAD_ENVIRONMENT.items()
-):
-    os.environ[_thread_environment_name] = _thread_environment_value
-del _thread_environment_name, _thread_environment_value
+# Sets the single-thread environment variables before NumPy/Torch import.
+from ai.rl.rollout_worker import (
+    CloudpickleWrapper,
+    RolloutEnvFactory,
+    RolloutWorkerAssignment,
+    SINGLE_THREAD_ENVIRONMENT,
+    WorkerFailurePayload as _WorkerFailurePayload,
+    WorkerWBRGymEnv as _WorkerWBRGymEnv,
+    build_worker_assignments,
+    configure_worker_single_thread,
+    exception_reporting_worker as _exception_reporting_worker,
+)
 
 import numpy as np
 from numpy.typing import NDArray
 import gymnasium as gym
 import torch
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv
-from stable_baselines3.common.vec_env.base_vec_env import (
-    CloudpickleWrapper,
-    VecEnvIndices,
-)
-from stable_baselines3.common.vec_env.subproc_vec_env import (
-    _stack_obs,
-    _worker as _sb3_worker,
-)
+from stable_baselines3.common.vec_env.base_vec_env import VecEnvIndices
+from stable_baselines3.common.vec_env.subproc_vec_env import _stack_obs
 
 from env.action_schema import ActionSchema
 from env.encoder import TrainOnlyNormalizer
@@ -52,7 +43,6 @@ from env.backtest import PreparedEpisode
 from env.fees import DEFAULT_FEE_SCHEDULE, FeeSchedule
 from env.gym_adapter import WBRGymEnv
 from env.shared_episode import (
-    AttachedPreparedEpisode,
     SharedPreparedEpisodeDescriptor,
     SharedPreparedEpisodeOwner,
 )
@@ -67,10 +57,9 @@ ROLLOUT_CLOSE_PHASE_TIMEOUT_SECONDS = 2.0
 
 
 def configure_single_thread_runtime() -> None:
-    """Pin native math and Torch execution to one thread per process."""
+    """Pin native math and Torch execution to one thread in the learner process."""
 
-    for name, value in SINGLE_THREAD_ENVIRONMENT.items():
-        os.environ[name] = value
+    configure_worker_single_thread()
     torch.set_num_threads(1)
     if torch.get_num_interop_threads() != 1:
         try:
@@ -96,96 +85,6 @@ def resolve_rollout_backend(
     if requested == "auto":
         return "subproc" if n_envs > 1 else "dummy"
     return requested  # type: ignore[return-value]
-
-
-@dataclass(frozen=True, slots=True)
-class RolloutWorkerAssignment:
-    """One stable mapping from a vector slot to its independent RNG seed."""
-
-    worker_index: int
-    seed: int
-
-    def __post_init__(self) -> None:
-        if self.worker_index < 0:
-            raise ValueError("worker index must be non-negative")
-        if self.seed < 0:
-            raise ValueError("worker seed must be non-negative")
-
-    def as_dict(self) -> dict[str, object]:
-        return {
-            "worker_index": self.worker_index,
-            "seed": self.seed,
-        }
-
-
-def build_worker_assignments(
-    *,
-    n_envs: int,
-    base_seed: int,
-) -> tuple[RolloutWorkerAssignment, ...]:
-    """Build deterministic independent full-period vector slots."""
-
-    if type(n_envs) is not int or n_envs <= 0:
-        raise ValueError("n_envs must be a positive int")
-    if type(base_seed) is not int or base_seed < 0:
-        raise ValueError("base_seed must be a non-negative int")
-    return tuple(
-        RolloutWorkerAssignment(worker_index=index, seed=base_seed + index)
-        for index in range(n_envs)
-    )
-
-
-class _WorkerWBRGymEnv(WBRGymEnv):
-    """WBR environment with one sealed initial seed and optional attachment."""
-
-    def __init__(
-        self,
-        episode: PreparedEpisode,
-        *,
-        worker_seed: int,
-        attachment: AttachedPreparedEpisode | None,
-        **kwargs: object,
-    ) -> None:
-        super().__init__(episode, **kwargs)
-        self.worker_seed = int(worker_seed)
-        self._first_reset = True
-        self._attachment = attachment
-        self.action_space.seed(self.worker_seed)
-
-    def reset(
-        self,
-        *,
-        seed: int | None = None,
-        options: dict[str, object] | None = None,
-    ) -> tuple[NDArray[np.float32], dict[str, object]]:
-        if self._first_reset:
-            effective_seed = self.worker_seed if seed is None else int(seed)
-            if effective_seed != self.worker_seed:
-                raise ValueError(
-                    "first rollout reset seed differs from the sealed worker assignment"
-                )
-            self._first_reset = False
-            seed = effective_seed
-        return super().reset(seed=seed, options=options)
-
-    def close(self) -> None:
-        attachment = self._attachment
-        self._attachment = None
-        try:
-            super().close()
-        finally:
-            if attachment is not None:
-                # Drop the environment's last episode reference before closing
-                # its SharedMemory mappings.
-                self.episode = None  # type: ignore[assignment]
-                attachment.close()
-
-
-@dataclass(frozen=True, slots=True)
-class _WorkerFailurePayload:
-    exception_type: str
-    message: str
-    traceback: str
 
 
 class RolloutWorkerError(RuntimeError):
@@ -254,33 +153,6 @@ class RolloutWorkerCommunicationError(RolloutWorkerError):
 
 class RolloutWorkerProtocolError(RolloutWorkerError):
     """A worker returned a value that violates the SB3 VecEnv protocol."""
-
-
-def _exception_reporting_worker(
-    remote: Connection,
-    parent_remote: Connection,
-    env_fn_wrapper: CloudpickleWrapper,
-) -> None:
-    """Run SB3's worker while preserving any uncaught exception as text."""
-
-    try:
-        _sb3_worker(remote, parent_remote, env_fn_wrapper)
-    except BaseException as error:
-        failure = _WorkerFailurePayload(
-            exception_type=f"{type(error).__module__}.{type(error).__qualname__}",
-            message=str(error),
-            traceback=traceback.format_exc(),
-        )
-        try:
-            remote.send(failure)
-        except (BrokenPipeError, EOFError, OSError):
-            pass
-    finally:
-        for connection in (remote, parent_remote):
-            try:
-                connection.close()
-            except OSError:
-                pass
 
 
 class _DeterministicSubprocVecEnv(SubprocVecEnv):
@@ -706,46 +578,6 @@ class _DeterministicSubprocVecEnv(SubprocVecEnv):
             except process_errors as error:
                 failures.append(error)
         return failures
-
-
-@dataclass(frozen=True, slots=True)
-class RolloutEnvFactory:
-    """Top-level spawn-pickleable factory containing no PreparedEpisode/path."""
-
-    episode_descriptor: SharedPreparedEpisodeDescriptor
-    assignment: RolloutWorkerAssignment
-    action_schema_payload: Mapping[str, object]
-    normalizer_payload: Mapping[str, object]
-    initial_cash: float
-    random_window_min_transitions: int | None
-    fees: FeeSchedule
-
-    def __call__(self) -> WBRGymEnv:
-        configure_single_thread_runtime()
-        attached = self.episode_descriptor.attach()
-        try:
-            action_schema = ActionSchema.from_dict(self.action_schema_payload)
-            normalizer = TrainOnlyNormalizer.from_dict(self.normalizer_payload)
-            return _WorkerWBRGymEnv(
-                attached.episode,
-                worker_seed=self.assignment.seed,
-                attachment=attached,
-                action_schema=action_schema,
-                normalizer=normalizer,
-                initial_cash=self.initial_cash,
-                include_critic_context=True,
-                random_window_min_transitions=self.random_window_min_transitions,
-                fees=self.fees,
-            )
-        except BaseException as construction_error:
-            try:
-                attached.close()
-            except BaseException as cleanup_error:
-                raise BaseExceptionGroup(
-                    "rollout worker construction and cleanup both failed",
-                    [construction_error, cleanup_error],
-                )
-            raise
 
 
 @dataclass(frozen=True, slots=True)
