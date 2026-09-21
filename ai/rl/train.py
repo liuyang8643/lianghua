@@ -818,7 +818,7 @@ def _build_run_identity(
             "checkpoint_selection": CHECKPOINT_SELECTION_OBJECTIVE,
             "gamma": PPO_GAMMA,
             "gae_lambda": args.gae_lambda,
-            "ent_coef": 0.0,
+            "ent_coef": args.ent_coef,
             "n_steps": n_steps,
             "collection_scope": "complete_episode" if args.n_steps == 0 else "fixed_transition_count",
             "partial_final_minibatch": args.n_steps == 0,
@@ -1231,7 +1231,7 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
             n_epochs=args.n_epochs,
             gamma=PPO_GAMMA,
             gae_lambda=args.gae_lambda,
-            ent_coef=0.0,
+            ent_coef=args.ent_coef,
             target_kl=args.target_kl,
             policy_kwargs=policy_kwargs,
             rollout_buffer_class=rollout_buffer_class,
@@ -1253,7 +1253,7 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
         model.n_epochs = args.n_epochs
         model.gamma = PPO_GAMMA
         model.gae_lambda = args.gae_lambda
-        model.ent_coef = 0.0
+        model.ent_coef = args.ent_coef
         model.target_kl = args.target_kl
     require_cuda_model(model)
     _bind_model_identity(model, run_identity)
@@ -1571,7 +1571,7 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
         'evaluation_execution': args.evaluation_execution,
         'gamma': PPO_GAMMA,
         'gae_lambda': args.gae_lambda,
-        'ent_coef': 0.0,
+        'ent_coef': args.ent_coef,
     }
     if validation_selector is None:
         raise RuntimeError("training completed without validation")
@@ -1669,6 +1669,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-kl", type=float, default=DEFAULT_TARGET_KL)
     parser.add_argument("--gae-lambda", type=float, default=PPO_GAE_LAMBDA,
                         help="GAE lambda; with gamma it sets the per-step credit window of the advantage")
+    parser.add_argument("--ent-coef", type=float, default=0.0,
+                        help="SB3 entropy bonus; >0 counteracts the monotone shrink of the Gaussian std")
     parser.add_argument("--log-std-init", type=float, default=DEFAULT_LOG_STD_INIT,
                         help="initial log standard deviation of the SB3 Gaussian head in Box coordinates")
     parser.add_argument("--advantage-baseline", choices=ADVANTAGE_BASELINES, default=DEFAULT_ADVANTAGE_BASELINE,
@@ -1728,6 +1730,8 @@ def _validate_cli(args: argparse.Namespace) -> None:
         raise ValueError("target_kl must be finite and positive")
     if not 0.0 <= args.gae_lambda <= 1.0:
         raise ValueError("gae_lambda must be in [0, 1]")
+    if not math.isfinite(args.ent_coef) or args.ent_coef < 0.0:
+        raise ValueError("ent_coef must be finite and non-negative")
     if not math.isfinite(args.log_std_init):
         raise ValueError("log_std_init must be finite")
     if args.advantage_baseline == "synchronized_env_row_mean" and (

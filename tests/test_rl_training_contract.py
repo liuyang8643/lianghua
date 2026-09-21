@@ -259,7 +259,8 @@ def test_training_source_declares_the_only_objective_and_standard_ppo():
     assert "atomic_write_json(" in source
     assert "PPO_GAMMA = 0.99" in source
     assert "PPO_GAE_LAMBDA = 0.95" in source
-    assert '"ent_coef": 0.0' in source
+    assert '"--ent-coef", type=float, default=0.0' in source
+    assert '"ent_coef": args.ent_coef' in source
     assert "_pretest_qualification" not in source
     assert "holdout_mode" not in source
 
