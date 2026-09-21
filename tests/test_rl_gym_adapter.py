@@ -1,4 +1,5 @@
 import inspect
+import math
 import subprocess
 import sys
 
@@ -70,7 +71,7 @@ def test_episode_always_consumes_all_d_minus_one_transitions(episode):
     assert reset_info["episode_transitions"] == episode.transition_count
     metrics = env.session.reward_state.performance_state.performance()
     assert sum(rewards) == pytest.approx(
-        episode.transition_count / 252 * (metrics.annualized_return - metrics.max_drawdown)
+        episode.transition_count / 252 * (math.log1p(metrics.annualized_return) - metrics.max_drawdown)
     )
     assert final_info["full_investment_contract_satisfied"] is True
 
@@ -112,7 +113,7 @@ def test_environment_manifest_freezes_dense_incremental_drawdown_semantics(episo
     )
 
     assert ENVIRONMENT_SCHEMA_VERSION == (
-        "wbr-ppo-environment-v37-turnover-floor"
+        "wbr-ppo-environment-v38-log-return-reward"
     )
     assert manifest["prefilter"] == {
         "n": 300,
@@ -131,13 +132,13 @@ def test_environment_manifest_freezes_dense_incremental_drawdown_semantics(episo
         "required_rows": 100064,
     }
     transition = manifest["transition"]
-    assert transition["objective"] == "annualized_return_minus_max_drawdown"
+    assert transition["objective"] == "annualized_log_return_minus_max_drawdown"
     assert transition["reward"] == (
-        "horizon_scaled_annualized_return_increment_minus_new_max_drawdown_increment"
+        "horizon_scaled_annualized_log_return_increment_minus_new_max_drawdown_increment"
     )
     assert transition["max_drawdown_penalty_weight"] == pytest.approx(1.0)
     assert transition["episode_sum_identity"] == (
-        "H/252*(annualized_net_return_minus_episode_max_drawdown)"
+        "H/252*(log1p(annualized_net_return)_minus_episode_max_drawdown)"
     )
     assert transition["fees_and_slippage"] == "included_once_via_net_nav"
     assert transition["full_investment"] == "planner_contract_fail_closed"

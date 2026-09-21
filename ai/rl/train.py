@@ -112,7 +112,7 @@ def scheduled_learning_rate(initial: float, end_fraction: float, decay_start: fl
     progress = min(1.0, max(0.0, completed / total))
     phase = max(0.0, (progress - decay_start) / (1.0 - decay_start))
     return initial * (1.0 - (1.0 - end_fraction) * phase)
-RUN_IDENTITY_VERSION = "wbr-ppo-run-identity-v89-turnover-floor-low-exploration"
+RUN_IDENTITY_VERSION = "wbr-ppo-run-identity-v90-log-return-reward"
 EVALUATION_CACHE_PROTOCOL = {"prepared_splits": "lazy_once_shared_readonly_until_exit",
                              "evaluation_execution": "serial", "release": "ExitStack",
                              "replay_storage": "full_history_precompute_then_causal_history_projection"}
@@ -814,7 +814,7 @@ def _build_run_identity(
             "implementation": "stable_baselines3.PPO",
             "evaluation_protocol": "periodic_three_split_validation_selection",
             "policy": "ai.rl.typed_policy.TypedActorCriticPolicy",
-            "objective": "horizon_scaled_annualized_return_minus_max_drawdown",
+            "objective": "horizon_scaled_annualized_log_return_minus_max_drawdown",
             "checkpoint_selection": CHECKPOINT_SELECTION_OBJECTIVE,
             "gamma": PPO_GAMMA,
             "gae_lambda": args.gae_lambda,
@@ -1546,7 +1546,7 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
             raise RuntimeError("static benchmark config changed during training")
 
     training_metadata = {
-        'objective': 'horizon_scaled_annualized_return_minus_max_drawdown',
+        'objective': 'horizon_scaled_annualized_log_return_minus_max_drawdown',
         'financial_data_protocol': run_identity['contract']['financial_data_protocol'],
         'reward_schema_version': REWARD_SCHEMA_VERSION,
         'typed_distribution': TYPED_ACTION_DISTRIBUTION_VERSION,

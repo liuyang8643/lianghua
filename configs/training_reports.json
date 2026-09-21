@@ -1,6 +1,13 @@
 {
   "runs": [
     {
+      "id": "ppo11_e9_rewardv5_logret_20260921",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo11_e9_rewardv5_logret_20260921/run",
+      "log_path": "../artifacts/rl/ppo11_e9_rewardv5_logret_20260921/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo11_e9_rewardv5_logret_20260921/monitor/cache"
+    },
+    {
       "id": "ppo11_e8_v20_entcoef0003_20260921",
       "algorithm": "PPO",
       "output_dir": "../artifacts/rl/ppo11_e8_v20_entcoef0003_20260921/run",

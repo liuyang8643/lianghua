@@ -15,7 +15,13 @@ ANNUALIZATION_DAYS = 252
 TRADING_DAYS_PER_YEAR = float(ANNUALIZATION_DAYS)
 CALMAR_DRAWDOWN_EPSILON = 1e-6
 MAX_DRAWDOWN_PENALTY_WEIGHT = 1.0
-REWARD_SCHEMA_VERSION = "horizon-balanced-return-incremental-max-drawdown-v4"
+# v5 (2026-09-21): the return term is the per-step annualized *log* return increment
+# ``net_log_return * 252 / H`` instead of the arithmetic annualized-return increment.
+# The complete-episode sum is exactly ``H/252 * (log(1 + annualized_return) - max_drawdown)``,
+# so every day of the episode carries the same weight per unit of log return (v4 weighted
+# late-episode days by the compounded equity factor), which keeps the critic target
+# stationary and makes the return/drawdown trade-off closer to the Calmar gradient.
+REWARD_SCHEMA_VERSION = "horizon-balanced-log-return-incremental-max-drawdown-v5"
 
 @dataclass(frozen=True)
 class PerformanceMetrics:
@@ -162,7 +168,7 @@ class StreamingPerformanceState:
 @dataclass(frozen=True)
 class EpisodeReward:
     net_log_return: float
-    annualized_return_increment: float
+    annualized_log_return_increment: float
     drawdown_increment_penalty: float
     horizon_scale: float
     reward: float
@@ -171,7 +177,7 @@ class EpisodeReward:
     def as_dict(self) -> dict[str, object]:
         return {
             "net_log_return": self.net_log_return,
-            "annualized_return_increment": self.annualized_return_increment,
+            "annualized_log_return_increment": self.annualized_log_return_increment,
             "drawdown_increment_penalty": self.drawdown_increment_penalty,
             "horizon_scale": self.horizon_scale,
             "reward": self.reward,
@@ -198,11 +204,10 @@ class EpisodeRewardState:
         net_log_return: float,
     ) -> tuple["EpisodeRewardState", EpisodeReward]:
         previous_max_drawdown = self.performance_state.max_drawdown
-        previous_annualized_return = self.performance_state.performance().annualized_return
         state = self.performance_state.advance(net_log_return)
         metrics = state.performance()
-        annualized_return_increment = (
-            metrics.annualized_return - previous_annualized_return
+        annualized_log_return_increment = (
+            float(net_log_return) * TRADING_DAYS_PER_YEAR / state.horizon_transitions
         )
         drawdown_increment_penalty = MAX_DRAWDOWN_PENALTY_WEIGHT * (
             metrics.max_drawdown - previous_max_drawdown
@@ -210,10 +215,10 @@ class EpisodeRewardState:
         horizon_scale = state.horizon_transitions / TRADING_DAYS_PER_YEAR
         reward = EpisodeReward(
             net_log_return=float(net_log_return),
-            annualized_return_increment=annualized_return_increment,
+            annualized_log_return_increment=annualized_log_return_increment,
             drawdown_increment_penalty=drawdown_increment_penalty,
             horizon_scale=horizon_scale,
-            reward=horizon_scale * (annualized_return_increment - drawdown_increment_penalty),
+            reward=horizon_scale * (annualized_log_return_increment - drawdown_increment_penalty),
             metrics=metrics,
         )
         return EpisodeRewardState(state), reward

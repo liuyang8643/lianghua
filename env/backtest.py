@@ -63,7 +63,7 @@ from offline_data import RUNTIME_FIELDS, RuntimeSlice, load_runtime_slice
 from offline_data.contracts import ReplayProjection
 
 
-ENVIRONMENT_SCHEMA_VERSION = "wbr-ppo-environment-v37-turnover-floor"
+ENVIRONMENT_SCHEMA_VERSION = "wbr-ppo-environment-v38-log-return-reward"
 CRITIC_CONTEXT_SCHEMA_VERSION = (
     "dense-return-incremental-drawdown-critic-context-v5"
 )
@@ -265,12 +265,12 @@ def environment_schema_manifest(
         },
         "transition": {
             "action_interval": "open[T]_to_open[T+1]",
-            "reward": "horizon_scaled_annualized_return_increment_minus_new_max_drawdown_increment",
+            "reward": "horizon_scaled_annualized_log_return_increment_minus_new_max_drawdown_increment",
             "reward_schema_version": REWARD_SCHEMA_VERSION,
-            "objective": "annualized_return_minus_max_drawdown",
-            "daily_component": "increment_in_episode_annualized_net_return",
+            "objective": "annualized_log_return_minus_max_drawdown",
+            "daily_component": "net_log_return*annualization_days/episode_horizon_transitions",
             "drawdown_component": "-weight*increase_in_running_max_drawdown",
-            "episode_sum_identity": "H/252*(annualized_net_return_minus_episode_max_drawdown)",
+            "episode_sum_identity": "H/252*(log1p(annualized_net_return)_minus_episode_max_drawdown)",
             "horizon_scale": "episode_horizon_transitions/annualization_days",
             "calmar_alignment": "positive_fixed_horizon_scaling_of_ratio_one_surrogate_changes_cross_horizon_weighting",
             "max_drawdown_penalty_weight": MAX_DRAWDOWN_PENALTY_WEIGHT,

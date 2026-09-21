@@ -124,7 +124,7 @@ class TrainingDiagnostics(BaseCallback):
     def _on_rollout_start(self) -> None:
         self.execution = {name: [] for name in (
             'gross_turnover_ratio', 'total_cost_ratio', 'total_fees', 'fill_count',
-            'portfolio_return', 'exposure', 'annualized_return_increment',
+            'portfolio_return', 'exposure', 'annualized_log_return_increment',
             'drawdown_increment_penalty', 'horizon_scale',
         )}
         self.dates = {}
@@ -142,7 +142,7 @@ class TrainingDiagnostics(BaseCallback):
             self.residual_reasons[reason] = self.residual_reasons.get(reason, 0) + 1
             for name, values in self.execution.items():
                 source = info['episode_reward'] if name in (
-                    'annualized_return_increment', 'drawdown_increment_penalty', 'horizon_scale',
+                    'annualized_log_return_increment', 'drawdown_increment_penalty', 'horizon_scale',
                 ) else info
                 values.append(float(source[name]))
         return True
