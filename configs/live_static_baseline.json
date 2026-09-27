@@ -1,0 +1,80 @@
+{
+  "buy_fee_rate": 0.0026054,
+  "individual_config": {
+    "buy_n": 20,
+    "cash_reserve_ratio": 0.15,
+    "empty_months": [],
+    "filter": false,
+    "filter_factors": {},
+    "holding_period": 1,
+    "limit_up_protection": true,
+    "prefilter_n": 300,
+    "rebalance": true,
+    "sell_m": 25,
+    "timing_enabled": false,
+    "weights": {
+      "AmihudIlliquidity": 0.4,
+      "AmountBasedSmallCap": 0.6,
+      "TrueMarketCap": 0.9,
+      "VolumeCV": 0.1
+    }
+  },
+  "metrics": {
+    "test": {
+      "annualized_return": 0.303413928694065,
+      "annualized_volatility": 0.3563766166409737,
+      "calmar": 0.634787574133535,
+      "max_drawdown": 0.47797710770916624,
+      "sharpe": 0.9241261354250051,
+      "total_return": 1.5387208863155863,
+      "transition_count": 886
+    },
+    "train": {
+      "annualized_return": 0.7168033465548616,
+      "annualized_volatility": 0.3243388670409831,
+      "calmar": 1.6127725488751112,
+      "max_drawdown": 0.4444540843994542,
+      "sharpe": 1.8317903786952476,
+      "total_return": 1254.654432813402,
+      "transition_count": 3327
+    },
+    "validation": {
+      "annualized_return": 0.25987622138266536,
+      "annualized_volatility": 0.24590277520162296,
+      "calmar": 0.9871297478543651,
+      "max_drawdown": 0.2632645019031539,
+      "sharpe": 1.063953318032647,
+      "total_return": 2.0459565467971186,
+      "transition_count": 1215
+    }
+  },
+  "periods": {
+    "test": {
+      "end": "2026-08-28",
+      "requested": [
+        "2023-01-01",
+        "2026-08-28"
+      ],
+      "start": "2023-01-03"
+    },
+    "train": {
+      "end": "2017-12-29",
+      "requested": [
+        "2004-04-28",
+        "2017-12-31"
+      ],
+      "start": "2004-04-28"
+    },
+    "validation": {
+      "end": "2022-12-30",
+      "requested": [
+        "2018-01-01",
+        "2022-12-31"
+      ],
+      "start": "2018-01-02"
+    }
+  },
+  "sell_fee_rate": 0.0031054,
+  "slippage_rate": 0.0025,
+  "source": "D:\\coding\\WBR-live\\configs\\config.json"
+}

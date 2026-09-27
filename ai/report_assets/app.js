@@ -104,10 +104,12 @@ function renderOverview(run) {
       label: splitLabel(item, split), color: palette[index], markers: true,
       points: item.evaluations.filter(record => record.split === split).map(record => [record.step, record.metrics[metric]])
     })), {
-      title: `${item.algorithm} · ${metrics[metric]}`, subtitle: item.label,
+      title: `${item.algorithm} · ${metrics[metric]}`,
+      subtitle: item.label + (item.protocol.evaluation_history ? ' · 已合并原训练评估历史；诊断与逐日记录仍属本次运行' : ''),
+      milestones: (item.protocol.evaluation_history?.resume_steps || []).map(step => ({ value: step, label: `续训 ${number(step, 0)} 轮` })),
       xLabel: `训练进度（${item.progress.unit}）`, unit: item.progress.unit,
       formatY: value => formatMetric(value, metric)
-    }, Object.keys(splits).map((split, index) => ({ label: `${splits[split]}静态基准`, value: item.baseline?.[split]?.[metric], color: palette[index] })));
+    }, Object.keys(splits).flatMap((split, index) => ([{ label: `${splits[split]} WBR-live`, value: item.baseline?.[split]?.[metric], color: palette[index] }, ...(item.matched_static_baseline?.[split] ? [{ label: `${splits[split]} 同规则静态`, value: item.matched_static_baseline[split][metric], color: palette[index] }] : [])])));
   }
   pruneCharts('performance:', keys);
   const selection = run.selection;

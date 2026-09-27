@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 
 from ai.reporting import (ReportReader, read_json, clean_json, process_alive,
-    write_ppo_report, write_ga_report, append_training_diagnostic, append_ppo_update_diagnostic)
+    live_static_baseline, write_ppo_report, write_ga_report,
+    append_training_diagnostic, append_ppo_update_diagnostic)
 
 
 def write(path, value):
@@ -42,14 +43,39 @@ def test_json_missing_distinct_from_corrupt():
     assert clean_json([float('nan'), float('inf'), 1]) == [None, None, 1]
 
 
-def test_reader_only_consumes_current_schema_and_does_not_write(tmp_path):
+def _sealed_baseline():
+    row = {'transition_count': 2, 'total_return': 0.1, 'annualized_return': 0.2,
+           'annualized_volatility': 0.3, 'sharpe': 0.4, 'max_drawdown': 0.5, 'calmar': 0.4}
+    return {split: dict(row) for split in ('train', 'validation', 'test')}
+
+
+@pytest.fixture(autouse=True)
+def sealed_live_baseline(monkeypatch):
+    monkeypatch.setattr('ai.reporting.live_static_baseline', lambda: _sealed_baseline())
+
+
+def test_live_static_baseline_rejects_a_partial_split_set(tmp_path, monkeypatch):
+    import ai.reporting as reporting
+    monkeypatch.setattr(reporting, 'live_static_baseline', live_static_baseline)
+    path = tmp_path / 'baseline.json'
+    monkeypatch.setattr(reporting, 'LIVE_STATIC_BASELINE_PATH', path)
+    path.write_text(json.dumps({'metrics': {'train': {}}}), encoding='utf-8')
+    with pytest.raises(ValueError, match='train, validation and test'):
+        reporting.live_static_baseline()
+
+
+def test_reader_only_consumes_current_schema_and_does_not_write(tmp_path, monkeypatch):
+    sealed = _sealed_baseline()
+    monkeypatch.setattr('ai.reporting.live_static_baseline', lambda: sealed)
     run = ppo(tmp_path, baselines={'train': {'metrics': {'calmar': .9}}, 'validation': None, 'test': None})
     before = {p: p.read_bytes() for p in run.iterdir()}
     report = ReportReader(tmp_path / 'run', 'ppo', 'PPO', log_path=tmp_path / 'stdout.log').snapshot()
     assert report['progress']['current'] == 2
     assert report['progress']['total'] == 100
     assert report['selection'] is None
-    assert report['baseline'] == {'train': {'calmar': .9}}
+    assert report['baseline'] == sealed
+    assert report['matched_static_baseline']['train']['calmar'] == .9
+    assert read_json(run / 'training_report.json')['baseline'] == sealed
     assert report['evaluations'] == []
     assert {p: p.read_bytes() for p in run.iterdir()} == before
     payload = read_json(run / 'training_report.json')

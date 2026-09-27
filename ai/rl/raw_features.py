@@ -29,6 +29,21 @@ RAW_PANEL_CONFIG = {
 }
 
 
+def _normalize_raw_bank_in_place(raw_bank, stock_scale, pit_bank, row_valid_bank,
+                                 *, chunk_bytes=32 * 1024 * 1024):
+    """Preserve elementwise arithmetic while bounding temporary device tables."""
+    row_bytes = raw_bank.shape[1] * raw_bank.shape[2] * raw_bank.element_size()
+    chunk_rows = max(1, chunk_bytes // row_bytes)
+    for start in range(0, len(raw_bank), chunk_rows):
+        stop = start + chunk_rows
+        rows = raw_bank[start:stop]
+        missing = rows == float(RAW_MISSING_VALUE)
+        negative = (rows < 0) & ~missing
+        rows.masked_fill_(missing, 0).div_(stock_scale)
+        rows.sub_(negative.to(rows.dtype) * 2).masked_fill_(missing, -1)
+        rows.mul_((pit_bank[start:stop] & row_valid_bank[start:stop, None]).unsqueeze(-1))
+
+
 def _masked_weights(logits: th.Tensor, valid: th.Tensor) -> th.Tensor:
     """Normalize only real members; an empty set contributes exactly zero."""
     weights = th.softmax(logits.masked_fill(~valid, th.finfo(logits.dtype).min), dim=-1)
@@ -202,13 +217,10 @@ class RawPanelFeatures(nn.Module):
         self.row_valid_bank = th.tensor(store.row_valid, device=self.stock_queries.device)
         # Fixed field scaling and PIT zeroing commute with every learned layer.
         # Store only this one normalized raw table, not one copy per window.
-        missing = self.raw_bank == float(RAW_MISSING_VALUE)
-        negative = (self.raw_bank < 0) & ~missing
-        self.raw_bank.masked_fill_(missing, 0).div_(self.stock_scale)
         # Disjoint ranges: nonnegative values >=0, signed values <-2, missing=-1.
         # This preserves signed source values; missing is never inferred from sign.
-        self.raw_bank.sub_(negative.to(self.raw_bank.dtype) * 2).masked_fill_(missing, -1)
-        self.raw_bank.mul_((self.pit_bank & self.row_valid_bank[:, None]).unsqueeze(-1))
+        _normalize_raw_bank_in_place(self.raw_bank, self.stock_scale,
+                                     self.pit_bank, self.row_valid_bank)
         member = store.pit_universe_mask & store.row_valid[:, None]
         prefix = np.vstack((np.zeros((1, self.stock_count), dtype=np.int32),
                             np.cumsum(member, axis=0, dtype=np.int32)))

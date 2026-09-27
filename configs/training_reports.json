@@ -1,6 +1,41 @@
 {
   "runs": [
     {
+      "id": "ppo12_f2_std_scaled_100k_20260923",
+      "algorithm": "PPO",
+      "output_dir": "../artifacts/rl/ppo12_f2_std_scaled_100k_20260923/run",
+      "log_path": "../artifacts/rl/ppo12_f2_std_scaled_100k_20260923/stdout.log",
+      "trace_dir": "../artifacts/rl/ppo12_f2_std_scaled_100k_20260923/monitor/cache"
+    },
+    {
+      "id": "ga12_hold20_3h_1_20260923_r2",
+      "algorithm": "GA",
+      "output_dir": "../artifacts/ga/ga12_hold20_3h_1_20260923_r2/run",
+      "log_path": "../artifacts/ga/ga12_hold20_3h_1_20260923_r2/stdout.log",
+      "trace_dir": "../artifacts/ga/ga12_hold20_3h_1_20260923_r2/monitor/cache"
+    },
+    {
+      "id": "ga12_hold20_3h_2_20260923_r2",
+      "algorithm": "GA",
+      "output_dir": "../artifacts/ga/ga12_hold20_3h_2_20260923_r2/run",
+      "log_path": "../artifacts/ga/ga12_hold20_3h_2_20260923_r2/stdout.log",
+      "trace_dir": "../artifacts/ga/ga12_hold20_3h_2_20260923_r2/monitor/cache"
+    },
+    {
+      "id": "ga12_hold20_3h_3_20260923_r2",
+      "algorithm": "GA",
+      "output_dir": "../artifacts/ga/ga12_hold20_3h_3_20260923_r2/run",
+      "log_path": "../artifacts/ga/ga12_hold20_3h_3_20260923_r2/stdout.log",
+      "trace_dir": "../artifacts/ga/ga12_hold20_3h_3_20260923_r2/monitor/cache"
+    },
+    {
+      "id": "ga12_hold20_3h_1_20260923",
+      "algorithm": "GA",
+      "output_dir": "../artifacts/ga/ga12_hold20_3h_1_20260923/run",
+      "log_path": "../artifacts/ga/ga12_hold20_3h_1_20260923/stdout.log",
+      "trace_dir": "../artifacts/ga/ga12_hold20_3h_1_20260923/monitor/cache"
+    },
+    {
       "id": "ppo11_f1_amihud12_hold20_100k_20260922",
       "algorithm": "PPO",
       "output_dir": "../artifacts/rl/ppo11_f1_amihud12_hold20_100k_20260922/run",

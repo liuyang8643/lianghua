@@ -45,6 +45,8 @@ include = [
     "/data/db/**/*.py",
     "/configs/*.py",
     "/configs/config.json",
+    "/configs/live_static_baseline.json",
+    "/configs/ppo_static4.json",
     "/configs/evaluation_splits.json",
     "/configs/strategy.yaml",
 ]

@@ -46,7 +46,7 @@ from ai.rl.evaluation import (
     parallel_backtests,
     parallel_backtests_for_episode,
 )
-from ai.rl.device import PPO_DEVICE, load_cuda_ppo, require_cuda_device, require_cuda_model
+from ai.rl.device import PPO_DEVICE, load_cuda_ppo, require_cuda_device, require_cuda_model, release_idle_cuda_memory
 from ai.rl.checkpoint import (
     FrozenEvaluationCheckpoint,
     capture_evaluation_checkpoint,
@@ -89,6 +89,7 @@ from env.shared_episode import (
     ResidentPreparedEpisode,
 )
 from factor import FactorBatch
+from factor.registry import PRODUCTION_FACTOR_NAMES, STATIC4_FACTOR_NAMES
 from offline_data import RuntimeSlice, compute_runtime_lineage
 
 
@@ -115,7 +116,18 @@ def scheduled_learning_rate(initial: float, end_fraction: float, decay_start: fl
     progress = min(1.0, max(0.0, completed / total))
     phase = max(0.0, (progress - decay_start) / (1.0 - decay_start))
     return initial * (1.0 - (1.0 - end_fraction) * phase)
-RUN_IDENTITY_VERSION = "wbr-ppo-run-identity-v91-amihud12-hold20"
+def exploration_scaled_learning_rate(base_rate: float, minimum_log_std: float,
+                                     reference_log_std: float) -> float:
+    """Keep the learning-rate / narrowest Gaussian scale ratio from growing."""
+    if not all(math.isfinite(x) for x in (base_rate, minimum_log_std, reference_log_std)) or base_rate <= 0:
+        raise ValueError("exploration learning-rate inputs must be finite with positive base rate")
+    rate = base_rate * math.exp(min(0.0, minimum_log_std - reference_log_std))
+    if rate <= 0:
+        raise ValueError("Gaussian scale is too small for a positive learning rate")
+    return rate
+
+
+RUN_IDENTITY_VERSION = "wbr-ppo-run-identity-v92-exploration-scaled-learning-rate"
 EVALUATION_CACHE_PROTOCOL = {"prepared_splits": "eager_once_before_rollout_workers_shared_readonly_until_exit",
                              "evaluation_execution": "serial", "release": "ExitStack",
                              "replay_storage": "full_history_precompute_then_causal_history_projection"}
@@ -830,6 +842,12 @@ def _build_run_identity(
             "batch_size": batch_size,
             "n_epochs": args.n_epochs,
             "learning_rate": args.learning_rate,
+            "learning_rate_std_scaling": {
+                "enabled": args.learning_rate_std_scaling,
+                "rule": "scheduled_rate * min(1, exp(min(policy.log_std) - reference_log_std))",
+                "reference_log_std": args.log_std_init,
+                "update_boundary": "before_each_rollout; detached_policy_parameter",
+            },
             "learning_rate_schedule": {"end_fraction": args.learning_rate_end_fraction,
                                        "decay_start": args.learning_rate_decay_start,
                                        "total_transitions": (args.rollouts * n_steps * args.n_envs
@@ -1022,6 +1040,8 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
     if not isinstance(fixed_filters, Mapping):
         raise TypeError("filter_factors must be a mapping")
     action_schema = ActionSchema(
+        factor_names=STATIC4_FACTOR_NAMES if args.factor_profile == "static4" else PRODUCTION_FACTOR_NAMES,
+        schema_version="day-config-static4-v2-live-validity-hold20" if args.factor_profile == "static4" else ActionSchema().schema_version,
         fixed_filter_flags=tuple(
             bool(fixed_filters.get(name, True))
             for name in ActionSchema().filter_names
@@ -1414,6 +1434,8 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
                                     eligible_for_selection: bool = True) -> None:
         started = time.perf_counter()
         snapshot = capture_evaluation_checkpoint(candidate, output_dir)
+        print(json.dumps({"event": "released_idle_cuda_memory_before_blocking_evaluation",
+                          **release_idle_cuda_memory(learner_device)}), flush=True)
         trace = train_tracker.replay(snapshot)
         consume_training_candidate(snapshot, trace, time.perf_counter() - started, phase=phase,
                                    eligible_for_selection=eligible_for_selection)
@@ -1460,9 +1482,14 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
         if evaluation_queue is not None:
             evaluation_queue.poll()
         before = int(model.num_timesteps)
-        model.lr_schedule = FloatSchedule(scheduled_learning_rate(
+        effective_learning_rate = scheduled_learning_rate(
             args.learning_rate, args.learning_rate_end_fraction, args.learning_rate_decay_start,
-            before + rollout_size, schedule_total))
+            before + rollout_size, schedule_total)
+        if args.learning_rate_std_scaling:
+            effective_learning_rate = exploration_scaled_learning_rate(
+                effective_learning_rate, float(model.policy.log_std.detach().min().item()),
+                args.log_std_init)
+        model.lr_schedule = FloatSchedule(effective_learning_rate)
         learn_started = time.perf_counter()
         model.learn(
             total_timesteps=rollout_size,
@@ -1609,6 +1636,7 @@ def _train(args: argparse.Namespace, resources: ExitStack) -> Path:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/config.json")
+    parser.add_argument("--factor-profile", choices=("production12", "static4"), default="production12")
     parser.add_argument("--runtime", required=True)
     parser.add_argument("--output", default="artifacts/rl/ppo")
     default_splits, _ = read_evaluation_splits()
@@ -1668,6 +1696,9 @@ def build_parser() -> argparse.ArgumentParser:
                         default="blocking", help="overlap one frozen CUDA train replay with the CUDA learner")
     parser.add_argument("--n-epochs", type=int, default=DEFAULT_N_EPOCHS)
     parser.add_argument("--learning-rate", type=float, default=DEFAULT_LEARNING_RATE)
+    parser.add_argument("--learning-rate-std-scaling", action="store_true",
+                        help="reduce scheduled learning rate in proportion to the narrowest Gaussian std; "
+                             "reference is --log-std-init, updated once before each rollout")
     parser.add_argument("--learning-rate-end-fraction", type=float, default=1.0)
     parser.add_argument("--learning-rate-decay-start", type=float, default=0.2)
     parser.add_argument("--target-kl", type=float, default=DEFAULT_TARGET_KL)

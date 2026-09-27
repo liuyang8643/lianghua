@@ -43,8 +43,8 @@ def test_ga_and_ppo_default_evaluation_cadence_is_shared():
     assert build_parser().parse_args(['--runtime', 'unused.npz']).eval_every_rollouts == DEFAULT_EVALUATION_EVERY
 
 
-@pytest.mark.parametrize("continue_after_first_generation,warm_start", [(False, False), (True, False), (False, True)])
-def test_standalone_two_generation_ga_resolves_identity_and_evaluates_three_splits(tmp_path, monkeypatch, continue_after_first_generation, warm_start):
+@pytest.mark.parametrize("continue_after_first_generation,warm_start,max_seconds", [(False, False, None), (True, False, None), (False, True, None), (False, False, 1e-9)])
+def test_standalone_two_generation_ga_resolves_identity_and_evaluates_three_splits(tmp_path, monkeypatch, continue_after_first_generation, warm_start, max_seconds):
     runtime = tmp_path / "runtime.npz"
     write_canonical_runtime(runtime, stocks=30)
     financial = {"snapshot_sha256": file_sha256(runtime), "manifest_sha256": "a" * 64,
@@ -66,7 +66,7 @@ def test_standalone_two_generation_ga_resolves_identity_and_evaluates_three_spli
     args = SimpleNamespace(mode="ga", output_dir=str(output), runtime_path=None, config=str(config_file),
         lookback=64, workers=None, seed=17, candidate_configs=None, warm_start=None,
         evaluation_splits=str(split_file), continue_from=None,
-        eval_every_generations=10, population_size=None, generations=None)
+        eval_every_generations=10, population_size=None, generations=None, max_seconds=max_seconds)
     dates = [datetime.fromisoformat(value) for value in splits["train"]]
     parent_cache = None
     if warm_start:
@@ -102,12 +102,15 @@ def test_standalone_two_generation_ga_resolves_identity_and_evaluates_three_spli
     assert contract["environment"]["schema_version"] == ENVIRONMENT_SCHEMA_VERSION
     assert Path(args.runtime_path) == runtime.resolve()
     report = json.loads((output / "comparison.json").read_text("utf8"))
-    assert report["state"] == "complete" and report["completed_generation"] == 2
+    completed = 1 if max_seconds is not None else 2
+    assert report["state"] == "complete" and report["completed_generation"] == completed
     assert report["opened"] == {"validation": True, "test": True}
     assert set(report["baselines"]) == {"train", "validation", "test"}
-    assert "validation" not in report["rows"][0] and "test" not in report["rows"][0]
-    assert {"validation", "test"}.issubset(report["rows"][1])
-    assert report["selected"]["generation"] == 2 and "test" not in report["selected"]
+    if completed == 2:
+        assert "validation" not in report["rows"][0] and "test" not in report["rows"][0]
+    assert {"validation", "test"}.issubset(report["rows"][-1])
+    assert report["selected"]["generation"] == completed and "test" not in report["selected"]
+    assert (output / 'best_individual_config.json').exists()
     if warm_start:
         initialization = identity['initialization']
         assert initialization['mode'] == 'candidate_warm_start_new_root'

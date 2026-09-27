@@ -59,6 +59,7 @@ from env.simulator import (
     accounting_schema_manifest,
 )
 from factor import FACTOR_SCHEMA_VERSION, PRODUCTION_FACTORS, FactorBatch, precompute_factors, factor_coverage
+from factor.registry import policy_factor_definitions, STATIC4_SCHEMA_VERSION
 from offline_data import RUNTIME_FIELDS, RuntimeSlice, load_runtime_slice
 from offline_data.contracts import ReplayProjection
 
@@ -128,7 +129,8 @@ def prepare_episode_from_runtime(
         end,
         preload_rows=required_runtime_preload_rows(lookback),
     )
-    factors = precompute_factors(runtime)
+    definitions = PRODUCTION_FACTORS if action_schema is None else policy_factor_definitions(action_schema.factor_names)
+    factors = precompute_factors(runtime, definitions=definitions)
     episode = PreparedEpisode.build(
         runtime,
         factors,
@@ -646,7 +648,7 @@ class PreparedEpisode:
         if type(encode_observations) is not bool:
             raise TypeError("encode_observations must be bool")
         if encode_observations:
-            if factors.schema_version != FACTOR_SCHEMA_VERSION:
+            if factors.schema_version not in (FACTOR_SCHEMA_VERSION, STATIC4_SCHEMA_VERSION):
                 raise ValueError("research factor schema cannot enter production observations")
             _validate_runtime_preload(runtime, lookback)
         else:

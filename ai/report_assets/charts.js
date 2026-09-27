@@ -107,6 +107,14 @@ export class LineChart {
       ctx.save(); ctx.setLineDash([5, 4]); ctx.strokeStyle = item.color; ctx.globalAlpha = .65;
       ctx.beginPath(); ctx.moveTo(pad.left, sy(item.value)); ctx.lineTo(pad.left + width, sy(item.value)); ctx.stroke(); ctx.restore();
     }
+    for (const item of this.options.milestones || []) {
+      if (!Number.isFinite(item.value) || item.value < xmin || item.value > xmax) continue;
+      ctx.save(); ctx.strokeStyle = '#68768a'; ctx.fillStyle = '#68768a'; ctx.setLineDash([3, 4]);
+      ctx.beginPath(); ctx.moveTo(sx(item.value), pad.top); ctx.lineTo(sx(item.value), pad.top + height); ctx.stroke();
+      ctx.textAlign = item.value > (xmin + xmax) / 2 ? 'right' : 'left';
+      ctx.fillText(item.label, sx(item.value) + (ctx.textAlign === 'right' ? -5 : 5), pad.top + 9);
+      ctx.restore();
+    }
     for (const item of visible) {
       ctx.strokeStyle = item.color; ctx.fillStyle = item.color; ctx.lineWidth = 1.8; ctx.lineJoin = 'round'; ctx.beginPath();
       item.points.forEach(([x, y], index) => { index ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y)); });

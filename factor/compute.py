@@ -13,7 +13,7 @@ from offline_data import RuntimeSlice
 from utils.stable_sort import stable_radix_order
 
 from .base import FACTOR_SCHEMA_VERSION, FactorBatch, FactorDefinition
-from .registry import PRODUCTION_FACTORS, PRODUCTION_FILTERS
+from .registry import PRODUCTION_FACTORS, PRODUCTION_FILTERS, STATIC4_FACTORS, STATIC4_SCHEMA_VERSION
 from .library.bilibili import (
     BiliAdjustedIssueDiscount, BiliHighLifetimeRangeRatio, calculate_bilibili_scores,
 )
@@ -225,6 +225,7 @@ def precompute_factors(
         raise ValueError("factor definition names must be non-empty and unique")
     schema_version = (
         FACTOR_SCHEMA_VERSION if definitions == PRODUCTION_FACTORS
+        else STATIC4_SCHEMA_VERSION if definitions == STATIC4_FACTORS
         else "wbr.research-factors.v1-pit-ranks"
     )
     _validate_required_fields(runtime, definitions + PRODUCTION_FILTERS)

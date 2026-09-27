@@ -195,3 +195,31 @@ def get_filter_definition(name: str) -> FactorDefinition:
 def get_factor_class(name: str) -> type:
     """Return one explicitly registered production factor/filter class."""
     return _PRODUCTION_DEFINITIONS[name].implementation
+
+
+# Explicit new-root comparison vocabulary; production twelve-factor defaults stay fixed.
+
+STATIC4_FACTOR_NAMES = ("TrueMarketCap", "VolumeCV", "AmountBasedSmallCap", "AmihudIlliquidity")
+STATIC4_SCHEMA_VERSION = "wbr.static4-factors.v2-live-validity-original-amihud"
+from factor.library import static4 as static4_implementations
+
+STATIC4_FACTORS = tuple(
+    _definition(getattr(static4_implementations, name),
+                version="live-static4-original-score-st-open2-gate-v2",
+                required_fields=fields, lagged_fields=lags, hist_days=history)
+    for name, fields, lags, history in (
+        ("TrueMarketCap", ("open", "st_mask", "total_share"), ("total_share",), 1),
+        ("VolumeCV", ("open", "st_mask", "volume"), (), VolumeCV.hist_days),
+        ("AmountBasedSmallCap", ("open", "st_mask", "amount"), (), AmountBasedSmallCap.hist_days),
+        ("AmihudIlliquidity", ("open", "st_mask", "close", "amount"), (), 20),
+    )
+)
+
+
+def policy_factor_definitions(names: tuple[str, ...]) -> tuple[FactorDefinition, ...]:
+    """Only explicitly approved policy vocabularies may enter encoded training."""
+    if names == PRODUCTION_FACTOR_NAMES:
+        return PRODUCTION_FACTORS
+    if names == STATIC4_FACTOR_NAMES:
+        return STATIC4_FACTORS
+    raise ValueError("unregistered policy factor vocabulary")

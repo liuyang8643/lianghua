@@ -1,5 +1,19 @@
 # WBR 目标架构与开发准则
 
+## 40. GitHub 完整历史数据分发（2026-09-27）
+
+用户明确授权当前完整代码和约 3.5 GB 全历史 runtime 一起推送现有 GitHub，接受首次克隆数 GB。`snapshots/runtime` 保存 1990-12-19～2026-08-28、5544 股票、53 个 NPZ 成员的原始字节分块及原始财务 manifest；`offline_data/portable_snapshot.py` 仅执行本地分块、SHA256 校验和还原，不改 schema、精度、日期或股票轴。`requirements-review.txt` 提供无需 QMT/Torch/CUDA 的静态回测环境。最近一年回测仍用 `testback.run_backtest` 和唯一 env 核，并从完整历史重算全部生产因子。无网络的干净副本回测与原始快照结果完全一致，约 53～62 秒、峰值内存约 22 GiB；建议 32 GB RAM。训练模型、历史实验副本和日志保留本地，`artifacts/` 整体忽略；不能据此删除仍被动态发现或生产注册引用的因子源码。新分发格式独立于运行/策略 schema，既有训练源码身份不作兼容承诺。详细交付验证见 `docs/review-delivery.md`。
+
+## 39. 三轮十二因子 GA 与 PPO 长训更新失稳（2026-09-23）
+
+用户要求先停止后台训练，顺序完成三次各3小时GA，再做逐次限时PPO排错并开启健康的新训练。三轮共用12因子、20持仓、单边滑点0.0025及F1同一2004～2017训练期，实际各10805/10810/10808秒，训练冠军Calmar2.0060/1.9887/1.9377；验证0.0645/0.1552/0.1770、测试0.3010/0.2913/0.5513，不与验证选择模型混淆。GA CLI新增`--max-seconds`，到时完成当前代和最终评估后正常保存。
+
+F1停止前进程仍正常更新、无异常退出；问题是训练Calmar从4400轮1.6708退化至42200轮0.6460。逐维PB/ROE Gaussian std从0.2019降至0.00609，平均std掩盖此收缩；固定lr0.003导致大步更新，SB3 target_kl只能在后续minibatch检测而不会撤销已执行更新。相近诊断继承归档policy和Adam、重置账户、同20env×64/batch640/1epoch，不冒称旧账户/RNG的精确续训。20000轮模型对照300轮：原参数1.5215→1.1945，固定lr0.0003为1.5315；但42200轮模型固定lr0.0003仍有早期大步更新。
+
+新增显式`--learning-rate-std-scaling`（默认关闭）：每轮learn前将原定学习率乘`min(1, exp(min(policy.log_std)-log_std_init))`，detach读取参数，不修改Gaussian、Adam、loss、奖励或动作语义。初始base lr仍0.003，成熟20000/42200模型约降至0.000127/0.0000905。PPO identity v92封存开关、公式、参考初始std和更新时机；v91不可同身份续训。该规则控制LR/std比例，不数学保证KL上限，也会一起降低critic学习率。
+
+限时验证：42200模型100轮（10分钟上限，实际305秒）200次Adam全部完成，单步KL最大0.02050，Calmar0.6460→0.6606；20000模型300轮（15分钟上限，实际724秒）600次Adam全部完成，单步KL最大0.00798，Calmar1.5215→1.5286。保存/重载policy、Adam精确一致、确定性动作误差0、下轮LR一致。38项逻辑/身份测试通过，另有GA20项测试及独立verify复核。新正式root使用该选项、其余原默认、随机初始化；证据只支持已测阶段的更新稳定性，不声称10万轮永不退化或已提高样本外收益。详细协议、失败启动审计与结果见`artifacts/ga12_ppo_debug_20260923/REPORT.md`。
+
 最新收敛优化覆盖（2026-09-20）：针对 0.0025 滑点下 PPO 训练 Calmar 随机游走（诊断：Box std≈0.92 不收缩、33～59% 采样坐标被裁到端点、确定性换股漂向 X=0 悬崖、critic explained_variance≈0、20 个同步环境共享同日市场冲击、approx_kl≈0.001/clip_fraction≈0），重新实施 CLI `--log-std-init`（默认 0）与 `--advantage-baseline`（`none`|`synchronized_env_row_mean`，默认 none）。`synchronized_env_row_mean` 仅在 `--episode-scope full` 且 n_envs≥2 时可用：GAE 之后对每个 buffer 行跨环境去均值，returns 与 clipped surrogate 不变。run identity v88；旧 checkpoint 不可同身份续训；CLI 默认未改。冻结源码启动统一使用 `scripts/launch_ppo_frozen.ps1`，其入口必须带 `__main__` 守卫，否则 spawn 的 rollout worker 会以父进程 argv 重跑 train() 并因输出目录非空崩溃（此前两次 expA 均因此卡死）。对照实验 E1（`log_std_init=-1.6` + `synchronized_env_row_mean`、seed 20260920、800 轮）训练 Calmar 0.520→1.058 近似单调爬升（最后 5 点 1.020±0.028，验证最高 0.910、测试 0.78），同预算旧默认运行为 0.31～0.79 随机游走；训练期 `approx_kl≈0.007`、`clip_fraction≈0.03～0.04`、std 0.20→0.19；critic explained_variance 仍≈0，换股稳定在 0.07（X=3），确定性权重跨日期标准差≤0.024（策略仍近似静态）。消融 E2（仅 std 0.2、无基线）800 轮末值 0.786（最后 5 点 0.744±0.035）：低探索消除塌陷，行均值基线提供大部分有效梯度。E3（E1 + lr 1e-3 + target_kl 0.03）800 轮末段 1.058→1.140→1.109（最后 5 点 1.100±0.032），`approx_kl` 0.011～0.014、`clip_fraction` 0.07～0.09、std 自行收缩至 0.167，未触发 target_kl 早停。据此 CLI 默认改为 `log_std_init=-1.6`、`advantage_baseline=synchronized_env_row_mean`、`learning_rate=1e-3`、`target_kl=0.03`（`DEFAULT_LOG_STD_INIT/DEFAULT_ADVANTAGE_BASELINE/DEFAULT_LEARNING_RATE/DEFAULT_TARGET_KL` 唯一定义于 ai/rl/train.py）；单环境测试须显式 `--advantage-baseline none`。800 轮短训只证明优化稳定性，不是收益验收；E4 以新默认跑 4000 轮探顶（seed 20260921，800 轮时 1.128，与 E3 跨 seed 一致），记录于 artifacts/rl/ppo11_e1_*～ppo11_e4_*。
 
 用户同日追加授权：生产换股动作探索范围改为 [0.05, 0.2]（ActionSchema v20 `day-config-v20-turnover-floor`，新增 `turnover_minimum` 并写入 schema hash 与 layout），固定 buy_n=50 下每日至少检查 floor(50×0.05)=2 只最差持仓，禁止策略靠 X=0/1 "不换股"取巧；权重仍可由 actor 缓慢变化实现少调仓。研究入口（calendar_replay、style_phase_research、bilibili smallcap）显式声明 `turnover_minimum=0.0, turnover_maximum=1.0` 保持原语义。environment v37、bundle v45、PPO identity v89；GA 采样与搜索范围自动读取同一 layout。旧 v19 checkpoint/GA 种群/历史坐标不可续入。用户验收标准：PPO 训练期至少快速收敛到 GA 水平（0.0025 滑点下 GA 训练 Calmar 1.50），再显著超越；当前静态化策略（权重跨日期 std≤0.02）最多逼近 GA，超越依赖状态路径真正被利用，属下一阶段假设。

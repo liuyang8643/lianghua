@@ -210,12 +210,12 @@ class Comparison:
         self.cache[key] = self.evaluator(self.episodes[split], config)['metrics']
         return self.cache[key]
 
-    def evaluate(self, generation, best, unique_candidates):
+    def evaluate(self, generation, best, unique_candidates, *, final=False):
         # Only copied frozen champions enter diagnostics. No result returns to GA breeding.
         config = json.loads(json.dumps(best['individual_config'], allow_nan=False))
         row = {'generation': generation + 1, 'config_sha256': config_sha(config),
             'config': config, 'train': best['metrics'], 'unique_candidates': unique_candidates}
-        scheduled = (generation + 1) % self.args.eval_every_generations == 0 or generation + 1 == self.args.generations
+        scheduled = final or (generation + 1) % self.args.eval_every_generations == 0 or generation + 1 == self.args.generations
         row['scheduled_evaluation'] = scheduled
         self.completed_generation = generation + 1
         if not scheduled:

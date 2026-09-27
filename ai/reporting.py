@@ -22,6 +22,28 @@ from utils.atomic_file import atomic_write_json
 from typing import Any
 
 SPLITS = ("train", "validation", "test")
+LIVE_STATIC_BASELINE_PATH = Path(__file__).resolve().parents[1] / "configs" / "live_static_baseline.json"
+_BASELINE_METRIC_KEYS = (
+    "transition_count", "total_return", "annualized_return", "annualized_volatility",
+    "sharpe", "max_drawdown", "calmar",
+)
+
+
+def live_static_baseline() -> dict[str, dict[str, float | int]]:
+    """Visualization baseline is the sealed WBR-live config replay at 25bp."""
+    payload = read_json(LIVE_STATIC_BASELINE_PATH)
+    if payload is None:
+        raise ValueError("live static baseline file is missing")
+    metrics = payload.get("metrics")
+    if not isinstance(metrics, dict) or set(metrics) != set(SPLITS):
+        raise ValueError("live static baseline must contain train, validation and test")
+    sealed = {}
+    for split in SPLITS:
+        row = metrics[split]
+        if set(row) != set(_BASELINE_METRIC_KEYS):
+            raise ValueError(f"live static baseline {split} metrics are incomplete")
+        sealed[split] = {key: row[key] for key in _BASELINE_METRIC_KEYS}
+    return sealed
 _DIAGNOSTICS = {
     "train/loss": "Loss", "train/policy_gradient_loss": "Policy loss",
     "train/value_loss": "Value loss", "train/approx_kl": "KL",
@@ -223,7 +245,11 @@ def _selection(selected: dict | None, report: dict, *, artifact_key: str, step: 
 def write_ppo_report(output_dir: Path, *, total_rollouts: int, timesteps: int,
                      curves: dict, baselines: dict, elapsed_seconds: float | None = None,
                      complete: bool = False) -> None:
-    """Publish already-opened PPO results; never opens a dataset or infers selection."""
+    """Publish already-opened PPO results; never opens a dataset or infers selection.
+
+    The chart baseline is always the sealed WBR-live 25bp replay. ``baselines`` remains
+    a separate matched execution benchmark, displayed alongside the live reference.
+    """
     output_dir = Path(output_dir)
     identity = read_json(output_dir / 'run_identity.json')
     if identity is None:
@@ -240,10 +266,9 @@ def write_ppo_report(output_dir: Path, *, total_rollouts: int, timesteps: int,
                           'test_role': contract['evaluation_protocol']['test_usage'],
                           'evaluation_interval': algorithm['complete_train_evaluation_every_rollouts'],
                           'elapsed_scope': 'recorded_collection_update_and_checkpoint_seconds_excludes_evaluation_and_startup'}
+    report['baseline'] = live_static_baseline()
+    report['matched_static_baseline'] = {split: value['metrics'] if value is not None else None for split, value in baselines.items()}
     for split in SPLITS:
-        baseline = baselines[split]
-        if baseline is not None:
-            report['baseline'][split] = baseline['metrics']
         for row in curves[split]:
             step = row['timesteps'] / size
             report['evaluations'].append(_point(step, split, row[f'{split}_metrics'],
@@ -301,8 +326,8 @@ def write_ga_report(output_dir: Path, *, total_generations: int, generation: int
         report['protocol'].update({key: identity[key] for key in ('selection', 'test_role', 'objective', 'deployment_bundle')})
         report['protocol']['evaluation_interval'] = comparison['eval_every_generations']
         report['progress']['elapsed_seconds'] = comparison['elapsed_seconds']
-        report['baseline'] = comparison['baselines']
         rows = comparison['rows']
+    report['baseline'] = live_static_baseline()
     for row in rows:
         step, artifact = row['generation'], row['config_sha256']
         for split in SPLITS:
@@ -363,6 +388,7 @@ class ReportReader:
                 report['progress'] = dict(report['progress'])
                 report['protocol'] = dict(report['protocol'])
             report['id'] = self.run_id
+            report['baseline'] = live_static_baseline()
             report['detail_loaded'] = detail
             if report['state'] in ('running', 'preparing') and process_alive(report['process_pid']) is False:
                 report['state'], report['state_label'] = 'stopped', '训练已停止'

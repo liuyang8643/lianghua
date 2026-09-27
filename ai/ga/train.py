@@ -638,6 +638,10 @@ def _run_ga(
 
     from multiprocessing import get_context
 
+    started_at = time.monotonic()
+    max_seconds = getattr(args, "max_seconds", None)
+    if max_seconds is not None and (not math.isfinite(max_seconds) or max_seconds <= 0):
+        raise ValueError("max_seconds must be finite and positive")
     if args.warm_start and (resume_dir is not None or args.continue_from):
         raise ValueError("--warm-start cannot be combined with resume/continue-from")
     profile_name = resolve_profile_name(fallback=profile_name)
@@ -694,6 +698,7 @@ def _run_ga(
             runtime_path=runtime_path,
             episode=episode,
         )
+        metadata["wall_time_budget_seconds"] = max_seconds
         if comparison_requested:
             if resume_dir is not None or args.candidate_configs:
                 raise ValueError("comparison requires a new GA run or explicit continuation")
@@ -807,8 +812,12 @@ def _run_ga(
                     write_generation_diagnostics(output_dir, generation, results,
                                                  len(canonical_configs), len(missing),
                                                  time.perf_counter() - generation_started)
+                    budget_reached = max_seconds is not None and time.monotonic() - started_at >= max_seconds
                     if comparison is not None:
-                        comparison.evaluate(generation, best, len(ga_cache))
+                        comparison.evaluate(generation, best, len(ga_cache), final=budget_reached)
+                    budget_reached = budget_reached or (
+                        max_seconds is not None and time.monotonic() - started_at >= max_seconds
+                    )
                     write_ga_report(output_dir, total_generations=generations,
                                     generation=generation + 1, best=best)
                     ga_logger.info(
@@ -816,6 +825,9 @@ def _run_ga(
                         f"calmar={best['calmar']:.4f} full-investment=PASS"
                     )
                     if candidate_path:
+                        break
+                    if budget_reached:
+                        ga_logger.info("Wall-time budget reached; saving the completed generation and final evaluations")
                         break
                     next_configs = ga_optimizer(
                         results,
@@ -871,6 +883,8 @@ def parse_args(argv=None):
     parser.add_argument("--resume", nargs="?", const="auto")
     parser.add_argument("--profile", choices=(DEFAULT_GA_PROFILE,), default=DEFAULT_GA_PROFILE)
     parser.add_argument("--generations", type=int)
+    parser.add_argument("--max-seconds", type=float,
+                        help="Wall-time budget including preparation; finish the current generation and save normally")
     parser.add_argument("--population-size", type=int)
     parser.add_argument("--seed", type=int, default=DEFAULT_GA_SEED)
     parser.add_argument(
@@ -878,6 +892,8 @@ def parse_args(argv=None):
         help="evaluate a complete current4 config list in debug mode",
     )
     args = parser.parse_args(argv)
+    if args.max_seconds is not None and (not math.isfinite(args.max_seconds) or args.max_seconds <= 0):
+        parser.error("--max-seconds must be finite and positive")
     if args.warm_start and (args.resume or args.continue_from):
         parser.error("--warm-start cannot be combined with resume/continue-from")
     if args.candidate_configs and args.mode != "debug":

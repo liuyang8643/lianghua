@@ -1,113 +1,96 @@
-# WBR 量化交易系统
+# WBR 量化策略研究与回测
 
-当前PPO默认：100000轮、20env、n_steps=64、batch_size=640、n_epochs=3、固定learning_rate=3e-4、gamma=0.99、gae_lambda=0.95、target_kl=None、seed=None。其余算法设置继承SB3；标准DiagGaussianDistribution、Linear mean、log_std_init=0，环境动作裁剪到Box[-1,1]后由唯一ActionSchema映射到11个[0,1]权重与[0,0.2]换股比例。
+GA 与 PPO 输出 `DayConfig`，回测和实盘共用 `env` 的选股、合法性、调仓、成交与账户结算。回测只读本地数据。
 
+## 克隆后直接 review / debug
 
-## 环境要求
+仓库包含完整当前源码和 **1990-12-19～2026-08-28、5544 只股票**的完整 runtime，包括行情、上市/退市状态、财报面板和原始财务状态。股票轴没有按今天的存续股票筛选。数据截至 2026-08-28，不代表实时数据。
 
-- Windows + Python 3.12 + [QMT 客户端]
-- uv 包管理器
+完整快照约 **3.45 GiB**，以 48 MiB 分块随 Git 一起下载，不使用 Git LFS，不需要行情账号或额外下载市场数据。首次安装 Python 依赖仍需联网。建议浅克隆当前分支：
 
-### 安装
-
-```powershell
-# 安装 uv
-irm https://astral.sh/uv/install.ps1 | iex
-
-# 安装依赖
-uv sync
+```sh
+git clone --depth 1 --branch refactor/ai-rl-architecture https://github.com/liuyang8643/lianghua.git
+cd lianghua
 ```
 
-## 实盘运行
+### 1. 安装轻量回测环境
 
-1. 配置 `configs/env.py`（QMT路径、账号等）
-2. 登录 QMT，勾选极简模式
-3. 使用已冻结且通过部署校验的 bundle 和本地 runtime 启动：
+Python **3.12**；支持 Windows / Linux。固定配置回测无需 QMT、PyTorch 或 CUDA。
 
-```powershell
-.\run.ps1 -Bundle artifacts/policies/selected -Runtime data/runtime/sealed.npz
+```sh
+python -m venv .venv-review
 ```
 
-新账户链需显式传入 `-InitializeNewChain`；已有账户链从 journal 恢复实际成交与配置历史。
+激活环境：Windows PowerShell 执行 `.venv-review/Scripts/Activate.ps1`；Linux / macOS 执行 `source .venv-review/bin/activate`。后续均使用此环境的 Python。
 
-## 开发指引
-
-### 单回测
-
-```bash
-uv run python -m testback.run_backtest \
-  --start-date 20240101 --end-date 20241231 \
-  --individual-config configs/config.json
+```sh
+python -m pip install -r requirements-review.txt
 ```
 
-### GA 参数搜索
+若已经安装 uv，可用 `uv venv .venv-review --python 3.12` 和 `uv pip install --python .venv-review -r requirements-review.txt` 替代。不要为轻量回测运行 `uv sync`，它安装的是完整训练/数据更新环境。
 
-```bash
-uv run python -m ai.ga.train --mode ga --runtime data/runtime/runtime_1990-12-19_2026-08-28_rawstate.npz
+### 2. 离线还原完整数据
+
+```sh
+python offline_data/portable_snapshot.py restore
 ```
 
-GA默认训练10000代，并从GA/PPO共用的 `configs/evaluation_splits.json` 读取三段诊断日期。可用 `--evaluation-splits <JSON文件>` 覆盖，不要求先训练PPO；该参数与 `--ppo-reference` 互斥，二者共用同一个评估器。每10代及结束评估当代训练冠军，按验证Calmar选择，测试仅诊断。debug模式不隐式打开holdout。快速运行可显式指定 `--generations 100 --population-size 32 --workers 20`。
+还原到 `data/runtime/runtime_1990-12-19_2026-08-28_rawstate.npz`，同时还原其原始 `.manifest.json`。逐块 SHA-256 和最终文件 SHA-256 都会校验。再次执行只验证现有文件；遇到不同内容会报错，不覆盖本地数据。
 
-PPO默认100000个vector rollout。共同分期为训练2004-04-28～2017-12-31、验证2018–2022、测试2023–2026-08-28。长动量固定使用[T-252,T-21)，允许跳过内部缺失的日收益，但首尾必须有效且231行中至少185行有效；不补造价格、不压缩时间轴或外推收益。factor v9下，2004-04-28是11因子各自首次均覆盖至少50%当时成员的日期，用作最早实用起点；2003年已有极稀疏财务值，不当作广覆盖起点，50%也不是后续每日股票池限制。更长历史不保证更好泛化，已查看年份仍是研究诊断。因子或分期改变需新随机root，旧模型、种群和缓存不能作为新分期续训；旧结果按原日期独立保留。PPO在初始化、每50轮及结束评估，GA每10代及结束评估，两者轮/代不代表相同计算预算。
+分块、Git 对象及还原文件合计需要约 **11 GiB** 磁盘空间，另留依赖、计算内存和输出空间。原始快照保留全部历史，因子在本机重新计算；上市以来累计因子不能用简单日期截断替代历史。
 
-### 添加新因子
+完整因子重算建议 **32 GB 内存**：本机最近一年实测约 53～62 秒，进程树内存峰值约 22 GiB；首次运行还包含 Numba 编译，其他机器耗时可能不同。内存小于此规模时，缩短回测日期也不会免除上市以来因子的历史计算。
 
-研究候选由 `factor_db.discovery` 动态发现并登记，已登记的候选源码保留血缘，不按生产训练是否使用来删除。接纳的因子由 `factor/registry.py` 显式注册；`ActionSchema` 是权重、买卖数量范围及固定控制的唯一来源。`configs/strategy.yaml` 只保留运行配置，静态对照使用 `configs/config.json`；实盘读取 bundle 内冻结的配置。
+### 3. 回测最近一个完整可用年度
 
-
-十一因子 PPO 研究入口（下列命令启动全新随机训练，不用于旧十因子模型续训）：
-
-```powershell
-.venv/Scripts/python.exe -m ai.rl.train --runtime data/runtime/runtime_1990-12-19_2026-08-28_rawstate.npz --output artifacts/rl/ppo --rollouts 100
+```sh
+python -m testback.run_backtest --start-date 20250829 --end-date 20260828 --output-dir results/review-year
 ```
 
-当前十一因子在原十项末尾加入高异常毛利润 `HighAbnormalGrossProfit`，GA与PPO均学习其连续[0,1]权重；静态对照新权重为0。公式为（单季毛利润−去年同季毛利润×单季销售收现同比比例）/同季末总资产，公告严格早于决策日，缺失保持NaN。二值因子不参与截面排名，连续因子同分取平均排名。`factor_coverage_train.json` 记录各年覆盖率及全缺失区间，`ppo_diagnostics.jsonl` 记录每轮 loss/KL 与奖励、优势分位数。
+读取 `configs/config.json`，初始资金 100 万，固定 20 只目标持仓，单边滑点 0.0025。该静态配置是调试基准，不是 GA 冠军或已训练 PPO。
 
-GA/PPO共用固定50只目标持仓，`sell_m` 已替换为换股比例 `turnover_rate`。生产搜索比例范围0～0.2，每天最多检查10只；检查数量为 `floor(50 × 比例)`（处理整股边界的浮点舍入）：先取持仓中当日因子排名最差的X只，只换出其中跌出完整PIT股票池前50名且可全部卖出的股票，锁仓不递补检查更好的持仓。买入继续服从原有候选池、过滤器和交易合法性。冷启动可建满50只；每日等权与现金sweep保持，因此比例限制的是替换只数，不是资金换手率硬上限。
+输出 `results/review-year/record.json`、日志及 HTML 报告，包含净值、收益、交易明细与个股图表。仅需机器可读结果时加 `--no-charts`。报告图表的前端库使用 CDN；回测计算和数据读取完全离线。
 
-动作共12维：11个独立因子权重及1个连续换股比例。GA/PPO均从 `ActionSchema` 读取范围、规范化精度和编解码；PPO使用SB3标准高斯动作头，不保留类别换股或全局/残差动作头。
+缩短调试日期，例如 `--start-date 20260803 --end-date 20260828`；也可在完整快照范围内选择其它历史时期。长历史因子仍需完整预计算，因此缩短回放主要减少账户步数。`--end-date` 是最后结算开盘日，不额外借用下一日数据。早期年份可能缺少部分财务因子。
 
-当前actor输入为完整股票轴、64日原始状态：19个历史字段（已完成K线、原始财报和报告季度）加18个当日已知字段（开盘、股本、发行与生命周期、交易合法性和财报时效）。因子排名和过滤信号不进入actor；原始持仓、现金和实际配置/成交历史继续保留。财报按公告版本因果回放、保留原始负值；normalizer只在训练集拟合。因子计算窗口不受actor的64日输入限制。详细字段见[输入报告](artifacts/raw_state_only_20260917/report.md)。
+调试入口依次为 `testback/run_backtest.py` → `testback/backtest.py` → `env/backtest.py`；因子计算见 `factor/compute.py`，权重和换股范围见 `env/action_schema.py`。修改配置直接用 `--individual-config your-config.json`。
 
-训练、冻结评估和实盘推理共用一个原始序列Transformer及CUDA执行路径，原始数据通过 `RawMarketStore` 共享，窗口引用在可学习层前移除。可微更新不跨梯度步骤缓存学习结果。仅保留当前Observation/encoder/network契约，形状或语义变化必须新随机root，没有旧checkpoint重解释或CPU fallback。
+## 目录与职责
 
-当前PPO默认：100000轮、20env、n_steps=64、batch_size=640、n_epochs=3、固定learning_rate=3e-4、gamma=0.99、gae_lambda=0.95、target_kl=None、seed=None。其余算法设置继承SB3；标准DiagGaussianDistribution、Linear mean、log_std_init=0，环境动作裁剪到Box[-1,1]后由唯一ActionSchema映射到11个[0,1]权重与[0,0.2]换股比例。
-
-PPO只保留固定周期评估：随机初始化、第50/100/150…轮及结束时，用同一checkpoint分别回放训练、验证、测试完整周期。每个split只准备一次并驻留只读共享内存，评估按顺序串行执行。仅按验证Calmar选模，测试仅诊断，不参与梯度、训练奖励或选模；静态配置仅作参考。没有训练成绩门槛、解封状态、一次测试限制或Calmar 1.5资格门槛。已反复观察的测试期不称为盲测。保留有限值、满仓、数据因果、schema/source/hash及同身份线性续训检查。
-
-各split只准备一次并共享只读数据；账户链逐日串行更新。完整历史预计算后统一通过 `PreparedEpisode.compact_for_replay()` 保留本段与64日输入所需前置数据；投影不能重算长周期因子。GA/PPO共用唯一env交易核。
-
-## 当前目录与边界
-
-| 路径 | 当前职责 |
+| 目录 | 职责 |
 |---|---|
-| `offline_data/` | 本地快照、PIT公告版本、runtime读取和身份校验 |
-| `data/` | 仍在使用的数据源下载、更新和runtime构建；同时存放本地数据产物 |
-| `factor/` | 固定生产词表、公共因子计算和有效性；共享数值函数 |
-| `factor_db/` | 仍被生产注册引用的旧因子，以及动态候选库、登记和研究记录 |
-| `env/` | 唯一账户链、评分、合法性、调仓、成交、收益和Observation；Gym类型仅在适配层 |
-| `ai/ga/`、`ai/rl/` | GA静态配置搜索、PPO动态决策，各自学习循环共用env |
-| `ai/factor_discovery/` | 离线因子与行业研究入口 |
-| `trade/` | 券商适配、实盘装配、成交journal和只读replay |
-| `testback/` | 固定策略回测入口与只读报告；不另写账户算法 |
-| `configs/`、`utils/` | 声明式配置及共享文件I/O、进程/日志等边缘工具 |
-| `tests/` | 离线合成、因果、交易一致性、资源生命周期和身份测试 |
-| `artifacts/`、`results/` | 当前及旧运行结果、模型与压缩源码证据；非运行中的展开源码副本已清理 |
-| `ai/reporting.py`、`ai/report_server.py`、`ai/report_assets/` | GA/PPO共用的报告契约、单一服务与页面；从运行记录读取指标 |
-| `dashboard/` | 数据覆盖率页面，与训练报告职责不同 |
+| `offline_data/`、`data/*.py` | 不可变快照、PIT 财报、数据下载更新及 runtime 构建 |
+| `factor/`、`factor_db/` | 生产因子、仍被引用的旧因子和动态研究候选 |
+| `env/` | 唯一选股、合法性、调仓、成交、账户及 Reward 实现 |
+| `ai/ga/`、`ai/rl/` | 静态 GA / 动态 PPO 的优化、评估与模型加载 |
+| `trade/` | 券商适配、实盘执行、journal 与 replay |
+| `testback/` | 固定配置回测及报告 |
+| `configs/`、`tests/` | 声明式配置与契约/因果/一致性测试 |
+| `snapshots/runtime/` | 本次分发的完整历史快照、分块清单和来源证明 |
 
-`data/`和`offline_data/`、`factor_db/`和`factor/`尚处于明确的职责迁移中，不能把仍用的旧路径直接删除。旧`core/`目前只剩数据/缓存/结果，`trading/`只剩编译缓存；历史实验源码归档后不参与运行。目标迁移关系见 [PLAN.md](PLAN.md)。
+本地 `artifacts/`、`results/`、日志、缓存、模型、历史实验源码副本不进入 Git；动态因子候选及仍被引用的代码保留。`AGENTS.md`、`CLAUDE.md`、`PLAN.md` 保留架构及研究历史约束。
 
-代码精简记录、各模块审查、删除证据和验收结果见 [本轮报告](artifacts/code_cleanup_20260917/report.md)。
+本次交付的核对结果见 [分发验证记录](docs/review-delivery.md)。
 
-## 统一训练报告
+## 完整训练与实盘环境
 
-```powershell
-uv run python -m ai.report_server --config configs/training_reports.json --port 8766
+完整环境使用 `uv sync`，Windows QMT 用于实盘；PPO 的训练和模型推理要求 CUDA。当前生产词表是 **12 因子、20 持仓、换股范围 [0.05, 0.2]**。默认训练参数以 `ai/rl/train.py` 为准，运行 `python -m ai.rl.train --help` 查看，避免文档重复维护实验默认值。
+
+```sh
+python -m ai.ga.train --mode ga --runtime data/runtime/runtime_1990-12-19_2026-08-28_rawstate.npz
+python -m ai.rl.train --runtime data/runtime/runtime_1990-12-19_2026-08-28_rawstate.npz --output artifacts/rl/new-run
 ```
 
-一个只读服务显示多个GA/PPO运行，共用训练/验证/测试曲线、配置、权重、诊断和CSV导出。每项清单显式指定 `id`、`algorithm`、`output_dir`、`log_path`、`trace_dir`，相对路径以清单目录为基准；不再猜测root/run目录。
+这两个命令会开始正式搜索/训练，不是快速回测命令。固定配置回测无需下载训练模型。
 
-页面读取每个运行已保存的词表、预算、选择结果与曲线，不按当前默认值解释旧实验，不重新计算收益或调用历史源码。已生成逐日trace用统一controls结构展示；缺少trace时直接显示未保存。GA代数与PPO轮数不代表相同计算预算。
+`configs/training_reports.json` 是本地历史实验索引，模型和报告不随仓库分发；只读报告服务需要对应运行产物。实盘使用已校验 bundle 和 `run.ps1`，账号和凭据从环境变量注入。
 
-主代码只维护当前实现。旧模型、收益数据与源码压缩包作为审计证据保存；只有正在运行的训练保留其唯一冻结执行目录，避免spawn worker中途加载改变后的代码。旧源码归档没有自动解压/导入/回放入口。
+## 更新分发快照
+
+维护者从已有完整快照生成新的分块目录：
+
+```sh
+python offline_data/portable_snapshot.py pack data/runtime/runtime_1990-12-19_2026-08-28_rawstate.npz snapshots/new-runtime --sidecar data/runtime/runtime_1990-12-19_2026-08-28_rawstate.manifest.json
+```
+
+不修改浮点精度、股票轴、日期或 NPZ 字节。因子/数据因果规则没有新增兼容实现。大数据更新会增加 Git 历史体积；日常数据和实验输出继续只保留在本地。

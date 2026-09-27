@@ -39,9 +39,8 @@ results/
 core/factors/results/
 
 # ---- Training / verification artifacts ----
-artifacts/rl/
-artifacts/verification/
-artifacts/factor_discovery/
+# Local experiments, checkpoints, archived sources and generated evidence.
+artifacts/
 dashboard/data.json
 dashboard/data.js
 
@@ -67,3 +66,6 @@ projects/
 llm_ga/_scratch/
 llm_ga/_e2e.log
 llm_ga/proposals/
+
+# Separate minimal review environment (full training environment stays in .venv).
+.venv-review/

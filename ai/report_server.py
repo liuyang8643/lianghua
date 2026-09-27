@@ -37,6 +37,53 @@ class Reports:
             self.traces[key] = TraceStore(output_dir, directory=base / entry['trace_dir'])
         if not self.readers:
             raise ValueError('Configure at least one run')
+        self.history_parents = {}
+        entries = {entry['id']: entry for entry in config['runs']}
+        for key, entry in entries.items():
+            if 'history_parent' not in entry:
+                continue
+            parent = entry['history_parent']
+            if parent not in entries or parent == key or any(entries[k]['algorithm'].upper() != 'PPO' for k in (key, parent)):
+                raise ValueError('Evaluation history requires a registered PPO parent')
+            child_identity = json.loads((self.readers[key].run_dir / 'run_identity.json').read_text(encoding='utf-8'))
+            parent_identity = json.loads((self.readers[parent].run_dir / 'run_identity.json').read_text(encoding='utf-8'))
+            lineage = child_identity['lineage']
+            if (lineage['mode'] != 'resume' or lineage['parent_identity_sha256'] != parent_identity['identity_sha256']
+                    or child_identity['contract'] != parent_identity['contract']):
+                raise ValueError('Evaluation history parent identity or contract mismatch')
+            latest = json.loads((self.readers[parent].run_dir / 'latest_train_model.json').read_text(encoding='utf-8'))
+            if latest['phase'] != 'post_update' or latest['run_identity_sha256'] != parent_identity['identity_sha256']:
+                raise ValueError('Evaluation history requires the parent post-update checkpoint')
+            contract = parent_identity['contract']
+            size = contract['algorithm']['n_steps'] * len(contract['rollout']['assignments'])
+            boundary = latest['timesteps'] / size
+            if boundary < 0 or not boundary.is_integer():
+                raise ValueError('Invalid evaluation history resume boundary')
+            self.history_parents[key] = (parent, int(boundary))
+        for key in self.history_parents:
+            seen = set()
+            while key in self.history_parents:
+                if key in seen:
+                    raise ValueError('Evaluation history parent cycle')
+                seen.add(key)
+                key = self.history_parents[key][0]
+
+    def _snapshot_run(self, key: str, *, detail: bool = False) -> dict:
+        report = self.require_run(key).snapshot(detail=detail)
+        if key not in self.history_parents:
+            return report
+        parent_key, boundary = self.history_parents[key]
+        parent = self._snapshot_run(parent_key)
+        # Only evaluation history is composed; selection, diagnostics and traces remain native.
+        points = [{**row, 'source_run_id': row.get('source_run_id', parent_key)}
+                  for row in parent['evaluations'] if row['step'] < boundary]
+        points.extend({**row, 'source_run_id': key} for row in report['evaluations'] if row['step'] >= boundary)
+        history = parent['protocol'].get('evaluation_history', {})
+        return {**report, 'evaluations': sorted(points, key=lambda row: (row['step'], row['split'])),
+                'protocol': {**report['protocol'], 'evaluation_history': {
+                    'parent_run_id': parent_key, 'resume_step': boundary,
+                    'resume_steps': [*history.get('resume_steps', []), boundary],
+                    'scope': 'evaluations_only_native_selection_diagnostics_and_traces'}}}
 
     def require_run(self, key: str):
         if key not in self.readers:
@@ -51,21 +98,21 @@ class Reports:
             items = list(self.readers.items())
             if self.max_runs is not None:
                 items = items[:self.max_runs]
-            rows = [reader.snapshot(detail=(key == detail)) for key, reader in items]
+            rows = [self._snapshot_run(key, detail=(key == detail)) for key, _ in items]
             return {'schema_version': REPORT_SCHEMA_VERSION, 'updated_at': datetime.now(timezone.utc).isoformat(), 'runs': rows}
 
     def csv(self, key: str | None) -> bytes:
         with self.lock:
-            readers = [self.require_run(key)] if key else self.readers.values()
+            keys = [key] if key else list(self.readers)
             stream = io.StringIO(newline='')
             writer = csv.writer(stream)
             writer.writerow(('run', 'algorithm', 'step', 'unit', 'split', 'artifact_id', 'role', 'eligible',
                              'calmar', 'annualized_return', 'max_drawdown', 'sharpe', 'elapsed_seconds'))
-            for reader in readers:
-                report = reader.snapshot()
+            for run_key in keys:
+                report = self._snapshot_run(run_key)
                 for point in report['evaluations']:
                     metrics = point['metrics']
-                    writer.writerow((report['id'], report['algorithm'], point['step'], report['progress']['unit'],
+                    writer.writerow((point.get('source_run_id', report['id']), report['algorithm'], point['step'], report['progress']['unit'],
                         point['split'], point['artifact_id'], point['role'], point['eligible'],
                         *(metrics.get(key) for key in ('calmar', 'annualized_return', 'max_drawdown', 'sharpe')),
                         point['elapsed_seconds']))

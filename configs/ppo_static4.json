@@ -1,0 +1,20 @@
+{
+  "individual_config": {
+    "weights": {
+      "TrueMarketCap": 0.9,
+      "VolumeCV": 0.1,
+      "AmountBasedSmallCap": 0.6,
+      "AmihudIlliquidity": 0.4
+    },
+    "filter_factors": {
+      "FilterST": false,
+      "FilterLowPrice": false
+    },
+    "buy_n": 20,
+    "single_buy_pct": 0.05,
+    "prefilter_n": 300,
+    "limit_up_protection": true,
+    "rebalance_band_pct": 0.01,
+    "turnover_rate": 0.1
+  }
+}

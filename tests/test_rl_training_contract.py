@@ -86,6 +86,8 @@ def test_financial_snapshot_verifier_failure_prevents_split_preparation(tmp_path
     prepare_split = Mock(side_effect=AssertionError("split opened before financial verification"))
     monkeypatch.setattr(train_module, "read_financial_snapshot_manifest", verifier)
     monkeypatch.setattr(train_module, "_prepare_split", prepare_split)
+    # This tests data verification order, not GPU availability or model execution.
+    monkeypatch.setattr(train_module, "require_cuda_device", lambda device: device)
     args = build_parser().parse_args([
         "--runtime", str(runtime), "--output", str(output), "--device", "cuda",
     ])
@@ -178,6 +180,17 @@ def test_optimizer_settings_are_part_of_the_frozen_contract():
     )
     with pytest.raises(ValueError, match="contract"):
         _assert_verified_resume_compatible(parent, changed)
+
+
+@pytest.mark.parametrize("changed_scaling", [
+    {"enabled": True, "reference_log_std": -1.6},
+    {"enabled": False, "reference_log_std": -2.0},
+])
+def test_exploration_rate_mode_and_reference_cannot_change_on_resume(changed_scaling):
+    parent = _identity({"learning_rate_std_scaling": {"enabled": False, "reference_log_std": -1.6}})
+    child = _identity({"learning_rate_std_scaling": changed_scaling}, parent=parent["identity_sha256"])
+    with pytest.raises(ValueError, match="contract"):
+        _assert_verified_resume_compatible(parent, child)
 
 
 def test_parent_model_identity_is_checked_before_rebinding():

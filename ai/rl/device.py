@@ -2,12 +2,25 @@
 from __future__ import annotations
 
 from pathlib import Path
+import gc
 
 import torch as th
 from stable_baselines3 import PPO
 
 
 PPO_DEVICE = "cuda"
+
+
+def release_idle_cuda_memory(device: str | th.device = PPO_DEVICE) -> dict[str, int]:
+    """Return unused learner cache to CUDA before a blocking evaluator starts."""
+    resolved = require_cuda_device(device)
+    gc.collect()
+    th.cuda.synchronize(resolved)
+    before = th.cuda.memory_reserved(resolved)
+    with th.cuda.device(resolved):
+        th.cuda.empty_cache()
+    return {"reserved_before": before, "reserved_after": th.cuda.memory_reserved(resolved),
+            "allocated_after": th.cuda.memory_allocated(resolved)}
 
 
 def require_cuda_device(device: str | th.device = PPO_DEVICE) -> th.device:
