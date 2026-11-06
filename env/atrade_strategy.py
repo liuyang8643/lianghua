@@ -23,12 +23,14 @@ class ATradeConfig:
     minimum_history:int=60
     exposure_low:float=.5
     exposure_high:float=1.
-    liquidity_top_n:int=500
+    liquidity_top_n:int|None=500
 
     def __post_init__(self):
-        if any(type(x) is not int for x in (self.topk,self.buffer,self.rebalance,self.trailing,self.minimum_history,self.liquidity_top_n)):
+        if any(type(x) is not int for x in (self.topk,self.buffer,self.rebalance,self.trailing,self.minimum_history)):
             raise TypeError('count parameters must be integers')
-        if not(1<=self.topk<=self.buffer and self.rebalance>0 and 1<=self.minimum_history<=self.trailing and self.liquidity_top_n>0):
+        if self.liquidity_top_n is not None and (type(self.liquidity_top_n) is not int or self.liquidity_top_n<1):
+            raise ValueError('liquidity_top_n must be positive integer or None')
+        if not(1<=self.topk<=self.buffer and self.rebalance>0 and 1<=self.minimum_history<=self.trailing):
             raise ValueError('invalid counts')
         if not(0<self.cap<=1 and self.volatility_floor>0 and 0<=self.exposure_low<=self.exposure_high<=1):
             raise ValueError('invalid weights')
@@ -42,7 +44,8 @@ def completed_volatility(close,preclose,member):
 
 
 def completed_liquidity_pool(amount,member,top_n=500):
-    """Upstream average-rank top500 rule shifted to local T-open information."""
+    """Causal liquidity ranking, or PIT membership alone when explicitly disabled."""
+    if top_n is None:return np.asarray(member,dtype=bool).copy()
     valid=np.isfinite(amount)&(amount>=0)&member
     average=pd.DataFrame(np.where(valid,amount,np.nan)).rolling(20,min_periods=20).mean().shift(1)
     return (average.rank(axis=1,ascending=False).to_numpy()<=top_n)&member

@@ -101,7 +101,7 @@ def evaluate(root:Path):
     require_guarded_job();started=time.monotonic();out=root/'evaluation';out.mkdir(exist_ok=False)
     protocol=json.loads((root/'protocol.json').read_text(encoding='utf8'))
     model_sources={int(h):Path(p) for h,p in json.loads((root/'model_sources.json').read_text()).items()}
-    config=ATradeConfig()
+    config=ATradeConfig(**protocol.get('atrade_config',{}))
     sources={str(p):file_sha256(p) for d in ('env','ai/supervised') for p in Path(d).glob('*.py')}
     frozen={'strategy':asdict(config),'horizons':[5,20,60],'model_sources':{str(k):str(v) for k,v in model_sources.items()},
         'model_receipts':{str(h):file_sha256(p/f'models/n{h}/complete.json') for h,p in model_sources.items()},
@@ -109,7 +109,7 @@ def evaluate(root:Path):
         'sources':sources,'config_sha256':file_sha256('configs/config.json'),
         'signal_history':'Compute completed liquidity/volatility and rolling dispersion over full2005-2026 prediction history once, then slice; never reset chained windows at split boundaries.',
         'adaptations':['Local frozen262-feature open-time predictors, only N60 newly trained; no rolling retraining or h5 head reweighting.',
-            'Apply upstream liquidity top500 to predictions at allocation time using T-1 completed20-day amount; model training universe remains local broad PIT.',
+            (f'Apply liquidity top{config.liquidity_top_n} to allocation predictions using completed20-day amount.' if config.liquidity_top_n is not None else 'No liquidity ranking/amount-history gate: retain PIT membership and original model eligibility. Selection and dispersion both use the expanded pool.'),
             'Volatility uses completed official close/preClose returns, not T HLC or upstream forward-adjusted close.',
             'Retain native fees, exchange lot rules, 1% resize band, T+1/locks/settlement and same-open execution assumption; not upstream 5000 currency resize band or liquidity-participation cap.',
             'Reserve locked holdings before allocation, scaling down free targets only if needed; realized positions/weights can exceed desired30/5% due locks or drift.',

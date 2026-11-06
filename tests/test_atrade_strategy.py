@@ -35,6 +35,19 @@ def test_completed_market_inputs_ignore_current_and_future_bars():
     np.testing.assert_array_equal(completed_liquidity_pool(amount,member,2)[:31],pool[:31])
 
 
+def test_disabled_liquidity_has_no_amount_or_history_gate_but_keeps_membership():
+    member=np.array([[False,True,True],[True,True,False]])
+    amount=np.array([[np.nan,0.,np.nan],[1e12,0.,100.]])
+    assert ATradeConfig(liquidity_top_n=None).liquidity_top_n is None
+    mask=completed_liquidity_pool(amount,member,None)
+    np.testing.assert_array_equal(mask,member)
+    mask[0,0]=True
+    assert not member[0,0]
+    assert not completed_liquidity_pool(amount,member,500).any()
+    for bad in [0,-1,True,2.5]:
+        with pytest.raises(ValueError):ATradeConfig(liquidity_top_n=bad)
+
+
 def test_dispersion_uses_three_scores_causally_and_midpoint_warmup():
     x=np.column_stack([np.arange(80.),np.zeros(80)])
     _,p,e=dispersion_exposure([x,x.copy(),x.copy()])
