@@ -444,8 +444,8 @@ def _build_histogram_payload(values: List[float], max_bins: int = 32) -> Dict[st
 
 
 
-def _build_winloss_payload(trade_log: List[Dict]) -> Dict[str, int]:
-    sell_trades = [trade for trade in trade_log if trade.get('action') == 'sell' and trade.get('income') is not None]
+def _build_winloss_payload(trade_log: List[Dict], *, closed_positions=None) -> Dict[str, int]:
+    sell_trades = [trade for trade in (closed_positions if closed_positions is not None else trade_log) if (closed_positions is not None or trade.get('action') == 'sell') and trade.get('income') is not None]
     if not sell_trades:
         return {}
 
@@ -757,7 +757,7 @@ def _make_holdings_table(
         execution_basis = _format_execution_basis(p)
         holding_days = p.get('holding_days') if holding_period_available else None
         rows.append([
-            _make_cell(_make_stock_button(p.get('code', ''), stock_name_map), _fmt_stock(p.get('code', ''), stock_name_map)),
+            _make_cell(_make_stock_button(p.get('code', ''), stock_name_map, kline_event_id=p.get('first_event_id')), _fmt_stock(p.get('code', ''), stock_name_map)),
             _make_cell(html_escape(signal_date), signal_date),
             _make_cell(html_escape(trade_date), trade_date),
             _make_cell(html_escape(execution_basis), execution_basis),
@@ -782,6 +782,8 @@ def _make_cleared_positions_table(
     stock_name_map: Dict[str, str],
     *,
     analytics_available: bool = True,
+    economic_episodes: bool = False,
+    ledger_summary: Dict | None = None,
 ) -> Dict[str, Any]:
     headers = [
         {'label': '股票', 'sort_type': 'text'},
@@ -799,6 +801,8 @@ def _make_cleared_positions_table(
         {'label': '盈亏率', 'sort_type': 'number'},
         {'label': '清仓原因', 'sort_type': 'text'},
     ]
+    if economic_episodes:
+        for index,label in {3:'结束信号日',4:'结束日（成交/估值）',7:'累计买入股数',8:'买入成交均价(¥)',9:'卖出成交均价(¥)',10:'累计买入支出(¥)',12:'净收益/累计投入'}.items():headers[index]['label']=label
     if not analytics_available:
         return _make_table(
             headers,
@@ -820,9 +824,10 @@ def _make_cleared_positions_table(
         buy_trade_date = _normalize_date(item.get('buy_trade_date') or item.get('buy_date', ''))
         clear_signal_date = _normalize_date(item.get('clear_signal_date') or item.get('clear_date', ''))
         clear_trade_date = _normalize_date(item.get('clear_trade_date') or item.get('clear_date', ''))
+        if economic_episodes:clear_trade_date=_normalize_date(item.get('clear_date',''))
         execution_basis = _format_execution_basis(item)
         rows.append([
-            _make_cell(_make_stock_button(item.get('code', ''), stock_name_map), _fmt_stock(item.get('code', ''), stock_name_map)),
+            _make_cell(_make_stock_button(item.get('code', ''), stock_name_map, kline_event_id=item.get('first_event_id')), _fmt_stock(item.get('code', ''), stock_name_map)),
             _make_cell(html_escape(buy_signal_date), buy_signal_date),
             _make_cell(html_escape(buy_trade_date), buy_trade_date),
             _make_cell(html_escape(clear_signal_date), clear_signal_date),
@@ -831,13 +836,17 @@ def _make_cleared_positions_table(
             _make_cell(str(item.get('holding_days', 0)), item.get('holding_days', 0)),
             _make_cell(f'{item.get("volume", 0):,}', item.get('volume', 0)),
             _make_cell(f'{item.get("avg_price", 0):.4f}', item.get('avg_price', 0)),
-            _make_cell(f'{item.get("clear_price", 0):.4f}', item.get('clear_price', 0)),
+            _make_cell(f'{item.get("clear_price", 0):.4f}' if item.get('clear_price') is not None else 'N/A', item.get('clear_price')),
             _make_cell(f'{item.get("cost", 0):,.2f}', item.get('cost', 0)),
             _make_cell(f'<span class="{income_cls}">{_fmt_money(income)}</span>', income),
             _make_cell(f'<span class="{income_cls}">{_fmt_pct(income_pct)}</span>', income_pct),
             _make_cell(html_escape(item.get('clear_reason', '') or ''), item.get('clear_reason', '') or ''),
         ])
-    return _make_table(headers, rows, 'cleared-table', '暂无已清仓持仓', row_height=60, max_height=520)
+    table = _make_table(headers, rows, 'cleared-table', '暂无已清仓持仓', row_height=60, max_height=520)
+    if economic_episodes:table['accounting_note']='经济口径：从建仓到实际持仓归零的完整回合，包含补仓、部分卖出、费用及权益调整现金残差；盈亏率=净盈亏/累计买入支出。不是券商FIFO逐笔账本。'
+    if economic_episodes and ledger_summary:
+        table['accounting_note']+=f" 已结束回合净盈亏 {ledger_summary['closed_pnl']:,.2f}元；未结束回合净盈亏 {ledger_summary['open_pnl']:,.2f}元；合计 {ledger_summary['account_pnl']:,.2f}元，与账户收益对账。未结束回合含部分卖出已兑现收益，不等同于剩余股票浮盈。"
+    return table
 
 
 
@@ -1275,6 +1284,8 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
             'excess_return_pct': excess_return,
             'benchmark_available': benchmark_available,
             'position_lot_analytics_available': lot_analytics_available,
+            'kline_position_state_available': bool(report_data.get('kline_position_state_available',lot_analytics_available)),
+            'position_accounting_basis': report_data.get('position_accounting_basis'),
             'max_drawdown_pct': metrics.get('max_drawdown', 0),
             'max_drawdown_start': metrics.get('max_drawdown_start', ''),
             'max_drawdown_end': metrics.get('max_drawdown_end', ''),
@@ -1329,6 +1340,8 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
                 cleared_positions,
                 stock_name_map,
                 analytics_available=lot_analytics_available,
+                economic_episodes=report_data.get('position_accounting_basis')=='economic_position_episode',
+                ledger_summary=report_data.get('position_ledger_summary'),
             ),
             'delist': _make_delist_events_table(delist_events, stock_name_map),
             'daily': _make_daily_table(daily_snapshots, stock_name_map, position_changes_available=bool(report_data.get('position_changes_available', lot_analytics_available))),
@@ -1346,7 +1359,7 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
                 'activity': activity,
             },
             'distribution': _build_histogram_payload(daily_returns_pct),
-            'winloss': _build_winloss_payload(trade_log),
+            'winloss': _build_winloss_payload(trade_log,closed_positions=cleared_positions if report_data.get('position_accounting_basis')=='economic_position_episode' else None),
             'factor_valid': {
                 'trade_dates': nav_dates,
                 'series': factor_valid_counts,

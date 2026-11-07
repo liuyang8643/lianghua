@@ -1230,6 +1230,7 @@ def _rollout_session(
     ],
     *,
     record_details: bool = True,
+    on_transition: Callable | None = None,
 ) -> RolloutTrace | RolloutSummary:
     if type(record_details) is not bool:
         raise TypeError("record_details must be bool")
@@ -1256,7 +1257,10 @@ def _rollout_session(
     while not session.terminated:
         config, raw_action = decision_provider(observation.copy())
         action = np.asarray(raw_action, dtype=np.float32)
+        account_before = session.current_account if on_transition is not None else None
         transition = session.step(config)
+        if on_transition is not None:
+            on_transition(account_before, transition)
         info = transition.info
         observation = transition.observation
         decision_dates.append(str(info["decision_date"]))
@@ -1365,6 +1369,7 @@ def run_day_config_episode(
     config_provider: DayConfigProvider,
     *,
     record_details: bool = True,
+    on_transition: Callable | None = None,
 ) -> RolloutTrace | RolloutSummary:
     """Run a fixed or dynamic DayConfig provider without importing Gym."""
     empty_action = np.empty(0, dtype=np.float32)
@@ -1373,7 +1378,7 @@ def run_day_config_episode(
         config = config_provider(observation)
         return config, session.action_schema.encode(config) if record_details else empty_action
 
-    return _rollout_session(session, decide, record_details=record_details)
+    return _rollout_session(session, decide, record_details=record_details, on_transition=on_transition)
 
 
 def run_policy_episode(

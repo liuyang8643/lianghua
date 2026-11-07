@@ -347,7 +347,7 @@ async function showKline(code, eventId, focusDate) {
 
     document.getElementById('klineTitle').textContent = `${code} ${stock.n || ''}`.trim();
     document.getElementById('klineMeta').textContent =
-      REPORT_DATA.summary?.position_lot_analytics_available === false
+      (REPORT_DATA.summary?.kline_position_state_available ?? REPORT_DATA.summary?.position_lot_analytics_available) === false
         ? `成交窗口 ${episode.start} → ${episode.end} · K线 ${episode.window_start} → ${episode.window_end} · 仅按成交分组，不表示公司行动后的实际持仓状态`
         : `持仓周期 ${episode.start} → ${episode.open ? '仍持有' : episode.end} · K线 ${episode.window_start} → ${episode.window_end}`;
     placeholder.style.display = 'none';
@@ -636,6 +636,12 @@ function mountTable(hostId, payload, tanstack) {
 }
 
 async function initTables() {
+  const note = REPORT_DATA.tables.cleared?.accounting_note;
+  if (note) {
+    const host = document.getElementById('cleared-host');
+    const paragraph = document.createElement('p'); paragraph.textContent=note;
+    host?.parentElement?.insertBefore(paragraph,host);
+  }
   const mounts = [
     ['monthly-host', 'monthly'],
     ['trade-host', 'trades'],
