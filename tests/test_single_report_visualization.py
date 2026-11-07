@@ -137,6 +137,34 @@ def test_trade_episode_window_and_kline_button():
     assert 'data-kline-event="0"' in table['rows'][0][2]['html']
 
 
+def test_research_supplements_preserve_original_detail_tabs(tmp_path):
+    report_data={
+        'individual_config':{'weights':{'Demo':1.}},'daily_returns':[1.0],
+        'cumulative_returns':[1.0],'trade_dates':['2026-01-05'],
+        'nav_dates':['2026-01-06'],'trade_log':[], 'positions':[],
+        'init_cash':1e6,'final_asset':1010000.,'metrics':{},
+        'period':{'start':'2026-01-05','end':'2026-01-06'},
+        'report_label':'多周期 / 测试',
+        'position_lot_analytics_available':False,
+        'report_navigation':[{'label':'多周期 / 测试','href':'../ml_test/single_report.html','current':True}],
+        'explainability':{'dates':['2026-01-05']},
+        'strategy_explanation':{'description':'同一冻结模型'},
+        'data_comparison':{'metrics':[{'version':'修复后','annualized_return':.1,'max_drawdown':.2,'calmar':.5,'total_return':.01,'final_nav':1010000.,'total_fees':10.}]},
+    }
+    text=generate_single_report(report_data,tmp_path).read_text(encoding='utf8')
+    for tab in ['monthly','trades','holdings','cleared','daily','delist','comparison','explanation']:
+        assert f'data-tab="{tab}"' in text
+        assert f'id="panel-{tab}"' in text
+    assert text.index('id="equity-chart"')<text.index('id="panel-comparison"')<text.index('只修数据后的表现差异')
+    assert text.index('id="panel-explanation"')<text.index('id="factor-explanation"')
+    assert 'href="../ml_test/single_report.html"' in text
+    assert 'aria-current="page"' in text
+    assert 'data-tab="cleared">已清仓 <span>N/A</span>' in text
+    payload=json.loads(text.split('<script id="report-data" type="application/json">',1)[1].split('</script>',1)[0])
+    assert payload['charts']['equity']['execution_dates']==['2026-01-05']
+    assert payload['charts']['equity']['trade_dates']==['2026-01-06']
+
+
 def test_daily_table_separates_execution_from_next_open_settlement():
     table = _make_daily_table(
         [

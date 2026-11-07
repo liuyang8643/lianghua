@@ -169,7 +169,7 @@ def _format_execution_basis(record: Dict[str, Any]) -> str:
 
 
 def _build_trade_episodes(trade_log: List[Dict], report_end: str = '') -> Dict[str, Dict[str, Any]]:
-    """Reconstruct flat-position episodes so each trade can open its own K-line window."""
+    """Group reported buys/sells into K-line windows, not corporate-action accounts."""
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     for event_id, trade in enumerate(trade_log):
         code = str(trade.get('code') or '')
@@ -573,7 +573,7 @@ def _make_position_change_summary(entered: List[str], exited: List[str], stock_n
     return '<br>'.join(parts), '\n'.join(title_lines)
 
 
-def _make_daily_table(daily_snapshots: List[Dict], stock_name_map: Dict[str, str]) -> Dict[str, Any]:
+def _make_daily_table(daily_snapshots: List[Dict], stock_name_map: Dict[str, str], *, position_changes_available: bool = True) -> Dict[str, Any]:
     headers = [
         {'label': '信号日', 'sort_type': 'date', 'align': 'center'},
         {'label': '执行日', 'sort_type': 'date', 'align': 'center'},
@@ -616,8 +616,12 @@ def _make_daily_table(daily_snapshots: List[Dict], stock_name_map: Dict[str, str
             [f'X:{_fmt_stock(code, stock_name_map)}' for code in exited_stocks]
         )
         buy_summary_html, buy_list_text = _make_stock_count_summary(buy_n_list, stock_name_map)
+        if 'buy_n_list' not in s:
+            buy_summary_html, buy_list_text = 'N/A', '未提供候选名单'
         trade_summary_html, trade_summary_title = _make_trade_count_summary(executed_buy_list, executed_sell_list, stock_name_map)
         change_summary_html, change_summary_title = _make_position_change_summary(entered_stocks, exited_stocks, stock_name_map)
+        if not s.get('position_changes_available', position_changes_available):
+            change_summary_html, change_summary_title = 'N/A', '未提供完整持仓成员变化；补仓或部分卖出不等于新增或清仓'
         total_asset = s.get('total_asset', 0)
         market_value = s.get('market_value', 0)
         pos_ratio = (market_value / total_asset * 100) if total_asset > 0 else 0.0
@@ -960,7 +964,7 @@ def _build_metric_cards(
          '使用日收益率均值和标准差按 252 交易日年化得到的夏普比率。'),
         ('平均实际仓位', f"{metrics.get('average_exposure', 0.0) * 100:.2f}%",
          'neutral',
-         '按每日收盘时持仓市值占总资产的平均比例。'),
+         '按每个估值时点的持仓市值占总资产计算日均比例；开盘回测为下一开盘估值。'),
         ('实际买入次数', str(metrics.get('executed_buy_count', 0)),
          'neutral',
          '本次回测实际成交的买入笔数。'),
@@ -1101,7 +1105,7 @@ def _build_primary_metric_cards(
             else '当前未提供逐持仓平仓配对',
         ),
         ('平均仓位', f"{metrics.get('average_exposure', 0.0) * 100:.1f}%",
-         'neutral', '按日收盘持仓市值占比'),
+         'neutral', '按每日估值时点的持仓市值占比'),
     ]
     return ''.join(
         f'<div class="primary-stat">'
@@ -1327,11 +1331,12 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
                 analytics_available=lot_analytics_available,
             ),
             'delist': _make_delist_events_table(delist_events, stock_name_map),
-            'daily': _make_daily_table(daily_snapshots, stock_name_map),
+            'daily': _make_daily_table(daily_snapshots, stock_name_map, position_changes_available=bool(report_data.get('position_changes_available', lot_analytics_available))),
         },
         'charts': {
             'equity': {
                 'trade_dates': nav_dates,
+                'execution_dates': execution_dates,
                 'strategy_nav': strategy_nav,
                 'benchmark_nav': hs300_nav,
                 'daily_returns_pct': daily_returns_pct,
@@ -1351,6 +1356,9 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
         },
         'kline_b64': kline_b64,
         'live_simulation': None,
+        'explainability': report_data.get('explainability'),
+        'strategy_explanation': report_data.get('strategy_explanation'),
+        'audit_summary': report_data.get('audit_summary'),
     }, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
 
     metric_cards = _build_metric_cards(
@@ -1388,6 +1396,57 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
             disp = str(v)
         config_rows.append(f'<span class="config-item"><strong>{html_escape(str(k))}:</strong> {html_escape(disp)}</span>')
     config_params_html = ' &nbsp;|&nbsp; '.join(config_rows) if config_rows else '<span class="muted">—</span>'
+    navigation = report_data.get('report_navigation') or []
+    navigation_html = ''
+    if navigation:
+        links = ''.join(
+            '<a' + (' aria-current="page"' if item.get('current') else '')
+            + ' href="' + html_escape(str(item['href']), quote=True) + '">'
+            + html_escape(str(item['label'])) + '</a>' for item in navigation
+        )
+        navigation_html = '<details class="config-details report-navigation"><summary>切换策略或回测区间：' + html_escape(str(report_data.get('report_label', '详细回测'))) + '</summary><nav aria-label="策略与区间报告">' + links + '</nav></details>'
+    data_comparison = report_data.get('data_comparison') or {}
+    comparison_section = ''
+    if data_comparison.get('metrics'):
+        comparison_rows = ''.join(
+            '<tr><td>' + html_escape(str(row['version'])) + '</td><td>'
+            + f"{row['annualized_return']:.2%} / {row['max_drawdown']:.2%} / {row['calmar']:.3f}"
+            + '</td><td>' + f"{row['total_return']:.2%}" + '</td><td>'
+            + f"{row['final_nav']:,.2f}" + '</td><td>'
+            + f"{row['total_fees']:,.2f}" + '</td></tr>'
+            for row in data_comparison['metrics']
+        )
+        notes = ''.join(f'<p>{html_escape(str(note))}</p>' for note in data_comparison.get('notes', []))
+        comparison_section = '<section class="card explain-intro"><h2>只修数据后的表现差异</h2><div class="explain-table-wrap"><table><thead><tr><th>数据版本</th><th>年化 / 最大回撤 / Calmar</th><th>累计收益</th><th>期末资产（元）</th><th>全部费用（元）</th></tr></thead><tbody>' + comparison_rows + '</tbody></table></div>' + notes + '</section>'
+    strategy_info = report_data.get('strategy_explanation') or {}
+    strategy_intro = ''
+    explanation_section = ''
+    if report_data.get('explainability'):
+        strategy_intro = '<section class="card explain-intro"><h2>当前策略怎样决策</h2>' + ''.join(
+            f'<p>{html_escape(str(strategy_info.get(key,"")))}</p>' for key in ('description','timing_note','date_note')
+        ) + '<p><a href="#factor-explanation">查看每日因子贡献与盈亏归因 ↓</a></p></section>'
+        explanation_section = '''<section id="factor-explanation" class="card explain-section">
+<div class="section-heading"><div><span class="section-eyebrow">MODEL EXPLANATION</span><h2>每日因子贡献</h2></div><span class="section-note">点击热力图选择交易日</span></div>
+<p>热力图展示对持仓股票<strong>原始模型评分</strong>的贡献，按冻结周期权重与当日开盘成交后持仓权重汇总。蓝色抬高评分，红色压低评分；这不是收益率，也不是经过非线性截面排序后的最终分数归因。相关因子的贡献会相互分摊，不代表因果关系。</p>
+<div id="explain-global-summary" class="explain-summary"></div>
+<div id="explain-heatmap" class="explain-heatmap" role="img" aria-label="每日主要因子对原始预测评分的贡献"></div>
+<div class="explain-controls"><label>交易日 → 下一开盘估值日 <select id="explain-day"></select></label><label>股票评分解释 <select id="explain-stock"></select></label></div>
+<div id="explain-day-summary" class="explain-summary"></div>
+<div id="explain-top-factors" class="explain-summary"></div>
+<div class="explain-detail-grid"><div><h3>单只股票：哪些因子推动评分</h3><div id="explain-stock-summary"></div><div id="explain-stock-chart" class="explain-stock-chart" role="img" aria-label="所选股票的因子评分贡献"></div></div><div><h3>实际盈亏来自哪些持仓</h3><p>此处按真实账户净值变化分解，包含费用和公司行动现金残差；与左侧预测解释独立。</p><div id="explain-pnl-table" class="explain-table-wrap"></div></div></div>
+<details class="explain-extremes"><summary>最高收益日、最大绝对波动日与审核说明</summary><div id="explain-extreme-days"></div><div id="explain-audit-summary"></div></details>
+</section>'''
+        if report_data.get('static_explanation_image'):
+            explanation_section += '<details class="card"><summary>静态净值对照与因子热力图（无需图表脚本）</summary><img style="max-width:100%;height:auto" loading="lazy" src="' + html_escape(str(report_data['static_explanation_image']), quote=True) + '" alt="修复前后净值、因子重要性和每日贡献热力图"></details>'
+    extra_tab_buttons = ''
+    extra_tab_panels = ''
+    for key, label, content in [
+        ('comparison', '修复对比', comparison_section),
+        ('explanation', '模型解释', strategy_intro + explanation_section),
+    ]:
+        if content:
+            extra_tab_buttons += f'<button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-{key}" data-tab="{key}">{label}</button>'
+            extra_tab_panels += f'<div class="tab-panel" id="panel-{key}" role="tabpanel" hidden>{content}</div>'
 
     html_content = f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1398,12 +1457,13 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
   <div class="header-main"><div><div class="report-kicker">WBR / SINGLE BACKTEST</div><div class="report-title">策略回测总览</div><div class="report-subtitle">{html_escape(signal_timing)} 信号 · {html_escape(trade_timing)} 执行 · {_fmt_pct(total_return)} 累计收益</div></div><a class="header-link" href="#detail-tabs">查看明细 <span aria-hidden="true">↓</span></a></div>
   <div class="report-meta"><span>{html_escape(trade_period_str or period_str)}</span><span>{trade_days:,} 个调仓日</span><span>初始 {_fmt_money(init_cash)}</span><span>期末 {_fmt_money(final_asset)}</span><span>生成于 {html_escape(generated_time)}</span></div>
 </header>
+{navigation_html}
 <details class="config-details"><summary><span class="summary-label">策略配置</span><span class="summary-preview">{weights_html}</span><span class="summary-caret" aria-hidden="true">⌄</span></summary><div class="config-content"><div><strong>因子权重</strong><div class="weight-list">{weights_html}</div></div><div><strong>策略参数</strong><div class="config-params">{config_params_html}</div></div><div><strong>执行口径</strong><div class="config-params">信号 {html_escape(signal_timing)} · 执行 {html_escape(trade_timing)} · 价格 {html_escape(price_field)} · 买入 {metrics.get('executed_buy_count', 0):,} · 卖出 {metrics.get('executed_sell_count', 0):,}</div></div></div></details>
 <section class="summary-section" aria-labelledby="summary-title"><div class="section-heading"><div><span class="section-eyebrow">PERFORMANCE SNAPSHOT</span><h2 id="summary-title">核心表现</h2></div><span class="section-note">策略累计 {_fmt_pct(total_return)} · {benchmark_note}</span></div><div class="primary-metrics">{primary_metric_cards}</div></section>
 <section class="card" aria-labelledby="metric-detail-title"><div class="section-heading"><div><span class="section-eyebrow">FULL METRICS</span><h2 id="metric-detail-title">完整指标</h2></div><span class="section-note">收益、交易与成本明细</span></div><div class="metrics-grid">{metric_cards}</div></section>
 <section class="performance-section card" aria-labelledby="performance-title"><div class="section-heading"><div><span class="section-eyebrow">EQUITY CURVE</span><h2 id="performance-title">资金、回撤、仓位与调仓</h2></div><span class="section-note">单图叠加 · 曲线与柱状可在图例中开关</span></div><div id="equity-chart" class="chart-equity" role="img" aria-label="策略净值、沪深300基准、回撤、实际仓位、当日调仓资金占比与日收益率叠加组合图"></div></section>
 <section class="analysis-grid" aria-label="收益与风险分析"><div class="card analysis-panel panel-wide"><div class="section-heading"><div><span class="section-eyebrow">MONTHLY MAP</span><h2>月度收益热力图</h2></div><span class="section-note">颜色越深代表绝对收益越大</span></div><div id="monthly-heatmap" class="chart-heatmap" role="img" aria-label="月度收益热力图"></div></div><div class="card analysis-panel"><div class="section-heading"><div><span class="section-eyebrow">RETURN DISTRIBUTION</span><h2>日收益分布</h2></div></div><div id="distribution-chart" class="chart-analysis" role="img" aria-label="每日收益率分布"></div></div><div class="card analysis-panel"><div class="section-heading"><div><span class="section-eyebrow">TRADE OUTCOMES</span><h2>清仓盈亏</h2></div></div><div id="winloss-chart" class="chart-analysis" role="img" aria-label="清仓盈亏分布"></div></div><div class="card analysis-panel panel-wide"><div class="section-heading"><div><span class="section-eyebrow">DATA HEALTH</span><h2>因子有效股票数</h2></div><span class="section-note">完整股票池 {stock_pool_size:,} 只 · 按交易日观察</span></div><div id="factor-valid-chart" class="chart-factor" role="img" aria-label="各因子有效股票数量趋势"></div></div><div class="card analysis-panel panel-wide"><div class="section-heading"><div><span class="section-eyebrow">YEARLY SCORECARD</span><h2>分年度指标</h2></div></div>{_build_per_year_table(per_year_metrics, available=per_year_metrics_available)}</div></section>
-<section id="detail-tabs" class="detail-section" aria-labelledby="detail-title"><div class="section-heading"><div><span class="section-eyebrow">RESEARCH TABLES</span><h2 id="detail-title">明细工作区</h2></div><span class="section-note">共 {len(trade_log):,} 笔实际成交 · {len(positions)} 只当前持仓</span></div><div class="tab-list" role="tablist" aria-label="回测明细分类"><button class="tab-button is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-monthly" data-tab="monthly">月度</button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-trades" data-tab="trades">交易记录 <span>{len(trade_log):,}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-holdings" data-tab="holdings">当前持仓 <span>{len(positions)}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-cleared" data-tab="cleared">已清仓 <span>{len(cleared_positions)}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-daily" data-tab="daily">每日快照 <span>{trade_days:,}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-delist" data-tab="delist">退市归零 <span>{len(delist_events)}</span></button></div><div class="tab-panels"><div class="tab-panel is-active" id="panel-monthly" role="tabpanel"><div id="monthly-host"></div></div><div class="tab-panel" id="panel-trades" role="tabpanel" hidden><div id="trade-host"></div></div><div class="tab-panel" id="panel-holdings" role="tabpanel" hidden><div id="holdings-host"></div></div><div class="tab-panel" id="panel-cleared" role="tabpanel" hidden><div id="cleared-host"></div></div><div class="tab-panel" id="panel-daily" role="tabpanel" hidden><div id="daily-host"></div></div><div class="tab-panel" id="panel-delist" role="tabpanel" hidden><div id="delist-host"></div></div></div></section>
+<section id="detail-tabs" class="detail-section" aria-labelledby="detail-title"><div class="section-heading"><div><span class="section-eyebrow">RESEARCH TABLES</span><h2 id="detail-title">明细工作区</h2></div><span class="section-note">共 {len(trade_log):,} 笔实际成交 · {len(positions)} 只当前持仓</span></div><div class="tab-list" role="tablist" aria-label="回测明细分类"><button class="tab-button is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-monthly" data-tab="monthly">月度</button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-trades" data-tab="trades">交易记录 <span>{len(trade_log):,}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-holdings" data-tab="holdings">当前持仓 <span>{len(positions)}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-cleared" data-tab="cleared">已清仓 <span>{len(cleared_positions) if lot_analytics_available else "N/A"}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-daily" data-tab="daily">每日快照 <span>{trade_days:,}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-delist" data-tab="delist">退市归零 <span>{len(delist_events)}</span></button>{extra_tab_buttons}</div><div class="tab-panels"><div class="tab-panel is-active" id="panel-monthly" role="tabpanel"><div id="monthly-host"></div></div><div class="tab-panel" id="panel-trades" role="tabpanel" hidden><div id="trade-host"></div></div><div class="tab-panel" id="panel-holdings" role="tabpanel" hidden><div id="holdings-host"></div></div><div class="tab-panel" id="panel-cleared" role="tabpanel" hidden><div id="cleared-host"></div></div><div class="tab-panel" id="panel-daily" role="tabpanel" hidden><div id="daily-host"></div></div><div class="tab-panel" id="panel-delist" role="tabpanel" hidden><div id="delist-host"></div></div>{extra_tab_panels}</div></section>
 <div class="footer">WBR 量化交易系统 · {trade_days:,} 个交易日 · {len(trade_log):,} 笔实际成交</div></div>
 <script id="report-data" type="application/json">{report_json}</script><script type="module">{module_js}</script></body></html>"""
 

@@ -83,7 +83,7 @@ def _daily_snapshots(trace: RolloutTrace) -> list[dict[str, object]]:
                 "total_asset": total_asset,
                 "market_value": market_value,
                 "exposure": market_value / total_asset,
-                "rebalance_funds_ratio": 0.0,
+                "rebalance_funds_ratio": float(sum(fill.price * fill.quantity for fill in fills) / trace.nav[index]),
                 "executed_buy_list": buys,
                 "executed_sell_list": sells,
                 "entered_stocks": buys,
@@ -104,6 +104,7 @@ def run_static_config_backtest(
     *,
     profile_name: str | None = None,
     initial_cash: float = 1_000_000.0,
+    action_schema: ActionSchema | None = None,
 ) -> dict[str, object]:
     """Evaluate one static config on the canonical serial account session."""
 
@@ -114,10 +115,8 @@ def run_static_config_backtest(
         )
     if episode.prefilter_n is None:
         raise ValueError("canonical backtest episode is missing prefilter_n")
-    schema = ActionSchema(
-        factor_names=episode.factors.factor_names,
-        filter_names=episode.factors.filter_names,
-    )
+    schema = action_schema or ActionSchema.from_config(
+        individual_config, factor_names=episode.factors.factor_names, filter_names=episode.factors.filter_names)
     canonical_config, day_config = canonicalize_individual_config(
         individual_config,
         profile_name=profile_name,
@@ -147,9 +146,21 @@ def run_static_config_backtest(
             + ", ".join(failed_dates)
         )
 
+    return trace_to_report_result(
+        trace, session.current_account, canonical_config=canonical_config,
+        day_config=day_config, coverage=factor_coverage(episode.runtime, episode.factors),
+    )
+
+
+def trace_to_report_result(
+    trace: RolloutTrace, final_account, *, canonical_config: Mapping[str, object],
+    day_config=None, coverage=None,
+) -> dict[str, object]:
+    """Present any detailed canonical account trace in the shared report shape."""
+    if not isinstance(trace, RolloutTrace):
+        raise TypeError("report conversion requires a detailed RolloutTrace")
     daily_returns = trace.portfolio_returns * 100.0
     cumulative_returns = (trace.nav[1:] / trace.nav[0] - 1.0) * 100.0
-    final_account = session.current_account
     trade_log = _trade_log(trace)
     positions = [
         {
@@ -174,7 +185,7 @@ def run_static_config_backtest(
     ]
     return {
         "individual_config": canonical_config,
-        "factor_coverage": factor_coverage(episode.runtime, episode.factors),
+        "factor_coverage": coverage or {},
         "day_config": day_config,
         "trace": trace,
         "daily_returns": daily_returns.astype(float).tolist(),
@@ -224,17 +235,11 @@ def _parse_date(value: object) -> date:
     return date(int(text[:4]), int(text[4:6]), int(text[6:8]))
 
 
-def _resolve_output_dir(output_dir_arg: str | None, mode: str) -> Path:
-    if output_dir_arg:
-        output_dir = Path(output_dir_arg)
-    else:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = Path("results") / f"{mode}_{timestamp}"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    return output_dir
+from utils.output_directory import resolve_output_dir as _resolve_output_dir
 
 
-def _core_report_metrics(result: Mapping[str, object]) -> dict[str, float]:
+
+def core_report_metrics(result: Mapping[str, object]) -> dict[str, float]:
     trace = result["trace"]
     if not isinstance(trace, RolloutTrace):
         raise TypeError("canonical report requires a RolloutTrace")
@@ -302,7 +307,7 @@ def run_single_mode(
             payload,
             initial_cash=float(getattr(args, "initial_cash", 1_000_000.0)),
         )
-        metrics = _core_report_metrics(result)
+        metrics = core_report_metrics(result)
         testback_logger.info(
             "canonical env 回测: "
             f"年化={metrics['annualized']:.2f}% "

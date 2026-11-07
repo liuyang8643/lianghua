@@ -88,14 +88,14 @@ function renderPerformanceCharts() {
         const rebalanceFunds = Number(payload.rebalance_funds_pct?.[index] || 0);
         const rows = [
           `<span style="color:${COLORS.strategy}">●</span> 策略净值: <b>${strategyNav.toFixed(4)}</b>`,
-          `<span style="color:${COLORS.benchmark}">●</span> 沪深300: <b>${benchmarkNav.toFixed(4)}</b>`,
+          ...((payload.benchmark_nav || []).length ? [`<span style="color:${COLORS.benchmark}">●</span> 沪深300: <b>${benchmarkNav.toFixed(4)}</b>`] : []),
           `<span style="color:${COLORS.negative}">●</span> 回撤: <b>${drawdown.toFixed(2)}%</b>`,
-          `<span style="color:${COLORS.teal}">●</span> 实际仓位: <b>${exposure.toFixed(1)}%</b>`,
-          `<span style="color:${COLORS.turnover}">●</span> 当日调仓资金: <b>${rebalanceFunds.toFixed(1)}%</b>`,
+          `<span style="color:${COLORS.teal}">●</span> 估值仓位: <b>${exposure.toFixed(1)}%</b>`,
+          `<span style="color:${COLORS.turnover}">●</span> 执行日买卖总额 / 调仓前净值: <b>${rebalanceFunds.toFixed(1)}%</b>`,
         ];
         rows.push(`日收益: <b style="color:${dailyReturn >= 0 ? COLORS.positive : COLORS.negative}">${dailyReturn >= 0 ? '+' : ''}${dailyReturn.toFixed(2)}%</b>`);
         if ((activity.buys || 0) + (activity.sells || 0) > 0) rows.push(`成交: 买 ${activity.buys || 0} / 卖 ${activity.sells || 0}`);
-        return `<b>${payload.trade_dates[index]}</b><br>${rows.join('<br>')}`;
+        return `<b>估值日 ${payload.trade_dates[index]}</b><br>执行日 ${payload.execution_dates?.[index] || payload.trade_dates[index]}<br>${rows.join('<br>')}`;
       },
     },
     grid: { left: 60, right: 66, top: 48, bottom: 54 },
@@ -121,7 +121,7 @@ function renderPerformanceCharts() {
         name: '仓位 / 回撤 / 日收益',
         position: 'right',
         min: (value) => Math.min(-10, Math.floor(value.min / 10) * 10),
-        max: 100,
+        max: (value) => Math.max(100, Math.ceil(value.max / 10) * 10),
         axisLabel: { ...valueAxis.axisLabel, formatter: (v) => `${Number(v).toFixed(0)}%` },
       },
     ],
@@ -143,7 +143,7 @@ function renderPerformanceCharts() {
         itemStyle: { color: COLORS.teal, opacity: .1 },
       },
       {
-        name: '当日调仓资金占比', type: 'line', yAxisIndex: 1,
+        name: '执行日买卖总额占比', type: 'line', yAxisIndex: 1,
         showSymbol: false, data: payload.rebalance_funds_pct || [],
         lineStyle: { color: COLORS.turnover, width: 1.3 }, z: 3,
       },
@@ -306,7 +306,7 @@ function closeKline() {
   document.getElementById('klinePanel')?.classList.remove('active');
 }
 
-async function showKline(code, eventId) {
+async function showKline(code, eventId, focusDate) {
   const overlay = document.getElementById('klineOverlay');
   const panel = document.getElementById('klinePanel');
   const placeholder = document.getElementById('klinePlaceholder');
@@ -322,16 +322,18 @@ async function showKline(code, eventId) {
     const allData = await loadKlineData();
     const stock = allData[code];
     if (!stock) throw new Error('该股票没有可用的本地日线数据');
-    const selectedEvent = stock.events.find((event) => Number(event.id) === Number(eventId));
+    const selectedEvent = eventId != null
+      ? stock.events.find((event) => Number(event.id) === Number(eventId))
+      : (focusDate ? stock.events.reduce((best, event) => !best || Math.abs(Date.parse(event.date)-Date.parse(focusDate)) < Math.abs(Date.parse(best.date)-Date.parse(focusDate)) ? event : best, null) : stock.events.at(-1));
     if (!selectedEvent) throw new Error('未找到对应交易事件');
     const episode = stock.episodes.find((item) => Number(item.id) === Number(selectedEvent.episode));
-    if (!episode) throw new Error('未找到对应持仓周期');
+    if (!episode) throw new Error('未找到对应成交窗口');
 
     const indices = [];
     stock.d.forEach((date, index) => {
       if (date >= episode.window_start && date <= episode.window_end) indices.push(index);
     });
-    if (indices.length < 5) throw new Error('该持仓周期的 K 线数据不足');
+    if (indices.length < 5) throw new Error('该成交窗口的 K 线数据不足');
     const pick = (values) => indices.map((index) => values[index]);
     const dates = pick(stock.d);
     const opens = pick(stock.o);
@@ -345,7 +347,9 @@ async function showKline(code, eventId) {
 
     document.getElementById('klineTitle').textContent = `${code} ${stock.n || ''}`.trim();
     document.getElementById('klineMeta').textContent =
-      `持仓周期 ${episode.start} → ${episode.open ? '仍持有' : episode.end} · K线 ${episode.window_start} → ${episode.window_end}`;
+      REPORT_DATA.summary?.position_lot_analytics_available === false
+        ? `成交窗口 ${episode.start} → ${episode.end} · K线 ${episode.window_start} → ${episode.window_end} · 仅按成交分组，不表示公司行动后的实际持仓状态`
+        : `持仓周期 ${episode.start} → ${episode.open ? '仍持有' : episode.end} · K线 ${episode.window_start} → ${episode.window_end}`;
     placeholder.style.display = 'none';
     renderArea.style.display = 'block';
     if (window._klineChart) window._klineChart.dispose();
@@ -664,7 +668,11 @@ function initTabs() {
       panel.hidden = !selected;
       panel.classList.toggle('is-active', selected);
     });
+    if (button.dataset.tab === 'explanation') renderExplanations();
     requestAnimationFrame(() => {
+      CHARTS.forEach((chart) => {
+        if (!chart.getDom().closest('[hidden]')) chart.resize();
+      });
       TABLE_INSTANCES.forEach((table) => {
         if (!table.root.closest('[hidden]')) {
           table.syncHeaderPadding();
@@ -686,11 +694,83 @@ function initTabs() {
   });
 }
 
+function renderExplanations() {
+  const d = REPORT_DATA.explainability;
+  const root = document.getElementById('factor-explanation');
+  const panel = document.getElementById('panel-explanation');
+  if (!d || !root || (panel && panel.hidden) || root.dataset.initialized === 'true') return;
+  root.dataset.initialized = 'true';
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt = (v, digits=4) => v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('zh-CN', {maximumFractionDigits:digits});
+  const signed = (v, digits=4) => (v > 0 ? '+' : '') + fmt(v, digits);
+  const daySelect = document.getElementById('explain-day');
+  const stockSelect = document.getElementById('explain-stock');
+  d.dates.forEach((day, i) => {
+    const option = document.createElement('option'); option.value = String(i);
+    option.textContent = `${day} → ${d.settlement_dates[i]}`; daySelect.appendChild(option);
+  });
+  const heatmap = makeChart('explain-heatmap');
+  const bound = d.heatmap.reduce((m,v) => Math.max(m,Math.abs(v[2] || 0)),1e-8);
+  heatmap.setOption({
+    animation:false,
+    tooltip:{formatter:(p) => { const name=d.factor_names[p.data[1]], info=d.feature_info?.[name];return `${esc(d.dates[p.data[0]])}<br>${esc(name)}<br>评分贡献：${signed(p.data[2],6)}<br>${esc(info?.description || '')}<br>${esc(info?.formula || '')}`;}},
+    grid:{left:245,right:28,top:24,bottom:95},
+    xAxis:{type:'category',data:d.dates,axisLabel:{rotate:40,hideOverlap:true},splitArea:{show:true}},
+    yAxis:{type:'category',data:d.factor_names,inverse:true,axisLabel:{width:225,overflow:'truncate',fontSize:11}},
+    visualMap:{min:-bound,max:bound,calculable:true,orient:'horizontal',left:'center',bottom:5,inRange:{color:['#c2413d','#fafafa','#2563eb']},text:['抬高评分','压低评分']},
+    dataZoom:[{type:'inside',xAxisIndex:0},{type:'slider',xAxisIndex:0,bottom:54,height:16}],
+    series:[{type:'heatmap',data:d.heatmap.filter((x) => x[2] != null),emphasis:{itemStyle:{borderColor:'#334155',borderWidth:1}}}],
+  });
+  const stockChart = makeChart('explain-stock-chart');
+  const importanceTotal = d.importance.reduce((s,v)=>s+v.mean_abs_weighted_contribution,0);
+  document.getElementById('explain-global-summary').innerHTML='<strong>本年度持仓样本中，评分贡献量最大的因子：</strong>'+d.importance.slice(0,6).map(v=>`${esc(v.name)}（绝对贡献占比 ${fmt(100*v.mean_abs_weighted_contribution/importanceTotal,2)}%）`).join('；')+'。该占比只描述模型评分，不是收益贡献占比。';
+  let currentDay = 0;
+  const showStock = (code) => {
+    const item = d.daily_stocks[currentDay].find((v) => v.code === code);
+    if (!item) {
+      document.getElementById('explain-stock-summary').textContent = '该持仓在当日没有可用的模型输入，未补造评分解释。';
+      stockChart.clear(); return;
+    }
+    const values = [...item.top_factors,{name:'其他因子合计',contribution:item.other_factor_contribution},{name:'预测周期N',contribution:item.horizon_contribution}];
+    const heads = d.horizons.map((h,i) => `${h}日：${fmt(item.head_ranks[i]*100,2)}百分位`).join(' · ');
+    document.getElementById('explain-stock-summary').innerHTML = `<strong>${esc(code)}</strong> · 开盘后权重 ${fmt(item.open_weight*100,2)}%<br>基准 ${fmt(item.baseline,6)} ＋全部因子及周期贡献＝原始加权评分 ${fmt(item.raw_blended_score,6)}<br>实际排名融合分数 ${fmt(item.final_score,6)}（经非线性排序，不等于左侧原始评分）<br>${esc(heads)}`;
+    stockChart.setOption({animation:false,grid:{left:195,right:35,top:20,bottom:40},tooltip:{trigger:'axis',axisPointer:{type:'shadow'},formatter:(params)=>{const v=values[params[0].dataIndex],info=d.feature_info?.[v.name];return `${esc(v.name)}<br>评分贡献 ${signed(v.contribution,6)}`+(Object.hasOwn(v,'normalized_value')?`<br>模型输入值 ${fmt(v.normalized_value,6)}${v.normalized_value==null?'（缺失分支）':''}<br>原始因子值 ${fmt(v.raw_value,6)}`:'')+`<br>${esc(info?.description || '')}`;}},xAxis:{type:'value',name:'原始评分贡献'},yAxis:{type:'category',data:values.map(v=>v.name),inverse:true,axisLabel:{width:180,overflow:'truncate',fontSize:11}},series:[{type:'bar',data:values.map(v=>({value:v.contribution,itemStyle:{color:v.contribution>=0?COLORS.strategy:COLORS.negative}}))}]},true);
+  };
+  const showDay = (index) => {
+    currentDay=index;daySelect.value=String(index);
+    const day=d.daily_pnl[index];const stocks=d.daily_stocks[index];
+    document.getElementById('explain-day-summary').innerHTML=`<strong>${esc(day.decision_date)}开盘交易 → ${esc(day.settlement_date)}开盘估值</strong> · 组合净收益 ${signed(day.return_pct,3)}% · 费用 ${fmt(day.fees,2)}元 · 持仓损益对账残差 ${fmt(day.reconciliation_error,8)}元<br>可解释股票的开盘后权重合计 ${fmt(d.coverage_open_weight[index]*100,2)}%；停牌或无有效模型输入的持仓不补造SHAP。`;
+    const top=d.daily_top_factors?.[index];
+    const describe=(rows)=>rows.map(v=>`${esc(v.name)} ${signed(v.contribution,6)}`).join('；');
+    document.getElementById('explain-top-factors').innerHTML=top?`<strong>主要正向贡献：</strong>${describe(top.positive)}<br><strong>主要负向贡献：</strong>${describe(top.negative)}`:'';
+    stockSelect.replaceChildren();
+    stocks.slice().sort((a,b)=>Math.abs(b.nav_contribution_pct)-Math.abs(a.nav_contribution_pct)).forEach(v=>{const option=document.createElement('option');option.value=v.code;option.textContent=v.code;stockSelect.appendChild(option);});
+    const ordered=day.stocks.slice().sort((a,b)=>Math.abs(b.net_pnl)-Math.abs(a.net_pnl));
+    document.getElementById('explain-pnl-table').innerHTML=`<table class="explain-table"><thead><tr><th>股票</th><th>开盘后权重</th><th>净损益/元</th><th>净值贡献/百分点</th><th>公司行动A</th></tr></thead><tbody>${ordered.map(v=>`<tr><td><button class="explain-link" data-explain-code="${esc(v.code)}">${esc(v.code)}</button> <button class="explain-link" data-explain-kline="${esc(v.code)}">K线</button></td><td>${fmt(v.open_weight*100,2)}%</td><td>${signed(v.net_pnl,2)}</td><td>${signed(v.nav_contribution_pct,3)}</td><td>${fmt(v.corporate_action?.reference_ratio ?? 1,6)}</td></tr>`).join('')}</tbody></table>`;
+    document.querySelectorAll('[data-explain-code]').forEach(button=>button.addEventListener('click',()=>{stockSelect.value=button.dataset.explainCode;showStock(button.dataset.explainCode);}));
+    document.querySelectorAll('[data-explain-kline]').forEach(button=>button.addEventListener('click',()=>showKline(button.dataset.explainKline,undefined,d.dates[currentDay])));
+    showStock(stockSelect.value);
+  };
+  daySelect.addEventListener('change',()=>showDay(Number(daySelect.value)));
+  stockSelect.addEventListener('change',()=>showStock(stockSelect.value));
+  heatmap.on('click',(p)=>showDay(p.data[0]));
+  const extreme=(label,order)=>`<h3>${label}</h3><ol>${order.slice(0,10).map(i=>`<li><button class="explain-link" data-explain-day="${i}">${esc(d.dates[i])} → ${esc(d.settlement_dates[i])}</button>：${signed(d.daily_pnl[i].return_pct,3)}%</li>`).join('')}</ol>`;
+  const indices=d.dates.map((_,i)=>i);
+  document.getElementById('explain-extreme-days').innerHTML=extreme('组合收益最高的10日',indices.slice().sort((a,b)=>d.daily_pnl[b].return_pct-d.daily_pnl[a].return_pct))+extreme('绝对波动最大的10日',indices.slice().sort((a,b)=>Math.abs(d.daily_pnl[b].return_pct)-Math.abs(d.daily_pnl[a].return_pct)));
+  document.querySelectorAll('[data-explain-day]').forEach(button=>button.addEventListener('click',()=>showDay(Number(button.dataset.explainDay))));
+  const audit=REPORT_DATA.audit_summary || {};
+  const countLabels={invalid_open:'开盘价异常',illegal_side:'买卖方向受限',premature_sale:'提前卖出',topup:'持仓补仓',over_budget:'超单笔额度',excess_sells:'超换出上限',excess_positions:'超持仓上限',fee_error:'费用不符',invalid_quantity:'数量不符'};
+  const countText=Object.entries(audit.counts || {}).map(([k,v])=>`${countLabels[k] || k} ${v}`).join('；');
+  document.getElementById('explain-audit-summary').innerHTML=`<p>逐笔执行检查：${audit.state==='pass'?'通过':esc(audit.state || '待核验')}；${esc(countText)}。日损益最大未对账残差 ${fmt(audit.max_pnl_reconciliation_error,8)}元。</p><p>${esc(audit.causality_note || '时点扰动、前缀截断和极值来源核验尚待专项结果，不以本图替代这些检查。')}</p><p>公司行动A用于事后收益结算，来自T收盘与下一日除权参考价；不是T日信号输入。持仓股数采用项目经济总回报合成语义，不是券商公司行动账本复刻。</p><p>原始预测贡献不等于因子对收益的因果贡献；同开盘信号与同价成交、固定滑点和资金容量仍受回测假设限制。</p>`;
+  showDay(indices.reduce((best,i)=>d.daily_pnl[i].return_pct>d.daily_pnl[best].return_pct?i:best,0));
+}
+
 renderPerformanceCharts();
 renderMonthlyHeatmap();
 renderFactorValidChart();
 renderDistributionChart();
 renderWinLossChart();
+renderExplanations();
 initTabs();
 initTables();
 initTooltips(document);
