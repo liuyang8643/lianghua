@@ -1,0 +1,22 @@
+{
+  "trading/bridge_wire.py": "568c8fd5a46ff35c4d5c37784b44edc9469b1c5268583d0b8628289683e6a021",
+  "trading/qmt_bridge.py": "ec93c54444aad201438c7ba52a0afac6936bcaabc489fa66e2e674e4e847921d",
+  "trading/bridge_client.py": "5b0691ca8b4d495e377f6ab58a0f3065fd780c5bd8689f73b931c98c9b925a74",
+  "trading/bridge_setup.py": "02a56b6da1f4b84250eda3d023f9c94970a428d643e3a1b571fbe50c929ebaa7",
+  "trading/bridge_acceptance_watch.py": "891f5bda3935416b9eaa4dc7df1dfdf5dec5d0143817f877231d6e390c0f69f7",
+  "trading/trader.py": "eaf298dd0d3a65594a193e6769cc991f13f343651eb01efb4c8592e4db78355d",
+  "trading/executor.py": "8c94a7eaae0255007039339bca83501f7dd19b6b815cfce9cea032d82781737f",
+  "trading/execution_journal.py": "e6fc5987376401ce48ff892c4e298200e8ca82b90f6ebe4e808087ea2cf50a32",
+  "trading/main.py": "c2d281863257c9fdfff7fbff2ec87b07318e3f9bacc4a54316b7d94b5d6652dc",
+  "trading/scheduler.py": "6e3b7b210b1ba9bfd9d3afd3d11b58ede5b279857e918a08f22c438b17208287",
+  "trading/watchdog.py": "4cc08cf514253e8594b886eafcc6f1702db818d06f317fe75ea47c1d46f5f784",
+  "trading/qmt.py": "c24e14485d4c0cc6642d64e7da86b28480a226775f6ab7b221df9f647eb84892",
+  "trading/lark_service.py": "ea3318435965882bfcbc965cf20e43bfc46c9d2cc1ee5e7985aa34faf12f16da",
+  "trading/lark/receiver.py": "816f99394ee729128fe40f72a553e3dacbdd7ebfce068c516d9d6d062d83f0aa",
+  "run.ps1": "6ab176b20ad5699de1cfa526901b2e063677550d831fe0d831a152912a1a7ba3",
+  "AGENTS.md": "6e6282e81bf20e512749e9e653fadd9ac18aa1a9e954985c5bea39a6ae41970e",
+  "configs/config.json": "c522c11080003eec8e8d63ed02e3edb27449a6e3b23031dc9b6f88a3420a6791",
+  "uv.lock": "afe0e2880a73ef89054854b4cdb1ace63a59d9fc4a116190acdb922ca362d4ae",
+  "trading/watcher.py": "2a4ccb40409d7310651d7b76185bba984289980bdc86e7035eabcec93f74f830",
+  "trading/persistence.py": "cf2bb607c0e1b2d21691a670665ce84cbe9a31d026aea90fa0f1295634fdc6fa"
+}

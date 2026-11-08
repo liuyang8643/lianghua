@@ -1,0 +1,22 @@
+实盘就绪验收：未通过
+目标交易日：2026-11-02
+实时验证时间：2026-11-01 23:47—23:53（北京时间）
+
+已通过：
+1. 在本机申万客户端中实际新建并运行 WBR_READONLY_CHECK_1101。
+2. 回执来自券商 bin.x64/pythonw.exe，Python 3.6.8，父进程为 miniquote.exe；随机 challenge 与本地请求一致。
+3. 当前外部项目 Python 只读查询真实账户成功，返回 24 只持仓。未注册交易回调，禁止下单和撤单。
+4. 交易日历覆盖至 2026-12-31；11月2日为交易日，上一交易日10月30日。Runtime 文件可读性、字段维度、近期交易日覆盖及有效行情检查通过。
+
+阻断项：
+1. 客户端 Python 无法导入 xtquant/xtquant.xttrader/xtquant.xttype/xtquant.xtdata，亦缺少 numpy、pandas、pyarrow。详见 client_environment.json 的逐项真实错误。
+2. 客户端只配置了纸面和只读探针，没有正式交易桥接。
+3. run.ps1、trading.main、trading.trader 仍走外部 Python + XtQuantTrader；未迁移为客户端文件执行。
+4. QMT _linkMini/linkMini 文件缺失。既有 watchdog 虽仍运行，但当前退出后的自动重启路径缺少所需文件，历史日志已有启动失败记录。
+
+范围与后续：
+此次是实时就绪验收，未安装或替换券商运行环境，未接入正式交易桥接，未修改或停止原有实盘守护进程。新建的只读探针已停止。
+未发送或撤销任何真实委托。账户只读连通不证明报单权限；明早成交和实时开盘行情不能由周日夜间检查证明。
+当前不能确认“内置 Python 明早可正常实盘交易”。需先按券商支持方式补齐运行环境、实现并验收正式桥接与启动恢复，再验证报单权限。
+
+证据：client_environment.json、external_account.json、data_readiness.json、readiness_verdict.json、client_log_evidence.png。

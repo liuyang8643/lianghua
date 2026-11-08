@@ -1,0 +1,17 @@
+{
+  "read_only": true,
+  "started_at": "2026-11-02T01:09:23.2958662+08:00",
+  "executable": "D:\\coding\\WBR-live\\.venv\\Scripts\\python.exe",
+  "pid": 35672,
+  "arguments": [
+    "-u",
+    "-X",
+    "utf8",
+    "-m",
+    "trading.bridge_acceptance_watch",
+    "--trade-date",
+    "2026-11-02",
+    "--output",
+    "D:\\coding\\WBR-live\\tmp\\qmt_bridge_20261102"
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "time": "2026-11-02T09:39:29.388394",
+  "mode": "READ_ONLY_DIAGNOSTIC",
+  "positions": {
+    "158905.SZ": 100000,
+    "300899.SZ": 1700,
+    "301049.SZ": 2500,
+    "301288.SZ": 3000,
+    "301298.SZ": 3700,
+    "301503.SZ": 2000,
+    "301519.SZ": 1700,
+    "600137.SH": 2600,
+    "603208.SH": 3800,
+    "688021.SH": 2609,
+    "688067.SH": 2135,
+    "688092.SH": 2151,
+    "688217.SH": 1996,
+    "688420.SH": 2135,
+    "688466.SH": 3096,
+    "688528.SH": 4797,
+    "688565.SH": 4422,
+    "688638.SH": 1563,
+    "688659.SH": 5239,
+    "688671.SH": 2090,
+    "688681.SH": 3257,
+    "688695.SH": 2234,
+    "688701.SH": 5911,
+    "688737.SH": 2881
+  },
+  "cash": 25746.44,
+  "orders": [
+    {
+      "order_id": 0,
+      "stock_code": "603208.SH",
+      "order_type": 24,
+      "order_volume": 4200,
+      "order_status": 55,
+      "order_remark": "",
+      "strategy_name": ""
+    },
+    {
+      "order_id": 0,
+      "stock_code": "688528.SH",
+      "order_type": 23,
+      "order_volume": 200,
+      "order_status": 56,
+      "order_remark": "",
+      "strategy_name": ""
+    },
+    {
+      "order_id": 0,
+      "stock_code": "688701.SH",
+      "order_type": 23,
+      "order_volume": 200,
+      "order_status": 56,
+      "order_remark": "",
+      "strategy_name": ""
+    }
+  ],
+  "trades": [
+    {
+      "order_id": 0,
+      "stock_code": "603208.SH",
+      "traded_volume": 400,
+      "traded_price": 9.8,
+      "traded_id": "0000060000276810_15664"
+    },
+    {
+      "order_id": 0,
+      "stock_code": "688528.SH",
+      "traded_volume": 200,
+      "traded_price": 8.17,
+      "traded_id": "0000040000386578_21108"
+    },
+    {
+      "order_id": 0,
+      "stock_code": "688701.SH",
+      "traded_volume": 200,
+      "traded_price": 6.68,
+      "traded_id": "0000080000560068_28758"
+    }
+  ]
+}

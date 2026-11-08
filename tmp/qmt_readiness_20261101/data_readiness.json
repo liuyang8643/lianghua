@@ -1,0 +1,9 @@
+{
+  "checked_at": "2026-11-01T23:47:31.388646",
+  "target_trade_date": "2026-11-02",
+  "is_trading_day": true,
+  "previous_trade_date": "2026-10-30",
+  "calendar_end": "2026-12-31",
+  "runtime_path": "D:\\coding\\WBR-live\\data\\runtime\\runtime_1990-12-19_2026-10-30.npz",
+  "runtime_validation": "PASS"
+}

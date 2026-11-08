@@ -1,0 +1,14 @@
+{
+  "checked_at": "2026-11-01T23:47:55.320604",
+  "executable": "D:\\coding\\WBR-live\\.venv\\Scripts\\python.exe",
+  "pid": 67576,
+  "mode": "READ_ONLY",
+  "callbacks_enabled": false,
+  "orders_enabled": false,
+  "connected": true,
+  "position_count": 24,
+  "total_asset": 1025414.05,
+  "cash": 24799.15,
+  "market_value": 1000614.8999999999,
+  "order_count": 0
+}

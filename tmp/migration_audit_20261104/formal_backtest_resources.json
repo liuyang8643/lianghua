@@ -1,0 +1,28 @@
+{
+  "loads": [
+    {
+      "rows": 126,
+      "start": "2026-04-28",
+      "end": "2026-11-03",
+      "bytes": 85451334
+    }
+  ],
+  "memory": {
+    "rss": 108855296,
+    "vms": 891338752,
+    "num_page_faults": 5794652,
+    "peak_wset": 270102528,
+    "wset": 108855296,
+    "peak_paged_pool": 400272,
+    "paged_pool": 400176,
+    "peak_nonpaged_pool": 48952,
+    "nonpaged_pool": 45144,
+    "pagefile": 891338752,
+    "peak_pagefile": 1047351296,
+    "private": 891338752
+  },
+  "total_return_pct": -0.3244031315747882,
+  "final_asset": 996755.9686842521,
+  "network_calls": 0,
+  "minute_price_simulation": false
+}

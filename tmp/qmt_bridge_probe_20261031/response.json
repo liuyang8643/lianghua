@@ -1,0 +1,139 @@
+{
+  "all_passed": true,
+  "broker_orders_sent": 0,
+  "cases": [
+    {
+      "name": "buy_sell_clear_and_hold",
+      "paper_positions_after_fills": {
+        "000001.SZ": 500,
+        "000002.SZ": 0,
+        "600000.SH": 200,
+        "600519.SH": 100,
+        "688092.SH": 200
+      },
+      "passed": true,
+      "result": {
+        "blocked": [],
+        "orders": [
+          {
+            "code": "000001.SZ",
+            "shares": 200,
+            "side": "BUY"
+          },
+          {
+            "code": "000002.SZ",
+            "shares": 200,
+            "side": "SELL"
+          },
+          {
+            "code": "600000.SH",
+            "shares": 400,
+            "side": "SELL"
+          },
+          {
+            "code": "688092.SH",
+            "shares": 200,
+            "side": "BUY"
+          }
+        ]
+      },
+      "second_pass": {
+        "blocked": [],
+        "orders": []
+      }
+    },
+    {
+      "name": "inflight_orders_avoid_duplicates",
+      "paper_positions_after_fills": {
+        "000001.SZ": 500,
+        "000002.SZ": 0,
+        "600000.SH": 200,
+        "600519.SH": 100,
+        "688092.SH": 200
+      },
+      "passed": true,
+      "result": {
+        "blocked": [],
+        "orders": [
+          {
+            "code": "000002.SZ",
+            "shares": 200,
+            "side": "SELL"
+          },
+          {
+            "code": "600000.SH",
+            "shares": 250,
+            "side": "SELL"
+          },
+          {
+            "code": "688092.SH",
+            "shares": 200,
+            "side": "BUY"
+          }
+        ]
+      },
+      "second_pass": {
+        "blocked": [],
+        "orders": []
+      }
+    },
+    {
+      "name": "already_at_target",
+      "paper_positions_after_fills": {
+        "000001.SZ": 500,
+        "000002.SZ": 0,
+        "600000.SH": 200,
+        "600519.SH": 100,
+        "688092.SH": 200
+      },
+      "passed": true,
+      "result": {
+        "blocked": [],
+        "orders": []
+      },
+      "second_pass": {
+        "blocked": [],
+        "orders": []
+      }
+    },
+    {
+      "name": "unsellable_position_is_blocked",
+      "passed": true,
+      "result": {
+        "blocked": [
+          {
+            "code": "000002.SZ",
+            "shares": 200
+          }
+        ],
+        "orders": [
+          {
+            "code": "000001.SZ",
+            "shares": 200,
+            "side": "BUY"
+          },
+          {
+            "code": "600000.SH",
+            "shares": 400,
+            "side": "SELL"
+          },
+          {
+            "code": "688092.SH",
+            "shares": 200,
+            "side": "BUY"
+          }
+        ]
+      }
+    }
+  ],
+  "challenge": "2a550f70a0494ddea4020f298ba8a08b",
+  "context_type": "NoneType",
+  "embedded_trade_api_present": false,
+  "mode": "PAPER_ONLY",
+  "parent_pid": 64556,
+  "pid": 43928,
+  "python_executable": "D:\\\u7533\u4e07\u5b8f\u6e90\u7b56\u7565\u91cf\u5316\u4ea4\u6613\u7ec8\u7aef\\bin.x64\\pythonw.exe",
+  "python_version": "3.6.8 (default, Dec 19 2022, 22:05:09) [MSC v.1900 64 bit (AMD64)]",
+  "source": "APP_SCRIPT_MAIN",
+  "version": 1
+}

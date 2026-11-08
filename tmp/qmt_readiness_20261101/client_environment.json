@@ -1,0 +1,44 @@
+{
+  "account_snapshot_verified": false,
+  "challenge": "1e1288dc1a7443808ff48d02460480c6",
+  "connection_verified": false,
+  "error": "RuntimeError: Broker interpreter cannot import xtquant.xttrader",
+  "executable": "D:\\\u7533\u4e07\u5b8f\u6e90\u7b56\u7565\u91cf\u5316\u4ea4\u6613\u7ec8\u7aef\\bin.x64\\pythonw.exe",
+  "finished_at": "2026-11-01T23:51:49.747029",
+  "mode": "READ_ONLY",
+  "modules": {
+    "numpy": {
+      "error": "ModuleNotFoundError: No module named 'numpy'",
+      "ok": false
+    },
+    "pandas": {
+      "error": "ModuleNotFoundError: No module named 'pandas'",
+      "ok": false
+    },
+    "pyarrow": {
+      "error": "ModuleNotFoundError: No module named 'pyarrow'",
+      "ok": false
+    },
+    "xtquant": {
+      "error": "ModuleNotFoundError: No module named 'xtquant'",
+      "ok": false
+    },
+    "xtquant.xtdata": {
+      "error": "ModuleNotFoundError: No module named 'xtquant'",
+      "ok": false
+    },
+    "xtquant.xttrader": {
+      "error": "ModuleNotFoundError: No module named 'xtquant'",
+      "ok": false
+    },
+    "xtquant.xttype": {
+      "error": "ModuleNotFoundError: No module named 'xtquant'",
+      "ok": false
+    }
+  },
+  "order_or_cancel_calls_in_probe": false,
+  "parent_pid": 64556,
+  "pid": 73716,
+  "python_version": "3.6.8 (default, Dec 19 2022, 22:05:09) [MSC v.1900 64 bit (AMD64)]",
+  "started_at": "2026-11-01T23:51:49.729835"
+}

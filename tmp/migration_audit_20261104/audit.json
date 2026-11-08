@@ -1,0 +1,3930 @@
+{
+  "period": [
+    "2026-08-03",
+    "2026-11-03"
+  ],
+  "trade_days": 61,
+  "loads": [
+    {
+      "rows": 126,
+      "start": "2026-04-28",
+      "end": "2026-11-03",
+      "bytes": 85451334
+    }
+  ],
+  "config": {
+    "filter": false,
+    "weights": {
+      "AmihudIlliquidity": 0.4,
+      "TrueMarketCap": 0.9,
+      "VolumeCV": 0.1,
+      "AmountBasedSmallCap": 0.6
+    },
+    "buy_n": 20,
+    "sell_m": 25,
+    "prefilter_n": 300,
+    "timing_enabled": false,
+    "rebalance": true,
+    "limit_up_protection": true,
+    "empty_months": [],
+    "cash_reserve_ratio": 0.15,
+    "holding_period": 1,
+    "filter_factors": {}
+  },
+  "ledger": [
+    {
+      "date": "2026-08-03",
+      "fill_rows": 91,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-04",
+      "fill_rows": 8,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-05",
+      "fill_rows": 6,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-06",
+      "fill_rows": 8,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-07",
+      "fill_rows": 12,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-10",
+      "fill_rows": 8,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-11",
+      "fill_rows": 4,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-17",
+      "fill_rows": 49,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-18",
+      "fill_rows": 24,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-19",
+      "fill_rows": 35,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-20",
+      "fill_rows": 26,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-21",
+      "fill_rows": 9,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-24",
+      "fill_rows": 4,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-25",
+      "fill_rows": 27,
+      "duplicate_trade_ids": 0,
+      "diff": {
+        "920289.BJ": {
+          "expected": 0,
+          "actual": 7000
+        }
+      }
+    },
+    {
+      "date": "2026-08-26",
+      "fill_rows": 6,
+      "duplicate_trade_ids": 0,
+      "diff": {
+        "920289.BJ": {
+          "expected": 7000,
+          "actual": 0
+        }
+      }
+    },
+    {
+      "date": "2026-08-27",
+      "fill_rows": 29,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-28",
+      "fill_rows": 21,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-08-31",
+      "status": "missing_fills_not_assumed_zero",
+      "position_change": {}
+    },
+    {
+      "date": "2026-09-01",
+      "fill_rows": 59,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-09-02",
+      "fill_rows": 1,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-09-03",
+      "fill_rows": 54,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-09-04",
+      "fill_rows": 51,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-09-07",
+      "fill_rows": 7,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-09-08",
+      "fill_rows": 25,
+      "duplicate_trade_ids": 0,
+      "diff": {
+        "920201.BJ": {
+          "expected": 0,
+          "actual": 5400
+        }
+      }
+    },
+    {
+      "date": "2026-09-09",
+      "fill_rows": 21,
+      "duplicate_trade_ids": 0,
+      "diff": {
+        "920201.BJ": {
+          "expected": 5400,
+          "actual": 0
+        }
+      }
+    },
+    {
+      "date": "2026-09-15",
+      "fill_rows": 17,
+      "duplicate_trade_ids": 0,
+      "diff": {
+        "920025.BJ": {
+          "expected": 0,
+          "actual": 17300
+        }
+      }
+    },
+    {
+      "date": "2026-09-18",
+      "fill_rows": 12,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-09-21",
+      "fill_rows": 6,
+      "duplicate_trade_ids": 0,
+      "diff": {
+        "920157.BJ": {
+          "expected": 0,
+          "actual": 1100
+        }
+      }
+    },
+    {
+      "date": "2026-09-22",
+      "fill_rows": 7,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-09-23",
+      "fill_rows": 16,
+      "duplicate_trade_ids": 0,
+      "diff": {
+        "920157.BJ": {
+          "expected": 1100,
+          "actual": 0
+        }
+      }
+    },
+    {
+      "date": "2026-09-24",
+      "fill_rows": 11,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-09-28",
+      "fill_rows": 1,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-09-29",
+      "fill_rows": 2,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-09-30",
+      "fill_rows": 1,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-08",
+      "fill_rows": 7,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-09",
+      "fill_rows": 5,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-12",
+      "fill_rows": 1,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-13",
+      "fill_rows": 9,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-14",
+      "fill_rows": 5,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-15",
+      "fill_rows": 5,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-16",
+      "fill_rows": 7,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-19",
+      "fill_rows": 8,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-20",
+      "fill_rows": 2,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-21",
+      "fill_rows": 8,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-22",
+      "fill_rows": 2,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-23",
+      "fill_rows": 22,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-26",
+      "fill_rows": 11,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-27",
+      "fill_rows": 19,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-28",
+      "fill_rows": 10,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-10-29",
+      "fill_rows": 7,
+      "duplicate_trade_ids": 0,
+      "diff": {
+        "158905.SZ": {
+          "expected": 0,
+          "actual": 100000
+        }
+      }
+    },
+    {
+      "date": "2026-10-30",
+      "fill_rows": 7,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    },
+    {
+      "date": "2026-11-02",
+      "status": "missing_fills_not_assumed_zero",
+      "position_change": {
+        "603208.SH": {
+          "expected": 4200,
+          "actual": 3800
+        },
+        "688528.SH": {
+          "expected": 4597,
+          "actual": 4797
+        },
+        "688701.SH": {
+          "expected": 5711,
+          "actual": 5911
+        }
+      }
+    },
+    {
+      "date": "2026-11-03",
+      "fill_rows": 35,
+      "duplicate_trade_ids": 0,
+      "diff": {}
+    }
+  ],
+  "missing_positions": [
+    {
+      "date": "2026-08-12",
+      "prior_positions": true,
+      "current_positions": false
+    },
+    {
+      "date": "2026-08-13",
+      "prior_positions": false,
+      "current_positions": false
+    },
+    {
+      "date": "2026-08-14",
+      "prior_positions": false,
+      "current_positions": true
+    },
+    {
+      "date": "2026-09-10",
+      "prior_positions": true,
+      "current_positions": false
+    },
+    {
+      "date": "2026-09-11",
+      "prior_positions": false,
+      "current_positions": false
+    },
+    {
+      "date": "2026-09-14",
+      "prior_positions": false,
+      "current_positions": true
+    },
+    {
+      "date": "2026-09-16",
+      "prior_positions": true,
+      "current_positions": false
+    },
+    {
+      "date": "2026-09-17",
+      "prior_positions": false,
+      "current_positions": true
+    }
+  ],
+  "seed_plan_comparisons": [
+    {
+      "date": "2026-08-03",
+      "diff": {
+        "001260.SZ": {
+          "expected": 2000,
+          "actual": 2300
+        },
+        "300220.SZ": {
+          "expected": 3200,
+          "actual": 0
+        },
+        "301006.SZ": {
+          "expected": 0,
+          "actual": 2900
+        },
+        "301037.SZ": {
+          "expected": 2800,
+          "actual": 3200
+        },
+        "301113.SZ": {
+          "expected": 0,
+          "actual": 2600
+        },
+        "301192.SZ": {
+          "expected": 0,
+          "actual": -100
+        },
+        "301503.SZ": {
+          "expected": 1500,
+          "actual": 1700
+        },
+        "600287.SH": {
+          "expected": 7600,
+          "actual": 0
+        },
+        "600561.SH": {
+          "expected": 6300,
+          "actual": 7100
+        },
+        "603073.SH": {
+          "expected": 2100,
+          "actual": 2400
+        },
+        "603282.SH": {
+          "expected": 0,
+          "actual": -100
+        },
+        "603385.SH": {
+          "expected": 6700,
+          "actual": 0
+        },
+        "603908.SH": {
+          "expected": 1800,
+          "actual": 2000
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688060.SH": {
+          "expected": 200,
+          "actual": 0
+        },
+        "688067.SH": {
+          "expected": 437,
+          "actual": 665
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 1755
+        },
+        "688092.SH": {
+          "expected": 200,
+          "actual": 243
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 1854
+        },
+        "688420.SH": {
+          "expected": 200,
+          "actual": 330
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 309
+        },
+        "688528.SH": {
+          "expected": 0,
+          "actual": 463
+        },
+        "688616.SH": {
+          "expected": 0,
+          "actual": 413
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688701.SH": {
+          "expected": 0,
+          "actual": 589
+        }
+      },
+      "archived_net": {
+        "301503.SZ": 1500,
+        "603908.SH": 1800,
+        "688067.SH": 437,
+        "603073.SH": 2100,
+        "600561.SH": 6300,
+        "688092.SH": 200,
+        "688420.SH": 200,
+        "001260.SZ": 2000,
+        "301037.SZ": 2800,
+        "603385.SH": 6700,
+        "300220.SZ": 3200,
+        "688060.SH": 200,
+        "600287.SH": 7600,
+        "001336.SZ": -100,
+        "300126.SZ": -100,
+        "300417.SZ": -100,
+        "300500.SZ": -100,
+        "300535.SZ": -100,
+        "300614.SZ": -100,
+        "300621.SZ": -100,
+        "300923.SZ": -100,
+        "301001.SZ": -100,
+        "301010.SZ": -100,
+        "301063.SZ": -100,
+        "301130.SZ": -100,
+        "301131.SZ": -100,
+        "301167.SZ": -100,
+        "301359.SZ": -100,
+        "600137.SH": -100,
+        "600455.SH": -100,
+        "600883.SH": -100,
+        "603029.SH": -100,
+        "605180.SH": -1400
+      },
+      "current_recomputed_net": {
+        "001260.SZ": 2300,
+        "001336.SZ": -100,
+        "300126.SZ": -100,
+        "300417.SZ": -100,
+        "300500.SZ": -100,
+        "300535.SZ": -100,
+        "300614.SZ": -100,
+        "300621.SZ": -100,
+        "300923.SZ": -100,
+        "301001.SZ": -100,
+        "301006.SZ": 2900,
+        "301010.SZ": -100,
+        "301037.SZ": 3200,
+        "301063.SZ": -100,
+        "301130.SZ": -100,
+        "301131.SZ": -100,
+        "301167.SZ": -100,
+        "301192.SZ": -100,
+        "301359.SZ": -100,
+        "301503.SZ": 1700,
+        "600137.SH": -100,
+        "600455.SH": -100,
+        "600561.SH": 7100,
+        "600883.SH": -100,
+        "603029.SH": -100,
+        "603073.SH": 2400,
+        "603282.SH": -100,
+        "603908.SH": 2000,
+        "605180.SH": -1400,
+        "688058.SH": 200,
+        "688067.SH": 665,
+        "688092.SH": 243,
+        "688420.SH": 330,
+        "688466.SH": 309,
+        "688528.SH": 463,
+        "688616.SH": 413,
+        "688638.SH": 200,
+        "688695.SH": 200,
+        "688701.SH": 589,
+        "688217.SH": 1854,
+        "688078.SH": 1755,
+        "301113.SZ": 2600
+      }
+    },
+    {
+      "date": "2026-08-04",
+      "diff": {
+        "001260.SZ": {
+          "expected": 100,
+          "actual": 300
+        },
+        "300220.SZ": {
+          "expected": 100,
+          "actual": -3300
+        },
+        "300949.SZ": {
+          "expected": 0,
+          "actual": -100
+        },
+        "301006.SZ": {
+          "expected": 0,
+          "actual": 2900
+        },
+        "301037.SZ": {
+          "expected": 0,
+          "actual": 300
+        },
+        "301113.SZ": {
+          "expected": 0,
+          "actual": 2600
+        },
+        "301503.SZ": {
+          "expected": 100,
+          "actual": 300
+        },
+        "600287.SH": {
+          "expected": 0,
+          "actual": -7600
+        },
+        "600561.SH": {
+          "expected": 0,
+          "actual": 800
+        },
+        "603073.SH": {
+          "expected": 0,
+          "actual": 300
+        },
+        "603282.SH": {
+          "expected": 0,
+          "actual": -100
+        },
+        "603385.SH": {
+          "expected": 100,
+          "actual": 0
+        },
+        "603908.SH": {
+          "expected": 100,
+          "actual": 200
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 1753
+        },
+        "688092.SH": {
+          "expected": -200,
+          "actual": 0
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 1837
+        },
+        "688420.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 340
+        },
+        "688528.SH": {
+          "expected": 0,
+          "actual": 330
+        },
+        "688616.SH": {
+          "expected": 0,
+          "actual": 456
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688701.SH": {
+          "expected": -307,
+          "actual": 318
+        }
+      },
+      "archived_net": {
+        "603908.SH": 100,
+        "301503.SZ": 100,
+        "001260.SZ": 100,
+        "603385.SH": 100,
+        "300220.SZ": 100,
+        "688701.SH": -307,
+        "688092.SH": -200,
+        "301192.SZ": -100
+      },
+      "current_recomputed_net": {
+        "001260.SZ": 300,
+        "300220.SZ": -3300,
+        "300949.SZ": -100,
+        "301006.SZ": 2900,
+        "301037.SZ": 300,
+        "301192.SZ": -100,
+        "301503.SZ": 300,
+        "600561.SH": 800,
+        "603073.SH": 300,
+        "603282.SH": -100,
+        "603908.SH": 200,
+        "688058.SH": 200,
+        "688067.SH": 200,
+        "688420.SH": 200,
+        "688466.SH": 340,
+        "688528.SH": 330,
+        "688616.SH": 456,
+        "688638.SH": 200,
+        "688695.SH": 200,
+        "688701.SH": 318,
+        "600287.SH": -7600,
+        "688217.SH": 1837,
+        "688078.SH": 1753,
+        "301113.SZ": 2600
+      }
+    },
+    {
+      "date": "2026-08-05",
+      "diff": {
+        "001260.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "300949.SZ": {
+          "expected": 0,
+          "actual": -100
+        },
+        "301006.SZ": {
+          "expected": 2600,
+          "actual": 2900
+        },
+        "301037.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "301113.SZ": {
+          "expected": 0,
+          "actual": 2500
+        },
+        "301503.SZ": {
+          "expected": 0,
+          "actual": 100
+        },
+        "600287.SH": {
+          "expected": 100,
+          "actual": 0
+        },
+        "600561.SH": {
+          "expected": 0,
+          "actual": 800
+        },
+        "603073.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "603908.SH": {
+          "expected": 0,
+          "actual": 100
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688060.SH": {
+          "expected": 0,
+          "actual": -1168
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 1732
+        },
+        "688092.SH": {
+          "expected": 0,
+          "actual": 204
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 1769
+        },
+        "688420.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 267
+        },
+        "688528.SH": {
+          "expected": -259,
+          "actual": 250
+        },
+        "688616.SH": {
+          "expected": 0,
+          "actual": 450
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688701.SH": {
+          "expected": 0,
+          "actual": 636
+        }
+      },
+      "archived_net": {
+        "600287.SH": 100,
+        "301006.SZ": 2600,
+        "688528.SH": -259,
+        "603282.SH": -100
+      },
+      "current_recomputed_net": {
+        "001260.SZ": 200,
+        "300949.SZ": -100,
+        "301006.SZ": 2900,
+        "301037.SZ": 200,
+        "301503.SZ": 100,
+        "600561.SH": 800,
+        "603073.SH": 200,
+        "603282.SH": -100,
+        "603908.SH": 100,
+        "688058.SH": 200,
+        "688060.SH": -1168,
+        "688067.SH": 200,
+        "688092.SH": 204,
+        "688420.SH": 200,
+        "688466.SH": 267,
+        "688528.SH": 250,
+        "688616.SH": 450,
+        "688638.SH": 200,
+        "688695.SH": 200,
+        "688701.SH": 636,
+        "688217.SH": 1769,
+        "688078.SH": 1732,
+        "301113.SZ": 2500
+      }
+    },
+    {
+      "date": "2026-08-06",
+      "diff": {
+        "001260.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "300949.SZ": {
+          "expected": 1500,
+          "actual": -100
+        },
+        "301006.SZ": {
+          "expected": 0,
+          "actual": 300
+        },
+        "301037.SZ": {
+          "expected": 0,
+          "actual": 300
+        },
+        "301113.SZ": {
+          "expected": 0,
+          "actual": 2600
+        },
+        "301503.SZ": {
+          "expected": 0,
+          "actual": 100
+        },
+        "600287.SH": {
+          "expected": 100,
+          "actual": 0
+        },
+        "600561.SH": {
+          "expected": 100,
+          "actual": 900
+        },
+        "603073.SH": {
+          "expected": -2200,
+          "actual": 300
+        },
+        "603385.SH": {
+          "expected": 100,
+          "actual": 0
+        },
+        "603908.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688060.SH": {
+          "expected": 0,
+          "actual": -1168
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 1756
+        },
+        "688092.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 1790
+        },
+        "688420.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 306
+        },
+        "688528.SH": {
+          "expected": 0,
+          "actual": 525
+        },
+        "688616.SH": {
+          "expected": 0,
+          "actual": 444
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688701.SH": {
+          "expected": 0,
+          "actual": 516
+        }
+      },
+      "archived_net": {
+        "600287.SH": 100,
+        "603385.SH": 100,
+        "600561.SH": 100,
+        "300949.SZ": 1500,
+        "603073.SH": -2200
+      },
+      "current_recomputed_net": {
+        "001260.SZ": 200,
+        "300949.SZ": -100,
+        "301006.SZ": 300,
+        "301037.SZ": 300,
+        "301503.SZ": 100,
+        "600561.SH": 900,
+        "603073.SH": 300,
+        "603908.SH": 200,
+        "688058.SH": 200,
+        "688060.SH": -1168,
+        "688067.SH": 200,
+        "688092.SH": 200,
+        "688420.SH": 200,
+        "688466.SH": 306,
+        "688528.SH": 525,
+        "688616.SH": 444,
+        "688638.SH": 200,
+        "688695.SH": 200,
+        "688701.SH": 516,
+        "688217.SH": 1790,
+        "688078.SH": 1756,
+        "301113.SZ": 2600
+      }
+    },
+    {
+      "date": "2026-08-07",
+      "diff": {
+        "001260.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "300220.SZ": {
+          "expected": 100,
+          "actual": -3400
+        },
+        "300949.SZ": {
+          "expected": 100,
+          "actual": 0
+        },
+        "301006.SZ": {
+          "expected": 0,
+          "actual": 300
+        },
+        "301113.SZ": {
+          "expected": 0,
+          "actual": 2400
+        },
+        "301503.SZ": {
+          "expected": 0,
+          "actual": 100
+        },
+        "600561.SH": {
+          "expected": 0,
+          "actual": 700
+        },
+        "603073.SH": {
+          "expected": 0,
+          "actual": 2500
+        },
+        "603709.SH": {
+          "expected": 0,
+          "actual": 3600
+        },
+        "603908.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688060.SH": {
+          "expected": 0,
+          "actual": -1168
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 1765
+        },
+        "688092.SH": {
+          "expected": 0,
+          "actual": 213
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 1821
+        },
+        "688420.SH": {
+          "expected": -1823,
+          "actual": 200
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 316
+        },
+        "688528.SH": {
+          "expected": 0,
+          "actual": 507
+        },
+        "688616.SH": {
+          "expected": 0,
+          "actual": 434
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688701.SH": {
+          "expected": 0,
+          "actual": 520
+        }
+      },
+      "archived_net": {
+        "300949.SZ": 100,
+        "300220.SZ": 100,
+        "688420.SH": -1823
+      },
+      "current_recomputed_net": {
+        "001260.SZ": 200,
+        "300220.SZ": -3400,
+        "301006.SZ": 300,
+        "301503.SZ": 100,
+        "600561.SH": 700,
+        "603908.SH": 200,
+        "688058.SH": 200,
+        "688060.SH": -1168,
+        "688067.SH": 200,
+        "688092.SH": 213,
+        "688420.SH": 200,
+        "688466.SH": 316,
+        "688528.SH": 507,
+        "688616.SH": 434,
+        "688638.SH": 200,
+        "688695.SH": 200,
+        "688701.SH": 520,
+        "688217.SH": 1821,
+        "688078.SH": 1765,
+        "603073.SH": 2500,
+        "603709.SH": 3600,
+        "301113.SZ": 2400
+      }
+    },
+    {
+      "date": "2026-08-10",
+      "diff": {
+        "001260.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "300220.SZ": {
+          "expected": 0,
+          "actual": -3500
+        },
+        "300268.SZ": {
+          "expected": 3100,
+          "actual": 0
+        },
+        "301037.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "301113.SZ": {
+          "expected": 2200,
+          "actual": 2500
+        },
+        "301503.SZ": {
+          "expected": 0,
+          "actual": 100
+        },
+        "600287.SH": {
+          "expected": 0,
+          "actual": 900
+        },
+        "600561.SH": {
+          "expected": 0,
+          "actual": 800
+        },
+        "603385.SH": {
+          "expected": 0,
+          "actual": -6900
+        },
+        "603709.SH": {
+          "expected": 0,
+          "actual": 3600
+        },
+        "603908.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688060.SH": {
+          "expected": 0,
+          "actual": -1168
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 1769
+        },
+        "688092.SH": {
+          "expected": 0,
+          "actual": 211
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 1735
+        },
+        "688420.SH": {
+          "expected": 0,
+          "actual": 1850
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 283
+        },
+        "688528.SH": {
+          "expected": 0,
+          "actual": 522
+        },
+        "688616.SH": {
+          "expected": 0,
+          "actual": 472
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688701.SH": {
+          "expected": 0,
+          "actual": 501
+        }
+      },
+      "archived_net": {
+        "301113.SZ": 2200,
+        "300268.SZ": 3100
+      },
+      "current_recomputed_net": {
+        "001260.SZ": 200,
+        "300220.SZ": -3500,
+        "301037.SZ": 200,
+        "301503.SZ": 100,
+        "600287.SH": 900,
+        "600561.SH": 800,
+        "603385.SH": -6900,
+        "603908.SH": 200,
+        "688058.SH": 200,
+        "688060.SH": -1168,
+        "688067.SH": 200,
+        "688092.SH": 211,
+        "688466.SH": 283,
+        "688528.SH": 522,
+        "688616.SH": 472,
+        "688638.SH": 200,
+        "688695.SH": 200,
+        "688701.SH": 501,
+        "688217.SH": 1735,
+        "688078.SH": 1769,
+        "688420.SH": 1850,
+        "301113.SZ": 2500,
+        "603709.SH": 3600
+      }
+    },
+    {
+      "date": "2026-08-11",
+      "diff": {
+        "001260.SZ": {
+          "expected": 0,
+          "actual": 100
+        },
+        "300268.SZ": {
+          "expected": 100,
+          "actual": -3100
+        },
+        "300899.SZ": {
+          "expected": 0,
+          "actual": 1400
+        },
+        "300949.SZ": {
+          "expected": 0,
+          "actual": -1700
+        },
+        "301037.SZ": {
+          "expected": -100,
+          "actual": 200
+        },
+        "301113.SZ": {
+          "expected": 100,
+          "actual": 300
+        },
+        "301503.SZ": {
+          "expected": 0,
+          "actual": 100
+        },
+        "600287.SH": {
+          "expected": -100,
+          "actual": 0
+        },
+        "600561.SH": {
+          "expected": 0,
+          "actual": 900
+        },
+        "603385.SH": {
+          "expected": 0,
+          "actual": -6900
+        },
+        "603709.SH": {
+          "expected": 0,
+          "actual": 3500
+        },
+        "603908.SH": {
+          "expected": 0,
+          "actual": 100
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 1767
+        },
+        "688092.SH": {
+          "expected": 0,
+          "actual": 215
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 1686
+        },
+        "688420.SH": {
+          "expected": 0,
+          "actual": 1839
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 302
+        },
+        "688528.SH": {
+          "expected": 0,
+          "actual": 513
+        },
+        "688616.SH": {
+          "expected": 0,
+          "actual": 427
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688701.SH": {
+          "expected": 0,
+          "actual": 456
+        }
+      },
+      "archived_net": {
+        "301113.SZ": 100,
+        "300268.SZ": 100,
+        "600287.SH": -100,
+        "301037.SZ": -100
+      },
+      "current_recomputed_net": {
+        "001260.SZ": 100,
+        "300949.SZ": -1700,
+        "301037.SZ": 200,
+        "301503.SZ": 100,
+        "600561.SH": 900,
+        "603385.SH": -6900,
+        "603908.SH": 100,
+        "688058.SH": 200,
+        "688067.SH": 200,
+        "688092.SH": 215,
+        "688466.SH": 302,
+        "688528.SH": 513,
+        "688616.SH": 427,
+        "688638.SH": 200,
+        "688695.SH": 200,
+        "688701.SH": 456,
+        "301113.SZ": 300,
+        "300268.SZ": -3100,
+        "688217.SH": 1686,
+        "688078.SH": 1767,
+        "688420.SH": 1839,
+        "603709.SH": 3500,
+        "300899.SZ": 1400
+      }
+    },
+    {
+      "date": "2026-08-17",
+      "diff": {
+        "300268.SZ": {
+          "expected": 0,
+          "actual": -3200
+        },
+        "300500.SZ": {
+          "expected": 3900,
+          "actual": 0
+        },
+        "300899.SZ": {
+          "expected": 0,
+          "actual": 1400
+        },
+        "301113.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "301503.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "600561.SH": {
+          "expected": -6500,
+          "actual": 900
+        },
+        "603073.SH": {
+          "expected": 0,
+          "actual": 2500
+        },
+        "603182.SH": {
+          "expected": 2800,
+          "actual": 0
+        },
+        "603709.SH": {
+          "expected": -3200,
+          "actual": 400
+        },
+        "603908.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688060.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 1812
+        },
+        "688092.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 1706
+        },
+        "688420.SH": {
+          "expected": 0,
+          "actual": 1909
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 299
+        },
+        "688528.SH": {
+          "expected": 0,
+          "actual": 406
+        },
+        "688616.SH": {
+          "expected": 0,
+          "actual": 438
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688670.SH": {
+          "expected": 2284,
+          "actual": 0
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688701.SH": {
+          "expected": 0,
+          "actual": 412
+        }
+      },
+      "archived_net": {
+        "688670.SH": 2284,
+        "300500.SZ": 3900,
+        "603182.SH": 2800,
+        "001260.SZ": -2200,
+        "300220.SZ": -3500,
+        "600561.SH": -6500,
+        "603709.SH": -3200
+      },
+      "current_recomputed_net": {
+        "001260.SZ": -2200,
+        "300220.SZ": -3500,
+        "300268.SZ": -3200,
+        "301113.SZ": 200,
+        "301503.SZ": 200,
+        "600561.SH": 900,
+        "603908.SH": 200,
+        "688060.SH": 200,
+        "688067.SH": 200,
+        "688092.SH": 200,
+        "688466.SH": 299,
+        "688528.SH": 406,
+        "688616.SH": 438,
+        "688638.SH": 200,
+        "688695.SH": 200,
+        "688701.SH": 412,
+        "603709.SH": 400,
+        "688217.SH": 1706,
+        "688420.SH": 1909,
+        "300899.SZ": 1400,
+        "688078.SH": 1812,
+        "603073.SH": 2500
+      }
+    },
+    {
+      "date": "2026-08-18",
+      "diff": {
+        "300500.SZ": {
+          "expected": 0,
+          "actual": -3900
+        },
+        "300899.SZ": {
+          "expected": 1200,
+          "actual": 1400
+        },
+        "300949.SZ": {
+          "expected": 0,
+          "actual": -1700
+        },
+        "301006.SZ": {
+          "expected": -2700,
+          "actual": 300
+        },
+        "301113.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "301503.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "600561.SH": {
+          "expected": 0,
+          "actual": 7300
+        },
+        "603176.SH": {
+          "expected": 7600,
+          "actual": 0
+        },
+        "603182.SH": {
+          "expected": 100,
+          "actual": -2800
+        },
+        "603709.SH": {
+          "expected": 0,
+          "actual": 3600
+        },
+        "603908.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688060.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 1821
+        },
+        "688092.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688132.SH": {
+          "expected": 2699,
+          "actual": 0
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 1700
+        },
+        "688420.SH": {
+          "expected": 0,
+          "actual": 1861
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 281
+        },
+        "688528.SH": {
+          "expected": -249,
+          "actual": 251
+        },
+        "688616.SH": {
+          "expected": 0,
+          "actual": 429
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688701.SH": {
+          "expected": -262,
+          "actual": 327
+        }
+      },
+      "archived_net": {
+        "688132.SH": 2699,
+        "603182.SH": 100,
+        "603176.SH": 7600,
+        "300899.SZ": 1200,
+        "688701.SH": -262,
+        "688528.SH": -249,
+        "300268.SZ": -3200,
+        "301006.SZ": -2700
+      },
+      "current_recomputed_net": {
+        "300268.SZ": -3200,
+        "300949.SZ": -1700,
+        "301006.SZ": 300,
+        "301113.SZ": 200,
+        "301503.SZ": 200,
+        "603908.SH": 200,
+        "688058.SH": 200,
+        "688060.SH": 200,
+        "688067.SH": 200,
+        "688092.SH": 200,
+        "688466.SH": 281,
+        "688528.SH": 251,
+        "688616.SH": 429,
+        "688638.SH": 200,
+        "688695.SH": 200,
+        "688701.SH": 327,
+        "300500.SZ": -3900,
+        "603182.SH": -2800,
+        "688217.SH": 1700,
+        "300899.SZ": 1400,
+        "688078.SH": 1821,
+        "688420.SH": 1861,
+        "603709.SH": 3600,
+        "600561.SH": 7300
+      }
+    },
+    {
+      "date": "2026-08-19",
+      "diff": {
+        "300899.SZ": {
+          "expected": 100,
+          "actual": 200
+        },
+        "300949.SZ": {
+          "expected": 0,
+          "actual": -1700
+        },
+        "301006.SZ": {
+          "expected": 2600,
+          "actual": 3000
+        },
+        "301049.SZ": {
+          "expected": 1800,
+          "actual": 2100
+        },
+        "301503.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "600287.SH": {
+          "expected": 0,
+          "actual": 1000
+        },
+        "603908.SH": {
+          "expected": 0,
+          "actual": 100
+        },
+        "688058.SH": {
+          "expected": -1671,
+          "actual": 0
+        },
+        "688060.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 1844
+        },
+        "688092.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688132.SH": {
+          "expected": 200,
+          "actual": 432
+        },
+        "688217.SH": {
+          "expected": 1555,
+          "actual": 1762
+        },
+        "688420.SH": {
+          "expected": 0,
+          "actual": 1874
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 347
+        },
+        "688528.SH": {
+          "expected": 0,
+          "actual": 503
+        },
+        "688616.SH": {
+          "expected": 0,
+          "actual": 437
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688670.SH": {
+          "expected": 200,
+          "actual": 377
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688701.SH": {
+          "expected": 0,
+          "actual": 587
+        }
+      },
+      "archived_net": {
+        "688217.SH": 1555,
+        "300899.SZ": 100,
+        "688670.SH": 200,
+        "301049.SZ": 1800,
+        "301006.SZ": 2600,
+        "688132.SH": 200,
+        "001336.SZ": -2000,
+        "603176.SH": -7600,
+        "603182.SH": -2900,
+        "688058.SH": -1671
+      },
+      "current_recomputed_net": {
+        "001336.SZ": -2000,
+        "300899.SZ": 200,
+        "300949.SZ": -1700,
+        "301503.SZ": 200,
+        "600287.SH": 1000,
+        "603176.SH": -7600,
+        "603182.SH": -2900,
+        "603908.SH": 100,
+        "688060.SH": 200,
+        "688067.SH": 200,
+        "688092.SH": 200,
+        "688132.SH": 432,
+        "688466.SH": 347,
+        "688528.SH": 503,
+        "688616.SH": 437,
+        "688638.SH": 200,
+        "688670.SH": 377,
+        "688695.SH": 200,
+        "688701.SH": 587,
+        "688217.SH": 1762,
+        "688078.SH": 1844,
+        "688420.SH": 1874,
+        "301006.SZ": 3000,
+        "301049.SZ": 2100
+      }
+    },
+    {
+      "date": "2026-08-20",
+      "diff": {
+        "300500.SZ": {
+          "expected": 0,
+          "actual": -3900
+        },
+        "300899.SZ": {
+          "expected": 0,
+          "actual": 100
+        },
+        "301006.SZ": {
+          "expected": 100,
+          "actual": 400
+        },
+        "301037.SZ": {
+          "expected": 0,
+          "actual": 3200
+        },
+        "301049.SZ": {
+          "expected": 100,
+          "actual": 300
+        },
+        "301298.SZ": {
+          "expected": 2900,
+          "actual": 0
+        },
+        "301503.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "600287.SH": {
+          "expected": 0,
+          "actual": -7700
+        },
+        "603908.SH": {
+          "expected": 0,
+          "actual": 100
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 1839
+        },
+        "688060.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 1821
+        },
+        "688092.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688132.SH": {
+          "expected": 0,
+          "actual": 258
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688420.SH": {
+          "expected": 1678,
+          "actual": 1901
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 326
+        },
+        "688528.SH": {
+          "expected": 200,
+          "actual": 564
+        },
+        "688616.SH": {
+          "expected": 0,
+          "actual": 464
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688670.SH": {
+          "expected": -231,
+          "actual": 0
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 225
+        },
+        "688701.SH": {
+          "expected": 200,
+          "actual": 663
+        }
+      },
+      "archived_net": {
+        "688420.SH": 1678,
+        "688528.SH": 200,
+        "688701.SH": 200,
+        "301049.SZ": 100,
+        "301298.SZ": 2900,
+        "301006.SZ": 100,
+        "688670.SH": -231,
+        "300949.SZ": -1700
+      },
+      "current_recomputed_net": {
+        "300500.SZ": -3900,
+        "300899.SZ": 100,
+        "300949.SZ": -1700,
+        "301503.SZ": 200,
+        "600287.SH": -7700,
+        "603908.SH": 100,
+        "688060.SH": 200,
+        "688067.SH": 200,
+        "688092.SH": 200,
+        "688132.SH": 258,
+        "688466.SH": 326,
+        "688528.SH": 564,
+        "688616.SH": 464,
+        "688638.SH": 200,
+        "688695.SH": 225,
+        "688701.SH": 663,
+        "301049.SZ": 300,
+        "301006.SZ": 400,
+        "688217.SH": 200,
+        "688420.SH": 1901,
+        "688078.SH": 1821,
+        "688058.SH": 1839,
+        "301037.SZ": 3200
+      }
+    },
+    {
+      "date": "2026-08-21",
+      "diff": {
+        "300500.SZ": {
+          "expected": 0,
+          "actual": -3900
+        },
+        "300899.SZ": {
+          "expected": 0,
+          "actual": 100
+        },
+        "301006.SZ": {
+          "expected": 0,
+          "actual": 300
+        },
+        "301049.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "301298.SZ": {
+          "expected": 0,
+          "actual": 400
+        },
+        "301503.SZ": {
+          "expected": 0,
+          "actual": 100
+        },
+        "603282.SH": {
+          "expected": 2400,
+          "actual": 0
+        },
+        "603908.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 1861
+        },
+        "688060.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 1757
+        },
+        "688092.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688132.SH": {
+          "expected": 0,
+          "actual": 257
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688420.SH": {
+          "expected": 0,
+          "actual": 224
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 278
+        },
+        "688528.SH": {
+          "expected": 0,
+          "actual": 338
+        },
+        "688616.SH": {
+          "expected": 0,
+          "actual": 475
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688701.SH": {
+          "expected": -209,
+          "actual": 378
+        }
+      },
+      "archived_net": {
+        "603282.SH": 2400,
+        "688701.SH": -209,
+        "688670.SH": -2253
+      },
+      "current_recomputed_net": {
+        "300500.SZ": -3900,
+        "300899.SZ": 100,
+        "301006.SZ": 300,
+        "301049.SZ": 200,
+        "301503.SZ": 100,
+        "603908.SH": 200,
+        "688060.SH": 200,
+        "688067.SH": 200,
+        "688092.SH": 200,
+        "688132.SH": 257,
+        "688217.SH": 200,
+        "688466.SH": 278,
+        "688528.SH": 338,
+        "688616.SH": 475,
+        "688638.SH": 200,
+        "688670.SH": -2253,
+        "688695.SH": 200,
+        "688701.SH": 378,
+        "301298.SZ": 400,
+        "688420.SH": 224,
+        "688078.SH": 1757,
+        "688058.SH": 1861
+      }
+    },
+    {
+      "date": "2026-08-24",
+      "diff": {
+        "300500.SZ": {
+          "expected": 0,
+          "actual": -3900
+        },
+        "300899.SZ": {
+          "expected": 0,
+          "actual": 100
+        },
+        "301006.SZ": {
+          "expected": 0,
+          "actual": 300
+        },
+        "301503.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "600287.SH": {
+          "expected": 0,
+          "actual": 1100
+        },
+        "600561.SH": {
+          "expected": 0,
+          "actual": 7400
+        },
+        "603282.SH": {
+          "expected": 0,
+          "actual": -2400
+        },
+        "603908.SH": {
+          "expected": 0,
+          "actual": 100
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 1854
+        },
+        "688060.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688078.SH": {
+          "expected": 1598,
+          "actual": 1811
+        },
+        "688092.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688132.SH": {
+          "expected": 0,
+          "actual": 255
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688420.SH": {
+          "expected": 0,
+          "actual": 215
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 327
+        },
+        "688528.SH": {
+          "expected": 0,
+          "actual": 315
+        },
+        "688616.SH": {
+          "expected": 0,
+          "actual": 466
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 212
+        },
+        "688701.SH": {
+          "expected": 0,
+          "actual": 510
+        }
+      },
+      "archived_net": {
+        "688078.SH": 1598
+      },
+      "current_recomputed_net": {
+        "300500.SZ": -3900,
+        "300899.SZ": 100,
+        "301006.SZ": 300,
+        "301503.SZ": 200,
+        "600287.SH": 1100,
+        "603282.SH": -2400,
+        "603908.SH": 100,
+        "688060.SH": 200,
+        "688067.SH": 200,
+        "688092.SH": 200,
+        "688132.SH": 255,
+        "688217.SH": 200,
+        "688420.SH": 215,
+        "688466.SH": 327,
+        "688528.SH": 315,
+        "688616.SH": 466,
+        "688638.SH": 200,
+        "688695.SH": 212,
+        "688701.SH": 510,
+        "688078.SH": 1811,
+        "688058.SH": 1854,
+        "600561.SH": 7400
+      }
+    },
+    {
+      "date": "2026-08-25",
+      "diff": {
+        "300500.SZ": {
+          "expected": -400,
+          "actual": 0
+        },
+        "300899.SZ": {
+          "expected": -100,
+          "actual": 0
+        },
+        "301006.SZ": {
+          "expected": -300,
+          "actual": 0
+        },
+        "301298.SZ": {
+          "expected": -300,
+          "actual": 0
+        },
+        "301503.SZ": {
+          "expected": -200,
+          "actual": 0
+        },
+        "600287.SH": {
+          "expected": -900,
+          "actual": 0
+        },
+        "603282.SH": {
+          "expected": -300,
+          "actual": -2400
+        },
+        "603908.SH": {
+          "expected": -300,
+          "actual": 0
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 1454
+        },
+        "688060.SH": {
+          "expected": -226,
+          "actual": 0
+        },
+        "688067.SH": {
+          "expected": -274,
+          "actual": 0
+        },
+        "688092.SH": {
+          "expected": -387,
+          "actual": 0
+        },
+        "688217.SH": {
+          "expected": -230,
+          "actual": 0
+        },
+        "688420.SH": {
+          "expected": -228,
+          "actual": 0
+        },
+        "688466.SH": {
+          "expected": -367,
+          "actual": 0
+        },
+        "688528.SH": {
+          "expected": -663,
+          "actual": -222
+        },
+        "688616.SH": {
+          "expected": -435,
+          "actual": 0
+        },
+        "688695.SH": {
+          "expected": -277,
+          "actual": 0
+        },
+        "688701.SH": {
+          "expected": -510,
+          "actual": 0
+        }
+      },
+      "archived_net": {
+        "688067.SH": -274,
+        "688528.SH": -663,
+        "688217.SH": -230,
+        "301503.SZ": -200,
+        "688466.SH": -367,
+        "300899.SZ": -100,
+        "688420.SH": -228,
+        "688092.SH": -387,
+        "603908.SH": -300,
+        "688701.SH": -510,
+        "688616.SH": -435,
+        "600287.SH": -900,
+        "688060.SH": -226,
+        "688695.SH": -277,
+        "300500.SZ": -400,
+        "301298.SZ": -300,
+        "603282.SH": -300,
+        "301006.SZ": -300
+      },
+      "current_recomputed_net": {
+        "603282.SH": -2400,
+        "688528.SH": -222,
+        "688058.SH": 1454
+      }
+    },
+    {
+      "date": "2026-08-26",
+      "diff": {
+        "300500.SZ": {
+          "expected": 0,
+          "actual": -3500
+        },
+        "300899.SZ": {
+          "expected": 0,
+          "actual": 100
+        },
+        "301006.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "301503.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "600561.SH": {
+          "expected": 0,
+          "actual": 6400
+        },
+        "603282.SH": {
+          "expected": 0,
+          "actual": -2100
+        },
+        "603908.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 1626
+        },
+        "688060.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688078.SH": {
+          "expected": -220,
+          "actual": 0
+        },
+        "688092.SH": {
+          "expected": 200,
+          "actual": 213
+        },
+        "688132.SH": {
+          "expected": -466,
+          "actual": 0
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688420.SH": {
+          "expected": 0,
+          "actual": 205
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 277
+        },
+        "688528.SH": {
+          "expected": 0,
+          "actual": 345
+        },
+        "688616.SH": {
+          "expected": 200,
+          "actual": 430
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688701.SH": {
+          "expected": 0,
+          "actual": 395
+        }
+      },
+      "archived_net": {
+        "688092.SH": 200,
+        "688616.SH": 200,
+        "688078.SH": -220,
+        "688132.SH": -466
+      },
+      "current_recomputed_net": {
+        "300500.SZ": -3500,
+        "300899.SZ": 100,
+        "301006.SZ": 200,
+        "301503.SZ": 200,
+        "603282.SH": -2100,
+        "603908.SH": 200,
+        "688060.SH": 200,
+        "688067.SH": 200,
+        "688092.SH": 213,
+        "688217.SH": 200,
+        "688420.SH": 205,
+        "688466.SH": 277,
+        "688528.SH": 345,
+        "688616.SH": 430,
+        "688695.SH": 200,
+        "688701.SH": 395,
+        "688058.SH": 1626,
+        "600561.SH": 6400
+      }
+    },
+    {
+      "date": "2026-08-27",
+      "diff": {
+        "300500.SZ": {
+          "expected": 0,
+          "actual": -3500
+        },
+        "300899.SZ": {
+          "expected": 100,
+          "actual": 200
+        },
+        "301006.SZ": {
+          "expected": 300,
+          "actual": 600
+        },
+        "301049.SZ": {
+          "expected": 0,
+          "actual": 200
+        },
+        "301298.SZ": {
+          "expected": 200,
+          "actual": 600
+        },
+        "301503.SZ": {
+          "expected": 0,
+          "actual": 400
+        },
+        "600287.SH": {
+          "expected": 800,
+          "actual": 0
+        },
+        "603282.SH": {
+          "expected": 200,
+          "actual": -2100
+        },
+        "603385.SH": {
+          "expected": 6500,
+          "actual": 0
+        },
+        "603908.SH": {
+          "expected": 200,
+          "actual": 400
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 1861
+        },
+        "688060.SH": {
+          "expected": 200,
+          "actual": 270
+        },
+        "688067.SH": {
+          "expected": 208,
+          "actual": 427
+        },
+        "688078.SH": {
+          "expected": 218,
+          "actual": 431
+        },
+        "688092.SH": {
+          "expected": 0,
+          "actual": 217
+        },
+        "688132.SH": {
+          "expected": 342,
+          "actual": 712
+        },
+        "688217.SH": {
+          "expected": 200,
+          "actual": 377
+        },
+        "688420.SH": {
+          "expected": 260,
+          "actual": 488
+        },
+        "688466.SH": {
+          "expected": 261,
+          "actual": 608
+        },
+        "688528.SH": {
+          "expected": 337,
+          "actual": 823
+        },
+        "688616.SH": {
+          "expected": 200,
+          "actual": 647
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688695.SH": {
+          "expected": 249,
+          "actual": 508
+        },
+        "688701.SH": {
+          "expected": 200,
+          "actual": 696
+        }
+      },
+      "archived_net": {
+        "688067.SH": 208,
+        "688466.SH": 261,
+        "688528.SH": 337,
+        "688217.SH": 200,
+        "688420.SH": 260,
+        "300899.SZ": 100,
+        "688078.SH": 218,
+        "603908.SH": 200,
+        "688132.SH": 342,
+        "688701.SH": 200,
+        "688060.SH": 200,
+        "688616.SH": 200,
+        "600287.SH": 800,
+        "301006.SZ": 300,
+        "301298.SZ": 200,
+        "688695.SH": 249,
+        "603282.SH": 200,
+        "603385.SH": 6500
+      },
+      "current_recomputed_net": {
+        "300500.SZ": -3500,
+        "300899.SZ": 200,
+        "301006.SZ": 600,
+        "301049.SZ": 200,
+        "301298.SZ": 600,
+        "301503.SZ": 400,
+        "603282.SH": -2100,
+        "603908.SH": 400,
+        "688060.SH": 270,
+        "688067.SH": 427,
+        "688078.SH": 431,
+        "688092.SH": 217,
+        "688132.SH": 712,
+        "688217.SH": 377,
+        "688420.SH": 488,
+        "688466.SH": 608,
+        "688528.SH": 823,
+        "688616.SH": 647,
+        "688638.SH": 200,
+        "688695.SH": 508,
+        "688701.SH": 696,
+        "688058.SH": 1861
+      }
+    },
+    {
+      "date": "2026-08-28",
+      "diff": {
+        "300500.SZ": {
+          "expected": 400,
+          "actual": -3500
+        },
+        "300899.SZ": {
+          "expected": -1300,
+          "actual": 100
+        },
+        "300949.SZ": {
+          "expected": 1600,
+          "actual": 1900
+        },
+        "301006.SZ": {
+          "expected": 100,
+          "actual": 400
+        },
+        "301113.SZ": {
+          "expected": -100,
+          "actual": -2300
+        },
+        "301298.SZ": {
+          "expected": 100,
+          "actual": 500
+        },
+        "301503.SZ": {
+          "expected": 0,
+          "actual": 400
+        },
+        "600287.SH": {
+          "expected": 100,
+          "actual": 0
+        },
+        "603385.SH": {
+          "expected": 100,
+          "actual": -6500
+        },
+        "603908.SH": {
+          "expected": 100,
+          "actual": 200
+        },
+        "688058.SH": {
+          "expected": 0,
+          "actual": 1779
+        },
+        "688060.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 201
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 206
+        },
+        "688092.SH": {
+          "expected": 0,
+          "actual": 227
+        },
+        "688132.SH": {
+          "expected": 0,
+          "actual": 396
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688420.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688466.SH": {
+          "expected": 200,
+          "actual": 396
+        },
+        "688528.SH": {
+          "expected": 200,
+          "actual": 566
+        },
+        "688616.SH": {
+          "expected": 200,
+          "actual": 515
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 245
+        },
+        "688701.SH": {
+          "expected": 0,
+          "actual": 323
+        }
+      },
+      "archived_net": {
+        "688466.SH": 200,
+        "688528.SH": 200,
+        "603908.SH": 100,
+        "688616.SH": 200,
+        "600287.SH": 100,
+        "301006.SZ": 100,
+        "301298.SZ": 100,
+        "300949.SZ": 1600,
+        "603385.SH": 100,
+        "300500.SZ": 400,
+        "301113.SZ": -100,
+        "300899.SZ": -1300,
+        "603282.SH": -2300
+      },
+      "current_recomputed_net": {
+        "300500.SZ": -3500,
+        "300899.SZ": 100,
+        "301006.SZ": 400,
+        "301113.SZ": -2300,
+        "301298.SZ": 500,
+        "301503.SZ": 400,
+        "603282.SH": -2300,
+        "603908.SH": 200,
+        "688060.SH": 200,
+        "688067.SH": 201,
+        "688078.SH": 206,
+        "688092.SH": 227,
+        "688132.SH": 396,
+        "688217.SH": 200,
+        "688420.SH": 200,
+        "688466.SH": 396,
+        "688528.SH": 566,
+        "688616.SH": 515,
+        "688638.SH": 200,
+        "688695.SH": 245,
+        "688701.SH": 323,
+        "603385.SH": -6500,
+        "688058.SH": 1779,
+        "300949.SZ": 1900
+      }
+    },
+    {
+      "date": "2026-09-01",
+      "diff": {
+        "300899.SZ": {
+          "expected": 1200,
+          "actual": 1300
+        },
+        "301006.SZ": {
+          "expected": -100,
+          "actual": 200
+        },
+        "301037.SZ": {
+          "expected": 2700,
+          "actual": 3200
+        },
+        "301049.SZ": {
+          "expected": -100,
+          "actual": 100
+        },
+        "301298.SZ": {
+          "expected": 0,
+          "actual": 400
+        },
+        "301503.SZ": {
+          "expected": 100,
+          "actual": 400
+        },
+        "603908.SH": {
+          "expected": 0,
+          "actual": 100
+        },
+        "688060.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688067.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688092.SH": {
+          "expected": 200,
+          "actual": 288
+        },
+        "688217.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688420.SH": {
+          "expected": 0,
+          "actual": 202
+        },
+        "688466.SH": {
+          "expected": 0,
+          "actual": 218
+        },
+        "688528.SH": {
+          "expected": -201,
+          "actual": 361
+        },
+        "688565.SH": {
+          "expected": 3255,
+          "actual": 3758
+        },
+        "688616.SH": {
+          "expected": -238,
+          "actual": 274
+        },
+        "688638.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 239
+        },
+        "688701.SH": {
+          "expected": 0,
+          "actual": 524
+        }
+      },
+      "archived_net": {
+        "301503.SZ": 100,
+        "688092.SH": 200,
+        "300899.SZ": 1200,
+        "301037.SZ": 2700,
+        "688565.SH": 3255,
+        "688528.SH": -201,
+        "301006.SZ": -100,
+        "688616.SH": -238,
+        "301049.SZ": -100,
+        "300500.SZ": -3900,
+        "301113.SZ": -2200,
+        "603385.SH": -6600,
+        "688132.SH": -2775
+      },
+      "current_recomputed_net": {
+        "300500.SZ": -3900,
+        "301006.SZ": 200,
+        "301049.SZ": 100,
+        "301113.SZ": -2200,
+        "301298.SZ": 400,
+        "301503.SZ": 400,
+        "603385.SH": -6600,
+        "603908.SH": 100,
+        "688060.SH": 200,
+        "688067.SH": 200,
+        "688078.SH": 200,
+        "688092.SH": 288,
+        "688132.SH": -2775,
+        "688217.SH": 200,
+        "688420.SH": 202,
+        "688466.SH": 218,
+        "688528.SH": 361,
+        "688616.SH": 274,
+        "688638.SH": 200,
+        "688695.SH": 239,
+        "688701.SH": 524,
+        "300899.SZ": 1300,
+        "688565.SH": 3758,
+        "301037.SZ": 3200
+      }
+    },
+    {
+      "date": "2026-09-02",
+      "diff": {},
+      "archived_net": {
+        "688701.SH": 531,
+        "688528.SH": 463,
+        "688466.SH": 231,
+        "688067.SH": 200,
+        "688217.SH": 225,
+        "688638.SH": 200,
+        "688695.SH": 226,
+        "688420.SH": 237,
+        "688078.SH": 200,
+        "301503.SZ": 300,
+        "603908.SH": 200,
+        "301006.SZ": 400,
+        "301298.SZ": 400,
+        "688616.SH": 586,
+        "688092.SH": 200,
+        "688060.SH": 200,
+        "688565.SH": 485,
+        "600287.SH": 900,
+        "300899.SZ": 100,
+        "301037.SZ": 500,
+        "300949.SZ": -1600
+      },
+      "current_recomputed_net": {
+        "300899.SZ": 100,
+        "300949.SZ": -1600,
+        "301006.SZ": 400,
+        "301037.SZ": 500,
+        "301298.SZ": 400,
+        "301503.SZ": 300,
+        "600287.SH": 900,
+        "603908.SH": 200,
+        "688060.SH": 200,
+        "688067.SH": 200,
+        "688078.SH": 200,
+        "688092.SH": 200,
+        "688217.SH": 225,
+        "688420.SH": 237,
+        "688466.SH": 231,
+        "688528.SH": 463,
+        "688565.SH": 485,
+        "688616.SH": 586,
+        "688638.SH": 200,
+        "688695.SH": 226,
+        "688701.SH": 531
+      }
+    },
+    {
+      "date": "2026-09-03",
+      "diff": {
+        "300220.SZ": {
+          "expected": 3700,
+          "actual": 0
+        },
+        "300899.SZ": {
+          "expected": -1200,
+          "actual": 0
+        },
+        "300949.SZ": {
+          "expected": 200,
+          "actual": -1600
+        },
+        "301037.SZ": {
+          "expected": 0,
+          "actual": 500
+        },
+        "301049.SZ": {
+          "expected": -1800,
+          "actual": 200
+        },
+        "301063.SZ": {
+          "expected": 2300,
+          "actual": 0
+        },
+        "301192.SZ": {
+          "expected": 2100,
+          "actual": 0
+        },
+        "301503.SZ": {
+          "expected": -1600,
+          "actual": 200
+        },
+        "600287.SH": {
+          "expected": 900,
+          "actual": 0
+        },
+        "603810.SH": {
+          "expected": 3400,
+          "actual": 0
+        },
+        "688078.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688193.SH": {
+          "expected": 0,
+          "actual": 902
+        },
+        "688565.SH": {
+          "expected": -3255,
+          "actual": 545
+        }
+      },
+      "archived_net": {
+        "688067.SH": 200,
+        "688528.SH": 510,
+        "688466.SH": 214,
+        "688217.SH": 209,
+        "603908.SH": 200,
+        "301298.SZ": 400,
+        "688638.SH": 200,
+        "688695.SH": 239,
+        "301006.SZ": 300,
+        "688092.SH": 200,
+        "688616.SH": 573,
+        "688420.SH": 251,
+        "600287.SH": 900,
+        "688060.SH": 200,
+        "603810.SH": 3400,
+        "301063.SZ": 2300,
+        "301192.SZ": 2100,
+        "300220.SZ": 3700,
+        "300949.SZ": 200,
+        "300899.SZ": -1200,
+        "301049.SZ": -1800,
+        "301503.SZ": -1600,
+        "688565.SH": -3255
+      },
+      "current_recomputed_net": {
+        "300949.SZ": -1600,
+        "301006.SZ": 300,
+        "301037.SZ": 500,
+        "301049.SZ": 200,
+        "301298.SZ": 400,
+        "301503.SZ": 200,
+        "603908.SH": 200,
+        "688060.SH": 200,
+        "688067.SH": 200,
+        "688078.SH": 200,
+        "688092.SH": 200,
+        "688217.SH": 209,
+        "688420.SH": 251,
+        "688466.SH": 214,
+        "688528.SH": 510,
+        "688565.SH": 545,
+        "688616.SH": 573,
+        "688638.SH": 200,
+        "688695.SH": 239,
+        "688193.SH": 902
+      }
+    },
+    {
+      "date": "2026-09-04",
+      "diff": {},
+      "archived_net": {
+        "688528.SH": 200,
+        "603908.SH": 100,
+        "688078.SH": 200,
+        "301298.SZ": 100,
+        "301006.SZ": 100,
+        "301503.SZ": 1900,
+        "688193.SH": 898,
+        "688565.SH": 3775,
+        "301037.SZ": 500,
+        "301049.SZ": 2000,
+        "300220.SZ": -3700,
+        "301063.SZ": -2300,
+        "301192.SZ": -2100,
+        "603810.SH": -3400
+      },
+      "current_recomputed_net": {
+        "300220.SZ": -3700,
+        "301006.SZ": 100,
+        "301037.SZ": 500,
+        "301063.SZ": -2300,
+        "301192.SZ": -2100,
+        "301298.SZ": 100,
+        "603810.SH": -3400,
+        "603908.SH": 100,
+        "688078.SH": 200,
+        "688528.SH": 200,
+        "301503.SZ": 1900,
+        "688193.SH": 898,
+        "688565.SH": 3775,
+        "301049.SZ": 2000
+      }
+    },
+    {
+      "date": "2026-09-07",
+      "diff": {},
+      "archived_net": {
+        "688466.SH": 200,
+        "688217.SH": 200,
+        "301503.SZ": 100,
+        "301037.SZ": 100,
+        "301049.SZ": 100,
+        "300949.SZ": -1800
+      },
+      "current_recomputed_net": {
+        "300949.SZ": -1800,
+        "301037.SZ": 100,
+        "688217.SH": 200,
+        "688466.SH": 200,
+        "301503.SZ": 100,
+        "301049.SZ": 100
+      }
+    },
+    {
+      "date": "2026-09-08",
+      "diff": {},
+      "archived_net": {
+        "600137.SH": 2100,
+        "688701.SH": -382,
+        "688528.SH": -469,
+        "688466.SH": -461,
+        "688217.SH": -336,
+        "688092.SH": -261,
+        "603908.SH": -200,
+        "301503.SZ": -200,
+        "301298.SZ": -300,
+        "301006.SZ": -200,
+        "688565.SH": -352,
+        "688616.SH": -336,
+        "688078.SH": -336,
+        "301037.SZ": -300,
+        "301049.SZ": -100,
+        "688060.SH": -1342
+      },
+      "current_recomputed_net": {
+        "301006.SZ": -200,
+        "301037.SZ": -300,
+        "301049.SZ": -100,
+        "301298.SZ": -300,
+        "301503.SZ": -200,
+        "603908.SH": -200,
+        "688060.SH": -1342,
+        "688078.SH": -336,
+        "688092.SH": -261,
+        "688217.SH": -336,
+        "688466.SH": -461,
+        "688528.SH": -469,
+        "688565.SH": -352,
+        "688616.SH": -336,
+        "688701.SH": -382,
+        "600137.SH": 2100
+      }
+    },
+    {
+      "date": "2026-09-09",
+      "diff": {},
+      "archived_net": {
+        "688528.SH": 200,
+        "688217.SH": 200,
+        "688565.SH": 200,
+        "688078.SH": 200,
+        "300899.SZ": 1200,
+        "603908.SH": -100,
+        "301006.SZ": -100,
+        "600287.SH": -8600
+      },
+      "current_recomputed_net": {
+        "301006.SZ": -100,
+        "600287.SH": -8600,
+        "603908.SH": -100,
+        "688078.SH": 200,
+        "688217.SH": 200,
+        "688528.SH": 200,
+        "688565.SH": 200,
+        "300899.SZ": 1200
+      }
+    },
+    {
+      "date": "2026-09-15",
+      "diff": {},
+      "archived_net": {
+        "688701.SH": -405,
+        "688528.SH": -410,
+        "688466.SH": -248,
+        "688067.SH": -307,
+        "688695.SH": -349,
+        "688193.SH": -226,
+        "603908.SH": -100,
+        "688565.SH": -329,
+        "688616.SH": -202,
+        "301298.SZ": -100,
+        "301006.SZ": -200,
+        "603208.SH": -200,
+        "301037.SZ": -100,
+        "301288.SZ": -100,
+        "301049.SZ": -100
+      },
+      "current_recomputed_net": {
+        "301006.SZ": -200,
+        "301037.SZ": -100,
+        "301049.SZ": -100,
+        "301288.SZ": -100,
+        "301298.SZ": -100,
+        "603208.SH": -200,
+        "603908.SH": -100,
+        "688067.SH": -307,
+        "688193.SH": -226,
+        "688466.SH": -248,
+        "688528.SH": -410,
+        "688565.SH": -329,
+        "688616.SH": -202,
+        "688695.SH": -349,
+        "688701.SH": -405
+      }
+    },
+    {
+      "date": "2026-09-18",
+      "diff": {},
+      "archived_net": {
+        "688528.SH": 200,
+        "688701.SH": 200,
+        "688092.SH": 200,
+        "301288.SZ": 100,
+        "603908.SH": 100,
+        "603208.SH": 100,
+        "301298.SZ": 100,
+        "688288.SH": 2340
+      },
+      "current_recomputed_net": {
+        "301288.SZ": 100,
+        "301298.SZ": 100,
+        "603208.SH": 100,
+        "603908.SH": 100,
+        "688092.SH": 200,
+        "688528.SH": 200,
+        "688701.SH": 200,
+        "688288.SH": 2340
+      }
+    },
+    {
+      "date": "2026-09-21",
+      "diff": {},
+      "archived_net": {
+        "301288.SZ": 100,
+        "600137.SH": 100,
+        "300899.SZ": 200,
+        "688528.SH": -224,
+        "688092.SH": -204
+      },
+      "current_recomputed_net": {
+        "300899.SZ": 200,
+        "301288.SZ": 100,
+        "600137.SH": 100,
+        "688092.SH": -204,
+        "688528.SH": -224
+      }
+    },
+    {
+      "date": "2026-09-22",
+      "diff": {},
+      "archived_net": {
+        "300899.SZ": 100,
+        "603810.SH": 200,
+        "600137.SH": -100,
+        "603908.SH": -100,
+        "603208.SH": -100,
+        "301298.SZ": -100
+      },
+      "current_recomputed_net": {
+        "300899.SZ": 100,
+        "301298.SZ": -100,
+        "600137.SH": -100,
+        "603208.SH": -100,
+        "603908.SH": -100,
+        "603810.SH": 200
+      }
+    },
+    {
+      "date": "2026-09-23",
+      "diff": {},
+      "archived_net": {
+        "603810.SH": 3300,
+        "301288.SZ": -100,
+        "301006.SZ": -100,
+        "688288.SH": -2340
+      },
+      "current_recomputed_net": {
+        "301006.SZ": -100,
+        "301288.SZ": -100,
+        "688288.SH": -2340,
+        "603810.SH": 3300
+      }
+    },
+    {
+      "date": "2026-09-24",
+      "diff": {},
+      "archived_net": {
+        "688466.SH": 200,
+        "688528.SH": 200,
+        "688701.SH": 200,
+        "600137.SH": 100,
+        "603908.SH": 100,
+        "688616.SH": 200,
+        "301049.SZ": 100,
+        "603208.SH": 100,
+        "301298.SZ": 100,
+        "301006.SZ": 100
+      },
+      "current_recomputed_net": {
+        "301006.SZ": 100,
+        "301049.SZ": 100,
+        "301298.SZ": 100,
+        "600137.SH": 100,
+        "603208.SH": 100,
+        "603908.SH": 100,
+        "688466.SH": 200,
+        "688528.SH": 200,
+        "688616.SH": 200,
+        "688701.SH": 200
+      }
+    },
+    {
+      "date": "2026-09-28",
+      "diff": {},
+      "archived_net": {
+        "301049.SZ": 100
+      },
+      "current_recomputed_net": {
+        "301049.SZ": 100
+      }
+    },
+    {
+      "date": "2026-09-29",
+      "diff": {},
+      "archived_net": {
+        "603810.SH": 100,
+        "301037.SZ": -3400
+      },
+      "current_recomputed_net": {
+        "301037.SZ": -3400,
+        "603810.SH": 100
+      }
+    },
+    {
+      "date": "2026-09-30",
+      "diff": {},
+      "archived_net": {
+        "688092.SH": 200
+      },
+      "current_recomputed_net": {
+        "688092.SH": 200
+      }
+    },
+    {
+      "date": "2026-10-08",
+      "diff": {},
+      "archived_net": {
+        "688565.SH": 200,
+        "688021.SH": 1744
+      },
+      "current_recomputed_net": {
+        "688565.SH": 200,
+        "688021.SH": 1744
+      }
+    },
+    {
+      "date": "2026-10-09",
+      "diff": {},
+      "archived_net": {
+        "688701.SH": 200,
+        "688021.SH": 483,
+        "603810.SH": -3600
+      },
+      "current_recomputed_net": {
+        "603810.SH": -3600,
+        "688701.SH": 200,
+        "688021.SH": 483
+      }
+    },
+    {
+      "date": "2026-10-12",
+      "diff": {},
+      "archived_net": {
+        "688021.SH": 200
+      },
+      "current_recomputed_net": {
+        "688021.SH": 200
+      }
+    },
+    {
+      "date": "2026-10-13",
+      "diff": {
+        "301131.SZ": {
+          "expected": 1100,
+          "actual": 900
+        },
+        "688193.SH": {
+          "expected": -204,
+          "actual": 0
+        }
+      },
+      "archived_net": {
+        "301131.SZ": 1100,
+        "688193.SH": -204
+      },
+      "current_recomputed_net": {
+        "301131.SZ": 900
+      }
+    },
+    {
+      "date": "2026-10-14",
+      "diff": {},
+      "archived_net": {
+        "301288.SZ": 100,
+        "301131.SZ": 200,
+        "688193.SH": -868
+      },
+      "current_recomputed_net": {
+        "301288.SZ": 100,
+        "688193.SH": -868,
+        "301131.SZ": 200
+      }
+    },
+    {
+      "date": "2026-10-15",
+      "diff": {},
+      "archived_net": {
+        "300899.SZ": 100,
+        "688659.SH": 4581,
+        "688528.SH": -211
+      },
+      "current_recomputed_net": {
+        "300899.SZ": 100,
+        "688528.SH": -211,
+        "688659.SH": 4581
+      }
+    },
+    {
+      "date": "2026-10-16",
+      "diff": {
+        "301131.SZ": {
+          "expected": 100,
+          "actual": 0
+        },
+        "688355.SH": {
+          "expected": 0,
+          "actual": 2579
+        }
+      },
+      "archived_net": {
+        "688217.SH": 200,
+        "688659.SH": 258,
+        "301131.SZ": 100,
+        "300899.SZ": -100,
+        "603908.SH": -2300
+      },
+      "current_recomputed_net": {
+        "300899.SZ": -100,
+        "603908.SH": -2300,
+        "688217.SH": 200,
+        "688659.SH": 258,
+        "688355.SH": 2579
+      }
+    },
+    {
+      "date": "2026-10-19",
+      "diff": {
+        "688355.SH": {
+          "expected": 2327,
+          "actual": 2315
+        }
+      },
+      "archived_net": {
+        "688420.SH": 200,
+        "688659.SH": 200,
+        "688355.SH": 2327,
+        "688217.SH": -202
+      },
+      "current_recomputed_net": {
+        "688217.SH": -202,
+        "688420.SH": 200,
+        "688659.SH": 200,
+        "688355.SH": 2315
+      }
+    },
+    {
+      "date": "2026-10-20",
+      "diff": {},
+      "archived_net": {
+        "688528.SH": 200,
+        "688217.SH": 200
+      },
+      "current_recomputed_net": {
+        "688217.SH": 200,
+        "688528.SH": 200
+      }
+    },
+    {
+      "date": "2026-10-21",
+      "diff": {},
+      "archived_net": {
+        "688701.SH": 200,
+        "688193.SH": 764,
+        "688420.SH": -226,
+        "688355.SH": -2327
+      },
+      "current_recomputed_net": {
+        "688355.SH": -2327,
+        "688420.SH": -226,
+        "688701.SH": 200,
+        "688193.SH": 764
+      }
+    },
+    {
+      "date": "2026-10-22",
+      "diff": {},
+      "archived_net": {
+        "301049.SZ": 100,
+        "600137.SH": -100
+      },
+      "current_recomputed_net": {
+        "301049.SZ": 100,
+        "600137.SH": -100
+      }
+    },
+    {
+      "date": "2026-10-23",
+      "diff": {
+        "301006.SZ": {
+          "expected": 100,
+          "actual": 0
+        },
+        "603208.SH": {
+          "expected": 200,
+          "actual": 100
+        },
+        "688193.SH": {
+          "expected": 0,
+          "actual": -764
+        },
+        "688565.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688616.SH": {
+          "expected": 0,
+          "actual": -4166
+        },
+        "688695.SH": {
+          "expected": 0,
+          "actual": 200
+        },
+        "688737.SH": {
+          "expected": 1202,
+          "actual": 2840
+        }
+      },
+      "archived_net": {
+        "688701.SH": 200,
+        "688466.SH": 200,
+        "688638.SH": 200,
+        "688067.SH": 200,
+        "688528.SH": 200,
+        "301288.SZ": 100,
+        "688021.SH": 200,
+        "688659.SH": 200,
+        "301298.SZ": 100,
+        "300899.SZ": 100,
+        "301049.SZ": 100,
+        "603208.SH": 200,
+        "600137.SH": 100,
+        "688420.SH": 200,
+        "688737.SH": 1202,
+        "301006.SZ": 100
+      },
+      "current_recomputed_net": {
+        "300899.SZ": 100,
+        "301049.SZ": 100,
+        "301288.SZ": 100,
+        "301298.SZ": 100,
+        "600137.SH": 100,
+        "603208.SH": 100,
+        "688021.SH": 200,
+        "688067.SH": 200,
+        "688193.SH": -764,
+        "688420.SH": 200,
+        "688466.SH": 200,
+        "688528.SH": 200,
+        "688565.SH": 200,
+        "688616.SH": -4166,
+        "688638.SH": 200,
+        "688659.SH": 200,
+        "688695.SH": 200,
+        "688701.SH": 200,
+        "688737.SH": 2840
+      }
+    },
+    {
+      "date": "2026-10-26",
+      "diff": {},
+      "archived_net": {
+        "301288.SZ": 100,
+        "688565.SH": 225,
+        "603208.SH": 100,
+        "300899.SZ": 100,
+        "688681.SH": 1723,
+        "688737.SH": 279,
+        "688193.SH": -764
+      },
+      "current_recomputed_net": {
+        "300899.SZ": 100,
+        "301288.SZ": 100,
+        "603208.SH": 100,
+        "688193.SH": -764,
+        "688565.SH": 225,
+        "688737.SH": 279,
+        "688681.SH": 1723
+      }
+    },
+    {
+      "date": "2026-10-27",
+      "diff": {
+        "600137.SH": {
+          "expected": 0,
+          "actual": 100
+        }
+      },
+      "archived_net": {
+        "688565.SH": 200,
+        "688681.SH": 1377,
+        "688355.SH": 1238,
+        "301006.SZ": -3300
+      },
+      "current_recomputed_net": {
+        "301006.SZ": -3300,
+        "600137.SH": 100,
+        "688565.SH": 200,
+        "688681.SH": 1377,
+        "688355.SH": 1238
+      }
+    },
+    {
+      "date": "2026-10-28",
+      "diff": {},
+      "archived_net": {
+        "688681.SH": 200,
+        "688737.SH": 1468,
+        "301519.SZ": 1700,
+        "688616.SH": -4166
+      },
+      "current_recomputed_net": {
+        "688616.SH": -4166,
+        "688681.SH": 200,
+        "688737.SH": 1468,
+        "301519.SZ": 1700
+      }
+    },
+    {
+      "date": "2026-10-29",
+      "diff": {},
+      "archived_net": {
+        "688701.SH": 200,
+        "301049.SZ": 100,
+        "600137.SH": 100,
+        "688466.SH": -560,
+        "301131.SZ": -1400
+      },
+      "current_recomputed_net": {
+        "301049.SZ": 100,
+        "301131.SZ": -1400,
+        "600137.SH": 100,
+        "688466.SH": -560,
+        "688701.SH": 200
+      }
+    },
+    {
+      "date": "2026-10-30",
+      "diff": {
+        "688671.SH": {
+          "expected": 2090,
+          "actual": 0
+        },
+        "688701.SH": {
+          "expected": -234,
+          "actual": -245
+        }
+      },
+      "archived_net": {
+        "301288.SZ": 100,
+        "301298.SZ": 100,
+        "688466.SH": 200,
+        "688671.SH": 2090,
+        "688701.SH": -234,
+        "688355.SH": -1169
+      },
+      "current_recomputed_net": {
+        "301288.SZ": 100,
+        "301298.SZ": 100,
+        "688355.SH": -1169,
+        "688466.SH": 200,
+        "688701.SH": -245
+      }
+    },
+    {
+      "date": "2026-11-02",
+      "diff": {},
+      "archived_net": {
+        "688701.SH": 200,
+        "688528.SH": 200,
+        "688021.SH": -210,
+        "301049.SZ": -100,
+        "603208.SH": -4200
+      },
+      "current_recomputed_net": {
+        "301049.SZ": -100,
+        "603208.SH": -4200,
+        "688021.SH": -210,
+        "688528.SH": 200,
+        "688701.SH": 200
+      }
+    },
+    {
+      "date": "2026-11-03",
+      "diff": {},
+      "archived_net": {
+        "688701.SH": -214,
+        "688067.SH": -217,
+        "301288.SZ": -100,
+        "688659.SH": 200,
+        "688021.SH": -214,
+        "688638.SH": -257,
+        "688737.SH": 200,
+        "688092.SH": -218,
+        "301049.SZ": -100,
+        "301037.SZ": 3700,
+        "688420.SH": -204,
+        "600137.SH": -2600,
+        "603208.SH": -3800,
+        "688466.SH": -3096
+      },
+      "current_recomputed_net": {
+        "301049.SZ": -100,
+        "301288.SZ": -100,
+        "600137.SH": -2600,
+        "603208.SH": -3800,
+        "688021.SH": -214,
+        "688067.SH": -217,
+        "688092.SH": -218,
+        "688420.SH": -204,
+        "688466.SH": -3096,
+        "688638.SH": -257,
+        "688659.SH": 200,
+        "688701.SH": -214,
+        "688737.SH": 200,
+        "301037.SZ": 3700
+      }
+    }
+  ],
+  "target_conversion": [
+    {
+      "date": "2026-08-03",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-04",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-05",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-06",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-07",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-10",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-11",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-17",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-18",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-19",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-20",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-21",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-24",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-25",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-26",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-27",
+      "diff": {}
+    },
+    {
+      "date": "2026-08-28",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-01",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-02",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-03",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-04",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-07",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-08",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-09",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-15",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-18",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-21",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-22",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-23",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-24",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-28",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-29",
+      "diff": {}
+    },
+    {
+      "date": "2026-09-30",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-08",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-09",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-12",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-13",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-14",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-15",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-16",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-19",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-20",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-21",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-22",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-23",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-26",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-27",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-28",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-29",
+      "diff": {}
+    },
+    {
+      "date": "2026-10-30",
+      "diff": {}
+    },
+    {
+      "date": "2026-11-02",
+      "diff": {}
+    },
+    {
+      "date": "2026-11-03",
+      "diff": {}
+    }
+  ],
+  "exact_ledger_days": 43,
+  "gap_ledger_days": 8,
+  "exact_seed_plan_days": 27,
+  "exact_target_conversion_days": 52,
+  "continuous": {
+    "total_return": -0.3244031315747882,
+    "final_asset": 996755.9686842521,
+    "init_cash": 1000000
+  },
+  "process_memory": {
+    "rss": 262438912,
+    "vms": 1075920896,
+    "num_page_faults": 5806889,
+    "peak_wset": 270782464,
+    "wset": 262438912,
+    "peak_paged_pool": 400288,
+    "paged_pool": 400192,
+    "peak_nonpaged_pool": 51464,
+    "nonpaged_pool": 50856,
+    "pagefile": 1075920896,
+    "peak_pagefile": 1078964224,
+    "private": 1075920896
+  },
+  "limitations": [
+    "Current end-of-day historical data, not archived pre-open quote snapshots.",
+    "Seed replay assumes T-1 holdings/cash persist pre-open and all holdings are sellable; broker pre-open receipts needed for exact execution equivalence.",
+    "Missing fills and missing account snapshots are not zero.",
+    "Current config replay is not historical strategy version reconstruction; Git HEAD is 2026-07-06.",
+    "No brokerage SDK, production writes, notification, network or model training."
+  ]
+}

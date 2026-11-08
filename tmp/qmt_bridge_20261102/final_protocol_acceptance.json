@@ -1,0 +1,25 @@
+{
+  "checked_at": "2026-11-02T00:31:26.923584",
+  "verified": true,
+  "position_count": 24,
+  "same_positions_as_pre_cutover": true,
+  "orders": 0,
+  "trades": 0,
+  "new_protocol_proof_query_ok": true,
+  "heartbeat": {
+    "account": "824300045987",
+    "connected": true,
+    "executable": "D:\\\u7533\u4e07\u5b8f\u6e90\u7b56\u7565\u91cf\u5316\u4ea4\u6613\u7ec8\u7aef\\bin.x64\\pythonw.exe",
+    "instance": "48d1299d1d7d41adaa47a9a1e962dd1a",
+    "live_enabled": false,
+    "parent_image": "D:\\\u7533\u4e07\u5b8f\u6e90\u7b56\u7565\u91cf\u5316\u4ea4\u6613\u7ec8\u7aef\\bin.x64\\miniquote.exe",
+    "parent_pid": 64556,
+    "pid": 76248,
+    "python_version": "3.6.8 (default, Dec 19 2022, 22:05:09) [MSC v.1900 64 bit (AMD64)]",
+    "session_started": 1793550682.9751093,
+    "source_sha256": "ec93c54444aad201438c7ba52a0afac6936bcaabc489fa66e2e674e4e847921d",
+    "started": 1793550682.7890024,
+    "updated": 1793550686.0363204
+  },
+  "wire_sha256": "568c8fd5a46ff35c4d5c37784b44edc9469b1c5268583d0b8628289683e6a021"
+}

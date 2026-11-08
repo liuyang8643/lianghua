@@ -1,0 +1,27 @@
+{
+  "checked_at": "2026-11-02T01:09:02.425744",
+  "old_main_pid": 4844,
+  "new_main_identity": {
+    "backend": "bridge",
+    "cmdline": [
+      "C:\\Users\\doctorl\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none\\python.exe",
+      "-X",
+      "utf8",
+      "-m",
+      "trading.main",
+      "--individual-config",
+      "D:\\coding\\WBR-live\\configs\\config.json",
+      "--trading-backend",
+      "bridge"
+    ],
+    "config": "D:\\coding\\WBR-live\\configs\\config.json",
+    "created": 1793552923.332245,
+    "cwd": "D:\\coding\\WBR-live",
+    "pid": 56544
+  },
+  "source_loaded_after_latest_writes": true,
+  "broker_pid_preserved": 76248,
+  "owner_verified": true,
+  "position_count": 24,
+  "no_order_or_cancel_calls": true
+}

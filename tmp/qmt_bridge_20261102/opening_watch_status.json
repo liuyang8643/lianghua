@@ -1,0 +1,1 @@
+{"actual_order_or_cancel_calls": 0, "checked_at": "2026-11-02T10:05:19.553606", "error": "RuntimeError: QMT bridge heartbeat is stale/disconnected/account mismatch", "observer_pid": 29860, "read_only": true, "stage": "DEADLINE_WITHOUT_VERIFIED_FILL", "success": false, "trade_date": "2026-11-02"}

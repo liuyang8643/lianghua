@@ -1,0 +1,100 @@
+{
+  "checked_at": "2026-11-01T23:52:40.469905",
+  "target_trade_date": "2026-11-02",
+  "verdict": "NOT_READY_FOR_CLIENT_PYTHON_LIVE_TRADING",
+  "processes": [
+    {
+      "pid": 12536,
+      "parent_pid": 66056,
+      "name": "python.exe",
+      "executable": "D:\\coding\\WBR-live\\.venv\\Scripts\\python.exe",
+      "cwd": "D:\\coding\\WBR-live",
+      "command": [
+        "D:\\coding\\WBR-live\\.venv\\Scripts\\python.exe",
+        "-u",
+        "-m",
+        "trading.watchdog",
+        "--individual-config",
+        "D:\\coding\\WBR-live\\configs\\config.json"
+      ],
+      "started_at": "2026-10-09T09:17:01.966304"
+    },
+    {
+      "pid": 23116,
+      "parent_pid": 50328,
+      "name": "python.exe",
+      "executable": "C:\\Users\\doctorl\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none\\python.exe",
+      "cwd": "D:\\coding\\WBR-live",
+      "command": [
+        "C:\\Users\\doctorl\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "trading.main",
+        "--individual-config",
+        "D:\\coding\\WBR-live\\configs\\config.json"
+      ],
+      "started_at": "2026-10-31T23:17:01.947580"
+    },
+    {
+      "pid": 50328,
+      "parent_pid": 57692,
+      "name": "python.exe",
+      "executable": "D:\\coding\\WBR-live\\.venv\\Scripts\\python.exe",
+      "cwd": "D:\\coding\\WBR-live",
+      "command": [
+        "D:\\coding\\WBR-live\\.venv\\Scripts\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "trading.main",
+        "--individual-config",
+        "D:\\coding\\WBR-live\\configs\\config.json"
+      ],
+      "started_at": "2026-10-31T23:17:01.935722"
+    },
+    {
+      "pid": 57692,
+      "parent_pid": 12536,
+      "name": "python.exe",
+      "executable": "C:\\Users\\doctorl\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none\\python.exe",
+      "cwd": "D:\\coding\\WBR-live",
+      "command": [
+        "C:\\Users\\doctorl\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none\\python.exe",
+        "-u",
+        "-m",
+        "trading.watchdog",
+        "--individual-config",
+        "D:\\coding\\WBR-live\\configs\\config.json"
+      ],
+      "started_at": "2026-10-09T09:17:01.996057"
+    }
+  ],
+  "client_probe_parent": {
+    "pid": 64556,
+    "name": "miniquote.exe",
+    "exe": "D:\\申万宏源策略量化交易终端\\bin.x64\\miniquote.exe"
+  },
+  "client_probe_challenge_matches": true,
+  "installed_strategies": [
+    "pythonbalance.py",
+    "WBR_FILE_IO_PAPER_1031.py",
+    "WBR_READONLY_CHECK_1101.py"
+  ],
+  "qmt_restart_launcher_files": {
+    "XtMiniQmt.exe": true,
+    "_linkMini": false,
+    "linkMini": false
+  },
+  "live_entry_has_file_bridge": false,
+  "live_entry_still_uses_external_xtquant": true,
+  "sources": {
+    "run.ps1": "19af461f182f32b9df29d241c6693da498a94c381b7589b04daf73f9c3f6026a",
+    "trading\\main.py": "5a057aab428f49b35c0f02f4054e63444f797e8fe779e215c5caef9c115bac75",
+    "trading\\trader.py": "fd4ed0993c38a2119f171b009e6676d69c2e05f840b38900781887fd857d0923"
+  },
+  "probe_ui_state": "STOPPED_AFTER_READONLY_CHECK",
+  "probe_stopped_at": "2026-11-01T23:53:15.403",
+  "broker_order_submission_tested": false,
+  "broker_order_permission_verified": false
+}

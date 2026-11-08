@@ -1,0 +1,64 @@
+[
+  {
+    "pid": 12536,
+    "ppid": 66056,
+    "name": "python.exe",
+    "exe": "D:\\coding\\WBR-live\\.venv\\Scripts\\python.exe",
+    "cmdline": [
+      "D:\\coding\\WBR-live\\.venv\\Scripts\\python.exe",
+      "-u",
+      "-m",
+      "trading.watchdog",
+      "--individual-config",
+      "D:\\coding\\WBR-live\\configs\\config.json"
+    ],
+    "create_time": 1791508621.966304
+  },
+  {
+    "pid": 23116,
+    "ppid": 50328,
+    "name": "python.exe",
+    "exe": "C:\\Users\\doctorl\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none\\python.exe",
+    "cmdline": [
+      "C:\\Users\\doctorl\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none\\python.exe",
+      "-X",
+      "utf8",
+      "-m",
+      "trading.main",
+      "--individual-config",
+      "D:\\coding\\WBR-live\\configs\\config.json"
+    ],
+    "create_time": 1793459821.9475799
+  },
+  {
+    "pid": 50328,
+    "ppid": 57692,
+    "name": "python.exe",
+    "exe": "D:\\coding\\WBR-live\\.venv\\Scripts\\python.exe",
+    "cmdline": [
+      "D:\\coding\\WBR-live\\.venv\\Scripts\\python.exe",
+      "-X",
+      "utf8",
+      "-m",
+      "trading.main",
+      "--individual-config",
+      "D:\\coding\\WBR-live\\configs\\config.json"
+    ],
+    "create_time": 1793459821.935722
+  },
+  {
+    "pid": 57692,
+    "ppid": 12536,
+    "name": "python.exe",
+    "exe": "C:\\Users\\doctorl\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none\\python.exe",
+    "cmdline": [
+      "C:\\Users\\doctorl\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none\\python.exe",
+      "-u",
+      "-m",
+      "trading.watchdog",
+      "--individual-config",
+      "D:\\coding\\WBR-live\\configs\\config.json"
+    ],
+    "create_time": 1791508621.9960573
+  }
+]

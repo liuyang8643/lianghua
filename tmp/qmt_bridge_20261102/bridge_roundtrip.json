@@ -1,0 +1,18 @@
+{
+  "checked_at": "2026-11-02T00:15:00.037203",
+  "backend": "client_file_bridge",
+  "position_count": 24,
+  "total_asset": 1025414.05,
+  "cash": 24799.15,
+  "market_value": 1000614.8999999999,
+  "orders": 0,
+  "trades": 0,
+  "broker_python": "D:\\\u7533\u4e07\u5b8f\u6e90\u7b56\u7565\u91cf\u5316\u4ea4\u6613\u7ec8\u7aef\\bin.x64\\pythonw.exe",
+  "broker_pid": 53124,
+  "client_parent_pid": 64556,
+  "instance": "e71b65de4d7b4792a517df6c270dadd6",
+  "source_sha256": "d2dbd2755a34839dfa53e5fc1a4ff6436ec770adc58cb7ef3a8a6bcc528c0539",
+  "live_enabled": false,
+  "callbacks_enabled": false,
+  "orders_enabled": false
+}

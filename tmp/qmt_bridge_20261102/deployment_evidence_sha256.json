@@ -1,0 +1,15 @@
+{
+  "deployment_readiness.json": "8a22fae7477089bbcfe43179470b6d738197b1f0d58e8aa5eb2ae1765db68995",
+  "deployed_source_sha256.json": "b536ac9d8820e9fb46c10fdbb5d610dc6c19c3f179e9e2d90b2e0dcdb5eea12c",
+  "deployment_report.txt": "03666bf6095713bc970b6303197eae20e55a0b995752dcf908b463ae3c7f7e53",
+  "pre_cutover_account.json": "9adad5097b5ef945f0cd6b35662ae41d616951d153dc740a047dacf942fea68d",
+  "native_cutover_stop.json": "c94c06f684abf15653dd415a7e578f3a6a7171c95bd3c9a41d211c30f2fd49d1",
+  "final_protocol_acceptance.json": "a107be7569971dd72dfa30b8409d478e51e00aa283a2d679d2a35e9191bdcefe",
+  "watchdog_restart_acceptance.json": "8a867a89d876c6f76d0d2ee9d5e4348b864a56569048d496a78ed071a9eb8f20",
+  "live_reconnect_recovery.json": "3008f658320c62dcc5a211a790eac1133b498aff2cc1661c95fd532908416356",
+  "live_client_bridge.png": "c4aea7d067db3d8ba8c770ba8440591c1f25340a605eb2576436bb17144ae649",
+  "live_client_strategy.png": "7d4ee9095f41ff5ebc6078d76b603298b2683164d8fbcbb0613d8c508d5a85e5",
+  "final_controller_reload.json": "68f2850bad2f67997e4a6fd0dd4c32857000d2e0342fb1b45830f92baaee162b",
+  "test_summary.json": "f0f1db013ef8c9b609251cfce6b5221f5df59d2896afe0e6bdda834546d30ba3",
+  "final_tests.out.log": "8dbc77a24f9bcc7376eac7863d0c616e61bbf9a2cb881511b2f86e69c09e5ef5"
+}

@@ -1,0 +1,12 @@
+{
+  "checked_at": "2026-11-03T23:00:57.663091",
+  "required_update_passed": true,
+  "readiness_for": "2026-11-04",
+  "runtime": "D:\\coding\\WBR-live\\data\\runtime\\runtime_1990-12-19_2026-11-03.npz",
+  "optional_history": {
+    "trade_date": "2026-11-03",
+    "required": false,
+    "state": "skipped",
+    "error": "Optional name history time budget exhausted"
+  }
+}

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>盘后 Diff 2026-11-03</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+          background: #0f1419; color: #e1e8ed; max-width: 1400px; margin: 0 auto; padding: 24px; }
+  h1, h2 { color: #ffffff; border-bottom: 1px solid #2c3e50; padding-bottom: 8px; }
+  .summary { background: #1a2332; padding: 16px; border-radius: 8px; margin-bottom: 24px; }
+  .summary .metric { display: inline-block; margin-right: 32px; }
+  .summary .label { color: #8899a6; font-size: 12px; }
+  .summary .value { font-size: 20px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 24px; }
+  th { background: #1a2332; padding: 10px; text-align: right; font-size: 13px; color: #8899a6; }
+  th:first-child, th:nth-child(2) { text-align: left; }
+  td { padding: 8px 10px; border-bottom: 1px solid #2c3e50; text-align: right; font-size: 13px; }
+  td:first-child, td:nth-child(2) { text-align: left; font-family: monospace; }
+  .positive { color: #f23645; }
+  .negative { color: #089981; }
+  .section { margin-bottom: 32px; }
+  .codes { background: #1a2332; padding: 12px; border-radius: 4px; margin-bottom: 8px;
+            font-family: monospace; font-size: 13px; line-height: 1.6; }
+  .match-rate { font-size: 24px; font-weight: 700; }
+  .match-good { color: #089981; }
+  .match-bad { color: #f23645; }
+</style></head><body>
+<h1>盘后 Diff 报告 — 2026-11-03</h1>
+<div class='summary'>比较基准：策略回测<br>
+执行对账不可验证：缺少昨日/今日持仓、成交或原始执行计划<br>
+收益差 = -滑点成本 - 手续费 + 成交数量差损益 + 未解释残差。账户资金变化单独列示。</div>
+
+<div class='summary'>
+  <div class='metric'><div class='label'>实盘总资产</div><div class='value'>¥101.7w</div></div>
+  <div class='metric'><div class='label'>回测总资产</div><div class='value'>¥93.8w</div></div>
+  <div class='metric'><div class='label'>实盘日 P&L</div><div class='value'>- (-)</div></div>
+  <div class='metric'><div class='label'>回测日 P&L</div><div class='value'>-1.6w (-1.54%)</div></div>
+</div>
+<div class='summary' style='border-left: 4px solid #8899a6;'><div class='label'>🔍 账务对账校验</div><div>缺少数据，无法校验 ∑(个股 P&L) vs 账户日变化</div></div>
+
+
+<div class='section'>
+  <h2>策略诊断：实盘 vs 独立策略回测（含资金基线与计划差异，不代表执行失败）</h2>
+  <div>买入: 实盘 ¥4.2w · 回测 ¥8.6w · 买量缺口合计 +2353 股</div>
+  <div>卖出: 实盘 ¥15.1w · 回测 ¥8.7w</div>
+  <table><thead><tr><th>代码</th><th>名称</th>
+<th>买入实盘</th><th>买入回测</th>
+<th>买股实盘</th><th>买股回测</th><th>买量缺口</th>
+<th>卖出实盘</th><th>卖出回测</th></tr></thead><tbody>
+<tr><td>300899.SZ</td><td>上海凯鑫</td><td>¥0</td><td>¥4,718</td><td>0</td><td>200</td><td class='positive'>+200</td><td>¥0</td><td>¥0</td></tr>
+<tr><td>301037.SZ</td><td>保立佳</td><td>¥3.8w</td><td>¥2.6w</td><td>3700</td><td>2500</td><td class='negative'>-1200</td><td>¥0</td><td>¥0</td></tr>
+<tr><td>301049.SZ</td><td>超越科技</td><td>¥0</td><td>¥5,031</td><td>0</td><td>300</td><td class='positive'>+300</td><td>¥1,621</td><td>¥0</td></tr>
+<tr><td>301288.SZ</td><td>清研环境</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥1,359</td><td>¥0</td></tr>
+<tr><td>301298.SZ</td><td>东利机械</td><td>¥0</td><td>¥5,410</td><td>0</td><td>500</td><td class='positive'>+500</td><td>¥0</td><td>¥0</td></tr>
+<tr><td>301503.SZ</td><td>智迪科技</td><td>¥0</td><td>¥1,935</td><td>0</td><td>100</td><td class='positive'>+100</td><td>¥0</td><td>¥0</td></tr>
+<tr><td>600137.SH</td><td>浪莎股份</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥4.3w</td><td>¥4.3w</td></tr>
+<tr><td>603208.SH</td><td>江山欧派</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥3.6w</td><td>¥0</td></tr>
+<tr><td>688021.SH</td><td>奥福科技</td><td>¥0</td><td>¥3,260</td><td>0</td><td>200</td><td class='positive'>+200</td><td>¥3,488</td><td>¥0</td></tr>
+<tr><td>688067.SH</td><td>爱威科技</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥4,314</td><td>¥0</td></tr>
+<tr><td>688092.SH</td><td>爱科科技</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥4,438</td><td>¥0</td></tr>
+<tr><td>688217.SH</td><td>睿昂基因</td><td>¥0</td><td>¥4,088</td><td>0</td><td>200</td><td class='positive'>+200</td><td>¥0</td><td>¥0</td></tr>
+<tr><td>688420.SH</td><td>美腾科技</td><td>¥0</td><td>¥4,042</td><td>0</td><td>200</td><td class='positive'>+200</td><td>¥4,084</td><td>¥0</td></tr>
+<tr><td>688466.SH</td><td>金科环境</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥4.3w</td><td>¥4.4w</td></tr>
+<tr><td>688565.SH</td><td>力源科技</td><td>¥0</td><td>¥1,786</td><td>0</td><td>200</td><td class='positive'>+200</td><td>¥0</td><td>¥0</td></tr>
+<tr><td>688638.SH</td><td>誉辰智能</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥7,679</td><td>¥0</td></tr>
+<tr><td>688659.SH</td><td>元琛科技</td><td>¥1,470</td><td>¥1,713</td><td>200</td><td>233</td><td class='positive'>+33</td><td>¥0</td><td>¥0</td></tr>
+<tr><td>688671.SH</td><td>碧兴物联</td><td>¥0</td><td>¥7,239</td><td>0</td><td>381</td><td class='positive'>+381</td><td>¥0</td><td>¥0</td></tr>
+<tr><td>688681.SH</td><td>科汇股份</td><td>¥0</td><td>¥5,397</td><td>0</td><td>423</td><td class='positive'>+423</td><td>¥0</td><td>¥0</td></tr>
+<tr><td>688695.SH</td><td>中创股份</td><td>¥0</td><td>¥6,027</td><td>0</td><td>329</td><td class='positive'>+329</td><td>¥0</td><td>¥0</td></tr>
+<tr><td>688701.SH</td><td>卓锦股份</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥1,484</td><td>¥0</td></tr>
+<tr><td>688737.SH</td><td>中自科技</td><td>¥2,632</td><td>¥9,041</td><td>200</td><td>687</td><td class='positive'>+487</td><td>¥0</td><td>¥0</td></tr>
+</tbody></table>
+</div>
+
+<div class='section'>
+  <h2>滑点明细（成交价 vs 开盘价，仅 debug 用）</h2>
+  <div>平均滑点 +0.000% (+0.0 bp) · 总滑点成本 0</div>
+  <table><thead><tr><th>代码</th><th>方向</th><th>est_price</th>
+<th>traded_price</th><th>滑点 %</th><th>滑点成本</th></tr></thead><tbody>
+</tbody></table>
+</div>
+
+<div class='section'>
+  <h2>逐股盈亏对比</h2>
+  <div>实盘合计 - · 回测合计 -1.6w</div>
+  <table><thead><tr><th>代码</th><th>名称</th>
+<th>仓位实盘</th><th>仓位回测</th>
+<th>市值实盘</th><th>市值回测</th>
+<th>P&L 实盘</th><th>P&L 回测</th><th>P&L 差</th>
+<th>收益 实盘</th><th>收益 回测</th><th>收益差</th></tr></thead><tbody>
+<tr><td>158905.SZ</td><td></td><td>100000</td><td>0</td><td>¥10.0w</td><td>¥0</td><td>-</td><td>-</td><td class=''>-</td><td>-</td><td>-</td><td class=''>-</td></tr>
+<tr><td>300899.SZ</td><td>上海凯鑫</td><td>1700</td><td>1900</td><td>¥3.9w</td><td>¥4.4w</td><td>-</td><td>-1,117</td><td class=''>-</td><td>-</td><td>-2.77%</td><td class=''>-</td></tr>
+<tr><td>301037.SZ</td><td>保立佳</td><td>3700</td><td>2500</td><td>¥3.8w</td><td>¥2.6w</td><td>-</td><td>-229</td><td class=''>-</td><td>-</td><td>-0.88%</td><td class=''>-</td></tr>
+<tr><td>301049.SZ</td><td>超越科技</td><td>2400</td><td>2800</td><td>¥3.9w</td><td>¥4.5w</td><td>-</td><td>-798</td><td class=''>-</td><td>-</td><td>-1.95%</td><td class=''>-</td></tr>
+<tr><td>301288.SZ</td><td>清研环境</td><td>2900</td><td>3400</td><td>¥4.0w</td><td>¥4.7w</td><td>-</td><td>-102</td><td class=''>-</td><td>-</td><td>-0.22%</td><td class=''>-</td></tr>
+<tr><td>301298.SZ</td><td>东利机械</td><td>3700</td><td>4300</td><td>¥3.9w</td><td>¥4.6w</td><td>-</td><td>-808</td><td class=''>-</td><td>-</td><td>-1.96%</td><td class=''>-</td></tr>
+<tr><td>301503.SZ</td><td>智迪科技</td><td>2000</td><td>2400</td><td>¥3.9w</td><td>¥4.7w</td><td>-</td><td>-376</td><td class=''>-</td><td>-</td><td>-0.83%</td><td class=''>-</td></tr>
+<tr><td>301519.SZ</td><td>舜禹股份</td><td>1700</td><td>1700</td><td>¥1.7w</td><td>¥1.7w</td><td>-</td><td>-221</td><td class=''>-</td><td>-</td><td>-1.27%</td><td class=''>-</td></tr>
+<tr><td>600137.SH</td><td>浪莎股份</td><td>0</td><td>0</td><td>¥0</td><td>¥0</td><td>-</td><td>-69</td><td class=''>-</td><td>-</td><td>-0.16%</td><td class=''>-</td></tr>
+<tr><td>603208.SH</td><td>江山欧派</td><td>0</td><td>0</td><td>¥0</td><td>¥0</td><td>-</td><td>-</td><td class=''>-</td><td>-</td><td>-</td><td class=''>-</td></tr>
+<tr><td>688021.SH</td><td>奥福科技</td><td>2395</td><td>3022</td><td>¥3.9w</td><td>¥4.9w</td><td>-</td><td>-634</td><td class=''>-</td><td>-</td><td>-1.38%</td><td class=''>-</td></tr>
+<tr><td>688067.SH</td><td>爱威科技</td><td>1918</td><td>2335</td><td>¥3.8w</td><td>¥4.6w</td><td>-</td><td>-1,051</td><td class=''>-</td><td>-</td><td>-2.23%</td><td class=''>-</td></tr>
+<tr><td>688092.SH</td><td>爱科科技</td><td>1933</td><td>2373</td><td>¥3.9w</td><td>¥4.8w</td><td>-</td><td>-475</td><td class=''>-</td><td>-</td><td>-0.98%</td><td class=''>-</td></tr>
+<tr><td>688217.SH</td><td>睿昂基因</td><td>1996</td><td>2449</td><td>¥4.0w</td><td>¥5.0w</td><td>-</td><td>-1,075</td><td class=''>-</td><td>-</td><td>-2.31%</td><td class=''>-</td></tr>
+<tr><td>688420.SH</td><td>美腾科技</td><td>1931</td><td>2335</td><td>¥3.9w</td><td>¥4.7w</td><td>-</td><td>-303</td><td class=''>-</td><td>-</td><td>-0.70%</td><td class=''>-</td></tr>
+<tr><td>688466.SH</td><td>金科环境</td><td>0</td><td>0</td><td>¥0</td><td>¥0</td><td>-</td><td>-132</td><td class=''>-</td><td>-</td><td>-0.30%</td><td class=''>-</td></tr>
+<tr><td>688528.SH</td><td>秦川物联</td><td>4797</td><td>5624</td><td>¥4.0w</td><td>¥4.6w</td><td>-</td><td>-1,350</td><td class=''>-</td><td>-</td><td>-2.82%</td><td class=''>-</td></tr>
+<tr><td>688565.SH</td><td>力源科技</td><td>4422</td><td>5400</td><td>¥3.9w</td><td>¥4.7w</td><td>-</td><td>-1,490</td><td class=''>-</td><td>-</td><td>-3.17%</td><td class=''>-</td></tr>
+<tr><td>688638.SH</td><td>誉辰智能</td><td>1306</td><td>1763</td><td>¥3.9w</td><td>¥5.3w</td><td>-</td><td>-18</td><td class=''>-</td><td>-</td><td>-0.03%</td><td class=''>-</td></tr>
+<tr><td>688659.SH</td><td>元琛科技</td><td>5439</td><td>6388</td><td>¥4.0w</td><td>¥4.7w</td><td>-</td><td>-497</td><td class=''>-</td><td>-</td><td>-1.09%</td><td class=''>-</td></tr>
+<tr><td>688671.SH</td><td>碧兴物联</td><td>2090</td><td>2471</td><td>¥3.9w</td><td>¥4.6w</td><td>-</td><td>-1,352</td><td class=''>-</td><td>-</td><td>-3.37%</td><td class=''>-</td></tr>
+<tr><td>688681.SH</td><td>科汇股份</td><td>3257</td><td>3680</td><td>¥4.1w</td><td>¥4.6w</td><td>-</td><td>-953</td><td class=''>-</td><td>-</td><td>-2.27%</td><td class=''>-</td></tr>
+<tr><td>688695.SH</td><td>中创股份</td><td>2234</td><td>2563</td><td>¥4.0w</td><td>¥4.6w</td><td>-</td><td>-1,207</td><td class=''>-</td><td>-</td><td>-2.94%</td><td class=''>-</td></tr>
+<tr><td>688701.SH</td><td>卓锦股份</td><td>5697</td><td>6867</td><td>¥3.8w</td><td>¥4.6w</td><td>-</td><td>-893</td><td class=''>-</td><td>-</td><td>-1.89%</td><td class=''>-</td></tr>
+<tr><td>688737.SH</td><td>中自科技</td><td>3081</td><td>3568</td><td>¥4.0w</td><td>¥4.7w</td><td>-</td><td>-664</td><td class=''>-</td><td>-</td><td>-1.73%</td><td class=''>-</td></tr>
+</tbody></table>
+</div>
+
+</body></html>

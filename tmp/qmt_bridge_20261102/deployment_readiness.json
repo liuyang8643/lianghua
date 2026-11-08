@@ -1,0 +1,60 @@
+{
+  "checked_at": "2026-11-02T01:12:38.568867",
+  "target_trade_date": "2026-11-02",
+  "stage": "DEPLOYED_PREMARKET_PASS_AWAITING_REAL_ORDERS",
+  "main_identity": {
+    "backend": "bridge",
+    "cmdline": [
+      "C:\\Users\\doctorl\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none\\python.exe",
+      "-X",
+      "utf8",
+      "-m",
+      "trading.main",
+      "--individual-config",
+      "D:\\coding\\WBR-live\\configs\\config.json",
+      "--trading-backend",
+      "bridge"
+    ],
+    "config": "D:\\coding\\WBR-live\\configs\\config.json",
+    "created": 1793552923.332245,
+    "cwd": "D:\\coding\\WBR-live",
+    "pid": 56544
+  },
+  "heartbeat": {
+    "account": "824300045987",
+    "connected": true,
+    "executable": "D:\\\u7533\u4e07\u5b8f\u6e90\u7b56\u7565\u91cf\u5316\u4ea4\u6613\u7ec8\u7aef\\bin.x64\\pythonw.exe",
+    "instance": "1864bf84a42a482d8099037eae579228",
+    "live_enabled": true,
+    "parent_image": "D:\\\u7533\u4e07\u5b8f\u6e90\u7b56\u7565\u91cf\u5316\u4ea4\u6613\u7ec8\u7aef\\bin.x64\\miniquote.exe",
+    "parent_pid": 64556,
+    "pid": 76248,
+    "python_version": "3.6.8 (default, Dec 19 2022, 22:05:09) [MSC v.1900 64 bit (AMD64)]",
+    "session_started": 1793551071.3471036,
+    "source_sha256": "ec93c54444aad201438c7ba52a0afac6936bcaabc489fa66e2e674e4e847921d",
+    "started": 1793550682.7890024,
+    "updated": 1793553157.8784647
+  },
+  "single_instance_locks_held": {
+    "trading_main.lock": true,
+    "trading_watchdog.lock": true
+  },
+  "owner_verified_by_broker_python": true,
+  "order_api_callable": true,
+  "cancel_api_callable": true,
+  "position_count": 24,
+  "positions_unchanged_after_cutover": true,
+  "total_asset": 1025414.05,
+  "cash": 24799.15,
+  "orders_so_far": 0,
+  "trades_so_far": 0,
+  "actual_order_permission_verified": false,
+  "actual_fill_verified": false,
+  "opening_observer_root_pid": 35672,
+  "test_checks_passed": 178,
+  "test_scope": "170 integration checks plus 50 final focused checks (8 additional cases)",
+  "independent_premarket_acceptance": "PASS; real orders/fills still pending",
+  "opening_observer_actual_pid": 29860,
+  "delayed_callback_day_preserved": true,
+  "observer_requires_full_original_target_coverage": true
+}

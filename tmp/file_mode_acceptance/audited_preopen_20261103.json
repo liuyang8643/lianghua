@@ -1,0 +1,88 @@
+{
+  "as_of": "2026-11-03T05:30:16.088447",
+  "preparation_verified": true,
+  "independent_review": "pass: preparation only",
+  "real_order_permission_verified": false,
+  "goal_complete": false,
+  "test_orders_added": 0,
+  "real_order_intents": 0,
+  "regression_tests_passed": 193,
+  "broker_python_simulation_cases_passed": 8,
+  "preparation": {
+    "checked_at": "2026-11-03T05:29:16.442239",
+    "preparation_ready": true,
+    "issues": [],
+    "real_order_permission_verified": false,
+    "account": "824300045987",
+    "executor": {
+      "account": "824300045987",
+      "cmdline": [
+        "",
+        "-u",
+        "D:/申万宏源策略量化交易终端/mpython\\WBR_EXEC_BRIDGE.py",
+        "D:/申万宏源策略量化交易终端/userdata_mini",
+        "1793652566584"
+      ],
+      "config": "D:\\coding\\WBR-live\\data\\live_file\\config.json",
+      "created": 1793652566.656284,
+      "parent_created": 1793633805.234472,
+      "parent_pid": 86120,
+      "pid": 32372,
+      "root": "D:\\coding\\WBR-live"
+    },
+    "executor_status": {
+      "live_enabled": true,
+      "parent_pid": 86120,
+      "pid": 32372,
+      "stage": "waiting_for_local_target",
+      "updated": 1793654956.408095
+    },
+    "planner_workers": [
+      {
+        "pid": 85952,
+        "created": 1793654370.41924
+      }
+    ],
+    "runtime": "D:\\coding\\WBR-live\\data\\runtime\\runtime_1990-12-19_2026-11-02.npz",
+    "expected_history_end": "2026-11-02",
+    "position_count": 24,
+    "account_captured_at": 1793654956.403086,
+    "order_intent_count": 0,
+    "source_hashes": {
+      "app_executor": "899b850ef21fc7b036f536258ed32b01c6a6b28b5e8d4fe0456b4ddeaa41ec95",
+      "execution_engine": "4683b35900863b6293b6c424fb3a809dc9a0d2952be9c860b038634500ad0a5d",
+      "execution_journal": "d876b119c5812c36ff90d0945814e3108dcaba6bbbf666eb89c538abc398362a",
+      "target_protocol": "2537fdb9fc8493dfdf53965c69803fad5e23cef34bef6c690f7276b93db0a6d7",
+      "bridge_wire": "812f9e9c4d673e06d014a6d6c2babc4681c36fcb0d2edaf8d5a0096937f7261d",
+      "qmt_bridge": "638bb603f6b525b3427f82b04a582b3f9406d653f7c3b728d6a4df780fdf6d3f"
+    }
+  },
+  "broker_python_simulation": "D:\\coding\\WBR-live\\tmp\\app_simulation_20261103_051941_592021\\report.json",
+  "independent_publisher_replay": "D:\\coding\\WBR-live\\tmp\\publisher_replay_20261103_052344\\report.json",
+  "historical_app_replay": "D:\\coding\\WBR-live\\data\\live_file\\replays\\2026-11-02\\run_20261103_041125_884341\\comparison.html",
+  "native_screenshot": "D:\\coding\\WBR-live\\tmp\\file_mode_acceptance\\preopen_strategy_final_20261103.png",
+  "native_live_start_screenshot": "D:\\coding\\WBR-live\\tmp\\file_mode_acceptance\\client_live_ready_20261103.png",
+  "written_market_rows_verification": "D:\\coding\\WBR-live\\tmp\\file_mode_acceptance\\closing_rows_verified.json",
+  "timing": {
+    "local_planner": "09:25:10 starts target generation",
+    "client": "waits for continuous trading at 09:30",
+    "reprice": "09:31 then original 30-second rules"
+  },
+  "automation": {
+    "id": "wbr-11-3",
+    "status": "ACTIVE",
+    "rrule": "FREQ=DAILY;BYHOUR=9,10,11,12,13,14,15;BYMINUTE=0,5,10,15,20,25,30,35,40,45,50,55;BYSECOND=0;COUNT=81",
+    "timezone": "Asia/Shanghai",
+    "first": "2026-11-03 09:00",
+    "includes": "2026-11-03 09:25",
+    "last": "2026-11-03 15:40",
+    "other_wbr_monitor_unchanged": true
+  },
+  "remaining_verification": [
+    "Actual same-day T-open and target publication",
+    "Broker accepted orders and real fills",
+    "All original absolute targets covered",
+    "Post-close Parquet audit"
+  ],
+  "architecture": "Local file-only planner; broker-app-only shared execution engine. No strategy computation inside broker app."
+}

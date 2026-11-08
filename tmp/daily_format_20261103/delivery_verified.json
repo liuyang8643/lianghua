@@ -1,0 +1,68 @@
+{
+  "main_receipt": {
+    "account": "824300045987",
+    "attempted_at": 1793676059.6504638,
+    "digest": "56ad976b91700d8ecf6bfed090b3372783071f2f9ed47de10fd65977967d0d2d",
+    "idempotency_key": "22d3bbf42e88567dadfb5c0507872f4e",
+    "message_id": "om_x100b61a17f07a8b0cfd4c19f6033bb7",
+    "phase": "close",
+    "sent_at": 1793714619.9726143,
+    "state": "sent",
+    "trade_date": "2026-11-03"
+  },
+  "attachments": {
+    "detail": {
+      "attempted_at": 1793714621.3336084,
+      "message_id": "om_x100b61aad526bcacce563bdf667717e",
+      "state": "sent",
+      "updated_at": 1793714622.2548995
+    },
+    "html": {
+      "attempted_at": 1793714619.9776716,
+      "message_id": "om_x100b61aad52e8d3ccf17ce19fd44cbb",
+      "state": "sent",
+      "updated_at": 1793714621.3239918
+    }
+  },
+  "api_audit": [
+    {
+      "method": "update_card",
+      "title": "实盘日报 @ 2026-11-03",
+      "template": "green",
+      "message_id": "om_x100b61a17f07a8b0cfd4c19f6033bb7",
+      "ok": true,
+      "response": {
+        "code": 0,
+        "msg": "success"
+      },
+      "ts": "2026-11-03T22:03:39.972"
+    },
+    {
+      "method": "send_file",
+      "file": {
+        "path": "D:\\coding\\WBR-live\\data\\live_trades\\reports\\diff_2026-11-03.html",
+        "name": "diff_2026-11-03.html",
+        "file_key": "file_v3_00173_17c4d916-f9fa-45f6-ad2d-8bd0c30841bg"
+      },
+      "ok": true,
+      "response": {
+        "code": 0,
+        "msg": "success"
+      },
+      "ts": "2026-11-03T22:03:41.323"
+    },
+    {
+      "method": "send_card",
+      "title": "📊 盈亏差异 & 滑点 @ 2026-11-03",
+      "template": "orange",
+      "message_id": "om_x100b61aad526bcacce563bdf667717e",
+      "ok": true,
+      "response": {
+        "code": 0,
+        "msg": "success"
+      },
+      "ts": "2026-11-03T22:03:42.254"
+    }
+  ],
+  "idempotent_second_poll_no_new_requests": true
+}

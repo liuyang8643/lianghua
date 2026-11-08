@@ -1,0 +1,203 @@
+{
+  "account_snapshot_verified": true,
+  "asset": {
+    "cash": 24799.15,
+    "market_value": 1000614.8999999999,
+    "total_asset": 1025414.05
+  },
+  "asset_position_market_value_difference": 0.0,
+  "challenge": "367f72b345034db7a93c277454a5838f",
+  "connect_result": 0,
+  "connection_verified": true,
+  "executable": "D:\\\u7533\u4e07\u5b8f\u6e90\u7b56\u7565\u91cf\u5316\u4ea4\u6613\u7ec8\u7aef\\bin.x64\\pythonw.exe",
+  "finished_at": "2026-11-02T00:04:14.727938",
+  "mode": "READ_ONLY",
+  "modules": {
+    "numpy": {
+      "error": "ModuleNotFoundError: No module named 'numpy'",
+      "ok": false
+    },
+    "pandas": {
+      "error": "ModuleNotFoundError: No module named 'pandas'",
+      "ok": false
+    },
+    "pyarrow": {
+      "error": "ModuleNotFoundError: No module named 'pyarrow'",
+      "ok": false
+    },
+    "xtquant": {
+      "file": "D:/coding/WBR-live/data/qmt_bridge_runtime/site-packages\\xtquant\\__init__.py",
+      "ok": true,
+      "version": "xtquant_250516"
+    },
+    "xtquant.xtdata": {
+      "file": "D:/coding/WBR-live/data/qmt_bridge_runtime/site-packages\\xtquant\\xtdata.py",
+      "ok": true,
+      "version": ""
+    },
+    "xtquant.xttrader": {
+      "file": "D:/coding/WBR-live/data/qmt_bridge_runtime/site-packages\\xtquant\\xttrader.py",
+      "ok": true,
+      "version": ""
+    },
+    "xtquant.xttype": {
+      "file": "D:/coding/WBR-live/data/qmt_bridge_runtime/site-packages\\xtquant\\xttype.py",
+      "ok": true,
+      "version": ""
+    }
+  },
+  "order_count": 0,
+  "order_or_cancel_calls_in_probe": false,
+  "parent_pid": 64556,
+  "pid": 48068,
+  "position_count": 24,
+  "positions": [
+    {
+      "code": "158905.SZ",
+      "market_value": 100000.0,
+      "sellable": 100000,
+      "shares": 100000
+    },
+    {
+      "code": "300899.SZ",
+      "market_value": 39814.0,
+      "sellable": 1700,
+      "shares": 1700
+    },
+    {
+      "code": "301049.SZ",
+      "market_value": 40600.00000000001,
+      "sellable": 2500,
+      "shares": 2500
+    },
+    {
+      "code": "301288.SZ",
+      "market_value": 40080.0,
+      "sellable": 3000,
+      "shares": 3000
+    },
+    {
+      "code": "301298.SZ",
+      "market_value": 39442.0,
+      "sellable": 3700,
+      "shares": 3700
+    },
+    {
+      "code": "301503.SZ",
+      "market_value": 39360.0,
+      "sellable": 2000,
+      "shares": 2000
+    },
+    {
+      "code": "301519.SZ",
+      "market_value": 16983.0,
+      "sellable": 1700,
+      "shares": 1700
+    },
+    {
+      "code": "600137.SH",
+      "market_value": 40820.0,
+      "sellable": 2600,
+      "shares": 2600
+    },
+    {
+      "code": "603208.SH",
+      "market_value": 41160.0,
+      "sellable": 4200,
+      "shares": 4200
+    },
+    {
+      "code": "688021.SH",
+      "market_value": 41117.84,
+      "sellable": 2609,
+      "shares": 2609
+    },
+    {
+      "code": "688067.SH",
+      "market_value": 42401.1,
+      "sellable": 2135,
+      "shares": 2135
+    },
+    {
+      "code": "688092.SH",
+      "market_value": 41406.75,
+      "sellable": 2151,
+      "shares": 2151
+    },
+    {
+      "code": "688217.SH",
+      "market_value": 40259.32000000001,
+      "sellable": 1996,
+      "shares": 1996
+    },
+    {
+      "code": "688420.SH",
+      "market_value": 40778.5,
+      "sellable": 2135,
+      "shares": 2135
+    },
+    {
+      "code": "688466.SH",
+      "market_value": 40526.64,
+      "sellable": 3096,
+      "shares": 3096
+    },
+    {
+      "code": "688528.SH",
+      "market_value": 38063.159999999996,
+      "sellable": 4597,
+      "shares": 4597
+    },
+    {
+      "code": "688565.SH",
+      "market_value": 39223.14000000001,
+      "sellable": 4422,
+      "shares": 4422
+    },
+    {
+      "code": "688638.SH",
+      "market_value": 44092.23,
+      "sellable": 1563,
+      "shares": 1563
+    },
+    {
+      "code": "688659.SH",
+      "market_value": 38716.21000000001,
+      "sellable": 5239,
+      "shares": 5239
+    },
+    {
+      "code": "688671.SH",
+      "market_value": 38957.6,
+      "sellable": 2090,
+      "shares": 2090
+    },
+    {
+      "code": "688681.SH",
+      "market_value": 40745.07,
+      "sellable": 3257,
+      "shares": 3257
+    },
+    {
+      "code": "688695.SH",
+      "market_value": 39340.74,
+      "sellable": 2234,
+      "shares": 2234
+    },
+    {
+      "code": "688701.SH",
+      "market_value": 37978.15,
+      "sellable": 5711,
+      "shares": 5711
+    },
+    {
+      "code": "688737.SH",
+      "market_value": 38749.450000000004,
+      "sellable": 2881,
+      "shares": 2881
+    }
+  ],
+  "python_version": "3.6.8 (default, Dec 19 2022, 22:05:09) [MSC v.1900 64 bit (AMD64)]",
+  "started_at": "2026-11-02T00:04:14.586721",
+  "trade_count": 0
+}

@@ -1,0 +1,29 @@
+{
+  "status": "completed_limited_audit_not_full_historical_equivalence",
+  "production_code_changes": false,
+  "tests_passed": 84,
+  "independent_review_task": "/root/verify_live",
+  "independent_review": {
+    "historical_full_equivalence": "not_passed",
+    "evidence_arithmetic": "passed",
+    "formal_backtest_supplement": "passed"
+  },
+  "sha256": {
+    "audit.json": "95712920ac201c68ddb91bc7f5991262dc9a6bcbbd6c76b23c6943a7a469a501",
+    "audit.py": "a25f3682da76964bc485a61613392e1a3cbbbbf47ce337e2f1a3fd44eae058d7",
+    "continuous_backtest.json": "e9b2b68a69885efc854cd509c34145fc7c7a544d4f4aac6bfd0903f9b3d4021d",
+    "formal_backtest.py": "e88ce694414b6eab87dc2f7b2aeb511afe9a3b9f2fcb71fadf58daef9b386aac",
+    "formal_backtest_resources.json": "ac6ab7ef462541c606a6d688d3267aa51a0a42dc4f69a879af3df0ae4dfcf519",
+    "formal_stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "formal_stdout.log": "d97dd2e2f6895b21f3161f1230e623bc24adb0fdd18c9b1908f71380c2335a7c",
+    "report.md": "506ac6610ad7064c4b907aa185c8bb4824b0faf1ec76a09f7b7b92536973a6f2",
+    "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout.log": "66d32c314c8594d578607c42da7fa15694a4598c5240002d6ea5afdda5dc9516",
+    "tests.log": "7bf6d3f7b98605ad79cf46e77557da671d7d2f39a06d57cfac7d7611dee6c302",
+    "formal_backtest\\backtest_report_20261104_021848.html": "8267b2d897433bb474cb579639e5299257aaa976e490c87289fd096215f00153",
+    "formal_backtest\\record.json": "c00445fb7f1f1f3c645bb11eb420d0def841933d39230b08d2784e5e7af93f9d",
+    "formal_backtest\\single.log": "83fba7185224996c2c06926634d3c8abcf2d25bb809bcac008d2ac1cd13f77d7",
+    "formal_backtest\\single_report.html": "8267b2d897433bb474cb579639e5299257aaa976e490c87289fd096215f00153"
+  },
+  "network_note": "Socket connection blocking applied. network_calls field is descriptive, not measured telemetry."
+}

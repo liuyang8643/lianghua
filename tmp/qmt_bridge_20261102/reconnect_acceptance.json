@@ -1,0 +1,39 @@
+{
+  "checked_at": "2026-11-02T00:19:40.760460",
+  "read_only": true,
+  "before": {
+    "account": "824300045987",
+    "connected": true,
+    "executable": "D:\\\u7533\u4e07\u5b8f\u6e90\u7b56\u7565\u91cf\u5316\u4ea4\u6613\u7ec8\u7aef\\bin.x64\\pythonw.exe",
+    "instance": "29e2e06e0e6246659fc9910b6aa48248",
+    "live_enabled": false,
+    "parent_image": "D:\\\u7533\u4e07\u5b8f\u6e90\u7b56\u7565\u91cf\u5316\u4ea4\u6613\u7ec8\u7aef\\bin.x64\\miniquote.exe",
+    "parent_pid": 64556,
+    "pid": 69896,
+    "python_version": "3.6.8 (default, Dec 19 2022, 22:05:09) [MSC v.1900 64 bit (AMD64)]",
+    "session_started": 1793549957.280162,
+    "source_sha256": "c54d0a3cad8a37c8530ce008aecf97aea21138054948ce1cbfa442067d2051c9",
+    "started": 1793549957.0862703,
+    "updated": 1793549974.5600107
+  },
+  "after": {
+    "account": "824300045987",
+    "connected": true,
+    "executable": "D:\\\u7533\u4e07\u5b8f\u6e90\u7b56\u7565\u91cf\u5316\u4ea4\u6613\u7ec8\u7aef\\bin.x64\\pythonw.exe",
+    "instance": "269b22a916c6472d808c6cbbdfe91acf",
+    "live_enabled": false,
+    "parent_image": "D:\\\u7533\u4e07\u5b8f\u6e90\u7b56\u7565\u91cf\u5316\u4ea4\u6613\u7ec8\u7aef\\bin.x64\\miniquote.exe",
+    "parent_pid": 64556,
+    "pid": 69896,
+    "python_version": "3.6.8 (default, Dec 19 2022, 22:05:09) [MSC v.1900 64 bit (AMD64)]",
+    "session_started": 1793549980.4938304,
+    "source_sha256": "c54d0a3cad8a37c8530ce008aecf97aea21138054948ce1cbfa442067d2051c9",
+    "started": 1793549957.0862703,
+    "updated": 1793549980.4938304
+  },
+  "old_session_requires_main_restart": true,
+  "new_trader_account_snapshot": true,
+  "same_positions": true,
+  "position_count": 24,
+  "no_order_or_cancel_calls": true
+}

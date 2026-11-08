@@ -1,0 +1,17 @@
+{
+  "integration": {
+    "passed": 170,
+    "log": "final_tests.out.log"
+  },
+  "final_focused": {
+    "passed": 50,
+    "files": [
+      "trading/test_bridge.py",
+      "trading/test_bridge_event_time.py",
+      "trading/test_bridge_acceptance_watch.py"
+    ]
+  },
+  "unique_cases": 178,
+  "independent_review": "final focused 50 passed; no code blockers",
+  "real_order_or_fill_verified": false
+}

@@ -1,0 +1,10 @@
+{
+  "mode": "CLI_DEPENDENCY_PROBE_ONLY",
+  "modules": {
+    "importlib": "D:/coding/WBR-live/data/qmt_bridge_runtime/stdlib\\importlib\\__init__.pyc",
+    "asyncio": "D:/coding/WBR-live/data/qmt_bridge_runtime/stdlib\\asyncio\\__init__.pyc",
+    "sqlite3": "D:/coding/WBR-live/data/qmt_bridge_runtime/stdlib\\sqlite3\\__init__.pyc",
+    "xtquant.xttrader": "D:/coding/WBR-live/data/qmt_bridge_runtime/site-packages\\xtquant\\xttrader.py",
+    "xtquant.xttype": "D:/coding/WBR-live/data/qmt_bridge_runtime/site-packages\\xtquant\\xttype.py"
+  }
+}

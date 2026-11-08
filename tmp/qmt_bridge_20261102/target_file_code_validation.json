@@ -1,0 +1,17 @@
+{
+  "checked_at": "2026-11-02T09:55:48.995116",
+  "tests": {
+    "command": ".venv/Scripts/python.exe -m pytest trading/test_target_file.py trading/test_bridge.py trading/test_trader_callbacks.py -q",
+    "passed": 63,
+    "real_order_tests": false
+  },
+  "python36_syntax": "PASS",
+  "app_probe_executed": false,
+  "live_enabled": false,
+  "source_sha256": {
+    "trading/target_file.py": "929ad565b45c0ee33eb8f1fe429901d0aa255d5930535dc5720d3014e9eb483d",
+    "trading/target_file_probe.py": "59707ccaa1c1b35d7a52086094c6e31eb9d56546d4e2f38f5a0be6cc7cc265b9",
+    "trading/account_snapshot.py": "8297f050ac04eec912a83825d5e708ab2bd34a0258d6ef3cf9008bbcff69458a",
+    "trading/qmt_bridge.py": "638bb603f6b525b3427f82b04a582b3f9406d653f7c3b728d6a4df780fdf6d3f"
+  }
+}

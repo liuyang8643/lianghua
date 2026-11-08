@@ -1,0 +1,21 @@
+{
+  "automation_id": "wbr-2",
+  "target_thread_id": "01a1927d-ecbf-76d3-b369-cc50591401df",
+  "timezone": "Asia/Shanghai",
+  "scheduled_followups": [
+    "2026-11-02T09:24:00+08:00",
+    "2026-11-02T09:31:00+08:00",
+    "2026-11-02T09:40:00+08:00",
+    "2026-11-02T09:50:00+08:00"
+  ],
+  "finite_occurrences": 4,
+  "preserved_existing_automation": "wbr",
+  "read_only_observer_pid": 29860,
+  "observer_verified_alive_at": "2026-11-02T01:20:46.701202+08:00",
+  "goal_remains_active": false,
+  "real_trade_verification_complete": false,
+  "goal_status": "blocked",
+  "blocked_reason": "Market closed; real broker orders/fills cannot yet be verified",
+  "deployed_services_continue_running": true,
+  "scheduled_followups_preserved": true
+}

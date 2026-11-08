@@ -1,0 +1,14 @@
+{
+  "checked_at": "2026-11-02T00:33:02.935855",
+  "old_processes_stopped": [
+    12536,
+    23116,
+    50328,
+    57692
+  ],
+  "locks_released": true,
+  "preserved_qmt_pids": [
+    42684,
+    64556
+  ]
+}

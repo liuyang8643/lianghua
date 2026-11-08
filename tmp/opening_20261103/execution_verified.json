@@ -1,0 +1,211 @@
+{
+  "checked_at": "2026-11-03T09:52:01.107518",
+  "snapshot_at": 1793670720.800384,
+  "snapshot_age": 0.30713486671447754,
+  "execution_id": "fb16378ee860",
+  "journal_completed": true,
+  "all_original_targets_covered": true,
+  "holding_comparison": [
+    {
+      "code": "300899.SZ",
+      "target": 1700,
+      "actual": 1700,
+      "difference": 0
+    },
+    {
+      "code": "301037.SZ",
+      "target": 3700,
+      "actual": 3700,
+      "difference": 0
+    },
+    {
+      "code": "301049.SZ",
+      "target": 2400,
+      "actual": 2400,
+      "difference": 0
+    },
+    {
+      "code": "301288.SZ",
+      "target": 2900,
+      "actual": 2900,
+      "difference": 0
+    },
+    {
+      "code": "301298.SZ",
+      "target": 3700,
+      "actual": 3700,
+      "difference": 0
+    },
+    {
+      "code": "301503.SZ",
+      "target": 2000,
+      "actual": 2000,
+      "difference": 0
+    },
+    {
+      "code": "301519.SZ",
+      "target": 1700,
+      "actual": 1700,
+      "difference": 0
+    },
+    {
+      "code": "600137.SH",
+      "target": 0,
+      "actual": 0,
+      "difference": 0
+    },
+    {
+      "code": "603208.SH",
+      "target": 0,
+      "actual": 0,
+      "difference": 0
+    },
+    {
+      "code": "688021.SH",
+      "target": 2395,
+      "actual": 2395,
+      "difference": 0
+    },
+    {
+      "code": "688067.SH",
+      "target": 1918,
+      "actual": 1918,
+      "difference": 0
+    },
+    {
+      "code": "688092.SH",
+      "target": 1933,
+      "actual": 1933,
+      "difference": 0
+    },
+    {
+      "code": "688217.SH",
+      "target": 1996,
+      "actual": 1996,
+      "difference": 0
+    },
+    {
+      "code": "688420.SH",
+      "target": 1931,
+      "actual": 1931,
+      "difference": 0
+    },
+    {
+      "code": "688466.SH",
+      "target": 0,
+      "actual": 0,
+      "difference": 0
+    },
+    {
+      "code": "688528.SH",
+      "target": 4797,
+      "actual": 4797,
+      "difference": 0
+    },
+    {
+      "code": "688565.SH",
+      "target": 4422,
+      "actual": 4422,
+      "difference": 0
+    },
+    {
+      "code": "688638.SH",
+      "target": 1306,
+      "actual": 1306,
+      "difference": 0
+    },
+    {
+      "code": "688659.SH",
+      "target": 5439,
+      "actual": 5439,
+      "difference": 0
+    },
+    {
+      "code": "688671.SH",
+      "target": 2090,
+      "actual": 2090,
+      "difference": 0
+    },
+    {
+      "code": "688681.SH",
+      "target": 3257,
+      "actual": 3257,
+      "difference": 0
+    },
+    {
+      "code": "688695.SH",
+      "target": 2234,
+      "actual": 2234,
+      "difference": 0
+    },
+    {
+      "code": "688701.SH",
+      "target": 5697,
+      "actual": 5697,
+      "difference": 0
+    },
+    {
+      "code": "688737.SH",
+      "target": 3081,
+      "actual": 3081,
+      "difference": 0
+    }
+  ],
+  "expected_net": {
+    "301037.SZ": 3700,
+    "688659.SH": 200,
+    "688737.SH": 200,
+    "301049.SZ": -100,
+    "301288.SZ": -100,
+    "600137.SH": -2600,
+    "603208.SH": -3800,
+    "688021.SH": -214,
+    "688067.SH": -217,
+    "688092.SH": -218,
+    "688420.SH": -204,
+    "688466.SH": -3096,
+    "688638.SH": -257,
+    "688701.SH": -214
+  },
+  "actual_net": {
+    "688092.SH": -218,
+    "688021.SH": -214,
+    "688701.SH": -214,
+    "688638.SH": -257,
+    "301037.SZ": 3700,
+    "688659.SH": 200,
+    "603208.SH": -3800,
+    "688737.SH": 200,
+    "600137.SH": -2600,
+    "301049.SZ": -100,
+    "301288.SZ": -100,
+    "688067.SH": -217,
+    "688420.SH": -204,
+    "688466.SH": -3096
+  },
+  "broker_order_count": 21,
+  "unique_trade_count": 35,
+  "broker_status_counts": {
+    "54": 5,
+    "53": 1,
+    "56": 15
+  },
+  "live_orders_and_fills": true,
+  "post_close_audit_pending": true,
+  "final_checked_at": "2026-11-03T09:58:43.321131",
+  "all_21_receipts_reconciled": true,
+  "independent_trade_coverage_review": "pass",
+  "executor_status": {
+    "live_enabled": true,
+    "parent_pid": 86120,
+    "pid": 70644,
+    "stage": "completed",
+    "target_sha256": "2e2518069b5d6f9bb40cdf2316b42724a4031e7ef5e12c20e9bdcbae278a2f67",
+    "updated": 1793671122.5814137
+  },
+  "heartbeat_age": 0.7397177219390869,
+  "client_processes": {
+    "42308": 1793633804.9962096,
+    "86120": 1793633805.234472
+  }
+}

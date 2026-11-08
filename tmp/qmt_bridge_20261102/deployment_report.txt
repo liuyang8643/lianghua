@@ -1,0 +1,29 @@
+客户端实盘链路修复与盘前验收（2026-11-02）
+
+结论：正式客户端执行桥接已部署，盘前就绪和故障恢复验收通过。
+实际报单权限及成交尚待当日09:30后既有策略的真实券商回报；没有增设测试买卖。
+
+已完成：
+- 在券商自带Python3.6.8中加载独立标准库、锁定XtQuant和兼容psutil，保留券商原exe/DLL。
+- 客户端WBR_EXEC_BRIDGE常驻，策略/因子计算保留在项目Python3.12。
+- 本地通过持久化SQLite请求/回报通道查询和执行；真实SDK交易调用只在客户端进程内。
+- 提交前持久化意图；未知状态禁止重发；明确未发送的证明可补齐本地journal后保留原目标重试。
+- 校验主进程启动时间、命令行、工作目录、配置、单实例锁及交易日/时段/halt/期限。
+- 旧native主进程和watchdog已退出，新watchdog/main明确使用backend=bridge。
+- 24只持仓逐股与切换前一致，实际未发送任何测试报单或撤单。
+- 主进程故障由watchdog重建并重新通过Runtime校验；券商客户端与桥接进程保留。
+- 桥接同PID重连引发旧main退出、watchdog重建Trader并重新通过身份/锁和数据校验。
+- 170项集成检查及最终50项focused检查通过（含8项新增用例，共178项覆盖）；独立验收员确认部署和只读恢复验收通过。
+
+当前机器状态见deployment_readiness.json；实际故障恢复见watchdog_restart_acceptance.json和live_reconnect_recovery.json。
+原生客户端界面证据：live_client_bridge.png、live_client_strategy.png。
+
+开盘验证：只读观察进程正在运行，等待当日执行journal及券商真实已报/成交记录。
+状态持续写入opening_watch_status.json；匹配的真实订单与成交出现后写入opening_execution_evidence.json；仅在真实成交覆盖原计划全部目标且执行日志标记完成时报告success=true。
+未报、待报、废单、无关手工订单或模拟配平不会计作成功。
+若当日策略无需交易，将明确记录“真实报单权限未验证”，不会自动额外买卖验证。
+
+启动：保持券商客户端和WBR_EXEC_BRIDGE运行，项目实盘由run.ps1守护。
+全新依赖/协议部署需先停桥接，再按AGENTS.md运行bridge_setup并从客户端重启桥接。
+
+最终审计更新：延迟事件保留原始日期/时间，旧日事件不污染今日战报；审计游标损坏只告警并重放。主进程已受控重载最新版，见final_controller_reload.json。

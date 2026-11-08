@@ -1,0 +1,29 @@
+{
+  "sent": true,
+  "message_id": "om_x100b61a17f07a8b0cfd4c19f6033bb7",
+  "feishu_response": {
+    "code": 0,
+    "msg": "success"
+  },
+  "planner_json": "D:\\coding\\WBR-live\\data\\live_file\\daily\\planner_2026-11-03.json",
+  "executor_json": "D:\\coding\\WBR-live\\data\\live_file\\daily\\executor_2026-11-03.json",
+  "executor_pid": 66000,
+  "broker_parent": 86120,
+  "broker_orders": 21,
+  "unique_trades": 35,
+  "today_backfilled": true,
+  "initial_holdings_source": "reconstructed_from_frozen_target_and_pending",
+  "all_remaining_zero": true,
+  "original_trade_plan_unchanged": true,
+  "original_order_request_count": 21,
+  "qt_processes": {
+    "42308": 1793633804.9962096,
+    "86120": 1793633805.234472
+  },
+  "json_hashes": {
+    "card_2026-11-03.json": "179c8ef3fcd7d867f1ccbc9257b03f0cdc2bb72fa87418b95aee190450a1e72e",
+    "executor_2026-11-03.json": "7967c9c156cc35473ff51434ecd8c19970e25c261bdf7c7f36a7153490d081f0",
+    "feishu_2026-11-03.json": "57c83d0e763b98ad152ef6b8968904bd2ceeef43f7d6d17859abb0cb5c1e0744",
+    "planner_2026-11-03.json": "40de37ec887c5fb8367ec3563cca0ab5b7ea5844fd5f58e142ae3d88c1cbba40"
+  }
+}

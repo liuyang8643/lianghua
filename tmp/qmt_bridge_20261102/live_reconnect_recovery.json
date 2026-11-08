@@ -1,0 +1,32 @@
+{
+  "checked_at": "2026-11-02T00:38:25.281723",
+  "bridge_process_same": true,
+  "bridge_pid": 76248,
+  "old_instance": "5fb131ea632047bd8441d0acf057918d",
+  "new_instance": "1864bf84a42a482d8099037eae579228",
+  "old_main_pid": 7940,
+  "new_main_identity": {
+    "backend": "bridge",
+    "cmdline": [
+      "C:\\Users\\doctorl\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none\\python.exe",
+      "-X",
+      "utf8",
+      "-m",
+      "trading.main",
+      "--individual-config",
+      "D:\\coding\\WBR-live\\configs\\config.json",
+      "--trading-backend",
+      "bridge"
+    ],
+    "config": "D:\\coding\\WBR-live\\configs\\config.json",
+    "created": 1793551087.6184473,
+    "cwd": "D:\\coding\\WBR-live",
+    "pid": 4844
+  },
+  "watchdog_rebuilt_trader_after_bridge_outage": true,
+  "runtime_ready": true,
+  "owner_and_lock_verified": true,
+  "position_count": 24,
+  "no_order_or_cancel_calls": true,
+  "source_sha256": "ec93c54444aad201438c7ba52a0afac6936bcaabc489fa66e2e674e4e847921d"
+}

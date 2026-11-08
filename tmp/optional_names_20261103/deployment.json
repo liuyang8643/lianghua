@@ -1,0 +1,53 @@
+{
+  "planner_processes": [
+    {
+      "pid": 30360,
+      "name": "python.exe",
+      "create_time": 1793718123.6537366,
+      "ppid": 38932,
+      "cmdline": [
+        "C:\\Users\\doctorl\\AppData\\Roaming\\uv\\python\\cpython-3.12.12-windows-x86_64-none\\python.exe",
+        "-u",
+        "-m",
+        "trading.planner_watchdog",
+        "--config",
+        "D:\\coding\\WBR-live\\configs\\config.json",
+        "--directory",
+        "D:\\coding\\WBR-live\\data\\live_file"
+      ],
+      "cwd": "D:\\coding\\WBR-live"
+    },
+    {
+      "pid": 38932,
+      "name": "python.exe",
+      "create_time": 1793718123.6043031,
+      "ppid": 86132,
+      "cmdline": [
+        "D:\\coding\\WBR-live\\.venv\\Scripts\\python.exe",
+        "-u",
+        "-m",
+        "trading.planner_watchdog",
+        "--config",
+        "D:\\coding\\WBR-live\\configs\\config.json",
+        "--directory",
+        "D:\\coding\\WBR-live\\data\\live_file"
+      ],
+      "cwd": "D:\\coding\\WBR-live"
+    }
+  ],
+  "planner_lock_held": true,
+  "executor_pid": 12236,
+  "executor_heartbeat_age": 0.2013413906097412,
+  "strategy_config_sha256": "c522c11080003eec8e8d63ed02e3edb27449a6e3b23031dc9b6f88a3420a6791",
+  "target_sha256": "2e2518069b5d6f9bb40cdf2316b42724a4031e7ef5e12c20e9bdcbae278a2f67",
+  "broker_clients": [
+    {
+      "pid": 42308,
+      "created": 1793633804.9962096
+    },
+    {
+      "pid": 86120,
+      "created": 1793633805.234472
+    }
+  ]
+}

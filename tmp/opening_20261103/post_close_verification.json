@@ -1,0 +1,37 @@
+{
+  "checked_at": "2026-11-03T15:51:46.296357",
+  "full_acceptance": false,
+  "live_execution_verified": true,
+  "broker_facts_persisted": true,
+  "broker_capture_at": "2026-11-03T15:35:00.115826",
+  "fills_exactly_match_broker": 35,
+  "positive_positions_exactly_match_broker": 22,
+  "zero_volume_closed_positions": 3,
+  "frozen_targets_covered": true,
+  "journal_mirror_exact": true,
+  "unresolved": [
+    "Bound previous-day JSON baseline is not adapted to legacy previous-day Parquet/summary inputs",
+    "Plan Parquet/report dimensions missing despite frozen execution journal being present",
+    "All 25 per-stock daily P&L values currently unavailable; reported account daily return uses Oct30 baseline instead of Nov2"
+  ],
+  "prior_baseline_json": "D:\\coding\\WBR-live\\data\\live_file\\account_eod_2026-11-02.json",
+  "report_html": "D:\\coding\\WBR-live\\data\\live_trades\\reports\\diff_2026-11-03.html",
+  "evidence": {
+    "data\\live_file\\account_eod_2026-11-03.json": {
+      "sha256": "eb7400ce286e9bf8122ef843b900dd652f6154c2452ed78e3ed3db3c3d6a9e7d",
+      "mtime": "2026-11-03T15:35:00.140628"
+    },
+    "data\\live_trades\\fills_2026-11-03.parquet": {
+      "sha256": "bd78940dfe0cb28dd0410728299e09022ea15c1fb8b0f002df61445227ea7516",
+      "mtime": "2026-11-03T15:35:01.832208"
+    },
+    "data\\live_trades\\positions_2026-11-03.parquet": {
+      "sha256": "e33d4df1e6e6cf9b791e208462587d52c5260f8685c2141b6c0af19be84f546d",
+      "mtime": "2026-11-03T15:35:01.982557"
+    },
+    "data\\live_trades\\execution_2026-11-03.json": {
+      "sha256": "169f283e1a33afda22f9c062f53e5a31f4dd25820fc4cbb58b490bfd21abf931",
+      "mtime": "2026-11-03T15:35:00.869617"
+    }
+  }
+}

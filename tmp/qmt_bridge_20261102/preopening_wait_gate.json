@@ -1,0 +1,35 @@
+{
+  "checked_at": "2026-11-02T01:28:38.210200",
+  "processes": [
+    {
+      "role": "main",
+      "pid": 56544,
+      "created": 1793552923.332245
+    },
+    {
+      "role": "bridge",
+      "pid": 76248,
+      "created": 1793550682.7890024
+    },
+    {
+      "role": "observer",
+      "pid": 29860,
+      "created": 1793552963.3406477
+    }
+  ],
+  "trading_day": true,
+  "continuous_trading_open": false,
+  "stage": "WAITING_FOR_STRATEGY_PLAN",
+  "observer_success": false,
+  "actual_mutation_requests": 0,
+  "followup_id": "wbr-2",
+  "followup_active": true,
+  "remaining_gate": "Real broker acceptance/fills and original target coverage after market opening",
+  "consecutive_goal_checks": [
+    "2026-11-02T01:15:29",
+    "2026-11-02T01:23:59",
+    "2026-11-02T01:28:38"
+  ],
+  "remaining_technical_changes_required": false,
+  "required_external_state_change": "2026-11-02 market opening"
+}

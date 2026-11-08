@@ -1,0 +1,267 @@
+{
+  "schema": "2.0",
+  "config": {
+    "update_multi": true
+  },
+  "header": {
+    "title": {
+      "tag": "plain_text",
+      "content": "实盘日报 @ 2026-11-03"
+    },
+    "template": "red",
+    "subtitle": {
+      "tag": "plain_text",
+      "content": "实盘盈亏 -1.5w · 实盘 -1.46% · 同计划零磨损 -1.32%"
+    }
+  },
+  "body": {
+    "elements": [
+      {
+        "tag": "div",
+        "text": {
+          "tag": "lark_md",
+          "content": "**T日操作对比 / T日持仓对比**"
+        }
+      },
+      {
+        "tag": "table",
+        "element_id": "daily_tbl",
+        "page_size": 20,
+        "row_height": "low",
+        "freeze_first_column": true,
+        "header_style": {
+          "text_align": "center",
+          "bold": true,
+          "background_style": "grey",
+          "text_color": "grey"
+        },
+        "columns": [
+          {
+            "name": "name",
+            "display_name": "股票",
+            "data_type": "lark_md",
+            "horizontal_align": "left"
+          },
+          {
+            "name": "pos",
+            "display_name": "持仓手数(目标vs实盘)",
+            "data_type": "lark_md",
+            "horizontal_align": "right"
+          },
+          {
+            "name": "ops",
+            "display_name": "操作(目标vs实盘)",
+            "data_type": "lark_md",
+            "horizontal_align": "right"
+          },
+          {
+            "name": "diff",
+            "display_name": "持仓差异",
+            "data_type": "lark_md",
+            "horizontal_align": "right"
+          },
+          {
+            "name": "log",
+            "display_name": "实盘日志",
+            "data_type": "lark_md",
+            "horizontal_align": "left"
+          }
+        ],
+        "rows": [
+          {
+            "name": "158905.SZ",
+            "pos": "<font color=\"grey\">目标100,000 vs 实盘100,000</font>",
+            "ops": "-",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "-"
+          },
+          {
+            "name": "上海凯鑫",
+            "pos": "<font color=\"grey\">目标1,700 vs 实盘1,700</font>",
+            "ops": "-",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"red\">已达标</font>"
+          },
+          {
+            "name": "保立佳",
+            "pos": "<font color=\"grey\">目标3,700 vs 实盘3,700</font>",
+            "ops": "目标+3700 vs 实盘+3700",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已成</font>"
+          },
+          {
+            "name": "超越科技",
+            "pos": "<font color=\"grey\">目标2,400 vs 实盘2,400</font>",
+            "ops": "目标-100 vs 实盘-100",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已成</font>"
+          },
+          {
+            "name": "清研环境",
+            "pos": "<font color=\"grey\">目标2,900 vs 实盘2,900</font>",
+            "ops": "目标-100 vs 实盘-100",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已成</font>"
+          },
+          {
+            "name": "东利机械",
+            "pos": "<font color=\"grey\">目标3,700 vs 实盘3,700</font>",
+            "ops": "-",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"red\">已达标</font>"
+          },
+          {
+            "name": "智迪科技",
+            "pos": "<font color=\"grey\">目标2,000 vs 实盘2,000</font>",
+            "ops": "-",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"red\">已达标</font>"
+          },
+          {
+            "name": "舜禹股份",
+            "pos": "<font color=\"grey\">目标1,700 vs 实盘1,700</font>",
+            "ops": "-",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "-"
+          },
+          {
+            "name": "浪莎股份",
+            "pos": "-",
+            "ops": "目标-2600 vs 实盘-2600",
+            "diff": "-",
+            "log": "<font color=\"green\">✅ 已成</font>"
+          },
+          {
+            "name": "江山欧派",
+            "pos": "-",
+            "ops": "目标-3800 vs 实盘-3800",
+            "diff": "-",
+            "log": "<font color=\"green\">✅ 已成</font>"
+          },
+          {
+            "name": "奥福科技",
+            "pos": "<font color=\"grey\">目标2,395 vs 实盘2,395</font>",
+            "ops": "目标-214 vs 实盘-214",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已成</font>"
+          },
+          {
+            "name": "爱威科技",
+            "pos": "<font color=\"grey\">目标1,918 vs 实盘1,918</font>",
+            "ops": "目标-217 vs 实盘-217",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已成</font>"
+          },
+          {
+            "name": "爱科科技",
+            "pos": "<font color=\"grey\">目标1,933 vs 实盘1,933</font>",
+            "ops": "目标-218 vs 实盘-218",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已成</font>"
+          },
+          {
+            "name": "睿昂基因",
+            "pos": "<font color=\"grey\">目标1,996 vs 实盘1,996</font>",
+            "ops": "-",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"red\">已达标</font>"
+          },
+          {
+            "name": "美腾科技",
+            "pos": "<font color=\"grey\">目标1,931 vs 实盘1,931</font>",
+            "ops": "目标-204 vs 实盘-204",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已成</font>"
+          },
+          {
+            "name": "金科环境",
+            "pos": "-",
+            "ops": "目标-3096 vs 实盘-3096",
+            "diff": "-",
+            "log": "<font color=\"green\">✅ 已成</font>"
+          },
+          {
+            "name": "秦川物联",
+            "pos": "<font color=\"grey\">目标4,797 vs 实盘4,797</font>",
+            "ops": "-",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"red\">已达标</font>"
+          },
+          {
+            "name": "力源科技",
+            "pos": "<font color=\"grey\">目标4,422 vs 实盘4,422</font>",
+            "ops": "-",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"red\">已达标</font>"
+          },
+          {
+            "name": "誉辰智能",
+            "pos": "<font color=\"grey\">目标1,306 vs 实盘1,306</font>",
+            "ops": "目标-257 vs 实盘-257",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已成</font>"
+          },
+          {
+            "name": "元琛科技",
+            "pos": "<font color=\"grey\">目标5,439 vs 实盘5,439</font>",
+            "ops": "目标+200 vs 实盘+200",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已成</font>"
+          },
+          {
+            "name": "碧兴物联",
+            "pos": "<font color=\"grey\">目标2,090 vs 实盘2,090</font>",
+            "ops": "-",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"red\">已达标</font>"
+          },
+          {
+            "name": "科汇股份",
+            "pos": "<font color=\"grey\">目标3,257 vs 实盘3,257</font>",
+            "ops": "-",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"red\">已达标</font>"
+          },
+          {
+            "name": "中创股份",
+            "pos": "<font color=\"grey\">目标2,234 vs 实盘2,234</font>",
+            "ops": "-",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"red\">已达标</font>"
+          },
+          {
+            "name": "卓锦股份",
+            "pos": "<font color=\"grey\">目标5,697 vs 实盘5,697</font>",
+            "ops": "目标-214 vs 实盘-214",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已成</font>"
+          },
+          {
+            "name": "中自科技",
+            "pos": "<font color=\"grey\">目标3,081 vs 实盘3,081</font>",
+            "ops": "目标+200 vs 实盘+200",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已成</font>"
+          },
+          {
+            "name": "— 合计 —",
+            "pos": "目标160,596 vs 实盘160,596",
+            "ops": "目标-6920 vs 实盘-6920",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"grey\">对齐 22/22 只</font>"
+          }
+        ]
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "text": {
+          "tag": "lark_md",
+          "content": "<font color=\"grey\">更新 22:25:28 · 已锁定</font>"
+        }
+      }
+    ]
+  }
+}

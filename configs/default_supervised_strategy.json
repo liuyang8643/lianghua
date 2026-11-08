@@ -1,0 +1,6 @@
+{
+  "strategy": "new_model_topk",
+  "bundle": "strategy_release/new_model_topk_20261108",
+  "manifest_sha256": "6e0595b704f4ea047e9e1c14dae4ee5d77b97720f1bee300ab7dd388863c8a4f",
+  "mvo_enabled": false
+}

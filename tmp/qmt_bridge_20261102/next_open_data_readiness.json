@@ -1,0 +1,6 @@
+{
+  "checked_at": "2026-11-02T23:27:56.327363",
+  "required_previous_trade_date": "2026-11-02",
+  "runtime_ready": false,
+  "error": "Runtime 缺少历史交易日 2026-11-02 ~ 2026-11-02"
+}

@@ -1,0 +1,45 @@
+{
+  "original_card_source": "data/live_trades/lark_audit/20261030.jsonl (final update)",
+  "schema_config_table_style_columns_and_elements_identical": true,
+  "renderer": "TradingDayBoard._build_card",
+  "archive_sha256": {
+    "planner_2026-11-03.json": "40de37ec887c5fb8367ec3563cca0ab5b7ea5844fd5f58e142ae3d88c1cbba40",
+    "executor_2026-11-03.json": "7967c9c156cc35473ff51434ecd8c19970e25c261bdf7c7f36a7153490d081f0"
+  },
+  "fills": 35,
+  "positions": 25,
+  "positions_pnl_available": 25,
+  "summary": {
+    "bt_daily_pnl": 3080.929999999993,
+    "bt_daily_return_pct": 0.29863674800630174,
+    "bt_total_asset": null,
+    "comparison_basis": "同计划零磨损回放",
+    "live_account_pnl": -15083.869999999995,
+    "live_daily_pnl": 1578.1589999999874,
+    "live_daily_return_pct": 0.15297208037731283,
+    "live_pnl_source": "per_stock",
+    "live_total_asset": 1016580.86,
+    "net_cash_flow": 0.0,
+    "prev_asset": 1031664.73
+  },
+  "execution_summary": {
+    "all_filled": true,
+    "available": true,
+    "bt_total_pnl": 3080.929999999993,
+    "fee_cost": 95.93100000000001,
+    "fee_source": "estimated",
+    "live_total_pnl": 1578.1589999999874,
+    "quantity_pnl": 0.0,
+    "residual": -7.395556389511171e-12,
+    "slippage_cost": 1406.839999999998,
+    "within_tolerance": true
+  },
+  "account_reconciliation": {
+    "account_pnl": -15083.869999999995,
+    "diff": 16662.028999999984,
+    "per_stock_pnl_sum": 1578.1589999999874,
+    "tolerance": 515.832365,
+    "unreconcilable_codes": [],
+    "within_tolerance": false
+  }
+}

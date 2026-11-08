@@ -1,0 +1,260 @@
+{
+  "schema": "2.0",
+  "config": {
+    "update_multi": true
+  },
+  "header": {
+    "title": {
+      "tag": "plain_text",
+      "content": "实盘日报 @ 2026-11-03"
+    },
+    "template": "green",
+    "subtitle": {
+      "tag": "plain_text",
+      "content": "客户端真实执行完成"
+    }
+  },
+  "body": {
+    "elements": [
+      {
+        "tag": "div",
+        "text": {
+          "tag": "lark_md",
+          "content": "**T日操作对比 / T日持仓对比**"
+        }
+      },
+      {
+        "tag": "table",
+        "element_id": "daily_tbl",
+        "page_size": 20,
+        "row_height": "low",
+        "freeze_first_column": true,
+        "header_style": {
+          "text_align": "center",
+          "bold": true,
+          "background_style": "grey",
+          "text_color": "grey"
+        },
+        "columns": [
+          {
+            "name": "name",
+            "display_name": "股票",
+            "data_type": "lark_md",
+            "horizontal_align": "left"
+          },
+          {
+            "name": "pos",
+            "display_name": "持仓手数(目标vs实盘)",
+            "data_type": "lark_md",
+            "horizontal_align": "right"
+          },
+          {
+            "name": "ops",
+            "display_name": "操作(目标vs实盘)",
+            "data_type": "lark_md",
+            "horizontal_align": "right"
+          },
+          {
+            "name": "diff",
+            "display_name": "持仓差异",
+            "data_type": "lark_md",
+            "horizontal_align": "right"
+          },
+          {
+            "name": "log",
+            "display_name": "实盘日志",
+            "data_type": "lark_md",
+            "horizontal_align": "left"
+          }
+        ],
+        "rows": [
+          {
+            "name": "卓锦股份",
+            "pos": "目标5,697 vs 实盘5,697",
+            "ops": "目标-214 vs 实盘-214",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "秦川物联",
+            "pos": "目标4,797 vs 实盘4,797",
+            "ops": "目标+0 vs 实盘+0",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "睿昂基因",
+            "pos": "目标1,996 vs 实盘1,996",
+            "ops": "目标+0 vs 实盘+0",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "爱威科技",
+            "pos": "目标1,918 vs 实盘1,918",
+            "ops": "目标-217 vs 实盘-217",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font> · 撤/部撤旧单 1笔"
+          },
+          {
+            "name": "清研环境",
+            "pos": "目标2,900 vs 实盘2,900",
+            "ops": "目标-100 vs 实盘-100",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font> · 撤/部撤旧单 1笔"
+          },
+          {
+            "name": "力源科技",
+            "pos": "目标4,422 vs 实盘4,422",
+            "ops": "目标+0 vs 实盘+0",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "元琛科技",
+            "pos": "目标5,439 vs 实盘5,439",
+            "ops": "目标+200 vs 实盘+200",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "奥福科技",
+            "pos": "目标2,395 vs 实盘2,395",
+            "ops": "目标-214 vs 实盘-214",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "科汇股份",
+            "pos": "目标3,257 vs 实盘3,257",
+            "ops": "目标+0 vs 实盘+0",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "誉辰智能",
+            "pos": "目标1,306 vs 实盘1,306",
+            "ops": "目标-257 vs 实盘-257",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "中自科技",
+            "pos": "目标3,081 vs 实盘3,081",
+            "ops": "目标+200 vs 实盘+200",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "中创股份",
+            "pos": "目标2,234 vs 实盘2,234",
+            "ops": "目标+0 vs 实盘+0",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "东利机械",
+            "pos": "目标3,700 vs 实盘3,700",
+            "ops": "目标+0 vs 实盘+0",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "智迪科技",
+            "pos": "目标2,000 vs 实盘2,000",
+            "ops": "目标+0 vs 实盘+0",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "爱科科技",
+            "pos": "目标1,933 vs 实盘1,933",
+            "ops": "目标-218 vs 实盘-218",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "超越科技",
+            "pos": "目标2,400 vs 实盘2,400",
+            "ops": "目标-100 vs 实盘-100",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font> · 撤/部撤旧单 1笔"
+          },
+          {
+            "name": "上海凯鑫",
+            "pos": "目标1,700 vs 实盘1,700",
+            "ops": "目标+0 vs 实盘+0",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "碧兴物联",
+            "pos": "目标2,090 vs 实盘2,090",
+            "ops": "目标+0 vs 实盘+0",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "保立佳",
+            "pos": "目标3,700 vs 实盘3,700",
+            "ops": "目标+3700 vs 实盘+3700",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "美腾科技",
+            "pos": "目标1,931 vs 实盘1,931",
+            "ops": "目标-204 vs 实盘-204",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font> · 撤/部撤旧单 1笔"
+          },
+          {
+            "name": "158905.SZ",
+            "pos": "未管理 · 实盘100,000",
+            "ops": "—",
+            "diff": "—",
+            "log": "计划未涉及，原样保留"
+          },
+          {
+            "name": "舜禹股份",
+            "pos": "目标1,700 vs 实盘1,700",
+            "ops": "目标+0 vs 实盘+0",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "浪莎股份",
+            "pos": "目标0 vs 实盘0",
+            "ops": "目标-2600 vs 实盘-2600",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font> · 撤/部撤旧单 1笔"
+          },
+          {
+            "name": "江山欧派",
+            "pos": "目标0 vs 实盘0",
+            "ops": "目标-3800 vs 实盘-3800",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font>"
+          },
+          {
+            "name": "金科环境",
+            "pos": "目标0 vs 实盘0",
+            "ops": "目标-3096 vs 实盘-3096",
+            "diff": "<font color=\"grey\">对齐</font>",
+            "log": "<font color=\"green\">✅ 已达标</font> · 撤/部撤旧单 1笔"
+          }
+        ]
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "text": {
+          "tag": "lark_md",
+          "content": "本地目标 JSON + 客户端真实回报 JSON；每端每天归档一次。 今日为补记；初始股数来自冻结计划还原，未重新计算策略。 21笔委托，35条去重成交；撤/部撤旧单与目标是否完成分开统计。"
+        }
+      }
+    ]
+  }
+}

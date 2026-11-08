@@ -1,0 +1,11 @@
+{
+  "stopped_watchdogs": [
+    58560,
+    58004
+  ],
+  "preserved_client_processes": {
+    "42308": 1793633804.9962096,
+    "86120": 1793633805.234472
+  },
+  "qmt_processes_terminated": 0
+}

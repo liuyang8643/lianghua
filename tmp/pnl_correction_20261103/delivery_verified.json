@@ -1,0 +1,79 @@
+{
+  "main": {
+    "account": "824300045987",
+    "attempted_at": 1793676059.6504638,
+    "digest": "be75c86f4c34e9918891523855b51f8d2828cae7199e70a049a97faa12bd5534",
+    "idempotency_key": "22d3bbf42e88567dadfb5c0507872f4e",
+    "message_id": "om_x100b61a17f07a8b0cfd4c19f6033bb7",
+    "phase": "close",
+    "sent_at": 1793716049.5559452,
+    "state": "sent",
+    "trade_date": "2026-11-03"
+  },
+  "attachments": {
+    "detail": {
+      "attempted_at": 1793714621.3336084,
+      "digest": "521a6f4965936a23379d970a4ed34e5f5877b5c38f3797574489e23810e3fb67",
+      "message_id": "om_x100b61aad526bcacce563bdf667717e",
+      "state": "sent",
+      "updated_at": 1793716051.7292037
+    },
+    "html": {
+      "attempted_at": 1793716049.5708265,
+      "digest": "9e1e837841f1cc71f8b49f70cd34e9233e3ed1480dfc719c2191a639cd8aa42a",
+      "history": [
+        {
+          "attempted_at": 1793714619.9776716,
+          "digest": "a80305b8cab7370e272a887a8cc40644894b98d4d33ec65772cd93db5985191b",
+          "message_id": "om_x100b61aad52e8d3ccf17ce19fd44cbb",
+          "state": "sent",
+          "updated_at": 1793714621.3239918
+        }
+      ],
+      "message_id": "om_x100b61aabbf6eca0cff8bda51cb4461",
+      "state": "sent",
+      "updated_at": 1793716051.0168233
+    }
+  },
+  "api_audit": [
+    {
+      "method": "update_card",
+      "title": "实盘日报 @ 2026-11-03",
+      "template": "red",
+      "message_id": "om_x100b61a17f07a8b0cfd4c19f6033bb7",
+      "ok": true,
+      "response": {
+        "code": 0,
+        "msg": "success"
+      },
+      "ts": "2026-11-03T22:27:29.555"
+    },
+    {
+      "method": "send_file",
+      "file": {
+        "path": "D:\\coding\\WBR-live\\data\\live_trades\\reports\\diff_2026-11-03.html",
+        "name": "diff_2026-11-03_corrected_9e1e8378.html",
+        "file_key": "file_v3_00173_9bb10c11-d0bb-41b3-b511-7c0fda92948g"
+      },
+      "ok": true,
+      "response": {
+        "code": 0,
+        "msg": "success"
+      },
+      "ts": "2026-11-03T22:27:31.015"
+    },
+    {
+      "method": "update_card",
+      "title": "📊 盈亏差异 & 滑点 @ 2026-11-03",
+      "template": "orange",
+      "message_id": "om_x100b61aad526bcacce563bdf667717e",
+      "ok": true,
+      "response": {
+        "code": 0,
+        "msg": "success"
+      },
+      "ts": "2026-11-03T22:27:31.726"
+    }
+  ],
+  "repeat_poll_no_new_api_requests": true
+}

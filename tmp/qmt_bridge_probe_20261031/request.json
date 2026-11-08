@@ -1,0 +1,183 @@
+{
+  "version": 1,
+  "mode": "PAPER_ONLY",
+  "challenge": "2a550f70a0494ddea4020f298ba8a08b",
+  "cases": [
+    {
+      "targets": {
+        "000001.SZ": 500,
+        "000002.SZ": 0,
+        "600000.SH": 200,
+        "600519.SH": 100,
+        "688092.SH": 200
+      },
+      "positions": {
+        "000001.SZ": 300,
+        "000002.SZ": 200,
+        "600000.SH": 600,
+        "600519.SH": 100
+      },
+      "sellable": {
+        "000001.SZ": 300,
+        "000002.SZ": 200,
+        "600000.SH": 600,
+        "600519.SH": 100
+      },
+      "working_buy": {},
+      "working_sell": {},
+      "name": "buy_sell_clear_and_hold",
+      "expected": {
+        "orders": [
+          {
+            "code": "000001.SZ",
+            "side": "BUY",
+            "shares": 200
+          },
+          {
+            "code": "000002.SZ",
+            "side": "SELL",
+            "shares": 200
+          },
+          {
+            "code": "600000.SH",
+            "side": "SELL",
+            "shares": 400
+          },
+          {
+            "code": "688092.SH",
+            "side": "BUY",
+            "shares": 200
+          }
+        ],
+        "blocked": []
+      }
+    },
+    {
+      "targets": {
+        "000001.SZ": 500,
+        "000002.SZ": 0,
+        "600000.SH": 200,
+        "600519.SH": 100,
+        "688092.SH": 200
+      },
+      "positions": {
+        "000001.SZ": 300,
+        "000002.SZ": 200,
+        "600000.SH": 600,
+        "600519.SH": 100
+      },
+      "sellable": {
+        "000001.SZ": 300,
+        "000002.SZ": 200,
+        "600000.SH": 600,
+        "600519.SH": 100
+      },
+      "working_buy": {
+        "000001.SZ": 200
+      },
+      "working_sell": {
+        "600000.SH": 150
+      },
+      "name": "inflight_orders_avoid_duplicates",
+      "expected": {
+        "orders": [
+          {
+            "code": "000002.SZ",
+            "side": "SELL",
+            "shares": 200
+          },
+          {
+            "code": "600000.SH",
+            "side": "SELL",
+            "shares": 250
+          },
+          {
+            "code": "688092.SH",
+            "side": "BUY",
+            "shares": 200
+          }
+        ],
+        "blocked": []
+      }
+    },
+    {
+      "targets": {
+        "000001.SZ": 500,
+        "000002.SZ": 0,
+        "600000.SH": 200,
+        "600519.SH": 100,
+        "688092.SH": 200
+      },
+      "positions": {
+        "000001.SZ": 500,
+        "000002.SZ": 0,
+        "600000.SH": 200,
+        "600519.SH": 100,
+        "688092.SH": 200
+      },
+      "sellable": {
+        "000001.SZ": 500,
+        "000002.SZ": 0,
+        "600000.SH": 200,
+        "600519.SH": 100,
+        "688092.SH": 200
+      },
+      "working_buy": {},
+      "working_sell": {},
+      "name": "already_at_target",
+      "expected": {
+        "orders": [],
+        "blocked": []
+      }
+    },
+    {
+      "targets": {
+        "000001.SZ": 500,
+        "000002.SZ": 0,
+        "600000.SH": 200,
+        "600519.SH": 100,
+        "688092.SH": 200
+      },
+      "positions": {
+        "000001.SZ": 300,
+        "000002.SZ": 200,
+        "600000.SH": 600,
+        "600519.SH": 100
+      },
+      "sellable": {
+        "000001.SZ": 300,
+        "000002.SZ": 0,
+        "600000.SH": 600,
+        "600519.SH": 100
+      },
+      "working_buy": {},
+      "working_sell": {},
+      "name": "unsellable_position_is_blocked",
+      "expected": {
+        "orders": [
+          {
+            "code": "000001.SZ",
+            "side": "BUY",
+            "shares": 200
+          },
+          {
+            "code": "600000.SH",
+            "side": "SELL",
+            "shares": 400
+          },
+          {
+            "code": "688092.SH",
+            "side": "BUY",
+            "shares": 200
+          }
+        ],
+        "blocked": [
+          {
+            "code": "000002.SZ",
+            "shares": 200
+          }
+        ]
+      }
+    }
+  ]
+}

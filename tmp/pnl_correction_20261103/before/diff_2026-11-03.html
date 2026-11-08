@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>盘后 Diff 2026-11-03</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+          background: #0f1419; color: #e1e8ed; max-width: 1400px; margin: 0 auto; padding: 24px; }
+  h1, h2 { color: #ffffff; border-bottom: 1px solid #2c3e50; padding-bottom: 8px; }
+  .summary { background: #1a2332; padding: 16px; border-radius: 8px; margin-bottom: 24px; }
+  .summary .metric { display: inline-block; margin-right: 32px; }
+  .summary .label { color: #8899a6; font-size: 12px; }
+  .summary .value { font-size: 20px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 24px; }
+  th { background: #1a2332; padding: 10px; text-align: right; font-size: 13px; color: #8899a6; }
+  th:first-child, th:nth-child(2) { text-align: left; }
+  td { padding: 8px 10px; border-bottom: 1px solid #2c3e50; text-align: right; font-size: 13px; }
+  td:first-child, td:nth-child(2) { text-align: left; font-family: monospace; }
+  .positive { color: #f23645; }
+  .negative { color: #089981; }
+  .section { margin-bottom: 32px; }
+  .codes { background: #1a2332; padding: 12px; border-radius: 4px; margin-bottom: 8px;
+            font-family: monospace; font-size: 13px; line-height: 1.6; }
+  .match-rate { font-size: 24px; font-weight: 700; }
+  .match-good { color: #089981; }
+  .match-bad { color: #f23645; }
+</style></head><body>
+<h1>盘后 Diff 报告 — 2026-11-03</h1>
+<div class='summary'>比较基准：同计划零磨损回放<br>
+全部按量成交 · 归因通过 · 滑点成本 +1,407 · 手续费（估算）+96 · 成交数量差损益 0 · 未解释残差 -0<br>
+收益差 = -滑点成本 - 手续费 + 成交数量差损益 + 未解释残差。账户资金变化单独列示。</div>
+
+<div class='summary'>
+  <div class='metric'><div class='label'>实盘总资产</div><div class='value'>¥101.7w</div></div>
+  <div class='metric'><div class='label'>回测总资产</div><div class='value'>-</div></div>
+  <div class='metric'><div class='label'>实盘日 P&L</div><div class='value'>+1,578 (+0.15%)</div></div>
+  <div class='metric'><div class='label'>回测日 P&L</div><div class='value'>+3,081 (+0.30%)</div></div>
+</div>
+<div class='summary'><div class='label'>账户其他变动（与执行归因分开）</div>账户变化减已登记出入金：-1.5w；证券盈亏：+1,578；其余变动：-1.7w。可能包含未登记出入金、利息、分红及费用差额，不自动认定为出入金。</div>
+<h2>逐股执行归因（负缺口表示计划外多成交）</h2><table><tr><th>代码</th><th>未买股数</th><th>未卖股数</th><th>滑点</th><th>估算费用</th><th>数量差损益</th><th>未解释残差</th></tr><tr><td>158905.SZ</td><td>0</td><td>0</td><td>+0.00</td><td>+0.00</td><td>+0.00</td><td>+0.00</td></tr><tr><td>300899.SZ</td><td>0</td><td>0</td><td>+0.00</td><td>+0.00</td><td>+0.00</td><td>+0.00</td></tr><tr><td>301037.SZ</td><td>0</td><td>0</td><td>-34.00</td><td>+4.07</td><td>+0.00</td><td>-0.00</td></tr><tr><td>301049.SZ</td><td>0</td><td>0</td><td>+56.00</td><td>+0.98</td><td>+0.00</td><td>-0.00</td></tr><tr><td>301288.SZ</td><td>0</td><td>0</td><td>+20.00</td><td>+0.82</td><td>+0.00</td><td>+0.00</td></tr><tr><td>301298.SZ</td><td>0</td><td>0</td><td>+0.00</td><td>+0.00</td><td>+0.00</td><td>+0.00</td></tr><tr><td>301503.SZ</td><td>0</td><td>0</td><td>+0.00</td><td>+0.00</td><td>+0.00</td><td>+0.00</td></tr><tr><td>301519.SZ</td><td>0</td><td>0</td><td>+0.00</td><td>+0.00</td><td>+0.00</td><td>+0.00</td></tr><tr><td>600137.SH</td><td>0</td><td>0</td><td>+133.00</td><td>+26.08</td><td>+0.00</td><td>-0.00</td></tr><tr><td>603208.SH</td><td>0</td><td>0</td><td>+0.00</td><td>+22.08</td><td>+0.00</td><td>-0.00</td></tr><tr><td>688021.SH</td><td>0</td><td>0</td><td>+0.00</td><td>+2.11</td><td>+0.00</td><td>-0.00</td></tr><tr><td>688067.SH</td><td>0</td><td>0</td><td>+101.99</td><td>+2.61</td><td>+0.00</td><td>-0.00</td></tr><tr><td>688092.SH</td><td>0</td><td>0</td><td>-36.50</td><td>+2.69</td><td>+0.00</td><td>-0.00</td></tr><tr><td>688217.SH</td><td>0</td><td>0</td><td>+0.00</td><td>+0.00</td><td>+0.00</td><td>-0.00</td></tr><tr><td>688420.SH</td><td>0</td><td>0</td><td>+38.76</td><td>+2.47</td><td>+0.00</td><td>-0.00</td></tr><tr><td>688466.SH</td><td>0</td><td>0</td><td>+1145.52</td><td>+25.96</td><td>+0.00</td><td>+0.00</td></tr><tr><td>688528.SH</td><td>0</td><td>0</td><td>+0.00</td><td>+0.00</td><td>+0.00</td><td>+0.00</td></tr><tr><td>688565.SH</td><td>0</td><td>0</td><td>+0.00</td><td>+0.00</td><td>+0.00</td><td>+0.00</td></tr><tr><td>688638.SH</td><td>0</td><td>0</td><td>+0.00</td><td>+4.65</td><td>+0.00</td><td>-0.00</td></tr><tr><td>688659.SH</td><td>0</td><td>0</td><td>+0.00</td><td>+0.15</td><td>+0.00</td><td>+0.00</td></tr><tr><td>688671.SH</td><td>0</td><td>0</td><td>+0.00</td><td>+0.00</td><td>+0.00</td><td>+0.00</td></tr><tr><td>688681.SH</td><td>0</td><td>0</td><td>+0.00</td><td>+0.00</td><td>+0.00</td><td>+0.00</td></tr><tr><td>688695.SH</td><td>0</td><td>0</td><td>+0.00</td><td>+0.00</td><td>+0.00</td><td>+0.00</td></tr><tr><td>688701.SH</td><td>0</td><td>0</td><td>-17.93</td><td>+0.97</td><td>+0.00</td><td>+0.00</td></tr><tr><td>688737.SH</td><td>0</td><td>0</td><td>+0.00</td><td>+0.28</td><td>+0.00</td><td>+0.00</td></tr></table>
+
+<div class='section'>
+  <h2>策略诊断：实盘 vs 独立策略回测（含资金基线与计划差异，不代表执行失败）</h2>
+  <div>买入: 实盘 ¥4.2w · 回测 ¥4.3w · 买量缺口合计 +0 股</div>
+  <div>卖出: 实盘 ¥15.1w · 回测 ¥15.2w</div>
+  <table><thead><tr><th>代码</th><th>名称</th>
+<th>买入实盘</th><th>买入回测</th>
+<th>买股实盘</th><th>买股回测</th><th>买量缺口</th>
+<th>卖出实盘</th><th>卖出回测</th></tr></thead><tbody>
+<tr><td>301037.SZ</td><td>保立佳</td><td>¥3.8w</td><td>¥3.8w</td><td>3700</td><td>3700</td><td class=''>+0</td><td>¥0</td><td>¥0</td></tr>
+<tr><td>301049.SZ</td><td>超越科技</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥1,621</td><td>¥1,677</td></tr>
+<tr><td>301288.SZ</td><td>清研环境</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥1,359</td><td>¥1,379</td></tr>
+<tr><td>600137.SH</td><td>浪莎股份</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥4.3w</td><td>¥4.3w</td></tr>
+<tr><td>603208.SH</td><td>江山欧派</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥3.6w</td><td>¥3.6w</td></tr>
+<tr><td>688021.SH</td><td>奥福科技</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥3,488</td><td>¥3,488</td></tr>
+<tr><td>688067.SH</td><td>爱威科技</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥4,314</td><td>¥4,416</td></tr>
+<tr><td>688092.SH</td><td>爱科科技</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥4,438</td><td>¥4,401</td></tr>
+<tr><td>688420.SH</td><td>美腾科技</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥4,084</td><td>¥4,123</td></tr>
+<tr><td>688466.SH</td><td>金科环境</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥4.3w</td><td>¥4.4w</td></tr>
+<tr><td>688638.SH</td><td>誉辰智能</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥7,679</td><td>¥7,679</td></tr>
+<tr><td>688659.SH</td><td>元琛科技</td><td>¥1,470</td><td>¥1,470</td><td>200</td><td>200</td><td class=''>+0</td><td>¥0</td><td>¥0</td></tr>
+<tr><td>688701.SH</td><td>卓锦股份</td><td>¥0</td><td>¥0</td><td>0</td><td>0</td><td class=''>+0</td><td>¥1,484</td><td>¥1,466</td></tr>
+<tr><td>688737.SH</td><td>中自科技</td><td>¥2,632</td><td>¥2,632</td><td>200</td><td>200</td><td class=''>+0</td><td>¥0</td><td>¥0</td></tr>
+</tbody></table>
+</div>
+
+<div class='section'>
+  <h2>滑点明细（成交价 vs 开盘价，仅 debug 用）</h2>
+  <div>平均滑点 -0.443% (-44.3 bp) · 总滑点成本 +1,407</div>
+  <table><thead><tr><th>代码</th><th>方向</th><th>est_price</th>
+<th>traded_price</th><th>滑点 %</th><th>滑点成本</th></tr></thead><tbody>
+<tr><td>688092.SH </td><td>sell</td><td>20.190</td><td>20.390</td><td class='negative'>+0.991%</td><td class='negative'>-29</td></tr>
+<tr><td>688092.SH </td><td>sell</td><td>20.190</td><td>20.290</td><td class='negative'>+0.495%</td><td class='negative'>-7</td></tr>
+<tr><td>688021.SH </td><td>sell</td><td>16.300</td><td>16.300</td><td class='positive'>+0.000%</td><td class='positive'>+0</td></tr>
+<tr><td>688701.SH </td><td>sell</td><td>6.850</td><td>6.940</td><td class='negative'>+1.314%</td><td class='negative'>-7</td></tr>
+<tr><td>688701.SH </td><td>sell</td><td>6.850</td><td>6.930</td><td class='negative'>+1.168%</td><td class='negative'>-11</td></tr>
+<tr><td>688638.SH </td><td>sell</td><td>29.880</td><td>29.880</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>688638.SH </td><td>sell</td><td>29.880</td><td>29.880</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>301037.SZ </td><td>buy</td><td>10.380</td><td>10.380</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>301037.SZ </td><td>buy</td><td>10.380</td><td>10.380</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>688659.SH </td><td>buy</td><td>7.350</td><td>7.350</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>603208.SH </td><td>sell</td><td>9.590</td><td>9.590</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>603208.SH </td><td>sell</td><td>9.590</td><td>9.590</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>603208.SH </td><td>sell</td><td>9.590</td><td>9.590</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>603208.SH </td><td>sell</td><td>9.590</td><td>9.590</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>688737.SH </td><td>buy</td><td>13.160</td><td>13.160</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>688737.SH </td><td>buy</td><td>13.160</td><td>13.160</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>600137.SH </td><td>sell</td><td>16.620</td><td>16.620</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>600137.SH </td><td>sell</td><td>16.620</td><td>16.620</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>600137.SH </td><td>sell</td><td>16.620</td><td>16.620</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>600137.SH </td><td>sell</td><td>16.620</td><td>16.620</td><td class='negative'>+0.000%</td><td class='negative'>0</td></tr>
+<tr><td>301037.SZ </td><td>buy</td><td>10.380</td><td>10.370</td><td class='negative'>-0.096%</td><td class='negative'>-3</td></tr>
+<tr><td>301037.SZ </td><td>buy</td><td>10.380</td><td>10.370</td><td class='negative'>-0.096%</td><td class='negative'>-7</td></tr>
+<tr><td>301037.SZ </td><td>buy</td><td>10.380</td><td>10.370</td><td class='negative'>-0.096%</td><td class='negative'>-6</td></tr>
+<tr><td>301037.SZ </td><td>buy</td><td>10.380</td><td>10.370</td><td class='negative'>-0.096%</td><td class='negative'>-8</td></tr>
+<tr><td>301037.SZ </td><td>buy</td><td>10.380</td><td>10.370</td><td class='negative'>-0.096%</td><td class='negative'>-9</td></tr>
+<tr><td>301037.SZ </td><td>buy</td><td>10.380</td><td>10.370</td><td class='negative'>-0.096%</td><td class='negative'>-1</td></tr>
+<tr><td>600137.SH </td><td>sell</td><td>16.620</td><td>16.550</td><td class='positive'>-0.421%</td><td class='positive'>+133</td></tr>
+<tr><td>301049.SZ </td><td>sell</td><td>16.770</td><td>16.210</td><td class='positive'>-3.339%</td><td class='positive'>+56</td></tr>
+<tr><td>301288.SZ </td><td>sell</td><td>13.790</td><td>13.590</td><td class='positive'>-1.450%</td><td class='positive'>+20</td></tr>
+<tr><td>688067.SH </td><td>sell</td><td>20.350</td><td>19.880</td><td class='positive'>-2.310%</td><td class='positive'>+102</td></tr>
+<tr><td>688420.SH </td><td>sell</td><td>20.210</td><td>20.020</td><td class='positive'>-0.940%</td><td class='positive'>+39</td></tr>
+<tr><td>688466.SH </td><td>sell</td><td>14.200</td><td>13.830</td><td class='positive'>-2.606%</td><td class='positive'>+740</td></tr>
+<tr><td>688466.SH </td><td>sell</td><td>14.200</td><td>13.830</td><td class='positive'>-2.606%</td><td class='positive'>+91</td></tr>
+<tr><td>688466.SH </td><td>sell</td><td>14.200</td><td>13.830</td><td class='positive'>-2.606%</td><td class='positive'>+296</td></tr>
+<tr><td>688466.SH </td><td>sell</td><td>14.200</td><td>13.830</td><td class='positive'>-2.606%</td><td class='positive'>+18</td></tr>
+</tbody></table>
+</div>
+
+<div class='section'>
+  <h2>逐股盈亏对比</h2>
+  <div>实盘合计 +1,578 · 回测合计 +3,081</div>
+  <table><thead><tr><th>代码</th><th>名称</th>
+<th>仓位实盘</th><th>仓位回测</th>
+<th>市值实盘</th><th>市值回测</th>
+<th>P&L 实盘</th><th>P&L 回测</th><th>P&L 差</th>
+<th>收益 实盘</th><th>收益 回测</th><th>收益差</th></tr></thead><tbody>
+<tr><td>688466.SH</td><td>金科环境</td><td>0</td><td>0</td><td>¥0</td><td>¥0</td><td>+2,203</td><td>+3,375</td><td class='negative'>-1,171</td><td>-</td><td>-</td><td class='negative'>-</td></tr>
+<tr><td>600137.SH</td><td>浪莎股份</td><td>0</td><td>0</td><td>¥0</td><td>¥0</td><td>+959</td><td>+1,118</td><td class='negative'>-159</td><td>-</td><td>-</td><td class='negative'>-</td></tr>
+<tr><td>688067.SH</td><td>爱威科技</td><td>1918</td><td>1918</td><td>¥3.8w</td><td>¥3.8w</td><td>-668</td><td>-564</td><td class='negative'>-105</td><td>-</td><td>-</td><td class='negative'>-</td></tr>
+<tr><td>301049.SZ</td><td>超越科技</td><td>2400</td><td>2400</td><td>¥3.9w</td><td>¥3.9w</td><td>-693</td><td>-636</td><td class='negative'>-57</td><td>-</td><td>-</td><td class='negative'>-</td></tr>
+<tr><td>688420.SH</td><td>美腾科技</td><td>1931</td><td>1931</td><td>¥3.9w</td><td>¥3.9w</td><td>+1,560</td><td>+1,601</td><td class='negative'>-41</td><td>-</td><td>-</td><td class='negative'>-</td></tr>
+<tr><td>688092.SH</td><td>爱科科技</td><td>1933</td><td>1933</td><td>¥3.9w</td><td>¥3.9w</td><td>+1,518</td><td>+1,484</td><td class='positive'>+34</td><td>-</td><td>-</td><td class='positive'>-</td></tr>
+<tr><td>301037.SZ</td><td>保立佳</td><td>3700</td><td>3700</td><td>¥3.8w</td><td>¥3.8w</td><td>-266</td><td>-296</td><td class='positive'>+30</td><td>-</td><td>-</td><td class='positive'>-</td></tr>
+<tr><td>603208.SH</td><td>江山欧派</td><td>0</td><td>0</td><td>¥0</td><td>¥0</td><td>-820</td><td>-798</td><td class='negative'>-22</td><td>-</td><td>-</td><td class='negative'>-</td></tr>
+<tr><td>301288.SZ</td><td>清研环境</td><td>2900</td><td>2900</td><td>¥4.0w</td><td>¥4.0w</td><td>+1,062</td><td>+1,083</td><td class='negative'>-21</td><td>-</td><td>-</td><td class='negative'>-</td></tr>
+<tr><td>688701.SH</td><td>卓锦股份</td><td>5697</td><td>5697</td><td>¥3.8w</td><td>¥3.8w</td><td>+97</td><td>+81</td><td class='positive'>+17</td><td>-</td><td>-</td><td class='positive'>-</td></tr>
+<tr><td>688638.SH</td><td>誉辰智能</td><td>1306</td><td>1306</td><td>¥3.9w</td><td>¥3.9w</td><td>+2,351</td><td>+2,355</td><td class='negative'>-5</td><td>-</td><td>-</td><td class='negative'>-</td></tr>
+<tr><td>688021.SH</td><td>奥福科技</td><td>2395</td><td>2395</td><td>¥3.9w</td><td>¥3.9w</td><td>-718</td><td>-716</td><td class='negative'>-2</td><td>-</td><td>-</td><td class='negative'>-</td></tr>
+<tr><td>688737.SH</td><td>中自科技</td><td>3081</td><td>3081</td><td>¥4.0w</td><td>¥4.0w</td><td>-1,303</td><td>-1,302</td><td class='negative'>-0</td><td>-</td><td>-</td><td class='negative'>-</td></tr>
+<tr><td>688659.SH</td><td>元琛科技</td><td>5439</td><td>5439</td><td>¥4.0w</td><td>¥4.0w</td><td>-945</td><td>-945</td><td class='negative'>-0</td><td>-</td><td>-</td><td class='negative'>-</td></tr>
+<tr><td>688217.SH</td><td>睿昂基因</td><td>1996</td><td>1996</td><td>¥4.0w</td><td>¥4.0w</td><td>-639</td><td>-639</td><td class='negative'>-0</td><td>-</td><td>-</td><td class='negative'>-</td></tr>
+<tr><td>688565.SH</td><td>力源科技</td><td>4422</td><td>4422</td><td>¥3.9w</td><td>¥3.9w</td><td>-575</td><td>-575</td><td class='positive'>+0</td><td>-</td><td>-</td><td class='positive'>-</td></tr>
+<tr><td>158905.SZ</td><td>红利主动</td><td>100000</td><td>100000</td><td>¥10.0w</td><td>¥10.0w</td><td>0</td><td>0</td><td class=''>0</td><td>-</td><td>-</td><td class=''>-</td></tr>
+<tr><td>300899.SZ</td><td>上海凯鑫</td><td>1700</td><td>1700</td><td>¥3.9w</td><td>¥3.9w</td><td>-833</td><td>-833</td><td class=''>0</td><td>-</td><td>-</td><td class=''>-</td></tr>
+<tr><td>301298.SZ</td><td>东利机械</td><td>3700</td><td>3700</td><td>¥3.9w</td><td>¥3.9w</td><td>-555</td><td>-555</td><td class=''>0</td><td>-</td><td>-</td><td class=''>-</td></tr>
+<tr><td>301503.SZ</td><td>智迪科技</td><td>2000</td><td>2000</td><td>¥3.9w</td><td>¥3.9w</td><td>-120</td><td>-120</td><td class=''>0</td><td>-</td><td>-</td><td class=''>-</td></tr>
+<tr><td>301519.SZ</td><td>舜禹股份</td><td>1700</td><td>1700</td><td>¥1.7w</td><td>¥1.7w</td><td>+85</td><td>+85</td><td class=''>0</td><td>-</td><td>-</td><td class=''>-</td></tr>
+<tr><td>688528.SH</td><td>秦川物联</td><td>4797</td><td>4797</td><td>¥4.0w</td><td>¥4.0w</td><td>+144</td><td>+144</td><td class=''>0</td><td>-</td><td>-</td><td class=''>-</td></tr>
+<tr><td>688671.SH</td><td>碧兴物联</td><td>2090</td><td>2090</td><td>¥3.9w</td><td>¥3.9w</td><td>-209</td><td>-209</td><td class=''>0</td><td>-</td><td>-</td><td class=''>-</td></tr>
+<tr><td>688681.SH</td><td>科汇股份</td><td>3257</td><td>3257</td><td>¥4.1w</td><td>¥4.1w</td><td>-326</td><td>-326</td><td class=''>0</td><td>-</td><td>-</td><td class=''>-</td></tr>
+<tr><td>688695.SH</td><td>中创股份</td><td>2234</td><td>2234</td><td>¥4.0w</td><td>¥4.0w</td><td>+268</td><td>+268</td><td class=''>0</td><td>-</td><td>-</td><td class=''>-</td></tr>
+</tbody></table>
+</div>
+
+</body></html>

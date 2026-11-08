@@ -1,0 +1,13 @@
+{
+  "checked_at": "2026-11-02T17:24:46.718171",
+  "goal_complete": false,
+  "opening_observer_stage": "DEADLINE_WITHOUT_VERIFIED_FILL",
+  "heartbeat_last_local": "2026-11-02 09:25:24",
+  "main_identity_exists": false,
+  "execution_journal_exists": false,
+  "app_target_probe_evidence_exists": false,
+  "live_enabled": false,
+  "computer_use": "QMT window returned screenshot obstructed by foreground remote-client account notice; no UI input performed",
+  "opening_followup_deleted": "wbr-2",
+  "other_automations_modified": false
+}
