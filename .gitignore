@@ -69,3 +69,8 @@ llm_ga/proposals/
 
 # Separate minimal review environment (full training environment stays in .venv).
 .venv-review/
+
+# Branch-independent local outputs; never switch account data or mutable registries.
+tmp/
+factor_db/registry.db
+factor_db/registry.db-*
