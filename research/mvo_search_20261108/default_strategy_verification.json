@@ -1,0 +1,35 @@
+{
+  "state": "pass",
+  "model_sha256": "042010db5216148bd4150cbd17b4d04e53aca47afc6d23c702016c4c47d78c7f",
+  "records": [
+    {
+      "date": "2011-01-04",
+      "stock_axis": 5561,
+      "eligible_predictions": 1849,
+      "raw_prediction_max_error": 0.0,
+      "fused_scores_exact": true
+    },
+    {
+      "date": "2017-12-01",
+      "stock_axis": 5561,
+      "eligible_predictions": 3184,
+      "raw_prediction_max_error": 0.0,
+      "fused_scores_exact": true
+    },
+    {
+      "date": "2021-12-31",
+      "stock_axis": 5561,
+      "eligible_predictions": 4405,
+      "raw_prediction_max_error": 0.0,
+      "fused_scores_exact": true
+    },
+    {
+      "date": "2026-10-29",
+      "stock_axis": 5561,
+      "eligible_predictions": 4976,
+      "raw_prediction_max_error": 0.0,
+      "fused_scores_exact": true
+    }
+  ],
+  "scope": "portable normalized-input inference and fusion; raw live feature supply/broker execution not certified"
+}

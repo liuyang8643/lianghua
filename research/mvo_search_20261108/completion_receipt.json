@@ -1,0 +1,38 @@
+{
+  "state": "complete",
+  "scope": "24 complete OOF candidates; frozen external account; independent arithmetic and full exact replay; native report produced; not browser pixel review or live deployment",
+  "tabs": [
+    "cleared",
+    "daily",
+    "delist",
+    "holdings",
+    "monthly",
+    "trades"
+  ],
+  "fills": 9455,
+  "closed_episodes": 2836,
+  "elapsed_seconds": 2412.1709184646606,
+  "bindings": {
+    "protocol.json": "319296df3009e4df643ba5a89a56d549666ea5273b6ec8a92a902bc574060e34",
+    "inputs.json": "dc953804363b021f3123d6dd9cfb9fcbafd45835c83a4882c1f407607c3b0c6d",
+    "source_snapshot/artifacts/research/multihorizon_mvo_20261108_drift_cap/mvo_adapter.py": "6f793f0024c0d096f39683d466b52185ce7712d6c5c5521d9458fef87e9f5354",
+    "search_plan.json": "11f3d21980ab3d56e6225d5d75b5f93ef2be5f84037f785688d316f929ec010b",
+    "winner.json": "15512044e952039b2484cb518d505569da3ef54765e2189cd40d6dfcaae2693c",
+    "complete.json": "95b3ca062525172d1027f0500188c8d4cd27b760eea4261ebd28e9080d3f58e5",
+    "external.json": "335ef5d3a949d9fa5e818ec77853640a33052f2e397b3a11fd4f2071145b0a7f",
+    "external.npz": "c5b6b3776cb532ceb62ed86ca6a71c1794c2bf39b9e3291155a36e37bc6f20a3",
+    "result_audit.json": "b2013a09c3f55fc6d4d953a489592af6b3f837f50125522112f7a85ca1dd92be",
+    "metadata_recovery.json": "3d088d0933e31935aa26c8002d426283c477e22f6ca18ad65b6b1861e274e0a8",
+    "mvo_adapter_report.py": "c018b9dd3bc06eb533aa8dd12872bc33d378e6d1e22b340ab22a1223c03ffee6",
+    "deliver.py": "a94c71e440a1fe0df441bcdec8b4058d6f68db211df91002f097acd6191263ef",
+    "delivery_complete.json": "2eb1e02bd9f1243574c31babf45276202a4b339f419a796e17d34cd54f0cf80f",
+    "execution_summary.json": "fba56426fe4cb1cb9f3e0f03b2906c6213737fbe207fe719c763cebb15caa3fc",
+    "report/single_report.html": "5bff23ed482d8bc17a32cbf8c41ce0e3002dc051387d2e6a226988f496bd35a6",
+    "comparison.html": "9e7ce04be875320b4f7baede2fa43b05aec6dce63ba68cd506d0a056da5658dc",
+    "reproduction.json": "f3f1dc99d232d3eeaef008976e48bce9fc0b2001e89b932484c50432e786b32d"
+  },
+  "prior_failures_preserved": [
+    "strict-cap trial root stopped after6invalid1complete",
+    "detailed result aggregation exception after full external journal, recovered and exact-replayed"
+  ]
+}

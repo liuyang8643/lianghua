@@ -1,0 +1,177 @@
+{
+  "state": "pass",
+  "scope": "saved full OOF trace arithmetic, solver residual receipts, fixed selection; not a second solver rerun for every market day",
+  "checks": [
+    {
+      "id": 0,
+      "dates": 2674,
+      "calmar": 0.8665151395327163,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2672
+    },
+    {
+      "id": 1,
+      "dates": 2674,
+      "calmar": 0.8714792300464226,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2672
+    },
+    {
+      "id": 2,
+      "dates": 2674,
+      "calmar": 0.7655392392709306,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2590
+    },
+    {
+      "id": 3,
+      "dates": 2674,
+      "calmar": 0.7667635915613882,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2597
+    },
+    {
+      "id": 4,
+      "dates": 2674,
+      "calmar": 0.9485017199690335,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2673
+    },
+    {
+      "id": 5,
+      "dates": 2674,
+      "calmar": 0.9475871519567443,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2673
+    },
+    {
+      "id": 6,
+      "dates": 2674,
+      "calmar": 0.8386188696277161,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2650
+    },
+    {
+      "id": 7,
+      "dates": 2674,
+      "calmar": 0.8490043369318525,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2651
+    },
+    {
+      "id": 8,
+      "dates": 2674,
+      "calmar": 0.6731787457592813,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2673
+    },
+    {
+      "id": 9,
+      "dates": 2674,
+      "calmar": 0.6488616274752707,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2673
+    },
+    {
+      "id": 10,
+      "dates": 2674,
+      "calmar": 0.6494587450725477,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2492
+    },
+    {
+      "id": 11,
+      "dates": 2674,
+      "calmar": 0.6040915334002,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2494
+    },
+    {
+      "id": 12,
+      "dates": 2674,
+      "calmar": 0.730886978613922,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2671
+    },
+    {
+      "id": 13,
+      "dates": 2674,
+      "calmar": 0.7082120278956745,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2671
+    },
+    {
+      "id": 14,
+      "dates": 2674,
+      "calmar": 0.6929619410485361,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2591
+    },
+    {
+      "id": 15,
+      "dates": 2674,
+      "calmar": 0.6966506060032569,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2582
+    },
+    {
+      "id": 16,
+      "dates": 2674,
+      "calmar": 0.6413414896476411,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2673
+    },
+    {
+      "id": 17,
+      "dates": 2674,
+      "calmar": 0.5695164310981318,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2671
+    },
+    {
+      "id": 18,
+      "dates": 2674,
+      "calmar": 0.6079378977897893,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2566
+    },
+    {
+      "id": 19,
+      "dates": 2674,
+      "calmar": 0.5695085571998677,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2530
+    },
+    {
+      "id": 20,
+      "dates": 2674,
+      "calmar": 0.6153572368087057,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2673
+    },
+    {
+      "id": 21,
+      "dates": 2674,
+      "calmar": 0.5284988466884701,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2673
+    },
+    {
+      "id": 22,
+      "dates": 2674,
+      "calmar": 0.5380886427231375,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2578
+    },
+    {
+      "id": 23,
+      "dates": 2674,
+      "calmar": 0.5273269356730813,
+      "annual_rows": 11,
+      "drift_over_cap_days": 2563
+    }
+  ],
+  "invalid_trials": [],
+  "winner": 4,
+  "full_grid": true
+}

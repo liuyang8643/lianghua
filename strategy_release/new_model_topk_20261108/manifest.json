@@ -1,0 +1,51 @@
+{
+  "release_id": "new_model_topk_20261108",
+  "default_method": "rank_buffer",
+  "display_name": "新模型 + TopK缓冲",
+  "horizons": [
+    3,
+    7,
+    15,
+    30,
+    60
+  ],
+  "weights": [
+    0.2,
+    0.3,
+    0.1,
+    0.3,
+    0.1
+  ],
+  "parameters": {
+    "buy_n": 40,
+    "sell_m": 40,
+    "hold_thresh": 3,
+    "max_replacements": 1
+  },
+  "allow_cash": true,
+  "top_up_existing_positions": false,
+  "new_entry_nav_fraction": 0.025,
+  "fees": {
+    "commission_rate": 8.54e-05,
+    "minimum_commission": 0.1,
+    "slippage_rate": 0.0025,
+    "stamp_tax_rate": 0.0005,
+    "transfer_fee_rate": 2e-05
+  },
+  "training_interval": [
+    "2005-01-01",
+    "2021-12-31"
+  ],
+  "features": 284,
+  "trees": 523,
+  "integration_scope": "portable model+normalization+allocation; live repository supplies causal features, legal masks and confirmed account. Existing trade.main PPO entry is not this adapter.",
+  "research_source_scope": "Exact tested research source for feature-provider porting, not a broker configuration; machine secrets/data/model caches excluded",
+  "files": {
+    "features.json": "9a775c2e070057eb4cca01afc2295a2f879b9c9d5cf0cc521fff89bb7fc864ec",
+    "model.json": "a2335a74fde2773c59d0785d44826f53223c96dc8f711be898bfaf5bb3081976",
+    "model.txt": "042010db5216148bd4150cbd17b4d04e53aca47afc6d23c702016c4c47d78c7f",
+    "QLIB_LICENSE.txt": "7df20dcdf9197e9945c14858d41c60f11b52b93e5b69e2b63416b874d598d322",
+    "research_source.zip": "71a367488fd305d4b94b6a0081d86b7486f67659183b86bbb1d2814555260830",
+    "research_source_manifest.json": "04ae7e17ed413d352bd186bbc52378b94bc5af2716e7c7c6f4d64cd639066ca1"
+  }
+}
