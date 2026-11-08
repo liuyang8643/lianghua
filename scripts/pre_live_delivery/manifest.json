@@ -1,0 +1,22 @@
+{
+  "files": {
+    "adapter_code_review.json": "ad5ac49223acb6ab10834296c7e9743495f00926ba0f2cd7a2b36c550297770d",
+    "audit_extreme_returns.py": "f673b26b62218e51643d5d7e9b831a5eaa07e442b024d5d1f9eb9b3daa9e9157",
+    "audit_native_reports.py": "3f79c72e27a5623f19dc6201ea2db7540599a5795e0b67f5870397b9aa99453f",
+    "check_extreme_public_quotes.py": "452299267665420a94f9df5989a29b93c0e85d522ebb1b86c82f365d082f14d7",
+    "delivery_inputs.py": "562cf4d39b2840aae5c0c1f3d12e17134b5078588c358849c53ca9201f8eac13",
+    "export_delivery_comparison.py": "0f3a887fc13ab388828ff3ac3da895dcd365a26c1dce2f70c205e6752066e105",
+    "export_factor_tables.py": "8936f35a6ab7a7499e97f4a03986ed4a59e34be492dea85a0dd3953ce213510c",
+    "export_frozen_strategy.py": "bbd63c4ff815979720ba8891c977b3d9d772a7627e7008e3c496e0c3f92558d6",
+    "export_label_coverage.py": "8130f06ddd952f0a07882d5b871a31c74e372364017235d6131a6a340f5a3d96",
+    "export_model_tables.py": "dd08626a78e29d369eaa8f70c206e81ae845f39fd2eb512bc60cac91c0777932",
+    "export_oof_years.py": "7ab9fa61473a7ceba79d9e9bed74bc0108c5532663b8b0da04fd9ad34a79bd6e",
+    "export_search_progress.py": "4fb6b577dfdf2f1df23998e83f1d84222aac8014fb011581f9a42f80a97a3ce8",
+    "finalize_presentations.py": "b313dc5ee61786a2cfca8adadbfe1a042c95e57492d1e19ed8d48330efae2cff",
+    "prepare_2026_explanation.py": "ca05b07c02f582beeaadabc00fcd6717f1e0e67298870bab896f7ec03ffdff21",
+    "run_final_regression.py": "df1257ed6941dd2178640b009fc40f1f13a9886ba6e4907507f71e19a7113cba",
+    "test_report_tabs.cjs": "9b83fa01c7d503681f114d9f8c8dd6e2d25d14a81c7194276d23cd5b1a02c9a9"
+  },
+  "scope": "Copy these versioned consumers into each fresh study root; only code-contract review may be reused under exact source SHA, never financial/data prelaunch or final passes.",
+  "version": "pre-live-delivery-20261108-v2"
+}

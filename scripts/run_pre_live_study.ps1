@@ -28,4 +28,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Independent prelaunch not passed or inputs cha
 Write-Phase 'training_workflow'
 & $python scripts/run_research_guarded.py --cwd (Get-Location).Path --logs (Join-Path $StudyRoot 'workflow_logs') -- $python -u -m ai.supervised.multihorizon_workflow --root $StudyRoot --start selection
 if ($LASTEXITCODE -ne 0) { throw 'Workflow failed; inspect preserved receipts' }
-Write-Phase 'awaiting_final_review_and_detailed_reports'
+Write-Phase 'delivery_regressions_and_reports'
+& (Join-Path $PSScriptRoot 'finalize_pre_live_study.ps1') -StudyRoot $StudyRoot
+if ($LASTEXITCODE -ne 0) { throw 'Delivery failed; inspect preserved receipts' }
+Write-Phase 'awaiting_independent_final_review'
