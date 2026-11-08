@@ -2,10 +2,6 @@ def is_cyb_stock(stock_code: str) -> bool:
   """创业板（300/301开头）：上市前5日不设限，此后±20%；ST仍20%。"""
   return stock_code.startswith('300') or stock_code.startswith('301')
 
-def is_kcb_stock(stock_code: str) -> bool:
-  """科创板（688开头）：上市前5日不设限，此后±20%；ST仍20%。"""
-  return stock_code.startswith('688')
-
 def is_bse_stock(stock_code: str) -> bool:
   """北交所（43/83/87/92开头）：上市首日不设限，此后±30%。"""
   bare_code = stock_code.split('.')[0]
@@ -19,28 +15,11 @@ def is_convertible_bond(stock_code: str) -> bool:
   """可转债（11/12/13开头）"""
   return stock_code.startswith('11') or stock_code.startswith('12') or stock_code.startswith('13')
 
-def min_buy_shares(stock_code: str) -> int:
-  """委托最小买入数量：科创板 200 股起，其余 100 股起。"""
-  if is_kcb_stock(stock_code):
-    return 200
-  return 100
-
-
-def buy_step_shares(stock_code: str) -> int:
-  """买入申报递增步长：科创板 200 股起、1 股递增；其余 100 股递增。"""
-  if is_kcb_stock(stock_code):
-    return 1
-  return min_buy_shares(stock_code)
-
-
-def floor_buy_shares(stock_code: str, shares: int) -> int:
-  """把买入数量向下调整为合法申报量；不足最低买入量时返回 0。"""
-  qty = int(shares)
-  minimum = min_buy_shares(stock_code)
-  if qty < minimum:
-    return 0
-  step = buy_step_shares(stock_code)
-  return minimum + ((qty - minimum) // step) * step
+from utils.stock.quantity import (
+    is_kcb_stock, minimum_buy_quantity as min_buy_shares,
+    buy_quantity_step as buy_step_shares, floor_buy_quantity as floor_buy_shares,
+    floor_partial_sell_quantity,
+)
 
 
 def round_buy_shares(stock_code: str, shares: int) -> int:
@@ -54,11 +33,17 @@ def round_buy_shares(stock_code: str, shares: int) -> int:
   return floor_buy_shares(stock_code, qty)
 
 
-def min_sell_shares(stock_code: str) -> int:
-  """部分卖出单笔申报最低股数：科创板200股（余额不足200可一次性全清，不受此限），其余100股。"""
-  if is_kcb_stock(stock_code):
-    return 200
-  return 100
+min_sell_shares = min_buy_shares
+
+
+def floor_sell_shares(stock_code: str, requested: int, available: int, holding: int) -> int:
+  """Execution quantity: cap by holdings/availability; permit odd-lot full liquidation."""
+  quantity = min(int(requested), int(available), int(holding))
+  if quantity <= 0:
+    return 0
+  if quantity == int(holding):
+    return quantity
+  return floor_partial_sell_quantity(stock_code, quantity)
 
 def board_limit_ratio(stock_code: str) -> float:
   """板块常规涨跌幅比例：科创/创业板0.20，北交所0.30，主板0.10。"""

@@ -1,0 +1,1998 @@
+{
+  "feature_names": [
+    "AccrualsYield",
+    "Alpha158_CNTN10",
+    "Alpha158_CNTN20",
+    "Alpha158_CNTN30",
+    "Alpha158_CNTN5",
+    "Alpha158_CNTN60",
+    "Alpha158_HIGH0",
+    "Alpha158_IMIN10",
+    "Alpha158_IMIN20",
+    "Alpha158_IMIN30",
+    "Alpha158_IMIN5",
+    "Alpha158_IMIN60",
+    "Alpha158_KLOW2",
+    "Alpha158_LOW0",
+    "Alpha158_MA30",
+    "Alpha158_MA60",
+    "Alpha158_MAX10",
+    "Alpha158_MAX20",
+    "Alpha158_MAX30",
+    "Alpha158_MAX5",
+    "Alpha158_MAX60",
+    "Alpha158_MIN10",
+    "Alpha158_MIN20",
+    "Alpha158_MIN30",
+    "Alpha158_MIN5",
+    "Alpha158_MIN60",
+    "Alpha158_OPEN0",
+    "Alpha158_QTLD30",
+    "Alpha158_QTLD60",
+    "Alpha158_QTLU10",
+    "Alpha158_QTLU30",
+    "Alpha158_QTLU60",
+    "Alpha158_RESI5",
+    "Alpha158_RSQR10",
+    "Alpha158_RSQR20",
+    "Alpha158_RSQR30",
+    "Alpha158_RSQR5",
+    "Alpha158_RSQR60",
+    "Alpha158_STD60",
+    "Alpha158_SUMN60",
+    "Alpha158_VMA60",
+    "Alpha158_VSTD30",
+    "Alpha158_VSUMN20",
+    "Alpha158_VSUMN30",
+    "Alpha158_VSUMN60",
+    "Alpha158_VWAP0",
+    "Alpha360_HIGH1",
+    "Alpha360_HIGH3",
+    "Alpha360_HIGH31",
+    "Alpha360_LOW1",
+    "Alpha360_LOW11",
+    "Alpha360_LOW12",
+    "Alpha360_LOW17",
+    "Alpha360_LOW18",
+    "Alpha360_LOW2",
+    "Alpha360_LOW24",
+    "Alpha360_LOW26",
+    "Alpha360_LOW27",
+    "Alpha360_LOW3",
+    "Alpha360_LOW37",
+    "Alpha360_LOW38",
+    "Alpha360_LOW4",
+    "Alpha360_LOW5",
+    "Alpha360_LOW51",
+    "Alpha360_LOW54",
+    "Alpha360_LOW58",
+    "Alpha360_LOW6",
+    "Alpha360_LOW7",
+    "Alpha360_LOW8",
+    "Alpha360_LOW9",
+    "Alpha360_VOLUME1",
+    "Alpha360_VOLUME10",
+    "Alpha360_VOLUME11",
+    "Alpha360_VOLUME12",
+    "Alpha360_VOLUME13",
+    "Alpha360_VOLUME14",
+    "Alpha360_VOLUME15",
+    "Alpha360_VOLUME16",
+    "Alpha360_VOLUME17",
+    "Alpha360_VOLUME18",
+    "Alpha360_VOLUME19",
+    "Alpha360_VOLUME2",
+    "Alpha360_VOLUME20",
+    "Alpha360_VOLUME21",
+    "Alpha360_VOLUME22",
+    "Alpha360_VOLUME23",
+    "Alpha360_VOLUME24",
+    "Alpha360_VOLUME25",
+    "Alpha360_VOLUME26",
+    "Alpha360_VOLUME27",
+    "Alpha360_VOLUME29",
+    "Alpha360_VOLUME3",
+    "Alpha360_VOLUME31",
+    "Alpha360_VOLUME32",
+    "Alpha360_VOLUME33",
+    "Alpha360_VOLUME34",
+    "Alpha360_VOLUME35",
+    "Alpha360_VOLUME36",
+    "Alpha360_VOLUME37",
+    "Alpha360_VOLUME38",
+    "Alpha360_VOLUME39",
+    "Alpha360_VOLUME4",
+    "Alpha360_VOLUME40",
+    "Alpha360_VOLUME41",
+    "Alpha360_VOLUME42",
+    "Alpha360_VOLUME43",
+    "Alpha360_VOLUME44",
+    "Alpha360_VOLUME45",
+    "Alpha360_VOLUME46",
+    "Alpha360_VOLUME47",
+    "Alpha360_VOLUME48",
+    "Alpha360_VOLUME49",
+    "Alpha360_VOLUME5",
+    "Alpha360_VOLUME51",
+    "Alpha360_VOLUME52",
+    "Alpha360_VOLUME53",
+    "Alpha360_VOLUME55",
+    "Alpha360_VOLUME56",
+    "Alpha360_VOLUME57",
+    "Alpha360_VOLUME58",
+    "Alpha360_VOLUME6",
+    "Alpha360_VOLUME7",
+    "Alpha360_VOLUME8",
+    "Alpha360_VOLUME9",
+    "Alpha360_VWAP2",
+    "Alpha360_VWAP8",
+    "AmountBasedSmallCap5",
+    "BiliAdjustedIssueDiscount",
+    "BiliKDJOversoldCross",
+    "BiliLowAmountAttention20__history_120__recent_20",
+    "BiliLowAmountAttention20__history_252__recent_10",
+    "BiliLowAmountAttention20__history_252__recent_30",
+    "BiliLowAmountAttention20__history_252__recent_60",
+    "BiliLowAmountAttention20__history_60__recent_10",
+    "BiliLowAmountAttention20__history_60__recent_30",
+    "BiliLowAmountAttention20__history_60__recent_60",
+    "BiliLowLifetimeRangeRatio",
+    "BiliLowPriceAbove2",
+    "BiliLowPriceSmallCap200",
+    "BiliLowReturnAttention20__window_120",
+    "BiliLowReturnAttention20__window_5",
+    "BiliLowReturnAttention20__window_60",
+    "BiliMACDBottomDivergence30",
+    "BiliNineDownReversal",
+    "BiliRawIssueDiscount",
+    "BookToMarket",
+    "CashFlowYield",
+    "Completed52WeekHighProximityStrict",
+    "Completed6030PoolBeta60Strict",
+    "CompletedAmihudIlliquidity20__window_60",
+    "CompletedAmountConditionedReversal20Strict",
+    "CompletedDividendConsistency3YPIT",
+    "CompletedDividendYield504PIT",
+    "CompletedPriorMonthTurnoverStrict",
+    "CompletedRangeVolatility20",
+    "DeepValueComposite",
+    "DownsideOpenVolatilityStrict",
+    "Factor_20260530_195339_g10_0",
+    "Factor_20260530_195339_g17_0",
+    "Factor_20260530_195339_g17_4",
+    "Factor_20260530_195339_g3_2",
+    "Factor_20260531_005210_g11_0",
+    "Factor_20260531_005210_g11_3",
+    "Factor_20260531_005210_g13_1",
+    "Factor_20260531_005210_g15_4",
+    "Factor_20260531_005210_g17_0",
+    "Factor_20260531_005210_g20_0",
+    "Factor_20260531_005210_g20_3",
+    "Factor_20260531_005210_g22_2",
+    "Factor_20260531_005210_g24_2",
+    "Factor_20260531_005210_g25_3",
+    "Factor_20260531_005210_g26_4",
+    "Factor_20260531_005210_g28_2",
+    "Factor_20260531_005210_g29_2",
+    "Factor_20260531_005210_g29_3",
+    "Factor_20260531_005210_g2_0",
+    "Factor_20260531_005210_g30_3",
+    "Factor_20260531_005210_g32_0",
+    "Factor_20260531_005210_g32_1",
+    "Factor_20260531_005210_g34_1",
+    "Factor_20260531_005210_g35_0",
+    "Factor_20260531_005210_g37_2",
+    "Factor_20260531_005210_g38_1",
+    "Factor_20260531_005210_g39_1",
+    "Factor_20260531_005210_g3_3",
+    "Factor_20260531_005210_g40_1",
+    "Factor_20260531_005210_g41_0",
+    "Factor_20260531_005210_g8_1",
+    "Factor_20260605_192540_g5_2",
+    "FinancialQualityGrowthNeutralPIT",
+    "GrossMarginQuality",
+    "High52Week",
+    "HighAbnormalGrossProfit",
+    "HighInventoryOtherPayable",
+    "HighOperatingCashSurplus",
+    "HighOperatingProfitRevenueGrowthSpread",
+    "HighReceivableOtherPayable",
+    "IndustryPeerReversal120Strict",
+    "IndustryPeerReversal20Strict",
+    "IndustryPeerReversal60Strict",
+    "IntermediateMomentum12Minus1",
+    "LongHorizonVol36MStrict",
+    "LowCashOutflowProfitGrowthSpread__penalty_0",
+    "LowCashOutflowProfitGrowthSpread__penalty_1.5",
+    "LowFloatTurnover20_10",
+    "LowPRDecile",
+    "LowResidualVol20",
+    "MainTurnover",
+    "Optimized__TrueMarketCap",
+    "PB3ROE5Signal",
+    "PBBelowTwoROEAbove10Signal",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.05",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.1",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.15",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.2",
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.05",
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.1",
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.15",
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.1",
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.15",
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.2",
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.25",
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.05",
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.15",
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.2",
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.25",
+    "PBBelowTwoROEAbove10Signal__pb_3__roe_0.1",
+    "PBBelowTwoROEAbove10Signal__pb_3__roe_0.2",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.05",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.1",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.15",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.2",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.25",
+    "PricePosition250",
+    "ProfitGrowth",
+    "SameCalendarMonthReturn3YStrict",
+    "TrendIndividualV5",
+    "TrendOpenSignal",
+    "TrendReversalPreCloseStrict",
+    "TrendReversalV11",
+    "VolumeCVStrict",
+    "VolumeCV__window_10",
+    "VolumeCV__window_120",
+    "VolumeCV__window_30",
+    "VolumeCV__window_5",
+    "VolumeCV__window_60",
+    "VolumeContraction5v15Strict",
+    "attention_contraction_10_60__attention_10__prior_120__recent_20__weight_0.75",
+    "attention_contraction_10_60__attention_10__prior_120__recent_5__weight_0.75",
+    "attention_contraction_10_60__attention_10__prior_20__recent_20__weight_0.25",
+    "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.25",
+    "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.5",
+    "attention_contraction_10_60__attention_10__prior_60__recent_20__weight_0.25",
+    "attention_contraction_10_60__attention_20__prior_60__recent_5__weight_0.75",
+    "attention_contraction_10_60__attention_30__prior_120__recent_20__weight_0.25",
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.25",
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.5",
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.75",
+    "attention_contraction_10_60__attention_30__prior_20__recent_10__weight_0.25",
+    "attention_contraction_10_60__attention_30__prior_20__recent_20__weight_0.5",
+    "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.25",
+    "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.75",
+    "attention_contraction_40_20",
+    "attention_contraction_40_60",
+    "attention_decay20_60",
+    "contraction_10_60",
+    "contraction_20_20",
+    "contraction_20_60",
+    "contraction_40_20",
+    "contraction_40_60",
+    "gradual_quiet20_60",
+    "high_to_quiet_10_20",
+    "high_to_quiet_20_20",
+    "high_to_quiet_20_60",
+    "high_to_quiet_40_20",
+    "high_to_quiet_40_60",
+    "low_residual_vol20__window_10",
+    "low_residual_vol20__window_120",
+    "low_residual_vol20__window_30",
+    "low_residual_vol20__window_5",
+    "persistent_quiet20_60__prior_120__recent_10",
+    "persistent_quiet20_60__prior_120__recent_60",
+    "persistent_quiet20_60__prior_20__recent_30",
+    "persistent_quiet20_60__prior_60__recent_10"
+  ],
+  "normalization": {
+    "AccrualsYield": "daily_PIT_percentile",
+    "Alpha158_CNTN10": "daily_PIT_percentile",
+    "Alpha158_CNTN20": "daily_PIT_percentile",
+    "Alpha158_CNTN30": "daily_PIT_percentile",
+    "Alpha158_CNTN5": "daily_PIT_percentile",
+    "Alpha158_CNTN60": "daily_PIT_percentile",
+    "Alpha158_HIGH0": "daily_PIT_percentile",
+    "Alpha158_IMIN10": "daily_PIT_percentile",
+    "Alpha158_IMIN20": "daily_PIT_percentile",
+    "Alpha158_IMIN30": "daily_PIT_percentile",
+    "Alpha158_IMIN5": "daily_PIT_percentile",
+    "Alpha158_IMIN60": "daily_PIT_percentile",
+    "Alpha158_KLOW2": "daily_PIT_percentile",
+    "Alpha158_LOW0": "daily_PIT_percentile",
+    "Alpha158_MA30": "daily_PIT_percentile",
+    "Alpha158_MA60": "daily_PIT_percentile",
+    "Alpha158_MAX10": "daily_PIT_percentile",
+    "Alpha158_MAX20": "daily_PIT_percentile",
+    "Alpha158_MAX30": "daily_PIT_percentile",
+    "Alpha158_MAX5": "daily_PIT_percentile",
+    "Alpha158_MAX60": "daily_PIT_percentile",
+    "Alpha158_MIN10": "daily_PIT_percentile",
+    "Alpha158_MIN20": "daily_PIT_percentile",
+    "Alpha158_MIN30": "daily_PIT_percentile",
+    "Alpha158_MIN5": "daily_PIT_percentile",
+    "Alpha158_MIN60": "daily_PIT_percentile",
+    "Alpha158_OPEN0": "daily_PIT_percentile",
+    "Alpha158_QTLD30": "daily_PIT_percentile",
+    "Alpha158_QTLD60": "daily_PIT_percentile",
+    "Alpha158_QTLU10": "daily_PIT_percentile",
+    "Alpha158_QTLU30": "daily_PIT_percentile",
+    "Alpha158_QTLU60": "daily_PIT_percentile",
+    "Alpha158_RESI5": "daily_PIT_percentile",
+    "Alpha158_RSQR10": "daily_PIT_percentile",
+    "Alpha158_RSQR20": "daily_PIT_percentile",
+    "Alpha158_RSQR30": "daily_PIT_percentile",
+    "Alpha158_RSQR5": "daily_PIT_percentile",
+    "Alpha158_RSQR60": "daily_PIT_percentile",
+    "Alpha158_STD60": "daily_PIT_percentile",
+    "Alpha158_SUMN60": "daily_PIT_percentile",
+    "Alpha158_VMA60": "daily_PIT_percentile",
+    "Alpha158_VSTD30": "daily_PIT_percentile",
+    "Alpha158_VSUMN20": "daily_PIT_percentile",
+    "Alpha158_VSUMN30": "daily_PIT_percentile",
+    "Alpha158_VSUMN60": "daily_PIT_percentile",
+    "Alpha158_VWAP0": "daily_PIT_percentile",
+    "Alpha360_HIGH1": "daily_PIT_percentile",
+    "Alpha360_HIGH3": "daily_PIT_percentile",
+    "Alpha360_HIGH31": "daily_PIT_percentile",
+    "Alpha360_LOW1": "daily_PIT_percentile",
+    "Alpha360_LOW11": "daily_PIT_percentile",
+    "Alpha360_LOW12": "daily_PIT_percentile",
+    "Alpha360_LOW17": "daily_PIT_percentile",
+    "Alpha360_LOW18": "daily_PIT_percentile",
+    "Alpha360_LOW2": "daily_PIT_percentile",
+    "Alpha360_LOW24": "daily_PIT_percentile",
+    "Alpha360_LOW26": "daily_PIT_percentile",
+    "Alpha360_LOW27": "daily_PIT_percentile",
+    "Alpha360_LOW3": "daily_PIT_percentile",
+    "Alpha360_LOW37": "daily_PIT_percentile",
+    "Alpha360_LOW38": "daily_PIT_percentile",
+    "Alpha360_LOW4": "daily_PIT_percentile",
+    "Alpha360_LOW5": "daily_PIT_percentile",
+    "Alpha360_LOW51": "daily_PIT_percentile",
+    "Alpha360_LOW54": "daily_PIT_percentile",
+    "Alpha360_LOW58": "daily_PIT_percentile",
+    "Alpha360_LOW6": "daily_PIT_percentile",
+    "Alpha360_LOW7": "daily_PIT_percentile",
+    "Alpha360_LOW8": "daily_PIT_percentile",
+    "Alpha360_LOW9": "daily_PIT_percentile",
+    "Alpha360_VOLUME1": "daily_PIT_percentile",
+    "Alpha360_VOLUME10": "daily_PIT_percentile",
+    "Alpha360_VOLUME11": "daily_PIT_percentile",
+    "Alpha360_VOLUME12": "daily_PIT_percentile",
+    "Alpha360_VOLUME13": "daily_PIT_percentile",
+    "Alpha360_VOLUME14": "daily_PIT_percentile",
+    "Alpha360_VOLUME15": "daily_PIT_percentile",
+    "Alpha360_VOLUME16": "daily_PIT_percentile",
+    "Alpha360_VOLUME17": "daily_PIT_percentile",
+    "Alpha360_VOLUME18": "daily_PIT_percentile",
+    "Alpha360_VOLUME19": "daily_PIT_percentile",
+    "Alpha360_VOLUME2": "daily_PIT_percentile",
+    "Alpha360_VOLUME20": "daily_PIT_percentile",
+    "Alpha360_VOLUME21": "daily_PIT_percentile",
+    "Alpha360_VOLUME22": "daily_PIT_percentile",
+    "Alpha360_VOLUME23": "daily_PIT_percentile",
+    "Alpha360_VOLUME24": "daily_PIT_percentile",
+    "Alpha360_VOLUME25": "daily_PIT_percentile",
+    "Alpha360_VOLUME26": "daily_PIT_percentile",
+    "Alpha360_VOLUME27": "daily_PIT_percentile",
+    "Alpha360_VOLUME29": "daily_PIT_percentile",
+    "Alpha360_VOLUME3": "daily_PIT_percentile",
+    "Alpha360_VOLUME31": "daily_PIT_percentile",
+    "Alpha360_VOLUME32": "daily_PIT_percentile",
+    "Alpha360_VOLUME33": "daily_PIT_percentile",
+    "Alpha360_VOLUME34": "daily_PIT_percentile",
+    "Alpha360_VOLUME35": "daily_PIT_percentile",
+    "Alpha360_VOLUME36": "daily_PIT_percentile",
+    "Alpha360_VOLUME37": "daily_PIT_percentile",
+    "Alpha360_VOLUME38": "daily_PIT_percentile",
+    "Alpha360_VOLUME39": "daily_PIT_percentile",
+    "Alpha360_VOLUME4": "daily_PIT_percentile",
+    "Alpha360_VOLUME40": "daily_PIT_percentile",
+    "Alpha360_VOLUME41": "daily_PIT_percentile",
+    "Alpha360_VOLUME42": "daily_PIT_percentile",
+    "Alpha360_VOLUME43": "daily_PIT_percentile",
+    "Alpha360_VOLUME44": "daily_PIT_percentile",
+    "Alpha360_VOLUME45": "daily_PIT_percentile",
+    "Alpha360_VOLUME46": "daily_PIT_percentile",
+    "Alpha360_VOLUME47": "daily_PIT_percentile",
+    "Alpha360_VOLUME48": "daily_PIT_percentile",
+    "Alpha360_VOLUME49": "daily_PIT_percentile",
+    "Alpha360_VOLUME5": "daily_PIT_percentile",
+    "Alpha360_VOLUME51": "daily_PIT_percentile",
+    "Alpha360_VOLUME52": "daily_PIT_percentile",
+    "Alpha360_VOLUME53": "daily_PIT_percentile",
+    "Alpha360_VOLUME55": "daily_PIT_percentile",
+    "Alpha360_VOLUME56": "daily_PIT_percentile",
+    "Alpha360_VOLUME57": "daily_PIT_percentile",
+    "Alpha360_VOLUME58": "daily_PIT_percentile",
+    "Alpha360_VOLUME6": "daily_PIT_percentile",
+    "Alpha360_VOLUME7": "daily_PIT_percentile",
+    "Alpha360_VOLUME8": "daily_PIT_percentile",
+    "Alpha360_VOLUME9": "daily_PIT_percentile",
+    "Alpha360_VWAP2": "daily_PIT_percentile",
+    "Alpha360_VWAP8": "daily_PIT_percentile",
+    "AmountBasedSmallCap5": "daily_PIT_percentile",
+    "BiliAdjustedIssueDiscount": "daily_PIT_percentile",
+    "BiliKDJOversoldCross": "binary",
+    "BiliLowAmountAttention20__history_120__recent_20": "daily_PIT_percentile",
+    "BiliLowAmountAttention20__history_252__recent_10": "daily_PIT_percentile",
+    "BiliLowAmountAttention20__history_252__recent_30": "daily_PIT_percentile",
+    "BiliLowAmountAttention20__history_252__recent_60": "daily_PIT_percentile",
+    "BiliLowAmountAttention20__history_60__recent_10": "daily_PIT_percentile",
+    "BiliLowAmountAttention20__history_60__recent_30": "daily_PIT_percentile",
+    "BiliLowAmountAttention20__history_60__recent_60": "daily_PIT_percentile",
+    "BiliLowLifetimeRangeRatio": "daily_PIT_percentile",
+    "BiliLowPriceAbove2": "daily_PIT_percentile",
+    "BiliLowPriceSmallCap200": "binary",
+    "BiliLowReturnAttention20__window_120": "daily_PIT_percentile",
+    "BiliLowReturnAttention20__window_5": "daily_PIT_percentile",
+    "BiliLowReturnAttention20__window_60": "daily_PIT_percentile",
+    "BiliMACDBottomDivergence30": "binary",
+    "BiliNineDownReversal": "binary",
+    "BiliRawIssueDiscount": "daily_PIT_percentile",
+    "BookToMarket": "daily_PIT_percentile",
+    "CashFlowYield": "daily_PIT_percentile",
+    "Completed52WeekHighProximityStrict": "daily_PIT_percentile",
+    "Completed6030PoolBeta60Strict": "daily_PIT_percentile",
+    "CompletedAmihudIlliquidity20__window_60": "daily_PIT_percentile",
+    "CompletedAmountConditionedReversal20Strict": "daily_PIT_percentile",
+    "CompletedDividendConsistency3YPIT": "daily_PIT_percentile",
+    "CompletedDividendYield504PIT": "daily_PIT_percentile",
+    "CompletedPriorMonthTurnoverStrict": "daily_PIT_percentile",
+    "CompletedRangeVolatility20": "daily_PIT_percentile",
+    "DeepValueComposite": "daily_PIT_percentile",
+    "DownsideOpenVolatilityStrict": "daily_PIT_percentile",
+    "Factor_20260530_195339_g10_0": "daily_PIT_percentile",
+    "Factor_20260530_195339_g17_0": "daily_PIT_percentile",
+    "Factor_20260530_195339_g17_4": "daily_PIT_percentile",
+    "Factor_20260530_195339_g3_2": "daily_PIT_percentile",
+    "Factor_20260531_005210_g11_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g11_3": "daily_PIT_percentile",
+    "Factor_20260531_005210_g13_1": "daily_PIT_percentile",
+    "Factor_20260531_005210_g15_4": "daily_PIT_percentile",
+    "Factor_20260531_005210_g17_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g20_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g20_3": "daily_PIT_percentile",
+    "Factor_20260531_005210_g22_2": "daily_PIT_percentile",
+    "Factor_20260531_005210_g24_2": "daily_PIT_percentile",
+    "Factor_20260531_005210_g25_3": "daily_PIT_percentile",
+    "Factor_20260531_005210_g26_4": "daily_PIT_percentile",
+    "Factor_20260531_005210_g28_2": "daily_PIT_percentile",
+    "Factor_20260531_005210_g29_2": "daily_PIT_percentile",
+    "Factor_20260531_005210_g29_3": "daily_PIT_percentile",
+    "Factor_20260531_005210_g2_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g30_3": "daily_PIT_percentile",
+    "Factor_20260531_005210_g32_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g32_1": "daily_PIT_percentile",
+    "Factor_20260531_005210_g34_1": "daily_PIT_percentile",
+    "Factor_20260531_005210_g35_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g37_2": "daily_PIT_percentile",
+    "Factor_20260531_005210_g38_1": "daily_PIT_percentile",
+    "Factor_20260531_005210_g39_1": "daily_PIT_percentile",
+    "Factor_20260531_005210_g3_3": "daily_PIT_percentile",
+    "Factor_20260531_005210_g40_1": "daily_PIT_percentile",
+    "Factor_20260531_005210_g41_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g8_1": "daily_PIT_percentile",
+    "Factor_20260605_192540_g5_2": "daily_PIT_percentile",
+    "FinancialQualityGrowthNeutralPIT": "daily_PIT_percentile",
+    "GrossMarginQuality": "daily_PIT_percentile",
+    "High52Week": "daily_PIT_percentile",
+    "HighAbnormalGrossProfit": "daily_PIT_percentile",
+    "HighInventoryOtherPayable": "daily_PIT_percentile",
+    "HighOperatingCashSurplus": "daily_PIT_percentile",
+    "HighOperatingProfitRevenueGrowthSpread": "daily_PIT_percentile",
+    "HighReceivableOtherPayable": "daily_PIT_percentile",
+    "IndustryPeerReversal120Strict": "daily_PIT_percentile",
+    "IndustryPeerReversal20Strict": "daily_PIT_percentile",
+    "IndustryPeerReversal60Strict": "daily_PIT_percentile",
+    "IntermediateMomentum12Minus1": "daily_PIT_percentile",
+    "LongHorizonVol36MStrict": "daily_PIT_percentile",
+    "LowCashOutflowProfitGrowthSpread__penalty_0": "daily_PIT_percentile",
+    "LowCashOutflowProfitGrowthSpread__penalty_1.5": "daily_PIT_percentile",
+    "LowFloatTurnover20_10": "daily_PIT_percentile",
+    "LowPRDecile": "daily_PIT_percentile",
+    "LowResidualVol20": "daily_PIT_percentile",
+    "MainTurnover": "daily_PIT_percentile",
+    "Optimized__TrueMarketCap": "daily_PIT_percentile",
+    "PB3ROE5Signal": "binary",
+    "PBBelowTwoROEAbove10Signal": "binary",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.05": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.1": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.15": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.2": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.05": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.1": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.15": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.1": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.15": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.2": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.25": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.05": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.15": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.2": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.25": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_3__roe_0.1": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_3__roe_0.2": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.05": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.1": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.15": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.2": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.25": "daily_PIT_percentile",
+    "PricePosition250": "daily_PIT_percentile",
+    "ProfitGrowth": "daily_PIT_percentile",
+    "SameCalendarMonthReturn3YStrict": "daily_PIT_percentile",
+    "TrendIndividualV5": "daily_PIT_percentile",
+    "TrendOpenSignal": "daily_PIT_percentile",
+    "TrendReversalPreCloseStrict": "daily_PIT_percentile",
+    "TrendReversalV11": "daily_PIT_percentile",
+    "VolumeCVStrict": "daily_PIT_percentile",
+    "VolumeCV__window_10": "daily_PIT_percentile",
+    "VolumeCV__window_120": "daily_PIT_percentile",
+    "VolumeCV__window_30": "daily_PIT_percentile",
+    "VolumeCV__window_5": "daily_PIT_percentile",
+    "VolumeCV__window_60": "daily_PIT_percentile",
+    "VolumeContraction5v15Strict": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_10__prior_120__recent_20__weight_0.75": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_10__prior_120__recent_5__weight_0.75": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_10__prior_20__recent_20__weight_0.25": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.25": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.5": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_10__prior_60__recent_20__weight_0.25": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_20__prior_60__recent_5__weight_0.75": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_120__recent_20__weight_0.25": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.25": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.5": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.75": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_20__recent_10__weight_0.25": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_20__recent_20__weight_0.5": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.25": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.75": "daily_PIT_percentile",
+    "attention_contraction_40_20": "daily_PIT_percentile",
+    "attention_contraction_40_60": "daily_PIT_percentile",
+    "attention_decay20_60": "daily_PIT_percentile",
+    "contraction_10_60": "daily_PIT_percentile",
+    "contraction_20_20": "daily_PIT_percentile",
+    "contraction_20_60": "daily_PIT_percentile",
+    "contraction_40_20": "daily_PIT_percentile",
+    "contraction_40_60": "daily_PIT_percentile",
+    "gradual_quiet20_60": "daily_PIT_percentile",
+    "high_to_quiet_10_20": "daily_PIT_percentile",
+    "high_to_quiet_20_20": "daily_PIT_percentile",
+    "high_to_quiet_20_60": "daily_PIT_percentile",
+    "high_to_quiet_40_20": "daily_PIT_percentile",
+    "high_to_quiet_40_60": "daily_PIT_percentile",
+    "low_residual_vol20__window_10": "daily_PIT_percentile",
+    "low_residual_vol20__window_120": "daily_PIT_percentile",
+    "low_residual_vol20__window_30": "daily_PIT_percentile",
+    "low_residual_vol20__window_5": "daily_PIT_percentile",
+    "persistent_quiet20_60__prior_120__recent_10": "daily_PIT_percentile",
+    "persistent_quiet20_60__prior_120__recent_60": "daily_PIT_percentile",
+    "persistent_quiet20_60__prior_20__recent_30": "daily_PIT_percentile",
+    "persistent_quiet20_60__prior_60__recent_10": "daily_PIT_percentile"
+  },
+  "factors": {
+    "AccrualsYield": {
+      "name": "AccrualsYield",
+      "rank_ic": 0.009089881356064122,
+      "valid_days": 3517
+    },
+    "Alpha158_CNTN10": {
+      "name": "Alpha158_CNTN10",
+      "rank_ic": 0.011824260674475607,
+      "valid_days": 4047
+    },
+    "Alpha158_CNTN20": {
+      "name": "Alpha158_CNTN20",
+      "rank_ic": 0.014880453282676709,
+      "valid_days": 3974
+    },
+    "Alpha158_CNTN30": {
+      "name": "Alpha158_CNTN30",
+      "rank_ic": 0.012123896232209726,
+      "valid_days": 3886
+    },
+    "Alpha158_CNTN5": {
+      "name": "Alpha158_CNTN5",
+      "rank_ic": 0.01105128373669443,
+      "valid_days": 4060
+    },
+    "Alpha158_CNTN60": {
+      "name": "Alpha158_CNTN60",
+      "rank_ic": 0.007268465059175537,
+      "valid_days": 3886
+    },
+    "Alpha158_HIGH0": {
+      "name": "Alpha158_HIGH0",
+      "rank_ic": 0.0007526183180734423,
+      "valid_days": 4072
+    },
+    "Alpha158_IMIN10": {
+      "name": "Alpha158_IMIN10",
+      "rank_ic": 0.022096507052594656,
+      "valid_days": 4051
+    },
+    "Alpha158_IMIN20": {
+      "name": "Alpha158_IMIN20",
+      "rank_ic": 0.03372380350602558,
+      "valid_days": 3982
+    },
+    "Alpha158_IMIN30": {
+      "name": "Alpha158_IMIN30",
+      "rank_ic": 0.03607706413779669,
+      "valid_days": 3894
+    },
+    "Alpha158_IMIN5": {
+      "name": "Alpha158_IMIN5",
+      "rank_ic": 0.016876529762196977,
+      "valid_days": 4061
+    },
+    "Alpha158_IMIN60": {
+      "name": "Alpha158_IMIN60",
+      "rank_ic": 0.027922533623061192,
+      "valid_days": 3638
+    },
+    "Alpha158_KLOW2": {
+      "name": "Alpha158_KLOW2",
+      "rank_ic": 0.004258139821325224,
+      "valid_days": 4070
+    },
+    "Alpha158_LOW0": {
+      "name": "Alpha158_LOW0",
+      "rank_ic": 0.045036129074460855,
+      "valid_days": 4070
+    },
+    "Alpha158_MA30": {
+      "name": "Alpha158_MA30",
+      "rank_ic": 0.063764373320073,
+      "valid_days": 4072
+    },
+    "Alpha158_MA60": {
+      "name": "Alpha158_MA60",
+      "rank_ic": 0.0692005659975603,
+      "valid_days": 4059
+    },
+    "Alpha158_MAX10": {
+      "name": "Alpha158_MAX10",
+      "rank_ic": 0.010070865193552951,
+      "valid_days": 4072
+    },
+    "Alpha158_MAX20": {
+      "name": "Alpha158_MAX20",
+      "rank_ic": 0.014206530045523372,
+      "valid_days": 4072
+    },
+    "Alpha158_MAX30": {
+      "name": "Alpha158_MAX30",
+      "rank_ic": 0.017050275256175765,
+      "valid_days": 4070
+    },
+    "Alpha158_MAX5": {
+      "name": "Alpha158_MAX5",
+      "rank_ic": 0.013825317439660555,
+      "valid_days": 4072
+    },
+    "Alpha158_MAX60": {
+      "name": "Alpha158_MAX60",
+      "rank_ic": 0.001737096412699012,
+      "valid_days": 3638
+    },
+    "Alpha158_MIN10": {
+      "name": "Alpha158_MIN10",
+      "rank_ic": 0.05445092673862717,
+      "valid_days": 4072
+    },
+    "Alpha158_MIN20": {
+      "name": "Alpha158_MIN20",
+      "rank_ic": 0.07002120110615272,
+      "valid_days": 3982
+    },
+    "Alpha158_MIN30": {
+      "name": "Alpha158_MIN30",
+      "rank_ic": 0.06556114218479829,
+      "valid_days": 4070
+    },
+    "Alpha158_MIN5": {
+      "name": "Alpha158_MIN5",
+      "rank_ic": 0.058151652083102245,
+      "valid_days": 4061
+    },
+    "Alpha158_MIN60": {
+      "name": "Alpha158_MIN60",
+      "rank_ic": 0.0778307035908349,
+      "valid_days": 3638
+    },
+    "Alpha158_OPEN0": {
+      "name": "Alpha158_OPEN0",
+      "rank_ic": 0.016762394771146147,
+      "valid_days": 4070
+    },
+    "Alpha158_QTLD30": {
+      "name": "Alpha158_QTLD30",
+      "rank_ic": 0.06385973283979578,
+      "valid_days": 4072
+    },
+    "Alpha158_QTLD60": {
+      "name": "Alpha158_QTLD60",
+      "rank_ic": 0.07981416858824202,
+      "valid_days": 3894
+    },
+    "Alpha158_QTLU10": {
+      "name": "Alpha158_QTLU10",
+      "rank_ic": 0.023164339344731895,
+      "valid_days": 4051
+    },
+    "Alpha158_QTLU30": {
+      "name": "Alpha158_QTLU30",
+      "rank_ic": 0.0602209798148899,
+      "valid_days": 4072
+    },
+    "Alpha158_QTLU60": {
+      "name": "Alpha158_QTLU60",
+      "rank_ic": 0.06539046332181174,
+      "valid_days": 3894
+    },
+    "Alpha158_RESI5": {
+      "name": "Alpha158_RESI5",
+      "rank_ic": 0.001420981185505367,
+      "valid_days": 4072
+    },
+    "Alpha158_RSQR10": {
+      "name": "Alpha158_RSQR10",
+      "rank_ic": 0.01072892400540471,
+      "valid_days": 4051
+    },
+    "Alpha158_RSQR20": {
+      "name": "Alpha158_RSQR20",
+      "rank_ic": 0.014964932973087658,
+      "valid_days": 3982
+    },
+    "Alpha158_RSQR30": {
+      "name": "Alpha158_RSQR30",
+      "rank_ic": 0.012598467078689779,
+      "valid_days": 3894
+    },
+    "Alpha158_RSQR5": {
+      "name": "Alpha158_RSQR5",
+      "rank_ic": 0.00555025929659233,
+      "valid_days": 4061
+    },
+    "Alpha158_RSQR60": {
+      "name": "Alpha158_RSQR60",
+      "rank_ic": 0.011717099177339792,
+      "valid_days": 3638
+    },
+    "Alpha158_STD60": {
+      "name": "Alpha158_STD60",
+      "rank_ic": 0.0018618067710918177,
+      "valid_days": 4059
+    },
+    "Alpha158_SUMN60": {
+      "name": "Alpha158_SUMN60",
+      "rank_ic": 0.04832589172336713,
+      "valid_days": 4057
+    },
+    "Alpha158_VMA60": {
+      "name": "Alpha158_VMA60",
+      "rank_ic": 0.03706728987275194,
+      "valid_days": 3638
+    },
+    "Alpha158_VSTD30": {
+      "name": "Alpha158_VSTD30",
+      "rank_ic": 0.012514919192902835,
+      "valid_days": 3894
+    },
+    "Alpha158_VSUMN20": {
+      "name": "Alpha158_VSUMN20",
+      "rank_ic": 0.033540506150693,
+      "valid_days": 4072
+    },
+    "Alpha158_VSUMN30": {
+      "name": "Alpha158_VSUMN30",
+      "rank_ic": 0.037236714781213286,
+      "valid_days": 3886
+    },
+    "Alpha158_VSUMN60": {
+      "name": "Alpha158_VSUMN60",
+      "rank_ic": 0.0455273446690437,
+      "valid_days": 3628
+    },
+    "Alpha158_VWAP0": {
+      "name": "Alpha158_VWAP0",
+      "rank_ic": 0.014091865148651812,
+      "valid_days": 4070
+    },
+    "Alpha360_HIGH1": {
+      "name": "Alpha360_HIGH1",
+      "rank_ic": 0.0033048263529432322,
+      "valid_days": 4072
+    },
+    "Alpha360_HIGH3": {
+      "name": "Alpha360_HIGH3",
+      "rank_ic": 0.02354639109409013,
+      "valid_days": 4072
+    },
+    "Alpha360_HIGH31": {
+      "name": "Alpha360_HIGH31",
+      "rank_ic": 0.05375006238174412,
+      "valid_days": 4072
+    },
+    "Alpha360_LOW1": {
+      "name": "Alpha360_LOW1",
+      "rank_ic": 0.03986397684316432,
+      "valid_days": 4069
+    },
+    "Alpha360_LOW11": {
+      "name": "Alpha360_LOW11",
+      "rank_ic": 0.06093637241291656,
+      "valid_days": 4072
+    },
+    "Alpha360_LOW12": {
+      "name": "Alpha360_LOW12",
+      "rank_ic": 0.06111321215797865,
+      "valid_days": 4034
+    },
+    "Alpha360_LOW17": {
+      "name": "Alpha360_LOW17",
+      "rank_ic": 0.07056120280432829,
+      "valid_days": 4072
+    },
+    "Alpha360_LOW18": {
+      "name": "Alpha360_LOW18",
+      "rank_ic": 0.06865789314888833,
+      "valid_days": 3989
+    },
+    "Alpha360_LOW2": {
+      "name": "Alpha360_LOW2",
+      "rank_ic": 0.0434972312440173,
+      "valid_days": 4072
+    },
+    "Alpha360_LOW24": {
+      "name": "Alpha360_LOW24",
+      "rank_ic": 0.07626261288143928,
+      "valid_days": 4072
+    },
+    "Alpha360_LOW26": {
+      "name": "Alpha360_LOW26",
+      "rank_ic": 0.07182093915441357,
+      "valid_days": 3920
+    },
+    "Alpha360_LOW27": {
+      "name": "Alpha360_LOW27",
+      "rank_ic": 0.07582841213436087,
+      "valid_days": 4072
+    },
+    "Alpha360_LOW3": {
+      "name": "Alpha360_LOW3",
+      "rank_ic": 0.044093906307132544,
+      "valid_days": 4063
+    },
+    "Alpha360_LOW37": {
+      "name": "Alpha360_LOW37",
+      "rank_ic": 0.06720869223127213,
+      "valid_days": 3831
+    },
+    "Alpha360_LOW38": {
+      "name": "Alpha360_LOW38",
+      "rank_ic": 0.07083340963728026,
+      "valid_days": 4072
+    },
+    "Alpha360_LOW4": {
+      "name": "Alpha360_LOW4",
+      "rank_ic": 0.04977265383073358,
+      "valid_days": 4072
+    },
+    "Alpha360_LOW5": {
+      "name": "Alpha360_LOW5",
+      "rank_ic": 0.04811143815054913,
+      "valid_days": 4060
+    },
+    "Alpha360_LOW51": {
+      "name": "Alpha360_LOW51",
+      "rank_ic": 0.06469321272621582,
+      "valid_days": 3708
+    },
+    "Alpha360_LOW54": {
+      "name": "Alpha360_LOW54",
+      "rank_ic": 0.06998029216300525,
+      "valid_days": 3938
+    },
+    "Alpha360_LOW58": {
+      "name": "Alpha360_LOW58",
+      "rank_ic": 0.0684014513181411,
+      "valid_days": 4028
+    },
+    "Alpha360_LOW6": {
+      "name": "Alpha360_LOW6",
+      "rank_ic": 0.05500653553346115,
+      "valid_days": 4072
+    },
+    "Alpha360_LOW7": {
+      "name": "Alpha360_LOW7",
+      "rank_ic": 0.053468203601533155,
+      "valid_days": 4072
+    },
+    "Alpha360_LOW8": {
+      "name": "Alpha360_LOW8",
+      "rank_ic": 0.052359627804592954,
+      "valid_days": 4054
+    },
+    "Alpha360_LOW9": {
+      "name": "Alpha360_LOW9",
+      "rank_ic": 0.05679922673238231,
+      "valid_days": 4072
+    },
+    "Alpha360_VOLUME1": {
+      "name": "Alpha360_VOLUME1",
+      "rank_ic": 0.003278108692361635,
+      "valid_days": 4069
+    },
+    "Alpha360_VOLUME10": {
+      "name": "Alpha360_VOLUME10",
+      "rank_ic": 0.019585963975832534,
+      "valid_days": 4047
+    },
+    "Alpha360_VOLUME11": {
+      "name": "Alpha360_VOLUME11",
+      "rank_ic": 0.021036467679591865,
+      "valid_days": 4042
+    },
+    "Alpha360_VOLUME12": {
+      "name": "Alpha360_VOLUME12",
+      "rank_ic": 0.022447467697155433,
+      "valid_days": 4034
+    },
+    "Alpha360_VOLUME13": {
+      "name": "Alpha360_VOLUME13",
+      "rank_ic": 0.023269420676667884,
+      "valid_days": 4027
+    },
+    "Alpha360_VOLUME14": {
+      "name": "Alpha360_VOLUME14",
+      "rank_ic": 0.02441737967825791,
+      "valid_days": 4021
+    },
+    "Alpha360_VOLUME15": {
+      "name": "Alpha360_VOLUME15",
+      "rank_ic": 0.025563152456454758,
+      "valid_days": 4012
+    },
+    "Alpha360_VOLUME16": {
+      "name": "Alpha360_VOLUME16",
+      "rank_ic": 0.026715709895894557,
+      "valid_days": 4005
+    },
+    "Alpha360_VOLUME17": {
+      "name": "Alpha360_VOLUME17",
+      "rank_ic": 0.029337206783061683,
+      "valid_days": 4072
+    },
+    "Alpha360_VOLUME18": {
+      "name": "Alpha360_VOLUME18",
+      "rank_ic": 0.028523512620832345,
+      "valid_days": 3989
+    },
+    "Alpha360_VOLUME19": {
+      "name": "Alpha360_VOLUME19",
+      "rank_ic": 0.032243280124078795,
+      "valid_days": 4072
+    },
+    "Alpha360_VOLUME2": {
+      "name": "Alpha360_VOLUME2",
+      "rank_ic": 0.00611940431132614,
+      "valid_days": 4065
+    },
+    "Alpha360_VOLUME20": {
+      "name": "Alpha360_VOLUME20",
+      "rank_ic": 0.03013206303440613,
+      "valid_days": 3974
+    },
+    "Alpha360_VOLUME21": {
+      "name": "Alpha360_VOLUME21",
+      "rank_ic": 0.03489600180300454,
+      "valid_days": 4072
+    },
+    "Alpha360_VOLUME22": {
+      "name": "Alpha360_VOLUME22",
+      "rank_ic": 0.0320287692874917,
+      "valid_days": 3956
+    },
+    "Alpha360_VOLUME23": {
+      "name": "Alpha360_VOLUME23",
+      "rank_ic": 0.03663396075302215,
+      "valid_days": 4072
+    },
+    "Alpha360_VOLUME24": {
+      "name": "Alpha360_VOLUME24",
+      "rank_ic": 0.033210091000574087,
+      "valid_days": 3939
+    },
+    "Alpha360_VOLUME25": {
+      "name": "Alpha360_VOLUME25",
+      "rank_ic": 0.03845715584295901,
+      "valid_days": 4072
+    },
+    "Alpha360_VOLUME26": {
+      "name": "Alpha360_VOLUME26",
+      "rank_ic": 0.03449914792462679,
+      "valid_days": 3920
+    },
+    "Alpha360_VOLUME27": {
+      "name": "Alpha360_VOLUME27",
+      "rank_ic": 0.03952668661858077,
+      "valid_days": 4072
+    },
+    "Alpha360_VOLUME29": {
+      "name": "Alpha360_VOLUME29",
+      "rank_ic": 0.03575721372747938,
+      "valid_days": 3894
+    },
+    "Alpha360_VOLUME3": {
+      "name": "Alpha360_VOLUME3",
+      "rank_ic": 0.00861824082769788,
+      "valid_days": 4063
+    },
+    "Alpha360_VOLUME31": {
+      "name": "Alpha360_VOLUME31",
+      "rank_ic": 0.037210613487861775,
+      "valid_days": 3876
+    },
+    "Alpha360_VOLUME32": {
+      "name": "Alpha360_VOLUME32",
+      "rank_ic": 0.04279293119631006,
+      "valid_days": 4063
+    },
+    "Alpha360_VOLUME33": {
+      "name": "Alpha360_VOLUME33",
+      "rank_ic": 0.0382031704429358,
+      "valid_days": 3859
+    },
+    "Alpha360_VOLUME34": {
+      "name": "Alpha360_VOLUME34",
+      "rank_ic": 0.043465177048582555,
+      "valid_days": 4061
+    },
+    "Alpha360_VOLUME35": {
+      "name": "Alpha360_VOLUME35",
+      "rank_ic": 0.03947040500448267,
+      "valid_days": 3844
+    },
+    "Alpha360_VOLUME36": {
+      "name": "Alpha360_VOLUME36",
+      "rank_ic": 0.044190346790304584,
+      "valid_days": 4072
+    },
+    "Alpha360_VOLUME37": {
+      "name": "Alpha360_VOLUME37",
+      "rank_ic": 0.039870966414127164,
+      "valid_days": 3831
+    },
+    "Alpha360_VOLUME38": {
+      "name": "Alpha360_VOLUME38",
+      "rank_ic": 0.044498662855181885,
+      "valid_days": 4072
+    },
+    "Alpha360_VOLUME39": {
+      "name": "Alpha360_VOLUME39",
+      "rank_ic": 0.040337559783419234,
+      "valid_days": 3814
+    },
+    "Alpha360_VOLUME4": {
+      "name": "Alpha360_VOLUME4",
+      "rank_ic": 0.011670792319999675,
+      "valid_days": 4061
+    },
+    "Alpha360_VOLUME40": {
+      "name": "Alpha360_VOLUME40",
+      "rank_ic": 0.04530411126993602,
+      "valid_days": 4072
+    },
+    "Alpha360_VOLUME41": {
+      "name": "Alpha360_VOLUME41",
+      "rank_ic": 0.04125989333562705,
+      "valid_days": 3790
+    },
+    "Alpha360_VOLUME42": {
+      "name": "Alpha360_VOLUME42",
+      "rank_ic": 0.04543963787547067,
+      "valid_days": 4072
+    },
+    "Alpha360_VOLUME43": {
+      "name": "Alpha360_VOLUME43",
+      "rank_ic": 0.0416659218415844,
+      "valid_days": 3772
+    },
+    "Alpha360_VOLUME44": {
+      "name": "Alpha360_VOLUME44",
+      "rank_ic": 0.04331497238902562,
+      "valid_days": 4072
+    },
+    "Alpha360_VOLUME45": {
+      "name": "Alpha360_VOLUME45",
+      "rank_ic": 0.04228295305524732,
+      "valid_days": 3758
+    },
+    "Alpha360_VOLUME46": {
+      "name": "Alpha360_VOLUME46",
+      "rank_ic": 0.043707903774072285,
+      "valid_days": 4072
+    },
+    "Alpha360_VOLUME47": {
+      "name": "Alpha360_VOLUME47",
+      "rank_ic": 0.042959785168890735,
+      "valid_days": 3741
+    },
+    "Alpha360_VOLUME48": {
+      "name": "Alpha360_VOLUME48",
+      "rank_ic": 0.04323406445589615,
+      "valid_days": 4072
+    },
+    "Alpha360_VOLUME49": {
+      "name": "Alpha360_VOLUME49",
+      "rank_ic": 0.04394046296038017,
+      "valid_days": 3725
+    },
+    "Alpha360_VOLUME5": {
+      "name": "Alpha360_VOLUME5",
+      "rank_ic": 0.01398459365427627,
+      "valid_days": 4060
+    },
+    "Alpha360_VOLUME51": {
+      "name": "Alpha360_VOLUME51",
+      "rank_ic": 0.04430699262495696,
+      "valid_days": 3708
+    },
+    "Alpha360_VOLUME52": {
+      "name": "Alpha360_VOLUME52",
+      "rank_ic": 0.04639262292515044,
+      "valid_days": 4070
+    },
+    "Alpha360_VOLUME53": {
+      "name": "Alpha360_VOLUME53",
+      "rank_ic": 0.04466531948345775,
+      "valid_days": 3691
+    },
+    "Alpha360_VOLUME55": {
+      "name": "Alpha360_VOLUME55",
+      "rank_ic": 0.04406016796657256,
+      "valid_days": 3674
+    },
+    "Alpha360_VOLUME56": {
+      "name": "Alpha360_VOLUME56",
+      "rank_ic": 0.04558951439243237,
+      "valid_days": 3921
+    },
+    "Alpha360_VOLUME57": {
+      "name": "Alpha360_VOLUME57",
+      "rank_ic": 0.04615783118879182,
+      "valid_days": 4034
+    },
+    "Alpha360_VOLUME58": {
+      "name": "Alpha360_VOLUME58",
+      "rank_ic": 0.04457759635845146,
+      "valid_days": 3648
+    },
+    "Alpha360_VOLUME6": {
+      "name": "Alpha360_VOLUME6",
+      "rank_ic": 0.014729002463067515,
+      "valid_days": 4059
+    },
+    "Alpha360_VOLUME7": {
+      "name": "Alpha360_VOLUME7",
+      "rank_ic": 0.015152474268257615,
+      "valid_days": 4057
+    },
+    "Alpha360_VOLUME8": {
+      "name": "Alpha360_VOLUME8",
+      "rank_ic": 0.01634505064564547,
+      "valid_days": 4054
+    },
+    "Alpha360_VOLUME9": {
+      "name": "Alpha360_VOLUME9",
+      "rank_ic": 0.01779231761068338,
+      "valid_days": 4051
+    },
+    "Alpha360_VWAP2": {
+      "name": "Alpha360_VWAP2",
+      "rank_ic": 0.024021209415933532,
+      "valid_days": 4065
+    },
+    "Alpha360_VWAP8": {
+      "name": "Alpha360_VWAP8",
+      "rank_ic": 0.039093325683557056,
+      "valid_days": 4072
+    },
+    "AmountBasedSmallCap5": {
+      "name": "AmountBasedSmallCap5",
+      "rank_ic": 0.14467920121787864,
+      "valid_days": 4071
+    },
+    "BiliAdjustedIssueDiscount": {
+      "name": "BiliAdjustedIssueDiscount",
+      "rank_ic": 0.041742427212649154,
+      "valid_days": 4070
+    },
+    "BiliKDJOversoldCross": {
+      "name": "BiliKDJOversoldCross",
+      "rank_ic": 0.0007141795828534773,
+      "valid_days": 2512
+    },
+    "BiliLowAmountAttention20__history_120__recent_20": {
+      "name": "BiliLowAmountAttention20__history_120__recent_20",
+      "rank_ic": 0.08451978678667103,
+      "valid_days": 3908
+    },
+    "BiliLowAmountAttention20__history_252__recent_10": {
+      "name": "BiliLowAmountAttention20__history_252__recent_10",
+      "rank_ic": 0.0877115861215762,
+      "valid_days": 3730
+    },
+    "BiliLowAmountAttention20__history_252__recent_30": {
+      "name": "BiliLowAmountAttention20__history_252__recent_30",
+      "rank_ic": 0.08152807962647877,
+      "valid_days": 3730
+    },
+    "BiliLowAmountAttention20__history_252__recent_60": {
+      "name": "BiliLowAmountAttention20__history_252__recent_60",
+      "rank_ic": 0.07419630212049089,
+      "valid_days": 3721
+    },
+    "BiliLowAmountAttention20__history_60__recent_10": {
+      "name": "BiliLowAmountAttention20__history_60__recent_10",
+      "rank_ic": 0.06499106346578326,
+      "valid_days": 3918
+    },
+    "BiliLowAmountAttention20__history_60__recent_30": {
+      "name": "BiliLowAmountAttention20__history_60__recent_30",
+      "rank_ic": 0.06436985567123461,
+      "valid_days": 3915
+    },
+    "BiliLowAmountAttention20__history_60__recent_60": {
+      "name": "BiliLowAmountAttention20__history_60__recent_60",
+      "rank_ic": 0.05746967239527099,
+      "valid_days": 3910
+    },
+    "BiliLowLifetimeRangeRatio": {
+      "name": "BiliLowLifetimeRangeRatio",
+      "rank_ic": 0.02454879770692549,
+      "valid_days": 4071
+    },
+    "BiliLowPriceAbove2": {
+      "name": "BiliLowPriceAbove2",
+      "rank_ic": 0.049546676297794016,
+      "valid_days": 4070
+    },
+    "BiliLowPriceSmallCap200": {
+      "name": "BiliLowPriceSmallCap200",
+      "rank_ic": 0.027296007755067533,
+      "valid_days": 3604
+    },
+    "BiliLowReturnAttention20__window_120": {
+      "name": "BiliLowReturnAttention20__window_120",
+      "rank_ic": 0.0959210384496334,
+      "valid_days": 3114
+    },
+    "BiliLowReturnAttention20__window_5": {
+      "name": "BiliLowReturnAttention20__window_5",
+      "rank_ic": 0.10631247993588305,
+      "valid_days": 4061
+    },
+    "BiliLowReturnAttention20__window_60": {
+      "name": "BiliLowReturnAttention20__window_60",
+      "rank_ic": 0.1029227356542518,
+      "valid_days": 3638
+    },
+    "BiliMACDBottomDivergence30": {
+      "name": "BiliMACDBottomDivergence30",
+      "rank_ic": 0.0005264161204064211,
+      "valid_days": 2046
+    },
+    "BiliNineDownReversal": {
+      "name": "BiliNineDownReversal",
+      "rank_ic": 0.0032242169368431692,
+      "valid_days": 3263
+    },
+    "BiliRawIssueDiscount": {
+      "name": "BiliRawIssueDiscount",
+      "rank_ic": 0.051778896357352354,
+      "valid_days": 4070
+    },
+    "BookToMarket": {
+      "name": "BookToMarket",
+      "rank_ic": 0.0737849570753464,
+      "valid_days": 3518
+    },
+    "CashFlowYield": {
+      "name": "CashFlowYield",
+      "rank_ic": 0.007967893004354113,
+      "valid_days": 3521
+    },
+    "Completed52WeekHighProximityStrict": {
+      "name": "Completed52WeekHighProximityStrict",
+      "rank_ic": 0.03575473471690553,
+      "valid_days": 2177
+    },
+    "Completed6030PoolBeta60Strict": {
+      "name": "Completed6030PoolBeta60Strict",
+      "rank_ic": 0.03176091522493745,
+      "valid_days": 3638
+    },
+    "CompletedAmihudIlliquidity20__window_60": {
+      "name": "CompletedAmihudIlliquidity20__window_60",
+      "rank_ic": 0.08260035845864992,
+      "valid_days": 4071
+    },
+    "CompletedAmountConditionedReversal20Strict": {
+      "name": "CompletedAmountConditionedReversal20Strict",
+      "rank_ic": 0.03695678503724906,
+      "valid_days": 3982
+    },
+    "CompletedDividendConsistency3YPIT": {
+      "name": "CompletedDividendConsistency3YPIT",
+      "rank_ic": 0.04555745330156518,
+      "valid_days": 2129
+    },
+    "CompletedDividendYield504PIT": {
+      "name": "CompletedDividendYield504PIT",
+      "rank_ic": 0.060775201231703914,
+      "valid_days": 2189
+    },
+    "CompletedPriorMonthTurnoverStrict": {
+      "name": "CompletedPriorMonthTurnoverStrict",
+      "rank_ic": 0.06512313241934509,
+      "valid_days": 4072
+    },
+    "CompletedRangeVolatility20": {
+      "name": "CompletedRangeVolatility20",
+      "rank_ic": 0.106109051200284,
+      "valid_days": 3982
+    },
+    "DeepValueComposite": {
+      "name": "DeepValueComposite",
+      "rank_ic": 0.06741638512840294,
+      "valid_days": 3518
+    },
+    "DownsideOpenVolatilityStrict": {
+      "name": "DownsideOpenVolatilityStrict",
+      "rank_ic": 0.05795442137436326,
+      "valid_days": 3982
+    },
+    "Factor_20260530_195339_g10_0": {
+      "name": "Factor_20260530_195339_g10_0",
+      "rank_ic": 0.052723029485838104,
+      "valid_days": 3518
+    },
+    "Factor_20260530_195339_g17_0": {
+      "name": "Factor_20260530_195339_g17_0",
+      "rank_ic": 0.03650354748610936,
+      "valid_days": 3518
+    },
+    "Factor_20260530_195339_g17_4": {
+      "name": "Factor_20260530_195339_g17_4",
+      "rank_ic": 0.03674566082944822,
+      "valid_days": 3518
+    },
+    "Factor_20260530_195339_g3_2": {
+      "name": "Factor_20260530_195339_g3_2",
+      "rank_ic": 0.009246273667074843,
+      "valid_days": 3521
+    },
+    "Factor_20260531_005210_g11_0": {
+      "name": "Factor_20260531_005210_g11_0",
+      "rank_ic": 0.043979278538719635,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g11_3": {
+      "name": "Factor_20260531_005210_g11_3",
+      "rank_ic": 0.03393421813884043,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g13_1": {
+      "name": "Factor_20260531_005210_g13_1",
+      "rank_ic": 0.029490462482442196,
+      "valid_days": 3519
+    },
+    "Factor_20260531_005210_g15_4": {
+      "name": "Factor_20260531_005210_g15_4",
+      "rank_ic": 0.02983797109991479,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g17_0": {
+      "name": "Factor_20260531_005210_g17_0",
+      "rank_ic": 0.00810919980597357,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g20_0": {
+      "name": "Factor_20260531_005210_g20_0",
+      "rank_ic": 0.017409139157463647,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g20_3": {
+      "name": "Factor_20260531_005210_g20_3",
+      "rank_ic": 0.03657142635629775,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g22_2": {
+      "name": "Factor_20260531_005210_g22_2",
+      "rank_ic": 0.05415869501126756,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g24_2": {
+      "name": "Factor_20260531_005210_g24_2",
+      "rank_ic": 0.02626945551705614,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g25_3": {
+      "name": "Factor_20260531_005210_g25_3",
+      "rank_ic": 0.03453254389945649,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g26_4": {
+      "name": "Factor_20260531_005210_g26_4",
+      "rank_ic": 0.02581574653797847,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g28_2": {
+      "name": "Factor_20260531_005210_g28_2",
+      "rank_ic": 0.04864331010530955,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g29_2": {
+      "name": "Factor_20260531_005210_g29_2",
+      "rank_ic": 0.025125788341012267,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g29_3": {
+      "name": "Factor_20260531_005210_g29_3",
+      "rank_ic": 0.0253371939181159,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g2_0": {
+      "name": "Factor_20260531_005210_g2_0",
+      "rank_ic": 0.03898064875436231,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g30_3": {
+      "name": "Factor_20260531_005210_g30_3",
+      "rank_ic": 0.03876259799248122,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g32_0": {
+      "name": "Factor_20260531_005210_g32_0",
+      "rank_ic": 0.038588223860963396,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g32_1": {
+      "name": "Factor_20260531_005210_g32_1",
+      "rank_ic": 0.06036430106188864,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g34_1": {
+      "name": "Factor_20260531_005210_g34_1",
+      "rank_ic": 0.0397072174561299,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g35_0": {
+      "name": "Factor_20260531_005210_g35_0",
+      "rank_ic": 0.034161021540940216,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g37_2": {
+      "name": "Factor_20260531_005210_g37_2",
+      "rank_ic": 0.01774032487705424,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g38_1": {
+      "name": "Factor_20260531_005210_g38_1",
+      "rank_ic": 0.03652813531923354,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g39_1": {
+      "name": "Factor_20260531_005210_g39_1",
+      "rank_ic": 0.03408097571999718,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g3_3": {
+      "name": "Factor_20260531_005210_g3_3",
+      "rank_ic": 0.02985345012245631,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g40_1": {
+      "name": "Factor_20260531_005210_g40_1",
+      "rank_ic": 0.04232612189937714,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g41_0": {
+      "name": "Factor_20260531_005210_g41_0",
+      "rank_ic": 0.030762916271430917,
+      "valid_days": 3518
+    },
+    "Factor_20260531_005210_g8_1": {
+      "name": "Factor_20260531_005210_g8_1",
+      "rank_ic": 0.03190620055155795,
+      "valid_days": 3518
+    },
+    "Factor_20260605_192540_g5_2": {
+      "name": "Factor_20260605_192540_g5_2",
+      "rank_ic": 0.03942817573440847,
+      "valid_days": 3527
+    },
+    "FinancialQualityGrowthNeutralPIT": {
+      "name": "FinancialQualityGrowthNeutralPIT",
+      "rank_ic": 0.030162614023082065,
+      "valid_days": 3527
+    },
+    "GrossMarginQuality": {
+      "name": "GrossMarginQuality",
+      "rank_ic": 0.015321691596188455,
+      "valid_days": 3517
+    },
+    "High52Week": {
+      "name": "High52Week",
+      "rank_ic": 0.002052225629870924,
+      "valid_days": 4070
+    },
+    "HighAbnormalGrossProfit": {
+      "name": "HighAbnormalGrossProfit",
+      "rank_ic": 0.03682674907544051,
+      "valid_days": 4067
+    },
+    "HighInventoryOtherPayable": {
+      "name": "HighInventoryOtherPayable",
+      "rank_ic": 0.004038270738371109,
+      "valid_days": 4068
+    },
+    "HighOperatingCashSurplus": {
+      "name": "HighOperatingCashSurplus",
+      "rank_ic": 0.021099589060784373,
+      "valid_days": 4040
+    },
+    "HighOperatingProfitRevenueGrowthSpread": {
+      "name": "HighOperatingProfitRevenueGrowthSpread",
+      "rank_ic": 0.04004204493269249,
+      "valid_days": 4068
+    },
+    "HighReceivableOtherPayable": {
+      "name": "HighReceivableOtherPayable",
+      "rank_ic": 0.0009537769141509365,
+      "valid_days": 4068
+    },
+    "IndustryPeerReversal120Strict": {
+      "name": "IndustryPeerReversal120Strict",
+      "rank_ic": 0.046703905421551326,
+      "valid_days": 2929
+    },
+    "IndustryPeerReversal20Strict": {
+      "name": "IndustryPeerReversal20Strict",
+      "rank_ic": 0.021086459726612453,
+      "valid_days": 3928
+    },
+    "IndustryPeerReversal60Strict": {
+      "name": "IndustryPeerReversal60Strict",
+      "rank_ic": 0.030614253476729705,
+      "valid_days": 3544
+    },
+    "IntermediateMomentum12Minus1": {
+      "name": "IntermediateMomentum12Minus1",
+      "rank_ic": 0.007378171199716527,
+      "valid_days": 2365
+    },
+    "LongHorizonVol36MStrict": {
+      "name": "LongHorizonVol36MStrict",
+      "rank_ic": 0.10589975735015374,
+      "valid_days": 1575
+    },
+    "LowCashOutflowProfitGrowthSpread__penalty_0": {
+      "name": "LowCashOutflowProfitGrowthSpread__penalty_0",
+      "rank_ic": 0.04946595170525703,
+      "valid_days": 4067
+    },
+    "LowCashOutflowProfitGrowthSpread__penalty_1.5": {
+      "name": "LowCashOutflowProfitGrowthSpread__penalty_1.5",
+      "rank_ic": 0.031196138505568145,
+      "valid_days": 4067
+    },
+    "LowFloatTurnover20_10": {
+      "name": "LowFloatTurnover20_10",
+      "rank_ic": 0.09441420893296772,
+      "valid_days": 94
+    },
+    "LowPRDecile": {
+      "name": "LowPRDecile",
+      "rank_ic": 0.02876267907563957,
+      "valid_days": 4066
+    },
+    "LowResidualVol20": {
+      "name": "LowResidualVol20",
+      "rank_ic": 0.10168969743546247,
+      "valid_days": 4072
+    },
+    "MainTurnover": {
+      "name": "MainTurnover",
+      "rank_ic": 0.1280123628043544,
+      "valid_days": 92
+    },
+    "Optimized__TrueMarketCap": {
+      "name": "Optimized__TrueMarketCap",
+      "rank_ic": 0.06807234845692992,
+      "valid_days": 4067
+    },
+    "PB3ROE5Signal": {
+      "name": "PB3ROE5Signal",
+      "rank_ic": 0.0418333999073301,
+      "valid_days": 4067
+    },
+    "PBBelowTwoROEAbove10Signal": {
+      "name": "PBBelowTwoROEAbove10Signal",
+      "rank_ic": 0.020389650733854944,
+      "valid_days": 3816
+    },
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.05": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.05",
+      "rank_ic": 0.030913058268999767,
+      "valid_days": 3662
+    },
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.1": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.1",
+      "rank_ic": 0.019293092527613034,
+      "valid_days": 3429
+    },
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.15": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.15",
+      "rank_ic": 0.00771427792340011,
+      "valid_days": 3320
+    },
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.2": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.2",
+      "rank_ic": 0.0008067772677050262,
+      "valid_days": 2417
+    },
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.05": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.05",
+      "rank_ic": 0.013419849243738402,
+      "valid_days": 3230
+    },
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.1": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.1",
+      "rank_ic": 0.010062940032878647,
+      "valid_days": 2865
+    },
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.15": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.15",
+      "rank_ic": 0.0018995114088930262,
+      "valid_days": 2267
+    },
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.1": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.1",
+      "rank_ic": 0.01993358052251871,
+      "valid_days": 4022
+    },
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.15": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.15",
+      "rank_ic": 0.007353384614982224,
+      "valid_days": 3853
+    },
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.2": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.2",
+      "rank_ic": 0.0014656431970046548,
+      "valid_days": 3506
+    },
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.25": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.25",
+      "rank_ic": 0.00035025657273170886,
+      "valid_days": 3479
+    },
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.05": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.05",
+      "rank_ic": 0.04024706442656902,
+      "valid_days": 3936
+    },
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.15": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.15",
+      "rank_ic": 0.010393210379303816,
+      "valid_days": 3576
+    },
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.2": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.2",
+      "rank_ic": 0.006236203033352802,
+      "valid_days": 3253
+    },
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.25": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.25",
+      "rank_ic": 0.002234020549834636,
+      "valid_days": 2497
+    },
+    "PBBelowTwoROEAbove10Signal__pb_3__roe_0.1": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_3__roe_0.1",
+      "rank_ic": 0.013063060231948816,
+      "valid_days": 4072
+    },
+    "PBBelowTwoROEAbove10Signal__pb_3__roe_0.2": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_3__roe_0.2",
+      "rank_ic": 0.000982329103078298,
+      "valid_days": 3770
+    },
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.05": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.05",
+      "rank_ic": 0.040758377459379984,
+      "valid_days": 4067
+    },
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.1": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.1",
+      "rank_ic": 0.017879598975280485,
+      "valid_days": 4067
+    },
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.15": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.15",
+      "rank_ic": 0.0030922122703255154,
+      "valid_days": 4050
+    },
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.2": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.2",
+      "rank_ic": 0.0009391932960598764,
+      "valid_days": 4034
+    },
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.25": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.25",
+      "rank_ic": 0.00038297685411549777,
+      "valid_days": 3897
+    },
+    "PricePosition250": {
+      "name": "PricePosition250",
+      "rank_ic": 0.018435320681634455,
+      "valid_days": 4072
+    },
+    "ProfitGrowth": {
+      "name": "ProfitGrowth",
+      "rank_ic": 0.029032224146744206,
+      "valid_days": 3518
+    },
+    "SameCalendarMonthReturn3YStrict": {
+      "name": "SameCalendarMonthReturn3YStrict",
+      "rank_ic": 0.006039271853429522,
+      "valid_days": 4072
+    },
+    "TrendIndividualV5": {
+      "name": "TrendIndividualV5",
+      "rank_ic": 0.07490012117146293,
+      "valid_days": 4071
+    },
+    "TrendOpenSignal": {
+      "name": "TrendOpenSignal",
+      "rank_ic": 0.007414730830652414,
+      "valid_days": 3480
+    },
+    "TrendReversalPreCloseStrict": {
+      "name": "TrendReversalPreCloseStrict",
+      "rank_ic": 0.07531355554092467,
+      "valid_days": 4021
+    },
+    "TrendReversalV11": {
+      "name": "TrendReversalV11",
+      "rank_ic": 0.07430115444939944,
+      "valid_days": 3961
+    },
+    "VolumeCVStrict": {
+      "name": "VolumeCVStrict",
+      "rank_ic": 0.0367282755238936,
+      "valid_days": 4020
+    },
+    "VolumeCV__window_10": {
+      "name": "VolumeCV__window_10",
+      "rank_ic": 0.029770465407062567,
+      "valid_days": 4071
+    },
+    "VolumeCV__window_120": {
+      "name": "VolumeCV__window_120",
+      "rank_ic": 0.024873670534123718,
+      "valid_days": 4071
+    },
+    "VolumeCV__window_30": {
+      "name": "VolumeCV__window_30",
+      "rank_ic": 0.03495733589754587,
+      "valid_days": 4071
+    },
+    "VolumeCV__window_5": {
+      "name": "VolumeCV__window_5",
+      "rank_ic": 0.018730292387045076,
+      "valid_days": 4071
+    },
+    "VolumeCV__window_60": {
+      "name": "VolumeCV__window_60",
+      "rank_ic": 0.02860750274172353,
+      "valid_days": 4071
+    },
+    "VolumeContraction5v15Strict": {
+      "name": "VolumeContraction5v15Strict",
+      "rank_ic": 0.022095873082899852,
+      "valid_days": 3982
+    },
+    "attention_contraction_10_60__attention_10__prior_120__recent_20__weight_0.75": {
+      "name": "attention_contraction_10_60__attention_10__prior_120__recent_20__weight_0.75",
+      "rank_ic": 0.1024852953991079,
+      "valid_days": 3205
+    },
+    "attention_contraction_10_60__attention_10__prior_120__recent_5__weight_0.75": {
+      "name": "attention_contraction_10_60__attention_10__prior_120__recent_5__weight_0.75",
+      "rank_ic": 0.0961259367598095,
+      "valid_days": 3468
+    },
+    "attention_contraction_10_60__attention_10__prior_20__recent_20__weight_0.25": {
+      "name": "attention_contraction_10_60__attention_10__prior_20__recent_20__weight_0.25",
+      "rank_ic": 0.050264556063182426,
+      "valid_days": 4072
+    },
+    "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.25": {
+      "name": "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.25",
+      "rank_ic": 0.05406936686710943,
+      "valid_days": 4072
+    },
+    "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.5": {
+      "name": "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.5",
+      "rank_ic": 0.07451618167167448,
+      "valid_days": 4072
+    },
+    "attention_contraction_10_60__attention_10__prior_60__recent_20__weight_0.25": {
+      "name": "attention_contraction_10_60__attention_10__prior_60__recent_20__weight_0.25",
+      "rank_ic": 0.07534961683894757,
+      "valid_days": 3849
+    },
+    "attention_contraction_10_60__attention_20__prior_60__recent_5__weight_0.75": {
+      "name": "attention_contraction_10_60__attention_20__prior_60__recent_5__weight_0.75",
+      "rank_ic": 0.11243659024871776,
+      "valid_days": 3588
+    },
+    "attention_contraction_10_60__attention_30__prior_120__recent_20__weight_0.25": {
+      "name": "attention_contraction_10_60__attention_30__prior_120__recent_20__weight_0.25",
+      "rank_ic": 0.07844589500517914,
+      "valid_days": 3408
+    },
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.25": {
+      "name": "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.25",
+      "rank_ic": 0.07999896838012385,
+      "valid_days": 3468
+    },
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.5": {
+      "name": "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.5",
+      "rank_ic": 0.08913524418543071,
+      "valid_days": 3531
+    },
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.75": {
+      "name": "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.75",
+      "rank_ic": 0.07047617885084091,
+      "valid_days": 3563
+    },
+    "attention_contraction_10_60__attention_30__prior_20__recent_10__weight_0.25": {
+      "name": "attention_contraction_10_60__attention_30__prior_20__recent_10__weight_0.25",
+      "rank_ic": 0.06596381476447617,
+      "valid_days": 3894
+    },
+    "attention_contraction_10_60__attention_30__prior_20__recent_20__weight_0.5": {
+      "name": "attention_contraction_10_60__attention_30__prior_20__recent_20__weight_0.5",
+      "rank_ic": 0.0869969024637734,
+      "valid_days": 4050
+    },
+    "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.25": {
+      "name": "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.25",
+      "rank_ic": 0.060857790899448504,
+      "valid_days": 3894
+    },
+    "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.75": {
+      "name": "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.75",
+      "rank_ic": 0.10673816158902248,
+      "valid_days": 4070
+    },
+    "attention_contraction_40_20": {
+      "name": "attention_contraction_40_20",
+      "rank_ic": 0.07352465725477769,
+      "valid_days": 4021
+    },
+    "attention_contraction_40_60": {
+      "name": "attention_contraction_40_60",
+      "rank_ic": 0.0903162724021383,
+      "valid_days": 3547
+    },
+    "attention_decay20_60": {
+      "name": "attention_decay20_60",
+      "rank_ic": 0.05220340055504073,
+      "valid_days": 3946
+    },
+    "contraction_10_60": {
+      "name": "contraction_10_60",
+      "rank_ic": 0.05870552216353629,
+      "valid_days": 4003
+    },
+    "contraction_20_20": {
+      "name": "contraction_20_20",
+      "rank_ic": 0.03827162701766675,
+      "valid_days": 4050
+    },
+    "contraction_20_60": {
+      "name": "contraction_20_60",
+      "rank_ic": 0.05328667414779968,
+      "valid_days": 3468
+    },
+    "contraction_40_20": {
+      "name": "contraction_40_20",
+      "rank_ic": 0.034434569179865177,
+      "valid_days": 3638
+    },
+    "contraction_40_60": {
+      "name": "contraction_40_60",
+      "rank_ic": 0.04845454321209986,
+      "valid_days": 3290
+    },
+    "gradual_quiet20_60": {
+      "name": "gradual_quiet20_60",
+      "rank_ic": 0.07037561242274133,
+      "valid_days": 4059
+    },
+    "high_to_quiet_10_20": {
+      "name": "high_to_quiet_10_20",
+      "rank_ic": 0.07763457595756848,
+      "valid_days": 3894
+    },
+    "high_to_quiet_20_20": {
+      "name": "high_to_quiet_20_20",
+      "rank_ic": 0.07901977277231541,
+      "valid_days": 3814
+    },
+    "high_to_quiet_20_60": {
+      "name": "high_to_quiet_20_60",
+      "rank_ic": 0.06772757430375911,
+      "valid_days": 3725
+    },
+    "high_to_quiet_40_20": {
+      "name": "high_to_quiet_40_20",
+      "rank_ic": 0.08839350369562324,
+      "valid_days": 3638
+    },
+    "high_to_quiet_40_60": {
+      "name": "high_to_quiet_40_60",
+      "rank_ic": 0.07179888207564807,
+      "valid_days": 3681
+    },
+    "low_residual_vol20__window_10": {
+      "name": "low_residual_vol20__window_10",
+      "rank_ic": 0.11928825778334477,
+      "valid_days": 4051
+    },
+    "low_residual_vol20__window_120": {
+      "name": "low_residual_vol20__window_120",
+      "rank_ic": 0.09528887323662562,
+      "valid_days": 3380
+    },
+    "low_residual_vol20__window_30": {
+      "name": "low_residual_vol20__window_30",
+      "rank_ic": 0.13127029331452242,
+      "valid_days": 3894
+    },
+    "low_residual_vol20__window_5": {
+      "name": "low_residual_vol20__window_5",
+      "rank_ic": 0.07945539512122031,
+      "valid_days": 4072
+    },
+    "persistent_quiet20_60__prior_120__recent_10": {
+      "name": "persistent_quiet20_60__prior_120__recent_10",
+      "rank_ic": 0.14114709825085348,
+      "valid_days": 3026
+    },
+    "persistent_quiet20_60__prior_120__recent_60": {
+      "name": "persistent_quiet20_60__prior_120__recent_60",
+      "rank_ic": 0.11263279477116593,
+      "valid_days": 2419
+    },
+    "persistent_quiet20_60__prior_20__recent_30": {
+      "name": "persistent_quiet20_60__prior_20__recent_30",
+      "rank_ic": 0.08336340136162104,
+      "valid_days": 4061
+    },
+    "persistent_quiet20_60__prior_60__recent_10": {
+      "name": "persistent_quiet20_60__prior_60__recent_10",
+      "rank_ic": 0.11514576378599589,
+      "valid_days": 3810
+    }
+  },
+  "timing": "T open permitted; T high/low/close/volume/amount forbidden as decision inputs; prior completed bars and PIT known events only",
+  "universe": "complete stock axis; listing_age>=0,notST,notdelisted,finite open>=2 before cross-sectional normalization; separate directional buy/sell legality"
+}

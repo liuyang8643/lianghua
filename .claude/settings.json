@@ -6,6 +6,9 @@
       "Bash(rm -rf ~)",
       "Edit(**/.claude/rules/**)",
       "Write(**/.claude/rules/**)"
+    ],
+    "ask": [
+      "ExitPlanMode"
     ]
   },
   "env": {

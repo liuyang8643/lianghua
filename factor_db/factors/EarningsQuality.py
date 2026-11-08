@@ -1,3 +1,4 @@
+from utils.numeric_panel import _shift
 """盈余质量因子 — 应计利润越低、现金流覆盖越好的公司得分越高。
 高分=盈利由真实现金支撑，低分=纸上利润。
 """
@@ -6,11 +7,6 @@ import numpy as np
 MIN_RAW_PRICE = 2.0
 
 
-def _shift(arr):
-    result = np.empty_like(arr)
-    result[0] = np.nan
-    result[1:] = arr[:-1]
-    return result
 
 
 class SloanAccruals:

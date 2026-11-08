@@ -16,7 +16,7 @@ import threading
 from datetime import date, datetime
 from typing import Optional
 
-from xtquant import xtconstant
+from trading import broker_codes as xtconstant
 
 from data.db.stock_name import get_stock_name_at_date
 from trading.helper import get_order_status_label, get_order_type_label
@@ -24,6 +24,12 @@ from trading.lark.format import (fmt_pct, fmt_diff_money, fmt_shares,
                                   diff_md, diff_shares_md)
 from trading.lark.sender import lark_sender, LarkMsgLevel, make_v2_card, make_v2_table, md_div
 from trading.logger import trading_logger
+
+DAILY_COLUMNS = [
+    {'name': key, 'display_name': label, 'horizontal_align': align}
+    for key, label, align in (
+        ('name', '股票', 'left'), ('pos', '持仓手数(目标vs实盘)', 'right'),
+        ('ops', '操作(目标vs实盘)', 'right'), ('diff', '持仓差异', 'right'), ('log', '实盘日志', 'left'))]
 
 
 # 订单状态聚合（按对账价值排序：失败置顶 → 部分 → 待成 → 已成）
@@ -91,7 +97,8 @@ class TradingDayBoard:
 
     _DEBOUNCE_SEC = 0.3  # 节流时长
 
-    def __init__(self):
+    def __init__(self, *, auto_publish=True):
+        self._auto_publish = auto_publish
         self._lock = threading.RLock()
         self._timer: Optional[threading.Timer] = None
         self.reset_state()
@@ -116,6 +123,7 @@ class TradingDayBoard:
             self._live_positions: Optional[dict[str, int]] = None
             self._name_cache: dict[str, str] = {}
             self._bt_return: Optional[float] = None       # 回测预期日收益
+            self._comparison_basis = '回测'
             self._live_pnl: Optional[float] = None         # 实盘日盈亏（盘后填入）
             self._live_return: Optional[float] = None      # 实盘日收益率（盘后填入）
             self._dirty: bool = False
@@ -126,6 +134,11 @@ class TradingDayBoard:
                 self._timer = None
 
     # ─── 公开 API ─────────────────────────────────────
+    def is_active_for(self, trade_date: date) -> bool:
+        """当前是否存在同一交易日、尚未锁定的实盘战报会话。"""
+        with self._lock:
+            return self._trade_date == trade_date and not self._finalized
+
     def start_session(self, *, trade_date: date, plan_rows: list[dict],
                       equity: float | None = None, position_count: int = 0,
                       base_target: float | None = None, buy_n: int | None = None,
@@ -230,7 +243,8 @@ class TradingDayBoard:
 
     def feed_bt_reference(self, bt_ref: dict | None, *,
                           bt_daily_return: float | None = None,
-                          y_positions: dict | None = None):
+                          y_positions: dict | None = None,
+                          comparison_basis: str = '回测'):
         """补充/刷新「回测对账参考」并立即更新卡片。
 
         盘前 seed-replay 缺 T-1 种子（sim / 首日）时 bt_ref 为空，导致「目标 vs 实盘」
@@ -242,6 +256,7 @@ class TradingDayBoard:
                 return
             if bt_ref is not None:
                 self._bt_ref = bt_ref
+                self._comparison_basis = comparison_basis
                 self._preload_names()
             if bt_daily_return is not None:
                 self._bt_return = bt_daily_return
@@ -337,6 +352,8 @@ class TradingDayBoard:
 
     # ─── 内部 ─────────────────────────────────────
     def _mark_dirty(self):
+        if not self._auto_publish:
+            return
         with self._lock:
             self._dirty = True
             if self._timer:
@@ -348,6 +365,8 @@ class TradingDayBoard:
 
     def _push_now(self):
         """同步发出/更新战报卡片。"""
+        if not self._auto_publish:
+            return
         with self._lock:
             self._dirty = False
             if not self._trade_date:
@@ -700,13 +719,7 @@ class TradingDayBoard:
 
         title_md = '**T日操作对比 / T日持仓对比**' if cmp else '**目标→成交**'
         elements = [md_div(title_md), make_v2_table(
-            columns=[
-                {'name': 'name', 'display_name': '股票', 'horizontal_align': 'left'},
-                {'name': 'pos', 'display_name': '持仓手数(目标vs实盘)', 'horizontal_align': 'right'},
-                {'name': 'ops', 'display_name': '操作(目标vs实盘)', 'horizontal_align': 'right'},
-                {'name': 'diff', 'display_name': '持仓差异', 'horizontal_align': 'right'},
-                {'name': 'log', 'display_name': '实盘日志', 'horizontal_align': 'left'},
-            ],
+            columns=DAILY_COLUMNS,
             rows=table, element_id='daily_tbl', page_size=20)]
 
         # footer
@@ -724,7 +737,7 @@ class TradingDayBoard:
             if self._live_return is not None:
                 parts.append(f"实盘 {fmt_pct(self._live_return, sign=True)}")
         if self._bt_return is not None:
-            parts.append(f"回测 {fmt_pct(self._bt_return, sign=True)}")
+            parts.append(f"{self._comparison_basis} {fmt_pct(self._bt_return, sign=True)}")
         if not parts:
             parts.append('交易中...')
 
@@ -738,6 +751,69 @@ class TradingDayBoard:
         return make_v2_card(
             title=f"实盘日报 @ {self._trade_date.isoformat()}",
             level=tpl, subtitle=sub, elements=elements)
+
+
+def file_plan_rows(planner):
+    """Adapt frozen share targets to the original board's plan schema."""
+    document = planner['target_document']
+    before = planner['initial_holdings']
+    rows = []
+    codes = list(document['buy_priority'])
+    codes += sorted(set(document['targets']) - set(codes))
+    for code in codes:
+        target = document['targets'][code]
+        delta = target['shares'] - before.get(code, 0)
+        if not delta and code not in document['buy_priority']:
+            continue
+        price = target.get('open_price', 0)
+        rows.append(dict(code=code, direction='buy' if delta >= 0 else 'sell',
+            est_volume=abs(delta), est_price=price, est_amount=abs(delta) * price,
+            plan_seq=len(rows) + 1, limit_status='ok' if delta else 'skip',
+            reason='' if delta else '已达标'))
+    return rows
+
+
+def build_file_daily_card(planner, execution=None, close_report=None):
+    """Only adapt file facts; render through the original TradingDayBoard."""
+    from types import SimpleNamespace
+    document = planner['target_document']
+    before = dict(planner['initial_holdings'])
+    actual = execution['actual_holdings'] if execution else before
+    # Older archives reconstructed managed holdings only. Unmanaged holdings
+    # are retained; do not invent a zero target or an original query timestamp.
+    target_positions = {**{c: q for c, q in actual.items() if c not in document['targets']},
+                        **{c: r['shares'] for c, r in document['targets'].items()}}
+    reference = dict(buy={}, sell={}, positions=target_positions)
+    if close_report is not None and 'execution' in close_report:
+        reference['positions'] = {r['code']: r['bt_volume'] for r in close_report['execution']['rows']}
+    rows = file_plan_rows(planner)
+    for row in rows:
+        if row['est_volume']:
+            reference[row['direction']][row['code']] = dict(
+                shares=row['est_volume'], amount=row['est_amount'])
+    board = TradingDayBoard(auto_publish=False)
+    board.start_session(trade_date=date.fromisoformat(document['trade_date']),
+                        plan_rows=rows, bt_ref=reference, y_positions=before)
+    if execution:
+        if not execution['evidence_verified']:
+            raise ValueError('Unverified execution facts cannot render a successful daily report')
+        source = close_report if close_report is not None and 'orders' in close_report else execution
+        for row in sorted(source['orders'], key=lambda r: (r['order_time'], r['order_id'])):
+            order = dict(price=0, traded_price=0, status_msg='')
+            order.update(row)
+            board.record_order(SimpleNamespace(**order))
+        for row in source['trades']:
+            board.record_trade(SimpleNamespace(**row))
+        board._live_positions = dict(actual)
+    if close_report is not None:
+        summary = close_report['summary']
+        board.feed_close_data(live_pnl=summary['live_daily_pnl'],
+                              live_return=summary['live_daily_return_pct'])
+        board.feed_bt_reference(reference, bt_daily_return=summary['bt_daily_return_pct'],
+                                comparison_basis='同计划零磨损')
+        board._live_positions = close_report['holdings']
+        board.finalize()
+    return board._build_card()
 
 
 # 全局单例

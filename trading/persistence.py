@@ -9,23 +9,34 @@
 """
 import os
 import threading
+import time
 import uuid
 from collections import Counter
+from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from filelock import FileLock
 
-from core.fees import COMMISSION_RATE, MIN_COMMISSION, STAMP_TAX_RATE, TRANSFER_FEE_RATE
+from utils.fees import COMMISSION_RATE, MIN_COMMISSION, STAMP_TAX_RATE, TRANSFER_FEE_RATE
 from trading.logger import trading_logger
 
 _TRADE_DIR = Path(__file__).resolve().parents[1] / "data" / "live_trades"
 
-# 进程内序列化所有「读全量→concat→原子替换」的 parquet 追加。
-# 09:30 时 SellMonitor 线程池 / BuyMonitor 线程 / watcher 回调线程会并发 record_event,
-# 若不加锁会出现「读到旧版 + 丢更新」以及多线程共写同一 tmp → footer 损坏。
+# 进程内 RLock 配合每个目标文件的 FileLock，序列化全部
+# 「读全量→concat→原子替换」事务；多个 trading 进程也不能并发覆盖同一文件。
 _WRITE_LOCK = threading.RLock()
+
+
+@contextmanager
+def _parquet_append_lock(path: Path):
+    """串行化 parquet 的读改写事务，覆盖同进程线程和多个 trading 进程。"""
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    with _WRITE_LOCK:
+        with FileLock(str(lock_path), timeout=30):
+            yield
 
 
 def _atomic_write_parquet(df: pd.DataFrame, path: Path):
@@ -37,7 +48,16 @@ def _atomic_write_parquet(df: pd.DataFrame, path: Path):
     tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}")
     try:
         df.to_parquet(tmp, index=False)
-        os.replace(tmp, path)
+        # Windows 上若另一个进程刚释放 parquet 句柄，replace 可能短暂返回
+        # WinError 5。跨进程锁负责写者互斥，这里只等待系统释放文件句柄。
+        for attempt in range(20):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if attempt == 19:
+                    raise
+                time.sleep(0.05)
     finally:
         if tmp.exists():
             try:
@@ -59,6 +79,27 @@ def _safe_read_parquet(path: Path):
         trading_logger.error(
             f"[LiveTrade] {path.name} 损坏,已隔离为 {corrupt.name} 并重新开始追加: {e}")
         return None
+
+
+def _event_dedupe_columns(row: dict) -> list[str]:
+    """返回事件的稳定业务键；本地生成的 ts 不能用于回调幂等。"""
+    event_type = row['event_type']
+    if event_type == EVT_TRADE:
+        if row.get('traded_id'):
+            return ['event_type', 'traded_id']
+        return [
+            'event_type', 'order_id', 'code', 'traded_volume',
+            'traded_price', 'amount',
+        ]
+    if event_type == EVT_ORDER:
+        return [
+            'event_type', 'order_id', 'code', 'order_status',
+            'order_volume', 'traded_volume', 'price', 'traded_price',
+            'status_msg',
+        ]
+    if event_type in (EVT_ORDER_ERROR, EVT_CANCEL_ERROR):
+        return ['event_type', 'order_id', 'code', 'status_msg']
+    return ['ts', 'event_type', 'order_id', 'traded_volume', 'price']
 
 
 def _coarse_key(order_id, price, shares) -> str:
@@ -174,26 +215,49 @@ class LiveTradeRecorder:
         # 盘前 plan 的预估价缓存，watcher 在成交回调中读它算 slippage
         self._today_plan_prices: dict[str, float] = {}
 
+    def _upsert_today_fill(self, fill: dict):
+        """按成交号（旧数据退回粗键）更新内存成交，避免回调重传重复计盈亏。"""
+        traded_id = str(fill.get('traded_id', '') or '')
+        coarse = _coarse_key(fill['order_id'], fill['price'], fill['shares'])
+        with _WRITE_LOCK:
+            for idx, old in enumerate(self._today_fills):
+                if old.get('date') != fill.get('date'):
+                    continue
+                old_id = str(old.get('traded_id', '') or '')
+                same = (
+                    old_id == traded_id if traded_id and old_id
+                    else _coarse_key(old['order_id'], old['price'], old['shares']) == coarse
+                )
+                if same:
+                    self._today_fills[idx] = fill
+                    return
+            self._today_fills.append(fill)
+
     def get_plan_est_price(self, code: str) -> float | None:
         """供 watcher 在成交回调里查 est_price（已记录 plan 后才有值）。"""
         v = self._today_plan_prices.get(code)
         return float(v) if v and v > 0 else None
 
     def record_cash_flow(self, amount: float, flow_type: str = 'deposit',
-                         note: str = '', trade_date: date | None = None):
+                         note: str = '', trade_date: date | None = None, reference: str | None = None):
         """记录出入金: amount>0=入金, amount<0=出金。
 
         Args:
             trade_date: 流水归属日，默认今天。补登历史日请显式传入。
         """
         target = trade_date or date.today()
+        if reference:
+            note = f'reference={reference} ' + note
         row = {'date': target, 'amount': amount, 'type': flow_type, 'note': note}
         path = _TRADE_DIR / "cash_flows.parquet"
         df_old = _load_cash_flows()
+        if reference and not df_old.empty and df_old['note'].str.contains(
+                'reference=' + reference + ' ', regex=False, na=False).any():
+            return
         df_new = pd.DataFrame([row])
         df = df_new if df_old.empty else pd.concat([df_old, df_new], ignore_index=True)
         df.to_parquet(path, index=False)
-        trading_logger.info(
+        trading_logger.debug(
             f"[LiveTrade] 出入金 {target}: {flow_type} ¥{amount:+,.0f} {note}")
 
     def get_today_cash_flows(self, trade_date: date | None = None) -> float:
@@ -226,7 +290,7 @@ class LiveTradeRecorder:
           2. 无 transfer_no 时用 (日期, 金额) 兜底，避免回看窗口重复入库。
 
         Args:
-            trader: trading.trader.Trader 实例
+            trader: 已确认的 FileAccount / 客户端账户适配器
             trade_date: 目标日（窗口右端），默认 date.today()
             lookback_days: 回看天数，默认 5（覆盖周末 + 迟到流水）
 
@@ -259,6 +323,7 @@ class LiveTradeRecorder:
                         pass
 
         new_rows = []
+        matched_user_rows = set()
         valid_streams = 0
         for s in streams:
             # 跳过占位/失败记录
@@ -291,6 +356,22 @@ class LiveTradeRecorder:
             remark = str(getattr(s, 'remark', '') or '')
             note = f"QMT流水 transfer_no={no} dir={direction} t={tm} bank={bank} remark={remark}"
 
+            # Upgrade one explicitly user-confirmed transfer to broker evidence,
+            # rather than counting the same withdrawal again on a later poll.
+            matches = df_old[(df_old['date'] == transfer_date)
+                & (df_old['amount'].round(2) == round(signed, 2))
+                & (df_old['type'] == 'user_confirmed')].index if not df_old.empty else []
+            matches = [i for i in matches if i not in matched_user_rows]
+            if matches:
+                index = matches[0]
+                df_old.loc[index, 'note'] = str(df_old.loc[index, 'note']) + ' | ' + note
+                df_old.loc[index, 'type'] = 'qmt_sync'
+                matched_user_rows.add(index)
+                if no:
+                    existing_nos.add(no)
+                existing_fallback.add(fb_key)
+                continue
+
             new_rows.append({
                 'date': transfer_date, 'amount': signed,
                 'type': 'qmt_sync', 'note': note,
@@ -300,10 +381,10 @@ class LiveTradeRecorder:
                 existing_nos.add(no)
             existing_fallback.add(fb_key)
 
-        if new_rows:
+        if new_rows or matched_user_rows:
             path = _TRADE_DIR / "cash_flows.parquet"
             df_new = pd.DataFrame(new_rows)
-            df = df_new if df_old.empty else pd.concat([df_old, df_new], ignore_index=True)
+            df = df_old if not new_rows else df_new if df_old.empty else pd.concat([df_old, df_new], ignore_index=True)
             df.to_parquet(path, index=False)
             trading_logger.info(
                 f"[LiveTrade] QMT 银证流水同步: 新增 {len(new_rows)} 条 "
@@ -324,7 +405,8 @@ class LiveTradeRecorder:
     # `record_fill` 退化为 record_event(type='trade') 的内部派生路径，保持向后兼容。
 
     def record_event(self, event_type: str, *, source: str = SRC_CALLBACK,
-                     trade_date: date | None = None, **payload) -> dict:
+                     trade_date: date | None = None, event_time: datetime | None = None,
+                     **payload) -> dict:
         """统一事件入口。任何 watcher 回调都应通过这里落盘。
 
         Args (payload 中可能包含的字段)：
@@ -335,7 +417,7 @@ class LiveTradeRecorder:
 
         Returns: 已写入的 event 行（dict）。
         """
-        now = datetime.now()
+        now = event_time or datetime.now()
         target_date = trade_date or now.date()
         row = {
             'date': target_date, 'ts': now,
@@ -367,7 +449,7 @@ class LiveTradeRecorder:
         # 派生 fill: trade 事件同步更新 fills_{T}.parquet
         if event_type == EVT_TRADE:
             est_price = payload.get('est_price')
-            if est_price is None:
+            if est_price is None and target_date == date.today():
                 est_price = self.get_plan_est_price(row['code'])
             slippage_pct = None
             if est_price is not None and est_price > 0 and row['traded_price'] > 0:
@@ -391,7 +473,7 @@ class LiveTradeRecorder:
                 'est_price': round(float(est_price), 4) if est_price else None,
                 'slippage_pct': slippage_pct,
             }
-            self._today_fills.append(fill)
+            self._upsert_today_fill(fill)
             self._append_fill(fill)
         return row
 
@@ -508,18 +590,14 @@ class LiveTradeRecorder:
             ydf = pd.read_parquet(yesterday_path)
             for _, r in ydf.iterrows():
                 if r['volume'] > 0:
-                    avg_raw = r['avg_price'] if 'avg_price' in r.index else 0
-                    y_avg = float(avg_raw) if pd.notna(avg_raw) else 0.0
                     y_map[r['code']] = {
                         'volume': int(r['volume']),
                         'last_price': float(r['last_price']),
-                        'avg_price': y_avg,
                     }
                     if 'name' in r and isinstance(r['name'], str) and r['name'].strip():
                         name_map.setdefault(r['code'], r['name'].strip())
 
-        # 4. 逐持仓组装行 — 用 QMT 真实 (vol, avg_price, last_price) 反推
-        # cost basis, 不依赖 fills 完整性。fills 缺记时仍能算准。
+        # 4. 用券商市值、昨日市值和真实成交现金流计算，数量不守恒时标未知。
         from data.db.stock_name import get_stock_name_at_date
         rows = []
         for p in positions:
@@ -527,7 +605,6 @@ class LiveTradeRecorder:
             vol_t = int(p.volume)
             lp_t = _position_last_price(p)
             mv_t = float(p.market_value) if p.market_value else lp_t * vol_t
-            t_avg = float(p.avg_price) if vol_t > 0 else 0.0
 
             agg = fill_agg.get(code, {})
             bought = agg.get('bought', 0)
@@ -539,64 +616,17 @@ class LiveTradeRecorder:
             y = y_map.get(code) or {}
             y_vol = y.get('volume', 0)
             y_lp = y.get('last_price', 0.0)
-            y_avg = y.get('avg_price', 0.0)
             y_mv = y_lp * y_vol
 
-            # vol 平衡反推 bought_real / sold_real（QMT 持仓为准）：
-            # vol_t - y_vol = bought_real - sold_real
-            # 假设当日单向（要么纯买要么纯卖；同日双向罕见但下方仍能处理）
-            expected_vol = y_vol + bought - sold
-            gap = vol_t - expected_vol  # >0 → buy fills 缺，<0 → sell fills 缺
-            if gap > 0:
-                bought_real, sold_real = bought + gap, sold
-            elif gap < 0:
-                bought_real, sold_real = bought, sold - gap
+            # 成交金额是现金流事实；券商成本价可能含费用、已实现损益或人工调整，
+            # 不能据此反推买卖金额。数量不守恒时也禁止凭收盘价补造成交。
+            balanced = vol_t == y_vol + bought - sold
+            if chain_broken or not balanced:
+                daily_pnl = daily_ret = None
             else:
-                bought_real, sold_real = bought, sold
-
-            # cost basis 反推（核心，独立于 fills）：
-            #   T_cost - Y_cost = buy_amt - y_avg × sold_real
-            #   ⇒ buy_amt_real = T_cost - Y_cost + y_avg × sold_real
-            t_cost = t_avg * vol_t
-            y_cost = y_avg * y_vol
-            buy_amt_real = max(0.0, t_cost - y_cost + y_avg * sold_real)
-
-            # sell_amt：优先用 fills 的均价 × 真实 sold_real，兜底用今日 close
-            if sold_real > 0:
-                if sold > 0 and sell_amt > 0:
-                    avg_sell_price = sell_amt / sold
-                else:
-                    avg_sell_price = lp_t if lp_t > 0 else y_lp
-                sell_amt_real = avg_sell_price * sold_real
-            else:
-                sell_amt_real = 0.0
-
-            # fee 按真实金额比例放大（fills 缺时同步放大）
-            total_fills = buy_amt + sell_amt
-            total_real = buy_amt_real + sell_amt_real
-            if total_fills > 0 and total_real > 0:
-                fee_real = fee * (total_real / total_fills)
-            else:
-                # 兜底估算：买 0.01%, 卖 0.06%
-                fee_real = buy_amt_real * 0.0001 + sell_amt_real * 0.0006
-
-            # Guard: 链路断裂（缺 T-1 快照但有更早快照）且为「已清仓」(vol_t==0) →
-            # 卖出仓位无成本基线，旧公式把卖出金额误当利润 → 标 None。持有仓位(vol_t>0)
-            # 不受影响：y_mv=0 时公式退化为 (close-avg)×vol-fee = 持仓盈亏，照常计算。
-            # 或：当日无任何 fills + 无昨日快照 + 仍有持仓 → 持仓来源未知（历史继承），
-            # cost basis 反推会得到错误的「假当日开仓」，更诚实地标 None。
-            if (chain_broken and vol_t == 0) or (
-                    vol_t > 0 and y_vol == 0 and buy_amt == 0 and sell_amt == 0):
-                daily_pnl = None
-                daily_ret = None
-            else:
-                daily_pnl = (lp_t * vol_t) - y_mv + sell_amt_real - buy_amt_real - fee_real
-                if y_mv > 0:
-                    daily_ret = daily_pnl / y_mv * 100
-                elif buy_amt_real > 0:
-                    daily_ret = daily_pnl / buy_amt_real * 100
-                else:
-                    daily_ret = None
+                daily_pnl = mv_t - y_mv + sell_amt - buy_amt - fee
+                base = y_mv if y_mv > 0 else buy_amt
+                daily_ret = daily_pnl / base * 100 if base > 0 else None
 
             # name 多层兜底：plan/fills > XtPosition.stock_name > db lookup
             name = name_map.get(code, '')
@@ -629,9 +659,9 @@ class LiveTradeRecorder:
         # 不变量保证：sum(per_stock_daily_pnl) == 账户日变化（减去 cash_flow）。
         # 若漏掉这些股票，sum 就会少算它们的 (sell_amt - Y_mv - fee) 部分。
         today_codes = {p.stock_code for p in positions}
-        sold_to_zero = set(y_map.keys()) - today_codes
+        sold_to_zero = (set(y_map) | set(fill_agg)) - today_codes
         for code in sold_to_zero:
-            y = y_map[code]
+            y = y_map.get(code, {'last_price': 0.0, 'volume': 0})
             y_mv = y['last_price'] * y['volume']
             agg = fill_agg.get(code, {})
             sell_amt = agg.get('sell_amount', 0.0)
@@ -640,8 +670,9 @@ class LiveTradeRecorder:
             sold = agg.get('sold', 0)
             bought = agg.get('bought', 0)
             # 公式：T_mv=0（已清仓），daily_pnl = -Y_mv + sell_amt - buy_amt - fee
-            daily_pnl = -y_mv + sell_amt - buy_amt - fee
-            daily_ret = (daily_pnl / y_mv * 100) if y_mv > 0 else None
+            daily_pnl = (-y_mv + sell_amt - buy_amt - fee
+                         if not chain_broken and y['volume'] + bought == sold else None)
+            daily_ret = (daily_pnl / y_mv * 100) if daily_pnl is not None and y_mv > 0 else None
             name = name_map.get(code) or get_stock_name_at_date(code, target_date) or ''
             rows.append({
                 'date': target_date, 'code': code, 'name': name,
@@ -653,7 +684,7 @@ class LiveTradeRecorder:
                 'buy_amount_today': round(buy_amt, 2),
                 'sell_amount_today': round(sell_amt, 2),
                 'fee_today': round(fee, 4),
-                'daily_pnl': round(daily_pnl, 2),
+                'daily_pnl': round(daily_pnl, 2) if daily_pnl is not None else None,
                 'daily_return_pct': round(daily_ret, 4) if daily_ret is not None else None,
             })
 
@@ -681,33 +712,39 @@ class LiveTradeRecorder:
                 (total_asset - prev_asset - net_cash_flow)。账户口径始终另存 account_pnl。
         """
         target = trade_date or date.today()
-        buys = sum(1 for r in self._today_fills if r['direction'] == 'buy' and r['date'] == target)
-        sells = sum(1 for r in self._today_fills if r['direction'] == 'sell' and r['date'] == target)
-        fees = sum(r['fee_est'] for r in self._today_fills if r['date'] == target)
+        # parquet 是跨进程权威成交源。进程重启后内存 `_today_fills` 为空或只含
+        # 重启后的增量，若只看内存会把真实成交数和费用写成 0。
+        fills = self.get_today_fills_df(trade_date=target)
+        buys = int((fills['direction'] == 'buy').sum()) if not fills.empty else 0
+        sells = int((fills['direction'] == 'sell').sum()) if not fills.empty else 0
+        fees = float(fills['fee_est'].sum()) if not fills.empty else 0.0
         net_cf = self.get_today_cash_flows(trade_date=target)
 
         summary_path = _TRADE_DIR / "daily_summary.parquet"
         prev_asset = None
         if summary_path.exists():
+            from datetime import timedelta
+            from utils.stock.time import get_last_trading_day
+            previous_day = get_last_trading_day(target - timedelta(days=1))
             prev = pd.read_parquet(summary_path)
-            prev_rows = prev[prev['date'] < target]  # 用 < target 而非 iloc[-1]，避免重跑当日污染
+            prev_rows = prev[prev['date'] == previous_day]
             if not prev_rows.empty:
                 prev_asset = float(prev_rows['total_asset'].iloc[-1])
 
         # 账户口径（含未剔除出入金风险）
-        account_pnl = 0.0
+        account_pnl = None
         if prev_asset and prev_asset > 0:
             account_pnl = total_asset - prev_asset - net_cf
         # daily_pnl 以个股口径为准（免疫未记账出入金），缺失回退账户口径
         daily_pnl = per_stock_pnl if per_stock_pnl is not None else account_pnl
-        daily_ret = (daily_pnl / prev_asset * 100) if (prev_asset and prev_asset > 0) else 0.0
+        daily_ret = (daily_pnl / prev_asset * 100) if (daily_pnl is not None and prev_asset and prev_asset > 0) else None
 
         row = {
             'date': target, 'total_asset': round(total_asset, 2),
             'cash': round(cash, 2), 'market_value': round(market_value, 2),
-            'daily_return_pct': round(daily_ret, 4),
-            'daily_pnl': round(daily_pnl, 2),
-            'account_pnl': round(account_pnl, 2),
+            'daily_return_pct': round(daily_ret, 4) if daily_ret is not None else None,
+            'daily_pnl': round(daily_pnl, 2) if daily_pnl is not None else None,
+            'account_pnl': round(account_pnl, 2) if account_pnl is not None else None,
             'net_cash_flow': round(net_cf, 2),
             'total_fees': round(fees, 2), 'buy_count': buys, 'sell_count': sells,
         }
@@ -720,9 +757,9 @@ class LiveTradeRecorder:
         else:
             df_all = df_new
         df_all.to_parquet(summary_path, index=False)
-        trading_logger.info(f"[LiveTrade] 日终摘要: daily_ret={daily_ret:+.2f}% pnl={daily_pnl:+.0f} cf={net_cf:+.0f}")
+        trading_logger.info(f"[LiveTrade] 日终摘要: daily_ret={daily_ret} pnl={daily_pnl} cf={net_cf:+.0f}")
 
-    def backfill_fills_from_qmt(self, trader, trade_date: date | None = None) -> int:
+    def backfill_fills_from_qmt(self, trader, trade_date: date | None = None) -> int | None:
         """从 QMT 当日全部成交回填 fills_{T}.parquet，弥补 watcher 漏接的回调。
 
         QMT `query_stock_trades` 返回的每条 XtTrade 字段：
@@ -738,15 +775,15 @@ class LiveTradeRecorder:
 
         去重策略：按 `traded_id` 做集合差集，已有的不重复写。
 
-        Returns: 新增 fill 条数。
+        Returns: 新增 fill 条数；QMT 查询失败时返回 ``None``。
         """
-        from xtquant import xtconstant
+        from trading import broker_codes as xtconstant
         target = trade_date or date.today()
         try:
             trades = trader.query_all_trades()
         except Exception as e:
             trading_logger.warning(f"[LiveTrade] QMT 当日成交查询失败，跳过回填: {e}")
-            return 0
+            return None
         if not trades:
             return 0
 
@@ -793,21 +830,18 @@ class LiveTradeRecorder:
     def get_today_fills_df(self, trade_date: date | None = None) -> pd.DataFrame:
         """获取指定日的 fills DataFrame。
 
-        优先返回内存里 `_today_fills`（仅当其日期与 trade_date 一致），
-        否则回退读 `fills_{date}.parquet`，缺失返回空 DataFrame。
-
-        这样保证 sim 模式、进程重启、盘后对账等场景都能拿到数据。
+        parquet 是每笔成交同步落盘的权威源，应优先读取；仅在文件尚不存在时
+        回退同日内存数据。这样进程重启后不会只看到重启后的部分成交。
         """
         target = trade_date or date.today()
-        # 内存数据匹配同一日时优先用（最快，含未刷盘的数据）
-        if self._today_fills:
-            first_date = self._today_fills[0].get('date')
-            if first_date == target:
-                return pd.DataFrame(self._today_fills, columns=FILL_COLS)
-        # 回退读 parquet
         path = _TRADE_DIR / f"fills_{target.isoformat()}.parquet"
         if path.exists():
             return pd.read_parquet(path)
+        # record_event 同步写 parquet；此分支只用于测试或写入前的瞬时状态。
+        if self._today_fills:
+            matching = [item for item in self._today_fills if item.get('date') == target]
+            if matching:
+                return pd.DataFrame(matching, columns=FILL_COLS)
         return pd.DataFrame(columns=FILL_COLS)
 
     def _append_fill(self, record: dict):
@@ -821,7 +855,7 @@ class LiveTradeRecorder:
         target = record.get('date') or date.today()
         path = _TRADE_DIR / f"fills_{target.isoformat()}.parquet"
         df_new = pd.DataFrame([record], columns=FILL_COLS)
-        with _WRITE_LOCK:
+        with _parquet_append_lock(path):
             df_old = _safe_read_parquet(path) if path.exists() else None
             if df_old is not None and not df_old.empty:
                 tid = str(record.get('traded_id', '') or '')
@@ -839,24 +873,28 @@ class LiveTradeRecorder:
     def _append_event(self, row: dict):
         """统一事件流追加。
 
-        按 (ts, event_type, order_id, traded_volume, price) 去重；
-        同一回调可能因网络重传/进程重启被推送多次，需保证幂等。
+        QMT 回调按稳定业务字段去重；executor action 才使用本地 ts 保留每次动作。
+        同一回调可能因网络重传或多个 QMT 客户端被推送多次，必须保证幂等。
         """
         target = row.get('date') or date.today()
         path = _TRADE_DIR / f"events_{target.isoformat()}.parquet"
         df_new = pd.DataFrame([row], columns=EVENT_COLS)
-        with _WRITE_LOCK:
+        with _parquet_append_lock(path):
             df_old = _safe_read_parquet(path) if path.exists() else None
             if df_old is not None and not df_old.empty:
-                # 去重 key：同一笔事件的所有字段（ts 精确到微秒，自然唯一）
-                key = ['ts', 'event_type', 'order_id', 'traded_volume', 'price']
+                key = _event_dedupe_columns(row)
                 try:
                     mask = ~df_old.set_index(key).index.isin(df_new.set_index(key).index)
                     old_filtered = df_old[mask]
                     if old_filtered.empty:
                         df_all = df_new
                     else:
-                        df_all = pd.concat([old_filtered, df_new], ignore_index=True)
+                        # 丢掉新行中全空的列再拼接，避免 pandas 对 all-NA 列的
+                        # FutureWarning；最后恢复固定事件 schema。
+                        new_values = df_new.dropna(axis=1, how='all')
+                        df_all = pd.concat(
+                            [old_filtered, new_values], ignore_index=True
+                        ).reindex(columns=EVENT_COLS)
                 except KeyError as e:
                     trading_logger.warning(
                         f"[LiveTrade] {path.name} 去重key缺失({e}), 回退直接拼接 (旧{len(df_old)}行+新{len(df_new)}行)")

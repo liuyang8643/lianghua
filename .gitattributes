@@ -1,0 +1,5 @@
+*.py text eol=lf
+*.json text eol=lf
+*.zip binary
+*.npz binary
+snapshots/runtime/runtime.part* binary -delta

@@ -5,7 +5,7 @@
 2. _compute_comparison 实盘成交累计 vs 回测、实盘T日持仓 = T-1 + 买 - 卖
 3. 实盘进度推进时差额收敛、对齐计数
 4. 无 bt_ref（首日/缺快照）时退回纯订单进度战报
-5. run_seed_replay_for_open 缺 T-1 种子时优雅返回 None
+5. 冻结执行证据缺失时拒绝空仓回退
 """
 import json
 from datetime import date, datetime
@@ -137,11 +137,8 @@ def test_no_bt_ref_falls_back():
     assert '目标→成交' in blob  # 退回原始战报
 
 
-def test_run_seed_replay_for_open_missing_seed(monkeypatch):
-    """缺 T-1 种子时 run_seed_replay_for_open 优雅返回 None（首个交易日）。"""
-    from trading import post_close
-    monkeypatch.setattr(post_close, '_load_seed', lambda trade_date: None)
-    out = post_close.run_seed_replay_for_open(
-        date(2026, 6, 2), {'weights': {}, 'buy_n': 2},
-        data=None, all_scores=None, date_idx=0, valid_stocks=[], stock_indices={})
-    assert out is None
+def test_missing_frozen_execution_never_falls_back_to_an_empty_account(tmp_path):
+    import pytest
+    from trading.frozen_replay import replay_frozen_targets
+    with pytest.raises(FileNotFoundError):
+        replay_frozen_targets(tmp_path,date(2026,6,2),tmp_path)

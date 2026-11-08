@@ -1,9 +1,9 @@
-from datetime import date
+from datetime import date, datetime
 from types import SimpleNamespace
 
 from xtquant import xtconstant
 
-from trading.executor import OrderMonitor, RebalanceExecutor
+from trading.execution_engine import OrderMonitor, RebalanceExecutor
 
 
 class _FakeTrader:
@@ -41,7 +41,7 @@ class _FakeTrader:
 
 
 def _make_order_monitor(executor, allocations=None, prices=None, limit_prices=None,
-                        sell_orders=None):
+                        sell_orders=None, force_trading=True):
     om = OrderMonitor(
         executor,
         sell_orders=sell_orders or [],
@@ -53,6 +53,9 @@ def _make_order_monitor(executor, allocations=None, prices=None, limit_prices=No
         limit_prices=limit_prices,
     )
     om.record_action = lambda *a, **k: None
+    if force_trading:
+        # 单元测试不依赖运行机器当前是否处于 A 股连续竞价时段。
+        om._can_submit_now = lambda now: True
     return om
 
 
@@ -212,7 +215,7 @@ def test_underfunded_reject_waits_for_cash_without_blocking():
 def test_is_insufficient_funds_recognizes_qmt_numeric_code():
     """回归 2026-06-02:query_order().status_msg 只给数字码 -150906130|1|-150906130,
     不含中文「资金可用数不足」。必须靠数字码识别,否则资金废单被误判为硬废单。"""
-    from trading.executor import _is_insufficient_funds
+    from trading.execution_engine import _is_insufficient_funds
     assert _is_insufficient_funds('-150906130|1|-150906130') is True   # QMT 买入资金不足码
     assert _is_insufficient_funds('资金可用数不足,尚需3440') is True
     assert _is_insufficient_funds('insufficient buying power') is True
@@ -246,6 +249,96 @@ def test_cash_gate_waits_until_cash_is_available():
     trader.cash = 11.0 * (1 + ex.BUY_FEE_RATE) * 250 + 0.01
     assert om._submit_affordable_buys() is True
     assert trader.submitted[0][1] == 250
+
+
+def test_main_loop_waits_for_cash_refresh_after_sell_fill():
+    """卖单先终态、cash 后刷新时不能提前退出，也不能重复提交卖单。"""
+    class _DelayedCashTrader(_FakeTrader):
+        def __init__(self):
+            super().__init__(cash=0.0)
+            self.asset_queries = 0
+
+        def query_asset(self):
+            self.asset_queries += 1
+            if self.asset_queries >= 3:
+                self.cash = 2_000.0
+            return super().query_asset()
+
+    trader = _DelayedCashTrader()
+    ex = RebalanceExecutor(trader)
+    ex.SELL_CASH_SETTLE_WAIT_SEC = 0.1
+    ex.BUY_MONITOR_DEADLINE_SEC = 0.2
+    ex.MONITOR_POLL_SEC = 0.001
+    om = _make_order_monitor(
+        ex,
+        allocations={'600001.SH': 100},
+        prices={'600000.SH': 10.0, '600001.SH': 10.0},
+        limit_prices={'600001.SH': 11.0},
+        sell_orders=[('600000.SH', 100)],
+    )
+
+    submitted = om.run()
+
+    assert [(code, shares) for code, shares, _, _ in trader.submitted] == [
+        ('600000.SH', 100),
+        ('600001.SH', 100),
+    ]
+    assert len(submitted) == 2
+
+
+def test_audit_persistence_failure_does_not_stop_order_submission(monkeypatch):
+    trader = _FakeTrader(cash=1e7)
+    ex = RebalanceExecutor(trader)
+    allocations = {'600000.SH': 100, '600001.SH': 100}
+    om = OrderMonitor(
+        ex,
+        sell_orders=[],
+        buy_allocations=allocations,
+        buy_n_stocks=list(allocations),
+        prices={code: 10.0 for code in allocations},
+        signal_date=date.today(), trade_date=date.today(),
+        limit_prices={code: 11.0 for code in allocations},
+    )
+    om._can_submit_now = lambda now: True
+
+    def fail_audit(*args, **kwargs):
+        raise PermissionError(5, 'locked')
+
+    monkeypatch.setattr('trading.execution_engine.RebalanceExecutor._record_event', fail_audit)
+
+    assert om._submit_affordable_buys() is True
+    assert len(trader.submitted) == 2
+
+
+def test_monitor_does_not_query_cash_before_trading_window(monkeypatch):
+    class _CountingTrader(_FakeTrader):
+        def __init__(self):
+            super().__init__()
+            self.asset_queries = 0
+
+        def query_asset(self):
+            self.asset_queries += 1
+            return super().query_asset()
+
+    trader = _CountingTrader()
+    ex = RebalanceExecutor(trader)
+    ex.BUY_MONITOR_DEADLINE_SEC = 0.01
+    ex.MONITOR_POLL_SEC = 0.001
+    om = OrderMonitor(
+        ex,
+        sell_orders=[],
+        buy_allocations={'600000.SH': 100},
+        buy_n_stocks=['600000.SH'],
+        prices={'600000.SH': 10.0},
+        signal_date=date.today(), trade_date=date.today(),
+        limit_prices={'600000.SH': 11.0},
+    )
+    om.record_action = lambda *args, **kwargs: None
+    om._can_submit_now = lambda now: False
+
+    om._main_loop()
+
+    assert trader.asset_queries == 0
 
 
 # ── 卖单撤单重挂(等股份释放 + 可用量封顶) ──────────────────
@@ -302,7 +395,7 @@ def _stuck_order_monitor(ex, code, volume):
     return om, sub
 
 
-def test_execute_does_not_cancel_persistent_orders():
+def test_execute_does_not_cancel_persistent_orders(monkeypatch):
     """主执行路径只挂单不撤单；未终态订单继续留在柜台。"""
     class _PendingTrader(_FakeTrader):
         def __init__(self):
@@ -328,6 +421,10 @@ def test_execute_does_not_cancel_persistent_orders():
         'prices': {'600001.SH': 10.0, '600002.SH': 10.0},
         'limit_prices': {'600002.SH': 11.0},
     }
+    monkeypatch.setattr(
+        'trading.execution_engine.RebalanceExecutor._record_event',
+        lambda *args, **kwargs: None,
+    )
     ex.execute(pending)
     assert trader.cancel_count == 0
 
@@ -378,6 +475,21 @@ def test_off_hours_fast_restores_default_timeouts():
 def test_order_reject_retry_sec_is_60():
     ex = RebalanceExecutor(_FakeTrader())
     assert ex.ORDER_REJECT_RETRY_SEC == 60.0
+
+
+def test_execution_waits_60s_at_open_then_30s_at_peer():
+    ex = RebalanceExecutor(_FakeTrader())
+    assert ex.OPEN_LIMIT_TTL_SEC == 60
+    assert ex.PEER_ORDER_TTL_SEC == 30
+
+
+def test_order_submission_pauses_at_lunch_and_after_close(monkeypatch):
+    ex = RebalanceExecutor(_FakeTrader())
+    om = _make_order_monitor(
+        ex, {'600000.SH': 100}, {'600000.SH': 10.0}, force_trading=False)
+    monkeypatch.setattr(RebalanceExecutor, '_is_current_trading', lambda self, dt: False)
+    assert om._can_submit_now(datetime(2026, 9, 1, 11, 30).timestamp()) is False
+    assert om._can_submit_now(datetime(2026, 9, 1, 15, 0).timestamp()) is False
 
 
 def test_protect_price_rounds_to_tick():
@@ -447,6 +559,7 @@ def test_unified_sell_buy_run():
         limit_prices={'600003.SH': 11.0, '600004.SH': 11.0},
     )
     om.record_action = lambda *a, **k: None
+    om._can_submit_now = lambda now: True
     submitted = om.run()
     assert len(submitted) == 4
     assert om._sell_remaining('600001.SH') == 0

@@ -1,4 +1,4 @@
-from xtquant import xtconstant
+from trading import broker_codes as xtconstant
 
 
 def get_order_type_label(order_type):

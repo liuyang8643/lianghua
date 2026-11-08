@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 from datetime import date
 
-from trading.executor import RebalanceExecutor
+from trading.execution_engine import RebalanceExecutor
 
 
 class _NoOrderTrader:

@@ -1,0 +1,340 @@
+"""Offline runtime contracts shared by factor, env, and training assembly."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Mapping
+
+import numpy as np
+
+
+RUNTIME_SCHEMA_VERSION = "wbr.runtime-slice.v10-validated-reference-quotes"
+RUNTIME_LINEAGE_VERSION = "wbr.runtime-lineage.v1"
+RUNTIME_GENERATION_SEMANTICS_VERSION = (
+    "wbr.runtime-generation-semantics.v10-validated-reference-quotes"
+)
+
+LEGACY_RUNTIME_PROVENANCE_NOTE = (
+    "Legacy runtime NPZ files do not embed upstream source provenance; "
+    "generation_semantics_sha256 verifies current builder/PIT code semantics "
+    "only and cannot prove which upstream inputs or code produced the file."
+)
+
+
+def placeholder_candidates(opening, volume, amount) -> np.ndarray:
+    """Source-quality candidates, NOT a same-day trading/stock-selection rule.
+
+    TDX zero-activity placeholders may decode as positive float32 subnormals.
+    An independent market-status source must resolve them before admission.
+    Verified trading rows with unavailable turnover use NaN, not false zeros.
+    """
+    opening=np.asarray(opening);volume=np.asarray(volume);amount=np.asarray(amount)
+    zero=np.finfo(np.float32).tiny
+    return (np.isfinite(opening)&(opening>0)&np.isfinite(volume)&np.isfinite(amount)
+            &(volume<=zero)&(amount<=zero))
+
+
+def validate_execution_quotes(data, dates, codes) -> None:
+    """Reject unresolved source placeholders without filtering any strategy."""
+    for start in range(0,len(dates),64):
+        stop=min(start+64,len(dates))
+        row,col=np.nonzero(placeholder_candidates(data['open'][start:stop],data['volume'][start:stop],data['amount'][start:stop]))
+        if len(row):
+            examples=', '.join(f'{codes[j]}@{dates[start+i]}' for i,j in zip(row[:8],col[:8]))
+            raise ValueError('unresolved nontrading placeholders; normalize with independent daily evidence before using this runtime: '+examples)
+    validate_reference_quotes(data,dates,codes)
+
+
+def reference_quote_clusters(data, dates, codes, *, minimum_count=50, minimum_fraction=.25):
+    """Flag broad same-close reference contamination for source review.
+
+    This is a whole-snapshot admission check, never a per-stock selection
+    filter. An individual ex-dividend zero-return day can legitimately have
+    preClose==close, so equality alone is not classified as a bad quote.
+    """
+    if not {'close','preClose'}.issubset(data):return []
+    close=np.asarray(data['close']);reference=np.asarray(data['preClose']);issues=[]
+    for start in range(1,len(dates),128):
+        stop=min(start+128,len(dates));current=close[start:stop];prior=close[start-1:stop-1];ref=reference[start:stop]
+        known=np.isfinite(current)&np.isfinite(prior)&np.isfinite(ref)&(current>0)&(prior>0)&(ref>0)
+        if 'listing_age' in data:known&=data['listing_age'][start:stop]>10
+        candidates=known&np.isclose(current,ref,rtol=0,atol=1e-7)&(np.abs(current-prior)>.009)
+        totals=known.sum(axis=1);counts=candidates.sum(axis=1)
+        for offset in np.flatnonzero((counts>=minimum_count)&(counts>=minimum_fraction*totals)):
+            indices=np.flatnonzero(candidates[offset]);issues.append({'date':str(dates[start+offset]),'count':int(counts[offset]),'known_stocks':int(totals[offset]),'examples':[str(codes[j]) for j in indices[:8]]})
+    return issues
+
+
+def validate_reference_quotes(data,dates,codes):
+    issues=reference_quote_clusters(data,dates,codes)
+    if issues:raise ValueError('unresolved preClose/current-close cluster; independently verify reference prices before use: '+str(issues))
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeFieldMetadata:
+    """A registered runtime field and its decision-time availability."""
+
+    name: str
+    dimensions: tuple[str, ...]
+    dtype: str
+    decision_lag: int
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "dimensions": list(self.dimensions),
+            "dtype": self.dtype,
+            "decision_lag": self.decision_lag,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeManifest:
+    """Source schema identity and boundaries of one immutable runtime slice.
+
+    ``fields`` and ``schema_hash`` describe the original snapshot. For replay
+    projections, ``retained_fields`` explicitly declares materialized fields.
+    """
+
+    schema_version: str
+    schema_hash: str
+    source_path: str
+    source_sha256: str
+    source_size: int
+    stock_vocabulary_sha256: str
+    requested_start: str
+    requested_end: str
+    loaded_start: str
+    loaded_end: str
+    requested_preload_rows: int
+    actual_preload_rows: int
+    fields: tuple[RuntimeFieldMetadata, ...]
+    replay_projection: ReplayProjection | None = None
+
+    def as_dict(self) -> dict[str, object]:
+        payload = {
+            "schema_version": self.schema_version,
+            "schema_hash": self.schema_hash,
+            "source_path": self.source_path,
+            "source_sha256": self.source_sha256,
+            "source_size": self.source_size,
+            "stock_vocabulary_sha256": self.stock_vocabulary_sha256,
+            "requested_start": self.requested_start,
+            "requested_end": self.requested_end,
+            "loaded_start": self.loaded_start,
+            "loaded_end": self.loaded_end,
+            "requested_preload_rows": self.requested_preload_rows,
+            "actual_preload_rows": self.actual_preload_rows,
+            "fields": [field.as_dict() for field in self.fields],
+        }
+        if self.replay_projection is not None:
+            payload["replay_projection"] = self.replay_projection.as_dict()
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayProjection:
+    """Provenance and materialized fields of an already-computed replay cache."""
+
+    source_manifest: RuntimeManifest
+    source_rows: int
+    source_row_offset: int
+    factor_schema_hash: str
+    observation_schema: str | None
+    encoded_schema: str | None
+    retained_fields: tuple[str, ...]
+    schema_version: str = "wbr-replay-projection-v2-explicit-fields"
+
+    def __post_init__(self) -> None:
+        if self.schema_version != "wbr-replay-projection-v2-explicit-fields":
+            raise ValueError("unsupported replay projection version")
+        if self.source_manifest.replay_projection is not None:
+            raise ValueError("replay projection must reference the original loaded runtime")
+        if (type(self.source_rows) is not int or type(self.source_row_offset) is not int
+                or not 0 <= self.source_row_offset < self.source_rows):
+            raise ValueError("replay projection needs an in-range source row offset")
+        if (self.observation_schema is None) != (self.encoded_schema is None):
+            raise ValueError("replay observation and encoded schemas must be present together")
+        source_fields = tuple(item.name for item in self.source_manifest.fields)
+        if (not isinstance(self.retained_fields, tuple) or not self.retained_fields
+                or len(set(self.retained_fields)) != len(self.retained_fields)
+                or self.retained_fields != tuple(name for name in source_fields if name in self.retained_fields)):
+            raise ValueError("replay retained fields must be an ordered unique subset of the source schema")
+        if self.observation_schema is not None and self.retained_fields != source_fields:
+            raise ValueError("actor replay must retain every source field")
+
+    def as_dict(self) -> dict[str, object]:
+        return {"schema_version": self.schema_version,
+                "source_manifest": self.source_manifest.as_dict(), "source_rows": self.source_rows,
+                "source_row_offset": self.source_row_offset, "factor_schema_hash": self.factor_schema_hash,
+                "observation_schema": self.observation_schema, "encoded_schema": self.encoded_schema,
+                "retained_fields": list(self.retained_fields)}
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeFieldLineage:
+    """Canonical identity of one registered field at a lineage cutoff."""
+
+    name: str
+    dimensions: tuple[str, ...]
+    decision_lag: int
+    source_dtype: str
+    canonical_dtype: str
+    canonical_shape: tuple[int, ...]
+    semantic_sha256: str
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "dimensions": list(self.dimensions),
+            "decision_lag": self.decision_lag,
+            "source_dtype": self.source_dtype,
+            "canonical_dtype": self.canonical_dtype,
+            "canonical_shape": list(self.canonical_shape),
+            "semantic_sha256": self.semantic_sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeGenerationComponent:
+    """One source component contributing to runtime generation semantics."""
+
+    name: str
+    source_sha256: str
+
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "name": self.name,
+            "source_sha256": self.source_sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeLineage:
+    """Versioned semantic identity for an append-only runtime prefix.
+
+    Existing NPZ files contain no embedded upstream provenance manifest. The
+    generation hash therefore verifies the current runtime/PIT code semantics,
+    not the historical files, API responses, or exact code that built an old
+    NPZ. ``upstream_provenance_embedded`` remains false for this contract.
+    """
+
+    lineage_version: str
+    runtime_schema_version: str
+    runtime_schema_hash: str
+    generation_semantics_version: str
+    generation_semantics_sha256: str
+    generation_components: tuple[RuntimeGenerationComponent, ...]
+    upstream_provenance_embedded: bool
+    provenance_note: str
+    semantic_sha256: str
+    requested_cutoff: str | None
+    prefix_start: str
+    prefix_end: str
+    prefix_rows: int
+    stock_count: int
+    stock_vocabulary_sha256: str
+    date_axis_sha256: str
+    fields: tuple[RuntimeFieldLineage, ...]
+
+    @property
+    def prefix_sha256(self) -> str:
+        return self.semantic_sha256
+
+    def field(self, name: str) -> RuntimeFieldLineage:
+        for field in self.fields:
+            if field.name == name:
+                return field
+        raise KeyError(name)
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "lineage_version": self.lineage_version,
+            "runtime_schema_version": self.runtime_schema_version,
+            "runtime_schema_hash": self.runtime_schema_hash,
+            "generation_semantics_version": self.generation_semantics_version,
+            "generation_semantics_sha256": self.generation_semantics_sha256,
+            "generation_components": [
+                component.as_dict() for component in self.generation_components
+            ],
+            "upstream_provenance_embedded": self.upstream_provenance_embedded,
+            "provenance_note": self.provenance_note,
+            "semantic_sha256": self.semantic_sha256,
+            "requested_cutoff": self.requested_cutoff,
+            "prefix_start": self.prefix_start,
+            "prefix_end": self.prefix_end,
+            "prefix_rows": self.prefix_rows,
+            "stock_count": self.stock_count,
+            "stock_vocabulary_sha256": self.stock_vocabulary_sha256,
+            "date_axis_sha256": self.date_axis_sha256,
+            "fields": [field.as_dict() for field in self.fields],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeSlice:
+    """A copied, contiguous, read-only view of a sealed runtime date range.
+
+    ``trade_dates`` and every array in ``data`` include preload rows. The
+    decision interval is ``[decision_start, decision_stop)`` and the final
+    loaded row is never later than the requested end date.
+    """
+
+    stock_codes: tuple[str, ...]
+    trade_dates: np.ndarray
+    data: Mapping[str, np.ndarray]
+    decision_start: int
+    decision_stop: int
+    manifest: RuntimeManifest
+
+    def __post_init__(self) -> None:
+        dates = self.trade_dates
+        projection = self.manifest.replay_projection
+        if projection is not None and tuple(self.data) != projection.retained_fields:
+            raise ValueError("replay runtime fields differ from declared retained fields")
+        if dates.ndim != 1 or dates.dtype != np.dtype("datetime64[D]"):
+            raise ValueError("trade_dates must be a 1D datetime64[D] array")
+        if not 0 <= self.decision_start < self.decision_stop <= len(dates):
+            raise ValueError("invalid decision interval")
+        if len(self.stock_codes) == 0:
+            raise ValueError("stock vocabulary must not be empty")
+
+        n_dates = len(dates)
+        n_stocks = len(self.stock_codes)
+        for name, values in self.data.items():
+            if values.ndim == 2 and values.shape != (n_dates, n_stocks):
+                raise ValueError(
+                    f"runtime field {name!r} must have shape "
+                    f"({n_dates}, {n_stocks})"
+                )
+            if values.ndim == 1 and values.shape != (n_stocks,):
+                raise ValueError(
+                    f"runtime field {name!r} must have shape ({n_stocks},)"
+                )
+            if values.ndim not in (1, 2):
+                raise ValueError(f"runtime field {name!r} must be 1D or 2D")
+
+        object.__setattr__(self, "data", MappingProxyType(dict(self.data)))
+
+    @property
+    def decision_dates(self) -> np.ndarray:
+        return self.trade_dates[self.decision_start : self.decision_stop]
+
+    @property
+    def n_dates(self) -> int:
+        return len(self.trade_dates)
+
+    @property
+    def n_stocks(self) -> int:
+        return len(self.stock_codes)
+
+    def field(self, name: str) -> np.ndarray:
+        return self.data[name]
+
+    def index_of(self, value: object) -> int:
+        target = np.datetime64(value, "D")
+        index = int(np.searchsorted(self.trade_dates, target))
+        if index == len(self.trade_dates) or self.trade_dates[index] != target:
+            raise KeyError(f"date is not present in runtime slice: {target}")
+        return index

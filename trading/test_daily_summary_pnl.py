@@ -48,3 +48,33 @@ def test_daily_pnl_falls_back_to_account_when_none(recorder, tmp_path):
     # 无个股口径 → daily_pnl 回退账户口径，且与 account_pnl 一致
     assert abs(row['daily_pnl'] - 500.0) < 1e-6
     assert abs(row['account_pnl'] - 500.0) < 1e-6
+
+
+def test_daily_summary_uses_persisted_fills_after_process_restart(
+        recorder, tmp_path):
+    target = date(2026, 6, 2)
+    pd.DataFrame([
+        {'date': target, 'direction': 'buy', 'fee_est': 1.25},
+        {'date': target, 'direction': 'sell', 'fee_est': 2.75},
+    ]).to_parquet(tmp_path / f'fills_{target.isoformat()}.parquet', index=False)
+
+    recorder.write_daily_summary(
+        total_asset=1_000_000.0, cash=100_000.0, market_value=900_000.0,
+        trade_date=target,
+    )
+
+    row = pd.read_parquet(tmp_path / 'daily_summary.parquet').iloc[-1]
+    assert row['buy_count'] == 1
+    assert row['sell_count'] == 1
+    assert row['total_fees'] == 4.0
+
+
+def test_missing_exact_previous_day_keeps_pnl_unknown(recorder, tmp_path):
+    recorder.write_daily_summary(total_asset=1000, cash=100, market_value=900,
+                                 trade_date=date(2026, 10, 30))
+    recorder.write_daily_summary(total_asset=1200, cash=200, market_value=1000,
+                                 trade_date=date(2026, 11, 3))
+    row = pd.read_parquet(tmp_path / 'daily_summary.parquet').iloc[-1]
+    assert row['total_asset'] == 1200 and row['cash'] == 200
+    assert pd.isna(row['daily_pnl']) and pd.isna(row['account_pnl'])
+    assert pd.isna(row['daily_return_pct'])

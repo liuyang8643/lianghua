@@ -1,0 +1,27 @@
+{
+  "annual_cost_rate_linear": 0.06492556095717944,
+  "average_holdings": 55.902229845626074,
+  "closed_holding_days_mean": 22.415021156558534,
+  "counts": {
+    "fee": 0,
+    "legality": 0,
+    "price": 0
+  },
+  "effective_holdings": 46.03085555597323,
+  "fills": 9455,
+  "ledger": {
+    "account_pnl": 858543.7155059257,
+    "accounting_basis": "economic_position_episode",
+    "broker_exact": false,
+    "closed_episodes": 2836,
+    "closed_pnl": 983451.9086763358,
+    "open_episodes": 76,
+    "open_pnl": -124908.19317041086
+  },
+  "max_realized_weight": 0.034315940980700385,
+  "mean_daily_amount": 303600170.59882337,
+  "median_daily_amount": 44894244.0,
+  "participation_p95": 0.0021703000574527643,
+  "regression_all_six_exact": true,
+  "turnover_implied_days_approx": 21.95899209790808
+}

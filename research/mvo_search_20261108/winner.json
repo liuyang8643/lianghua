@@ -1,0 +1,101 @@
+{
+  "complete_grid": true,
+  "external_seen": false,
+  "planned": 24,
+  "selection": "training continuous OOF only",
+  "trials": 24,
+  "winner": {
+    "annual": [
+      {
+        "drawdown": 0.3133118185165086,
+        "return": -0.13026557773031266,
+        "return_over_drawdown": -0.41576975406514677,
+        "year": "2011"
+      },
+      {
+        "drawdown": 0.18590402664628147,
+        "return": 0.3760149957857706,
+        "return_over_drawdown": 2.0226296469694662,
+        "year": "2012"
+      },
+      {
+        "drawdown": 0.14698809538164548,
+        "return": 0.4753224209823135,
+        "return_over_drawdown": 3.2337477381972213,
+        "year": "2013"
+      },
+      {
+        "drawdown": 0.08041090894933911,
+        "return": 0.8108214273167487,
+        "return_over_drawdown": 10.083475462609016,
+        "year": "2014"
+      },
+      {
+        "drawdown": 0.4231552550135732,
+        "return": 2.142582224255642,
+        "return_over_drawdown": 5.0633477875323,
+        "year": "2015"
+      },
+      {
+        "drawdown": 0.277770314866842,
+        "return": 0.291756965195906,
+        "return_over_drawdown": 1.0503532940003648,
+        "year": "2016"
+      },
+      {
+        "drawdown": 0.20661444076611402,
+        "return": 0.06059822526187553,
+        "return_over_drawdown": 0.29329133548062236,
+        "year": "2017"
+      },
+      {
+        "drawdown": 0.3085638247377801,
+        "return": -0.1058454074913,
+        "return_over_drawdown": -0.34302597714183847,
+        "year": "2018"
+      },
+      {
+        "drawdown": 0.14689948253160923,
+        "return": 0.5481479778311245,
+        "return_over_drawdown": 3.7314493447121313,
+        "year": "2019"
+      },
+      {
+        "drawdown": 0.20796080790419502,
+        "return": 0.3207553850114364,
+        "return_over_drawdown": 1.5423838185856849,
+        "year": "2020"
+      },
+      {
+        "drawdown": 0.1378818565230583,
+        "return": 0.4263581086045858,
+        "return_over_drawdown": 3.0921987805791185,
+        "year": "2021"
+      }
+    ],
+    "id": 4,
+    "metrics": {
+      "annualized_return": 0.40136348719430764,
+      "annualized_volatility": 0.27701667293821236,
+      "calmar": 0.9485017199690287,
+      "funding_floor_days": 1,
+      "max_drawdown": 0.42315525501357376,
+      "mean_exposure": 0.9989714451279176,
+      "mean_gross_turnover": 0.09864834369377266,
+      "sharpe": 1.3593341634671219,
+      "solver_days": 2674,
+      "total_fees": 7974386.572003266,
+      "total_return": 34.897714361722485,
+      "transition_count": 2674
+    },
+    "parameters": {
+      "max_weight": 0.025,
+      "pool_size": 80,
+      "risk_aversion": 10.0,
+      "turnover_limit": 0.1
+    },
+    "seconds": 54.71900000004098,
+    "state": "complete",
+    "trace_sha256": "1b8ded95fe2fbf8fba3347139b01e37f883af9852a16a1e9b35fd9cd73054ea8"
+  }
+}

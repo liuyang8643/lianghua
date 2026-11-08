@@ -13,7 +13,7 @@ WBR 回测可视化报告生成器
 9. 每日收益率分布
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from html import escape as html_escape
 from pathlib import Path
 import re
@@ -21,7 +21,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 
-from testback.logger import testback_logger
+from loguru import logger as testback_logger
 
 
 # ---------------------------------------------------------------------------
@@ -83,41 +83,25 @@ def _minify_html_document(html: str) -> str:
 
 
 
-def _make_stock_text(code: str, stock_name_map: Dict[str, str]) -> str:
-    return f'<span class="stock-text">{html_escape(_fmt_stock(code, stock_name_map))}</span>'
 
 
 
-def _make_stock_button(code: str, stock_name_map: Dict[str, str], class_name: str = 'code-btn') -> str:
+def _make_stock_button(code: str, stock_name_map: Dict[str, str], class_name: str = 'code-btn',
+                       kline_event_id: int | None = None) -> str:
     label = html_escape(_fmt_stock(code, stock_name_map))
+    if kline_event_id is not None:
+        return (
+            f'<button type="button" class="{class_name}" '
+            f'data-kline-code="{html_escape(code)}" data-kline-event="{kline_event_id}">'
+            f'{label}</button>'
+        )
     return f'<span class="{class_name}">{label}</span>'
 
 
 
-def _make_stock_list_html(codes: List[str], stock_name_map: Dict[str, str]) -> str:
-    if not codes:
-        return '<span class="muted">—</span>'
-    return '<br>'.join(html_escape(_fmt_stock(code, stock_name_map)) for code in codes)
 
 
 
-def _make_stock_action_list_html(buys: List[str], sells: List[str], stock_name_map: Dict[str, str]) -> str:
-    parts = []
-    if buys:
-        buy_html = '<br>'.join(
-            f'<span class="buy-cell">买 {html_escape(_fmt_stock(code, stock_name_map))}</span>'
-            for code in buys
-        )
-        parts.append(buy_html)
-    if sells:
-        sell_html = '<br>'.join(
-            f'<span class="sell-cell">卖 {html_escape(_fmt_stock(code, stock_name_map))}</span>'
-            for code in sells
-        )
-        parts.append(sell_html)
-    if not parts:
-        return '<span class="muted">—</span>'
-    return '<br>'.join(parts)
 
 
 
@@ -182,31 +166,161 @@ def _format_execution_basis(record: Dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _get_stock_trades(trade_log: List[Dict], code: str) -> Dict:
-    """获取某股票的所有买卖点"""
-    trades = [t for t in trade_log if t.get('code') == code]
-    buys = [
-        {
-            'signal_date': _get_signal_date(t),
-            'trade_date': _get_trade_date(t),
-            'price': t.get('price', 0),
-            'volume': t.get('volume', 0),
-            'execution_basis': _format_execution_basis(t),
+
+
+def _build_trade_episodes(trade_log: List[Dict], report_end: str = '') -> Dict[str, Dict[str, Any]]:
+    """Group reported buys/sells into K-line windows, not corporate-action accounts."""
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for event_id, trade in enumerate(trade_log):
+        code = str(trade.get('code') or '')
+        trade_date = _get_trade_date(trade)
+        action = str(trade.get('action') or '')
+        if not code or not trade_date or action not in {'buy', 'sell'}:
+            continue
+        grouped.setdefault(code, []).append({
+            'id': event_id,
+            'date': trade_date,
+            'action': action,
+            'price': round(float(trade.get('price') or 0.0), 4),
+            'volume': int(trade.get('volume') or 0),
+        })
+
+    resolved_end = report_end or max(
+        (event['date'] for events in grouped.values() for event in events),
+        default=datetime.now().strftime('%Y-%m-%d'),
+    )
+    result: Dict[str, Dict[str, Any]] = {}
+    for code, events in grouped.items():
+        events.sort(key=lambda item: (item['date'], item['id']))
+        episodes: List[Dict[str, Any]] = []
+        current: Dict[str, Any] | None = None
+        position_volume = 0
+        for event in events:
+            if event['action'] == 'buy':
+                if current is None:
+                    current = {'id': len(episodes), 'start': event['date'], 'events': []}
+                position_volume += event['volume']
+            elif current is None:
+                continue
+
+            event['episode'] = current['id']
+            current['events'].append(event['id'])
+            if event['action'] == 'sell':
+                position_volume = max(0, position_volume - event['volume'])
+                if position_volume == 0:
+                    current['end'] = event['date']
+                    episodes.append(current)
+                    current = None
+
+        if current is not None:
+            current['end'] = resolved_end
+            current['open'] = True
+            episodes.append(current)
+
+        for episode in episodes:
+            start_dt = datetime.strptime(episode['start'], '%Y-%m-%d') - timedelta(days=183)
+            end_dt = datetime.strptime(episode['end'], '%Y-%m-%d') + timedelta(days=183)
+            episode['window_start'] = start_dt.strftime('%Y-%m-%d')
+            episode['window_end'] = end_dt.strftime('%Y-%m-%d')
+        result[code] = {'events': events, 'episodes': episodes}
+    return result
+
+
+def _collect_kline_payload(
+    trade_log: List[Dict],
+    stock_name_map: Dict[str, str],
+    report_end: str,
+    runtime_kline: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Collect episode windows only from the sealed runtime snapshot."""
+    if not trade_log:
+        return {}
+    if runtime_kline is None:
+        raise ValueError("trade K-line rendering requires the sealed runtime snapshot")
+
+    episode_map = _build_trade_episodes(trade_log, report_end)
+    runtime_dates = np.asarray(runtime_kline['trade_dates']).astype('datetime64[D]')
+    runtime_code_index = {
+        str(code): index
+        for index, code in enumerate(np.asarray(runtime_kline['stock_codes']))
+    }
+
+    payload: Dict[str, Any] = {}
+    for code, info in episode_map.items():
+        if not info['episodes']:
+            continue
+
+        ranges = sorted(
+            (episode['window_start'], episode['window_end'])
+            for episode in info['episodes']
+        )
+        merged: List[List[str]] = []
+        for start, end in ranges:
+            if not merged or start > merged[-1][1]:
+                merged.append([start, end])
+            elif end > merged[-1][1]:
+                merged[-1][1] = end
+
+        stock_index = runtime_code_index.get(code)
+        if stock_index is None:
+            continue
+        mask = np.zeros(len(runtime_dates), dtype=bool)
+        for start, end in merged:
+            mask |= (
+                (runtime_dates >= np.datetime64(start, 'D'))
+                & (runtime_dates <= np.datetime64(end, 'D'))
+            )
+        row_indices = np.flatnonzero(mask)
+        ohlc = np.column_stack(
+            tuple(
+                np.asarray(runtime_kline[field])[row_indices, stock_index]
+                for field in ('open', 'high', 'low', 'close')
+            )
+        ).astype(np.float64, copy=False)
+        row_indices = row_indices[np.isfinite(ohlc).all(axis=1)]
+        if len(row_indices) < 5:
+            continue
+        date_strings = [
+            np.datetime_as_string(value, unit='D')
+            for value in runtime_dates[row_indices]
+        ]
+        open_values = np.asarray(runtime_kline['open'])[row_indices, stock_index]
+        high_values = np.asarray(runtime_kline['high'])[row_indices, stock_index]
+        low_values = np.asarray(runtime_kline['low'])[row_indices, stock_index]
+        close_values = np.asarray(runtime_kline['close'])[row_indices, stock_index]
+        amount_values = np.asarray(runtime_kline['amount'])[row_indices, stock_index]
+
+        payload[code] = {
+            'n': _get_stock_name(code, stock_name_map),
+            'd': date_strings,
+            'o': [round(float(value), 4) for value in open_values],
+            'h': [round(float(value), 4) for value in high_values],
+            'l': [round(float(value), 4) for value in low_values],
+            'c': [round(float(value), 4) for value in close_values],
+            'a': [
+                round(float(value), 2) if np.isfinite(value) else 0.0
+                for value in amount_values
+            ],
+            'events': info['events'],
+            'episodes': info['episodes'],
         }
-        for t in trades if t.get('action') == 'buy'
-    ]
-    sells = [
-        {
-            'signal_date': _get_signal_date(t),
-            'trade_date': _get_trade_date(t),
-            'price': t.get('price', 0),
-            'volume': t.get('volume', 0),
-            'income': t.get('income'),
-            'execution_basis': _format_execution_basis(t),
-        }
-        for t in trades if t.get('action') == 'sell'
-    ]
-    return {'buys': buys, 'sells': sells}
+    return payload
+
+
+def _encode_kline_payload(payload: Dict[str, Any]) -> str:
+    if not payload:
+        return ''
+    import base64
+    import gzip
+    import json
+
+    raw = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    encoded = base64.b64encode(gzip.compress(raw, compresslevel=9)).decode('ascii')
+    testback_logger.info(
+        f'K线数据: {len(payload)} 只股票, 原始 {len(raw)/1024/1024:.1f} MB, '
+        f'压缩后 {len(encoded)/1024/1024:.1f} MB'
+    )
+    return encoded
 
 
 
@@ -330,8 +444,8 @@ def _build_histogram_payload(values: List[float], max_bins: int = 32) -> Dict[st
 
 
 
-def _build_winloss_payload(trade_log: List[Dict]) -> Dict[str, int]:
-    sell_trades = [trade for trade in trade_log if trade.get('action') == 'sell' and trade.get('income') is not None]
+def _build_winloss_payload(trade_log: List[Dict], *, closed_positions=None) -> Dict[str, int]:
+    sell_trades = [trade for trade in (closed_positions if closed_positions is not None else trade_log) if (closed_positions is not None or trade.get('action') == 'sell') and trade.get('income') is not None]
     if not sell_trades:
         return {}
 
@@ -459,10 +573,11 @@ def _make_position_change_summary(entered: List[str], exited: List[str], stock_n
     return '<br>'.join(parts), '\n'.join(title_lines)
 
 
-def _make_daily_table(daily_snapshots: List[Dict], stock_name_map: Dict[str, str]) -> Dict[str, Any]:
+def _make_daily_table(daily_snapshots: List[Dict], stock_name_map: Dict[str, str], *, position_changes_available: bool = True) -> Dict[str, Any]:
     headers = [
         {'label': '信号日', 'sort_type': 'date', 'align': 'center'},
         {'label': '执行日', 'sort_type': 'date', 'align': 'center'},
+        {'label': '估值/结算日', 'sort_type': 'date', 'align': 'center'},
         {'label': '执行基准', 'sort_type': 'text', 'align': 'center'},
         {'label': '现金(¥)', 'sort_type': 'number'},
         {'label': '持仓市值(¥)', 'sort_type': 'number'},
@@ -490,6 +605,9 @@ def _make_daily_table(daily_snapshots: List[Dict], stock_name_map: Dict[str, str
         exited_stocks = s.get('exited_stocks', [])
         signal_date = _get_signal_date(s)
         trade_date = _get_trade_date(s)
+        settlement_date = _normalize_date(
+            s.get('settlement_date') or s.get('date')
+        )
         execution_basis = _format_execution_basis(s)
         action_sort = '|'.join(
             [f'B:{_fmt_stock(code, stock_name_map)}' for code in executed_buy_list] +
@@ -498,14 +616,19 @@ def _make_daily_table(daily_snapshots: List[Dict], stock_name_map: Dict[str, str
             [f'X:{_fmt_stock(code, stock_name_map)}' for code in exited_stocks]
         )
         buy_summary_html, buy_list_text = _make_stock_count_summary(buy_n_list, stock_name_map)
+        if 'buy_n_list' not in s:
+            buy_summary_html, buy_list_text = 'N/A', '未提供候选名单'
         trade_summary_html, trade_summary_title = _make_trade_count_summary(executed_buy_list, executed_sell_list, stock_name_map)
         change_summary_html, change_summary_title = _make_position_change_summary(entered_stocks, exited_stocks, stock_name_map)
+        if not s.get('position_changes_available', position_changes_available):
+            change_summary_html, change_summary_title = 'N/A', '未提供完整持仓成员变化；补仓或部分卖出不等于新增或清仓'
         total_asset = s.get('total_asset', 0)
         market_value = s.get('market_value', 0)
         pos_ratio = (market_value / total_asset * 100) if total_asset > 0 else 0.0
         rows.append([
             _make_cell(html_escape(signal_date), signal_date),
             _make_cell(html_escape(trade_date), trade_date),
+            _make_cell(html_escape(settlement_date), settlement_date),
             _make_cell(html_escape(execution_basis), execution_basis),
             _make_cell(f'{s["cash"]:,.2f}', s['cash']),
             _make_cell(f'{s["market_value"]:,.2f}', s['market_value']),
@@ -531,7 +654,11 @@ def _make_trade_table(trade_log: List[Dict], stock_name_map: Dict[str, str]) -> 
         {'label': '价格(¥)', 'sort_type': 'number'},
         {'label': '数量(股)', 'sort_type': 'number'},
         {'label': '金额(¥)', 'sort_type': 'number'},
-        {'label': '手续费(¥)', 'sort_type': 'number'},
+        {'label': '券商佣金(¥)', 'sort_type': 'number'},
+        {'label': '过户费(¥)', 'sort_type': 'number'},
+        {'label': '印花税(¥)', 'sort_type': 'number'},
+        {'label': '滑点(¥)', 'sort_type': 'number'},
+        {'label': '总费用(¥)', 'sort_type': 'number'},
         {'label': '盈亏(¥)', 'sort_type': 'number'},
         {'label': '说明', 'sort_type': 'text'},
     ]
@@ -539,7 +666,7 @@ def _make_trade_table(trade_log: List[Dict], stock_name_map: Dict[str, str]) -> 
         return _make_table(headers, [], 'trade-table', '暂无交易记录', row_height=60, max_height=540)
 
     rows = []
-    for t in trade_log:
+    for event_id, t in enumerate(trade_log):
         action = t.get('action', '')
         is_buy = action == 'buy'
         action_cls = 'buy-cell' if is_buy else 'sell-cell'
@@ -548,6 +675,7 @@ def _make_trade_table(trade_log: List[Dict], stock_name_map: Dict[str, str]) -> 
         signal_date = _get_signal_date(t)
         trade_date = _get_trade_date(t)
         execution_basis = _format_execution_basis(t)
+        total_fee = float(t['total_fee'])
         if income is None:
             income_html = '<span class="muted">—</span>'
             income_sort = ''
@@ -558,13 +686,34 @@ def _make_trade_table(trade_log: List[Dict], stock_name_map: Dict[str, str]) -> 
         rows.append([
             _make_cell(html_escape(signal_date), signal_date),
             _make_cell(html_escape(trade_date), trade_date),
-            _make_cell(_make_stock_button(t.get('code', ''), stock_name_map), _fmt_stock(t.get('code', ''), stock_name_map)),
+            _make_cell(
+                _make_stock_button(
+                    t.get('code', ''), stock_name_map, kline_event_id=event_id,
+                ),
+                _fmt_stock(t.get('code', ''), stock_name_map),
+            ),
             _make_cell(f'<span class="{action_cls}">{action_txt}</span>', action_txt),
             _make_cell(html_escape(execution_basis), execution_basis),
             _make_cell(f'{t.get("price", 0):.4f}', t.get('price', 0)),
             _make_cell(f'{t.get("volume", 0):,}', t.get('volume', 0)),
             _make_cell(f'{t.get("amount", 0):,.2f}', t.get('amount', 0)),
-            _make_cell(f'{t.get("commission", 0):.2f}', t.get('commission', 0)),
+            _make_cell(
+                f'{float(t["broker_commission"]):.2f}',
+                t['broker_commission'],
+            ),
+            _make_cell(
+                f'{float(t["transfer_fee"]):.2f}',
+                t['transfer_fee'],
+            ),
+            _make_cell(
+                f'{float(t["stamp_tax"]):.2f}',
+                t['stamp_tax'],
+            ),
+            _make_cell(
+                f'{float(t["slippage"]):.2f}',
+                t['slippage'],
+            ),
+            _make_cell(f'{float(total_fee):.2f}', total_fee),
             _make_cell(income_html, income_sort),
             _make_cell(html_escape(t.get('reason', '') or ''), t.get('reason', '') or ''),
         ])
@@ -572,7 +721,12 @@ def _make_trade_table(trade_log: List[Dict], stock_name_map: Dict[str, str]) -> 
 
 
 
-def _make_holdings_table(positions: List[Dict], stock_name_map: Dict[str, str]) -> Dict[str, Any]:
+def _make_holdings_table(
+    positions: List[Dict],
+    stock_name_map: Dict[str, str],
+    *,
+    holding_period_available: bool = True,
+) -> Dict[str, Any]:
     headers = [
         {'label': '股票', 'sort_type': 'text'},
         {'label': '信号日', 'sort_type': 'date', 'align': 'center'},
@@ -601,12 +755,16 @@ def _make_holdings_table(positions: List[Dict], stock_name_map: Dict[str, str]) 
         signal_date = _get_signal_date(p)
         trade_date = _get_trade_date(p)
         execution_basis = _format_execution_basis(p)
+        holding_days = p.get('holding_days') if holding_period_available else None
         rows.append([
-            _make_cell(_make_stock_button(p.get('code', ''), stock_name_map), _fmt_stock(p.get('code', ''), stock_name_map)),
+            _make_cell(_make_stock_button(p.get('code', ''), stock_name_map, kline_event_id=p.get('first_event_id')), _fmt_stock(p.get('code', ''), stock_name_map)),
             _make_cell(html_escape(signal_date), signal_date),
             _make_cell(html_escape(trade_date), trade_date),
             _make_cell(html_escape(execution_basis), execution_basis),
-            _make_cell(str(p.get('holding_days', 0)), p.get('holding_days', 0)),
+            _make_cell(
+                str(holding_days) if holding_days is not None else 'N/A',
+                holding_days,
+            ),
             _make_cell(f'{p.get("volume", 0):,}', p.get('volume', 0)),
             _make_cell(f'{p.get("avg_price", 0):.4f}', p.get('avg_price', 0)),
             _make_cell(f'{cost:,.2f}', cost),
@@ -619,7 +777,14 @@ def _make_holdings_table(positions: List[Dict], stock_name_map: Dict[str, str]) 
 
 
 
-def _make_cleared_positions_table(cleared_positions: List[Dict], stock_name_map: Dict[str, str]) -> Dict[str, Any]:
+def _make_cleared_positions_table(
+    cleared_positions: List[Dict],
+    stock_name_map: Dict[str, str],
+    *,
+    analytics_available: bool = True,
+    economic_episodes: bool = False,
+    ledger_summary: Dict | None = None,
+) -> Dict[str, Any]:
     headers = [
         {'label': '股票', 'sort_type': 'text'},
         {'label': '买入信号日', 'sort_type': 'date', 'align': 'center'},
@@ -636,6 +801,17 @@ def _make_cleared_positions_table(cleared_positions: List[Dict], stock_name_map:
         {'label': '盈亏率', 'sort_type': 'number'},
         {'label': '清仓原因', 'sort_type': 'text'},
     ]
+    if economic_episodes:
+        for index,label in {3:'结束信号日',4:'结束日（成交/估值）',7:'累计买入股数',8:'买入成交均价(¥)',9:'卖出成交均价(¥)',10:'累计买入支出(¥)',12:'净收益/累计投入'}.items():headers[index]['label']=label
+    if not analytics_available:
+        return _make_table(
+            headers,
+            [],
+            'cleared-table',
+            '当前 canonical env 未提供逐持仓平仓配对，相关统计不展示',
+            row_height=60,
+            max_height=520,
+        )
     if not cleared_positions:
         return _make_table(headers, [], 'cleared-table', '暂无已清仓持仓', row_height=60, max_height=520)
 
@@ -648,9 +824,10 @@ def _make_cleared_positions_table(cleared_positions: List[Dict], stock_name_map:
         buy_trade_date = _normalize_date(item.get('buy_trade_date') or item.get('buy_date', ''))
         clear_signal_date = _normalize_date(item.get('clear_signal_date') or item.get('clear_date', ''))
         clear_trade_date = _normalize_date(item.get('clear_trade_date') or item.get('clear_date', ''))
+        if economic_episodes:clear_trade_date=_normalize_date(item.get('clear_date',''))
         execution_basis = _format_execution_basis(item)
         rows.append([
-            _make_cell(_make_stock_button(item.get('code', ''), stock_name_map), _fmt_stock(item.get('code', ''), stock_name_map)),
+            _make_cell(_make_stock_button(item.get('code', ''), stock_name_map, kline_event_id=item.get('first_event_id')), _fmt_stock(item.get('code', ''), stock_name_map)),
             _make_cell(html_escape(buy_signal_date), buy_signal_date),
             _make_cell(html_escape(buy_trade_date), buy_trade_date),
             _make_cell(html_escape(clear_signal_date), clear_signal_date),
@@ -659,50 +836,52 @@ def _make_cleared_positions_table(cleared_positions: List[Dict], stock_name_map:
             _make_cell(str(item.get('holding_days', 0)), item.get('holding_days', 0)),
             _make_cell(f'{item.get("volume", 0):,}', item.get('volume', 0)),
             _make_cell(f'{item.get("avg_price", 0):.4f}', item.get('avg_price', 0)),
-            _make_cell(f'{item.get("clear_price", 0):.4f}', item.get('clear_price', 0)),
+            _make_cell(f'{item.get("clear_price", 0):.4f}' if item.get('clear_price') is not None else 'N/A', item.get('clear_price')),
             _make_cell(f'{item.get("cost", 0):,.2f}', item.get('cost', 0)),
             _make_cell(f'<span class="{income_cls}">{_fmt_money(income)}</span>', income),
             _make_cell(f'<span class="{income_cls}">{_fmt_pct(income_pct)}</span>', income_pct),
             _make_cell(html_escape(item.get('clear_reason', '') or ''), item.get('clear_reason', '') or ''),
         ])
-    return _make_table(headers, rows, 'cleared-table', '暂无已清仓持仓', row_height=60, max_height=520)
+    table = _make_table(headers, rows, 'cleared-table', '暂无已清仓持仓', row_height=60, max_height=520)
+    if economic_episodes:table['accounting_note']='经济口径：从建仓到实际持仓归零的完整回合，包含补仓、部分卖出、费用及权益调整现金残差；盈亏率=净盈亏/累计买入支出。不是券商FIFO逐笔账本。'
+    if economic_episodes and ledger_summary:
+        table['accounting_note']+=f" 已结束回合净盈亏 {ledger_summary['closed_pnl']:,.2f}元；未结束回合净盈亏 {ledger_summary['open_pnl']:,.2f}元；合计 {ledger_summary['account_pnl']:,.2f}元，与账户收益对账。未结束回合含部分卖出已兑现收益，不等同于剩余股票浮盈。"
+    return table
 
 
 
 def _make_delist_events_table(delist_events: List[Dict], stock_name_map: Dict[str, str]) -> Dict[str, Any]:
     headers = [
         {'label': '股票', 'sort_type': 'text'},
-        {'label': '退市日', 'sort_type': 'date', 'align': 'center'},
-        {'label': '归零信号日', 'sort_type': 'date', 'align': 'center'},
         {'label': '归零执行日', 'sort_type': 'date', 'align': 'center'},
-        {'label': '买入执行日', 'sort_type': 'date', 'align': 'center'},
-        {'label': '持仓天数(交易日)', 'sort_type': 'number'},
         {'label': '数量(股)', 'sort_type': 'number'},
+        {'label': '持仓均价(¥)', 'sort_type': 'number'},
         {'label': '持仓成本(¥)', 'sort_type': 'number'},
         {'label': '归零损失(¥)', 'sort_type': 'number'},
         {'label': '损失率', 'sort_type': 'number'},
-        {'label': '说明', 'sort_type': 'text'},
     ]
     if not delist_events:
         return _make_table(headers, [], 'delist-table', '暂无退市归零事件', row_height=56, max_height=520)
 
     rows = []
     for item in delist_events:
-        income = item.get('income', 0)
-        income_pct = item.get('income_pct', 0)
-        income_cls = 'neg-cell' if income < 0 else ''
+        quantity = int(item.get('quantity') or 0)
+        average_cost = float(item.get('average_cost') or 0.0)
+        proceeds = float(item.get('proceeds') or 0.0)
+        cost = quantity * average_cost
+        income = proceeds - cost
+        income_pct = income / cost * 100.0 if cost > 0.0 else 0.0
         rows.append([
             _make_cell(_make_stock_button(item.get('code', ''), stock_name_map), _fmt_stock(item.get('code', ''), stock_name_map)),
-            _make_cell(html_escape(_normalize_date(item.get('delist_date'))), _normalize_date(item.get('delist_date'))),
-            _make_cell(html_escape(_normalize_date(item.get('clear_signal_date'))), _normalize_date(item.get('clear_signal_date'))),
-            _make_cell(html_escape(_normalize_date(item.get('clear_trade_date'))), _normalize_date(item.get('clear_trade_date'))),
-            _make_cell(html_escape(_normalize_date(item.get('buy_trade_date'))), _normalize_date(item.get('buy_trade_date'))),
-            _make_cell(str(item.get('holding_days', 0)), item.get('holding_days', 0)),
-            _make_cell(f'{item.get("volume", 0):,}', item.get('volume', 0)),
-            _make_cell(f'{item.get("cost", 0):,.2f}', item.get('cost', 0)),
-            _make_cell(f'<span class="{income_cls}">{_fmt_money(income)}</span>', income),
-            _make_cell(f'<span class="{income_cls}">{_fmt_pct(income_pct)}</span>', income_pct),
-            _make_cell(html_escape(item.get('clear_reason', '') or ''), item.get('clear_reason', '') or ''),
+            _make_cell(
+                html_escape(_normalize_date(item.get('effective_date'))),
+                _normalize_date(item.get('effective_date')),
+            ),
+            _make_cell(f'{quantity:,}', quantity),
+            _make_cell(f'{average_cost:.4f}', average_cost),
+            _make_cell(f'{cost:,.2f}', cost),
+            _make_cell(f'<span class="neg-cell">{_fmt_money(income)}</span>', income),
+            _make_cell(f'<span class="neg-cell">{_fmt_pct(income_pct)}</span>', income_pct),
         ])
     return _make_table(headers, rows, 'delist-table', '暂无退市归零事件', row_height=56, max_height=520)
 
@@ -746,7 +925,13 @@ def _make_monthly_table(monthly_stats: List[Dict]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _build_per_year_table(per_year_metrics: List[Dict]) -> str:
+def _build_per_year_table(
+    per_year_metrics: List[Dict],
+    *,
+    available: bool = True,
+) -> str:
+    if not available:
+        return '<p style="color:var(--muted);padding:8px">N/A（未计算分年度指标）</p>'
     if not per_year_metrics:
         return '<p style="color:var(--muted);padding:8px">无年度数据</p>'
     header = '<tr><th>年份</th><th>年化收益</th><th>夏普比率</th><th>最大回撤</th><th>收益</th><th>交易日</th></tr>'
@@ -766,7 +951,12 @@ def _build_per_year_table(per_year_metrics: List[Dict]) -> str:
     return f'<table class="per-year-table"><thead>{header}</thead><tbody>{rows}</tbody></table>'
 
 
-def _build_metric_cards(metrics: Dict, holding_stats: Dict) -> str:
+def _build_metric_cards(
+    metrics: Dict,
+    holding_stats: Dict,
+    *,
+    lot_analytics_available: bool = True,
+) -> str:
     max_dd_period = ''
     if metrics.get('max_drawdown_start') and metrics.get('max_drawdown_end'):
         max_dd_period = f"{metrics['max_drawdown_start']} ~ {metrics['max_drawdown_end']}"
@@ -781,6 +971,9 @@ def _build_metric_cards(metrics: Dict, holding_stats: Dict) -> str:
         ('夏普比率', f"{metrics.get('sharpe_ratio', 0):.2f}",
          'neutral',
          '使用日收益率均值和标准差按 252 交易日年化得到的夏普比率。'),
+        ('平均实际仓位', f"{metrics.get('average_exposure', 0.0) * 100:.2f}%",
+         'neutral',
+         '按每个估值时点的持仓市值占总资产计算日均比例；开盘回测为下一开盘估值。'),
         ('实际买入次数', str(metrics.get('executed_buy_count', 0)),
          'neutral',
          '本次回测实际成交的买入笔数。'),
@@ -793,61 +986,81 @@ def _build_metric_cards(metrics: Dict, holding_stats: Dict) -> str:
         ('平均每天卖出', f"{metrics.get('avg_daily_sells', 0):.2f}",
          'neutral',
          '报告期内平均每个交易日卖出的股票只数。'),
-        ('完整 round-trip', str(metrics.get('round_trip_count', 0)),
-         'neutral',
-         '已完成买入并完成对应卖出的持仓数量。'),
-        ('平均持仓天数', f"{metrics.get('average_holding_days', 0):.2f}",
-         'neutral',
-         '当前持仓与已清仓持仓合并计算的平均持仓交易日。'),
+    ]
+    if lot_analytics_available:
+        cards.extend([
+            ('完整 round-trip', str(metrics.get('round_trip_count', 0)),
+             'neutral',
+             '已完成买入并完成对应卖出的持仓数量。'),
+            ('平均持仓天数', f"{metrics.get('average_holding_days', 0):.2f}",
+             'neutral',
+             '当前持仓与已清仓持仓合并计算的平均持仓交易日。'),
+            ('已清仓持仓数', str(metrics.get('cleared_positions_count', 0)),
+             'neutral',
+             '报告期内已经完全清仓的持仓数量。'),
+            ('盈利清仓数', str(metrics.get('wins', 0)),
+             'neutral',
+             '清仓后实现正收益的持仓数量。'),
+            ('亏损清仓数', str(metrics.get('losses', 0)),
+             'neutral',
+             '清仓后实现非正收益的持仓数量。'),
+            ('清仓胜率', f"{metrics.get('win_rate', 0):.1f}%",
+             'neutral',
+             '盈利清仓数占全部已清仓持仓数的比例。'),
+            ('平均单次清仓盈亏', _fmt_money(metrics.get('avg_profit', 0)),
+             'neutral',
+             '已清仓持仓的平均单笔盈亏。'),
+            ('平均盈利', _fmt_money(metrics.get('avg_win', 0)),
+             'neutral',
+             '盈利清仓持仓的平均单笔盈利。'),
+            ('平均亏损', _fmt_money(metrics.get('avg_loss', 0)),
+             'neutral',
+             '亏损清仓持仓的平均单笔亏损。'),
+            ('最大单次盈利', _fmt_money(metrics.get('max_profit', 0)),
+             'neutral',
+             '已清仓持仓中的最大单笔盈利。'),
+            ('最大单次亏损', _fmt_money(metrics.get('max_loss', 0)),
+             'neutral',
+             '已清仓持仓中的最大单笔亏损。'),
+        ])
+    cards.extend([
         ('退市归零次数', str(metrics.get('delist_count', 0)),
          'neutral',
          '持仓股票在退市后被按零价值核销的次数。'),
-        ('已清仓持仓数', str(metrics.get('cleared_positions_count', 0)),
-         'neutral',
-         '报告期内已经完全清仓的持仓数量。'),
         ('当前持仓数', str(metrics.get('current_positions_count', 0)),
          'neutral',
          '回测结束时仍然持有的股票数量。'),
-        ('盈利清仓数', str(metrics.get('wins', 0)),
+        ('总交易成本', _fmt_money(metrics.get('total_fees', 0)),
          'neutral',
-         '清仓后实现正收益的持仓数量。'),
-        ('亏损清仓数', str(metrics.get('losses', 0)),
+         '回测期间累计券商佣金、印花税、过户费与模拟滑点。'),
+        ('总滑点', _fmt_money(metrics.get('total_slippage', 0)),
          'neutral',
-         '清仓后实现非正收益的持仓数量。'),
-        ('清仓胜率', f"{metrics.get('win_rate', 0):.1f}%",
+         '回测期间累计按成交金额计提的模拟滑点。'),
+        ('券商佣金', _fmt_money(metrics.get('total_broker_commission', 0)),
          'neutral',
-         '盈利清仓数占全部已清仓持仓数的比例。'),
-        ('平均单次清仓盈亏', _fmt_money(metrics.get('avg_profit', 0)),
+         '回测期间累计支付的券商佣金。'),
+        ('印花税', _fmt_money(metrics.get('total_stamp_tax', 0)),
          'neutral',
-         '已清仓持仓的平均单笔盈亏。'),
-        ('平均盈利', _fmt_money(metrics.get('avg_win', 0)),
+         '回测期间累计支付的卖出印花税。'),
+        ('过户费', _fmt_money(metrics.get('total_transfer_fee', 0)),
          'neutral',
-         '盈利清仓持仓的平均单笔盈利。'),
-        ('平均亏损', _fmt_money(metrics.get('avg_loss', 0)),
-         'neutral',
-         '亏损清仓持仓的平均单笔亏损。'),
-        ('最大单次盈利', _fmt_money(metrics.get('max_profit', 0)),
-         'neutral',
-         '已清仓持仓中的最大单笔盈利。'),
-        ('最大单次亏损', _fmt_money(metrics.get('max_loss', 0)),
-         'neutral',
-         '已清仓持仓中的最大单笔亏损。'),
-        ('总手续费', _fmt_money(metrics.get('total_commission', 0)),
-         'neutral',
-         '回测期间累计成交手续费。'),
-        ('当前持仓平均持仓天数', f"{holding_stats.get('average_current_holding_days', 0):.2f}",
-         'neutral',
-         '回测结束时仍持有仓位的平均持仓交易日。'),
-        ('已清仓平均持仓天数', f"{holding_stats.get('average_cleared_holding_days', 0):.2f}",
-         'neutral',
-         '已清仓持仓的平均持仓交易日。'),
-        ('最长持仓天数', f"{holding_stats.get('max_holding_days', 0)}",
-         'neutral',
-         '本次回测中观测到的最长持仓交易日。'),
-        ('最短持仓天数', f"{holding_stats.get('min_holding_days', 0)}",
-         'neutral',
-         '本次回测中观测到的最短持仓交易日。'),
-    ]
+         '回测期间累计支付的过户费。'),
+    ])
+    if lot_analytics_available:
+        cards.extend([
+            ('当前持仓平均持仓天数', f"{holding_stats.get('average_current_holding_days', 0):.2f}",
+             'neutral',
+             '回测结束时仍持有仓位的平均持仓交易日。'),
+            ('已清仓平均持仓天数', f"{holding_stats.get('average_cleared_holding_days', 0):.2f}",
+             'neutral',
+             '已清仓持仓的平均持仓交易日。'),
+            ('最长持仓天数', f"{holding_stats.get('max_holding_days', 0)}",
+             'neutral',
+             '本次回测中观测到的最长持仓交易日。'),
+            ('最短持仓天数', f"{holding_stats.get('min_holding_days', 0)}",
+             'neutral',
+             '本次回测中观测到的最短持仓交易日。'),
+        ])
 
     grid = ''
     for label, value, cls, tooltip in cards:
@@ -859,24 +1072,64 @@ def _build_metric_cards(metrics: Dict, holding_stats: Dict) -> str:
     return grid
 
 
+def _build_primary_metric_cards(
+    metrics: Dict,
+    total_return: float,
+    excess_return: float | None,
+    init_cash: float,
+    final_asset: float,
+    *,
+    lot_analytics_available: bool = True,
+) -> str:
+    """Build the compact first-screen summary; the full metric set stays below."""
+    cards = [
+        ('总收益', _fmt_pct(total_return), 'pos' if total_return >= 0 else 'neg',
+         f'{_fmt_money(init_cash)} → {_fmt_money(final_asset)}'),
+        ('年化收益', _fmt_pct(metrics.get('annualized', 0)),
+         'pos' if metrics.get('annualized', 0) >= 0 else 'neg', '复利年化'),
+        (
+            '相对沪深300' if excess_return is not None else '总交易成本',
+            _fmt_pct(excess_return)
+            if excess_return is not None
+            else _fmt_money(metrics.get('total_fees', 0)),
+            'pos' if excess_return is not None and excess_return >= 0 else 'neutral',
+            '策略累计收益 - 基准累计收益'
+            if excess_return is not None
+            else '基准未计算；展示已计入净值的全部交易成本',
+        ),
+        ('Sharpe', f"{metrics.get('sharpe_ratio', 0):.2f}",
+         'neutral', '日收益年化'),
+        ('最大回撤', _fmt_pct(metrics.get('max_drawdown', 0), sign=False),
+         'neg', '从高点到低点'),
+        ('Calmar', f"{metrics.get('calmar_ratio', 0):.2f}",
+         'neutral', '年化收益 / 最大回撤'),
+        (
+            '清仓胜率' if lot_analytics_available else '实际成交',
+            f"{metrics.get('win_rate', 0):.1f}%"
+            if lot_analytics_available
+            else str(metrics.get('total_trades', 0)),
+            'neutral',
+            f"{metrics.get('wins', 0)} 盈利 / {metrics.get('losses', 0)} 亏损"
+            if lot_analytics_available
+            else '当前未提供逐持仓平仓配对',
+        ),
+        ('平均仓位', f"{metrics.get('average_exposure', 0.0) * 100:.1f}%",
+         'neutral', '按每日估值时点的持仓市值占比'),
+    ]
+    return ''.join(
+        f'<div class="primary-stat">'
+        f'<span class="primary-stat-label">{html_escape(label)}</span>'
+        f'<strong class="primary-stat-value {cls}">{html_escape(value)}</strong>'
+        f'<small class="primary-stat-context">{html_escape(context)}</small>'
+        f'</div>'
+        for label, value, cls, context in cards
+    )
+
+
 
 # ---------------------------------------------------------------------------
 # 主报告生成
 # ---------------------------------------------------------------------------
-
-def _build_live_sim_card(live_sim):
-    if not live_sim:
-        return ''
-    labels = ['base', '09:32', '09:33', '09:34', '09:35']
-    rows = ''
-    for l in labels:
-        m = live_sim.get(l, {})
-        base_s = live_sim.get('base', {}).get('sharpe', 0)
-        decay = m.get('sharpe', 0) - base_s
-        rows += f'<tr><td>{l}</td><td>{m.get("sharpe", 0):.3f}</td><td>{m.get("annualized", 0):.1f}%</td><td>{m.get("max_drawdown", 0):.1f}%</td><td class="{"neg" if decay < 0 else "pos"}">{decay:+.3f}</td></tr>'
-    return f'''<div class="card"><div class="card-title">实盘模拟 (2025-12-10 ~ 2026-06-08)</div>
-<table class="live-sim-table"><thead><tr><th>买入价</th><th>夏普</th><th>年化</th><th>最大回撤</th><th>vs base</th></tr></thead><tbody>{rows}</tbody></table></div>'''
-
 
 def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     """新版单次回测报告：ECharts + TanStack Table。"""
@@ -894,13 +1147,14 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     config = report_data.get('individual_config', {})
     weights = config.get('weights', {})
     buy_n = config.get('buy_n', 0)
-    sell_m = config.get('sell_m', 0)
-    verify_config = report_data.get('verify_config', {}) or {}
-    report_metadata = report_data.get('report_metadata', {}) or {}
-
     init_cash = report_data.get('init_cash', 1_000_000.0)
     cumulative_returns = report_data.get('cumulative_returns', []) or []
-    trade_dates = report_data.get('trade_dates', []) or []
+    execution_dates = report_data.get('trade_dates', []) or []
+    nav_dates = (
+        report_data.get('nav_dates')
+        or report_data.get('settlement_dates')
+        or execution_dates
+    )
     trade_log = report_data.get('trade_log', []) or []
     daily_snapshots = report_data.get('daily_snapshots', []) or []
     positions = report_data.get('positions', []) or []
@@ -908,62 +1162,158 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
     delist_events = report_data.get('delist_events', []) or []
     stock_name_map = report_data.get('stock_name_map', {}) or {}
     holding_stats = report_data.get('holding_stats', {}) or {}
+    lot_analytics_available = bool(
+        report_data.get('position_lot_analytics_available', True)
+    )
+    holding_period_available = bool(
+        report_data.get('holding_period_available', lot_analytics_available)
+    )
     per_year_metrics = report_data.get('per_year_metrics', []) or []
+    per_year_metrics_available = bool(
+        report_data.get('per_year_metrics_available', True)
+    )
     period = report_data.get('period', {}) or {}
     rebalance_rule = report_data.get('rebalance_rule', {}) or {}
+    report_metadata = report_data.get('report_metadata', {}) or {}
     final_asset = report_data.get('final_asset', init_cash)
-    live_sim = report_data.get('live_simulation')
-
     signal_period_str = f"{period.get('signal_start', '')} ~ {period.get('signal_end', '')}" if period else ''
     trade_period_str = f"{period.get('trade_start', '')} ~ {period.get('trade_end', '')}" if period else ''
     period_str = trade_period_str or (f"{period.get('start', '')} ~ {period.get('end', '')}" if period else '')
-    trade_days = len(trade_dates)
+    trade_days = len(nav_dates)
 
-    daily_returns_pct = _resolve_daily_returns_pct(report_data, cumulative_returns, trade_dates)
-    monthly_stats = calc_monthly_stats(trade_dates, cumulative_returns, daily_returns_pct)
+    daily_returns_pct = _resolve_daily_returns_pct(report_data, cumulative_returns, nav_dates)
+    monthly_stats = calc_monthly_stats(nav_dates, cumulative_returns, daily_returns_pct)
     strategy_nav = _cumulative_returns_to_nav(cumulative_returns)
     hs300_returns = report_data.get('hs300_returns') or []
-    hs300_nav = _cumulative_returns_to_nav(hs300_returns) if hs300_returns else []
+    benchmark_available = bool(
+        report_data.get('benchmark_available', bool(hs300_returns))
+    )
+    hs300_nav = (
+        _cumulative_returns_to_nav(hs300_returns)
+        if benchmark_available and hs300_returns
+        else []
+    )
+    factor_missing_counts = report_data.get('factor_missing_counts') or {}
+    stock_pool_size = int(report_metadata.get('stock_pool_size') or 0)
+    factor_valid_counts = {
+        name.replace('缺失', '有效'): [max(0, stock_pool_size - int(count)) for count in counts]
+        for name, counts in factor_missing_counts.items()
+    } if stock_pool_size > 0 else {}
+
+    drawdown_pct = []
+    peak_nav = 1.0
+    for nav in strategy_nav:
+        peak_nav = max(peak_nav, nav)
+        drawdown_pct.append(round((nav / peak_nav - 1.0) * 100.0, 6) if peak_nav else 0.0)
+    exposure_pct = [
+        round(float(snapshot.get('exposure', 0.0)) * 100.0, 6)
+        for snapshot in daily_snapshots
+    ]
+    rebalance_funds_pct = [
+        round(float(snapshot.get('rebalance_funds_ratio', 0.0)) * 100.0, 6)
+        for snapshot in daily_snapshots
+    ]
+    activity = [
+        {
+            'date': _get_trade_date(snapshot),
+            'buys': len(snapshot.get('executed_buy_list', []) or []),
+            'sells': len(snapshot.get('executed_sell_list', []) or []),
+        }
+        for snapshot in daily_snapshots
+    ]
 
     generated_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     metrics = dict(report_data.get('metrics', {}))
+    metrics['average_exposure'] = (
+        sum(float(snapshot.get('exposure', 0.0)) for snapshot in daily_snapshots)
+        / len(daily_snapshots)
+        if daily_snapshots else 0.0
+    )
+    executed_buy_count = report_data.get(
+        'executed_buy_count', metrics.get('buy_trades', 0)
+    )
+    executed_sell_count = report_data.get(
+        'executed_sell_count', metrics.get('sell_trades', 0)
+    )
     metrics.update({
-        'executed_buy_count': report_data.get('executed_buy_count', metrics.get('buy_trades', 0)),
-        'executed_sell_count': report_data.get('executed_sell_count', metrics.get('sell_trades', 0)),
+        'executed_buy_count': executed_buy_count,
+        'executed_sell_count': executed_sell_count,
         'delist_count': report_data.get('delist_count', len(delist_events)),
-        'round_trip_count': report_data.get('round_trip_count', len(cleared_positions)),
-        'cleared_positions_count': report_data.get('cleared_positions_count', len(cleared_positions)),
+        'round_trip_count': (
+            report_data.get('round_trip_count', len(cleared_positions))
+            if lot_analytics_available
+            else None
+        ),
+        'cleared_positions_count': (
+            report_data.get('cleared_positions_count', len(cleared_positions))
+            if lot_analytics_available
+            else None
+        ),
         'current_positions_count': report_data.get('current_positions_count', len(positions)),
-        'avg_daily_buys': metrics.get('executed_buy_count', 0) / max(trade_days, 1),
-        'avg_daily_sells': metrics.get('executed_sell_count', 0) / max(trade_days, 1),
+        'avg_daily_buys': executed_buy_count / max(trade_days, 1),
+        'avg_daily_sells': executed_sell_count / max(trade_days, 1),
         **holding_stats,
     })
 
     signal_timing = rebalance_rule.get('signal_timing', 'T-1')
     trade_timing = rebalance_rule.get('trade_timing', 'T open')
     price_field = rebalance_rule.get('price_field', 'open')
+    total_return = float(report_data.get('total_return', cumulative_returns[-1] if cumulative_returns else 0.0) or 0.0)
+    benchmark_return = (
+        float(hs300_returns[-1])
+        if benchmark_available and hs300_returns
+        else None
+    )
+    excess_return = (
+        round(total_return - benchmark_return, 6)
+        if benchmark_return is not None
+        else None
+    )
+    kline_payload = _collect_kline_payload(
+        trade_log, stock_name_map,
+        period.get('trade_end') or (execution_dates[-1] if execution_dates else ''),
+        report_data.get('_runtime_kline'),
+    )
+    kline_b64 = _encode_kline_payload(kline_payload)
 
     report_json = json.dumps({
         'summary': {
             'annualized_return_pct': metrics.get('annualized', 0),
+            'total_return_pct': total_return,
+            'benchmark_return_pct': benchmark_return,
+            'excess_return_pct': excess_return,
+            'benchmark_available': benchmark_available,
+            'position_lot_analytics_available': lot_analytics_available,
+            'kline_position_state_available': bool(report_data.get('kline_position_state_available',lot_analytics_available)),
+            'position_accounting_basis': report_data.get('position_accounting_basis'),
             'max_drawdown_pct': metrics.get('max_drawdown', 0),
+            'max_drawdown_start': metrics.get('max_drawdown_start', ''),
+            'max_drawdown_end': metrics.get('max_drawdown_end', ''),
             'sharpe_ratio': metrics.get('sharpe_ratio', 0),
             'calmar_ratio': metrics.get('calmar_ratio', 0),
-            'win_rate_pct': metrics.get('win_rate', 0),
+            'win_rate_pct': (
+                metrics.get('win_rate', 0)
+                if lot_analytics_available
+                else None
+            ),
             'total_trades': metrics.get('total_trades', 0),
-            'wins': metrics.get('wins', 0),
-            'losses': metrics.get('losses', 0),
-            'avg_profit': metrics.get('avg_profit', 0),
-            'avg_win': metrics.get('avg_win', 0),
-            'avg_loss': metrics.get('avg_loss', 0),
-            'max_profit': metrics.get('max_profit', 0),
-            'max_loss': metrics.get('max_loss', 0),
-            'total_commission': metrics.get('total_commission', 0),
+            'wins': metrics.get('wins', 0) if lot_analytics_available else None,
+            'losses': metrics.get('losses', 0) if lot_analytics_available else None,
+            'avg_profit': metrics.get('avg_profit', 0) if lot_analytics_available else None,
+            'avg_win': metrics.get('avg_win', 0) if lot_analytics_available else None,
+            'avg_loss': metrics.get('avg_loss', 0) if lot_analytics_available else None,
+            'max_profit': metrics.get('max_profit', 0) if lot_analytics_available else None,
+            'max_loss': metrics.get('max_loss', 0) if lot_analytics_available else None,
+            'total_fees': metrics.get('total_fees', 0),
+            'total_broker_commission': metrics.get('total_broker_commission', 0),
+            'total_transfer_fee': metrics.get('total_transfer_fee', 0),
+            'total_stamp_tax': metrics.get('total_stamp_tax', 0),
+            'total_slippage': metrics.get('total_slippage', 0),
             'total_days': trade_days,
             'init_cash': init_cash,
             'final_asset': final_asset,
-            'round_trips': metrics.get('round_trip_count', 0),
-            'avg_holding_days': metrics.get('average_holding_days', 0),
+            'round_trips': metrics.get('round_trip_count') if lot_analytics_available else None,
+            'avg_holding_days': metrics.get('average_holding_days') if lot_analytics_available else None,
             'avg_daily_buys': round(metrics.get('avg_daily_buys', 0), 2),
             'avg_daily_sells': round(metrics.get('avg_daily_sells', 0), 2),
             'delist_count': metrics.get('delist_count', 0),
@@ -974,30 +1324,74 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
             'signal_timing': signal_timing,
             'trade_timing': trade_timing,
             'price_field': price_field,
+            'nav_date_semantics': 'open[T+1]_valuation_and_settlement',
             'generated_time': generated_time,
+            'stock_pool_size': stock_pool_size,
         },
         'tables': {
             'monthly': _make_monthly_table(monthly_stats),
             'trades': _make_trade_table(trade_log, stock_name_map),
-            'holdings': _make_holdings_table(positions, stock_name_map),
-            'cleared': _make_cleared_positions_table(cleared_positions, stock_name_map),
+            'holdings': _make_holdings_table(
+                positions,
+                stock_name_map,
+                holding_period_available=holding_period_available,
+            ),
+            'cleared': _make_cleared_positions_table(
+                cleared_positions,
+                stock_name_map,
+                analytics_available=lot_analytics_available,
+                economic_episodes=report_data.get('position_accounting_basis')=='economic_position_episode',
+                ledger_summary=report_data.get('position_ledger_summary'),
+            ),
             'delist': _make_delist_events_table(delist_events, stock_name_map),
-            'daily': _make_daily_table(daily_snapshots, stock_name_map),
+            'daily': _make_daily_table(daily_snapshots, stock_name_map, position_changes_available=bool(report_data.get('position_changes_available', lot_analytics_available))),
         },
         'charts': {
             'equity': {
-                'trade_dates': trade_dates,
+                'trade_dates': nav_dates,
+                'execution_dates': execution_dates,
                 'strategy_nav': strategy_nav,
                 'benchmark_nav': hs300_nav,
                 'daily_returns_pct': daily_returns_pct,
+                'drawdown_pct': drawdown_pct,
+                'exposure_pct': exposure_pct,
+                'rebalance_funds_pct': rebalance_funds_pct,
+                'activity': activity,
             },
             'distribution': _build_histogram_payload(daily_returns_pct),
-            'winloss': _build_winloss_payload(trade_log),
+            'winloss': _build_winloss_payload(trade_log,closed_positions=cleared_positions if report_data.get('position_accounting_basis')=='economic_position_episode' else None),
+            'factor_valid': {
+                'trade_dates': nav_dates,
+                'series': factor_valid_counts,
+                'stock_pool_size': stock_pool_size,
+            },
+            'monthly': monthly_stats,
         },
-        'live_simulation': report_data.get('live_simulation'),
+        'kline_b64': kline_b64,
+        'live_simulation': None,
+        'explainability': report_data.get('explainability'),
+        'strategy_explanation': report_data.get('strategy_explanation'),
+        'audit_summary': report_data.get('audit_summary'),
     }, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
 
-    metric_cards = _build_metric_cards(metrics, holding_stats)
+    metric_cards = _build_metric_cards(
+        metrics,
+        holding_stats,
+        lot_analytics_available=lot_analytics_available,
+    )
+    primary_metric_cards = _build_primary_metric_cards(
+        metrics,
+        total_return,
+        excess_return,
+        init_cash,
+        final_asset,
+        lot_analytics_available=lot_analytics_available,
+    )
+    benchmark_note = (
+        f'沪深300 {_fmt_pct(benchmark_return)}'
+        if benchmark_return is not None
+        else '沪深300 N/A（未计算）'
+    )
     weights_html = ' '.join(
         f'<span class="weight-tag">{"+" if value > 0 else ""}{value:.2f} {html_escape(name)}</span>'
         for name, value in sorted(weights.items(), key=lambda item: abs(item[1]), reverse=True) if value != 0
@@ -1015,45 +1409,75 @@ def generate_single_report(report_data: Dict, output_dir: Path) -> Path:
             disp = str(v)
         config_rows.append(f'<span class="config-item"><strong>{html_escape(str(k))}:</strong> {html_escape(disp)}</span>')
     config_params_html = ' &nbsp;|&nbsp; '.join(config_rows) if config_rows else '<span class="muted">—</span>'
-
-    verify_notice_html = ''
-    if verify_config:
-        verify_parts = [
-            f'<strong>验证模式:</strong> {html_escape(verify_config.get("label") or "退市归零验证")}',
-            f'<strong>强制优先股票:</strong> {html_escape(verify_config.get("force_stock_code", ""))}',
-        ]
-        candidate_codes = verify_config.get('candidate_stock_codes') or []
-        if candidate_codes:
-            verify_parts.append(f'<strong>候选股票池:</strong> {html_escape(", ".join(candidate_codes))}')
-        stock_pool_size = report_metadata.get('stock_pool_size')
-        if stock_pool_size is not None:
-            verify_parts.append(f'<strong>实际 TopN 股票池:</strong> {stock_pool_size} 只')
-        config_path = report_metadata.get('config_path')
-        if config_path:
-            verify_parts.append(f'<strong>配置文件:</strong> {html_escape(config_path)}')
-        if verify_config.get('notes'):
-            verify_parts.append(f'<strong>备注:</strong> {html_escape(verify_config["notes"])}')
-        verify_notice_html = '<div class="verify-box">' + '<br>'.join(verify_parts) + '</div>'
+    navigation = report_data.get('report_navigation') or []
+    navigation_html = ''
+    if navigation:
+        links = ''.join(
+            '<a' + (' aria-current="page"' if item.get('current') else '')
+            + ' href="' + html_escape(str(item['href']), quote=True) + '">'
+            + html_escape(str(item['label'])) + '</a>' for item in navigation
+        )
+        navigation_html = '<details class="config-details report-navigation"><summary>切换策略或回测区间：' + html_escape(str(report_data.get('report_label', '详细回测'))) + '</summary><nav aria-label="策略与区间报告">' + links + '</nav></details>'
+    data_comparison = report_data.get('data_comparison') or {}
+    comparison_section = ''
+    if data_comparison.get('metrics'):
+        comparison_rows = ''.join(
+            '<tr><td>' + html_escape(str(row['version'])) + '</td><td>'
+            + f"{row['annualized_return']:.2%} / {row['max_drawdown']:.2%} / {row['calmar']:.3f}"
+            + '</td><td>' + f"{row['total_return']:.2%}" + '</td><td>'
+            + f"{row['final_nav']:,.2f}" + '</td><td>'
+            + f"{row['total_fees']:,.2f}" + '</td></tr>'
+            for row in data_comparison['metrics']
+        )
+        notes = ''.join(f'<p>{html_escape(str(note))}</p>' for note in data_comparison.get('notes', []))
+        comparison_section = '<section class="card explain-intro"><h2>只修数据后的表现差异</h2><div class="explain-table-wrap"><table><thead><tr><th>数据版本</th><th>年化 / 最大回撤 / Calmar</th><th>累计收益</th><th>期末资产（元）</th><th>全部费用（元）</th></tr></thead><tbody>' + comparison_rows + '</tbody></table></div>' + notes + '</section>'
+    strategy_info = report_data.get('strategy_explanation') or {}
+    strategy_intro = ''
+    explanation_section = ''
+    if report_data.get('explainability'):
+        strategy_intro = '<section class="card explain-intro"><h2>当前策略怎样决策</h2>' + ''.join(
+            f'<p>{html_escape(str(strategy_info.get(key,"")))}</p>' for key in ('description','timing_note','date_note')
+        ) + '<p><a href="#factor-explanation">查看每日因子贡献与盈亏归因 ↓</a></p></section>'
+        explanation_section = '''<section id="factor-explanation" class="card explain-section">
+<div class="section-heading"><div><span class="section-eyebrow">MODEL EXPLANATION</span><h2>每日因子贡献</h2></div><span class="section-note">点击热力图选择交易日</span></div>
+<p>热力图展示对持仓股票<strong>原始模型评分</strong>的贡献，按冻结周期权重与当日开盘成交后持仓权重汇总。蓝色抬高评分，红色压低评分；这不是收益率，也不是经过非线性截面排序后的最终分数归因。相关因子的贡献会相互分摊，不代表因果关系。</p>
+<div id="explain-global-summary" class="explain-summary"></div>
+<div id="explain-heatmap" class="explain-heatmap" role="img" aria-label="每日主要因子对原始预测评分的贡献"></div>
+<div class="explain-controls"><label>交易日 → 下一开盘估值日 <select id="explain-day"></select></label><label>股票评分解释 <select id="explain-stock"></select></label></div>
+<div id="explain-day-summary" class="explain-summary"></div>
+<div id="explain-top-factors" class="explain-summary"></div>
+<div class="explain-detail-grid"><div><h3>单只股票：哪些因子推动评分</h3><div id="explain-stock-summary"></div><div id="explain-stock-chart" class="explain-stock-chart" role="img" aria-label="所选股票的因子评分贡献"></div></div><div><h3>实际盈亏来自哪些持仓</h3><p>此处按真实账户净值变化分解，包含费用和公司行动现金残差；与左侧预测解释独立。</p><div id="explain-pnl-table" class="explain-table-wrap"></div></div></div>
+<details class="explain-extremes"><summary>最高收益日、最大绝对波动日与审核说明</summary><div id="explain-extreme-days"></div><div id="explain-audit-summary"></div></details>
+</section>'''
+        if report_data.get('static_explanation_image'):
+            explanation_section += '<details class="card"><summary>静态净值对照与因子热力图（无需图表脚本）</summary><img style="max-width:100%;height:auto" loading="lazy" src="' + html_escape(str(report_data['static_explanation_image']), quote=True) + '" alt="修复前后净值、因子重要性和每日贡献热力图"></details>'
+    extra_tab_buttons = ''
+    extra_tab_panels = ''
+    for key, label, content in [
+        ('comparison', '修复对比', comparison_section),
+        ('explanation', '模型解释', strategy_intro + explanation_section),
+    ]:
+        if content:
+            extra_tab_buttons += f'<button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-{key}" data-tab="{key}">{label}</button>'
+            extra_tab_panels += f'<div class="tab-panel" id="panel-{key}" role="tabpanel" hidden>{content}</div>'
 
     html_content = f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>回测报告 - {html_escape(period_str)}</title><link rel="icon" href="data:,"><link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css"><script src="https://unpkg.com/@popperjs/core@2/dist/umd/popper.min.js"></script><script src="https://unpkg.com/tippy.js@6/dist/tippy-bundle.umd.min.js"></script><script src="https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js"></script><style>{styles}</style></head>
-<body><div class="container">
-<div class="report-header"><div class="report-title">回测报告</div><div class="report-subtitle">WBR 量化交易系统 · T-1 信号 / T 日开盘执行 详细报告</div><div class="report-meta"><span>信号周期: {html_escape(signal_period_str)}</span><span>执行周期: {html_escape(trade_period_str or period_str)}</span><span>调仓日数: {trade_days}</span><span>初始资金: {_fmt_money(init_cash)}</span><span>最终资产: {_fmt_money(final_asset)}</span><span>生成时间: {html_escape(generated_time)}</span></div></div>
-<div class="config-box"><strong>因子权重:</strong> {weights_html}<br><strong>策略参数:</strong> {config_params_html}<br><strong>调仓规则:</strong> 信号={html_escape(signal_timing)} &nbsp;|&nbsp; 执行={html_escape(trade_timing)} &nbsp;|&nbsp; 价格字段={html_escape(price_field)}<br><strong>实际买入次数:</strong> {metrics.get('executed_buy_count', 0)} &nbsp;|&nbsp;<strong>实际卖出次数:</strong> {metrics.get('executed_sell_count', 0)} &nbsp;|&nbsp;<strong>完整 round-trip 数:</strong> {metrics.get('round_trip_count', 0)}</div>
-{verify_notice_html}
-<div class="card"><div class="card-title">核心指标</div><div class="metrics-grid">{metric_cards}</div></div>
-<div class="card"><div class="card-title">分年度指标</div>{_build_per_year_table(per_year_metrics)}</div>
-<div class="card"><div class="card-title">净值曲线</div><div id="equity-chart" class="chart-lg"></div></div>
-{_build_live_sim_card(live_sim)}
-<div class="charts-2col"><div class="card"><div class="card-title">每日收益率分布</div><div id="distribution-chart" class="chart"></div></div><div class="card"><div class="card-title">盈亏分布</div><div id="winloss-chart" class="chart"></div></div></div>
-<div class="card"><div class="card-title">月度收益</div><div id="monthly-host"></div></div>
-<h2>交易记录明细</h2><div class="card"><div id="trade-host"></div></div>
-<h2>当前持仓明细 ({len(positions)} 只)</h2><div class="card"><div id="holdings-host"></div></div>
-<h2>已清仓持仓明细 ({len(cleared_positions)} 只)</h2><div class="card"><div id="cleared-host"></div></div>
-<h2>每日资金快照</h2><div class="card"><div id="daily-host"></div></div>
-<h2>退市归零事件 ({len(delist_events)} 只)</h2><div class="card"><div id="delist-host"></div></div>
-<div class="footer">WBR 量化交易系统 · 回测报告 · 实际成交 {len(trade_log)} 笔 · {trade_days} 个交易日</div></div>
+<body><div class="container report-shell">
+<div class="kline-overlay" id="klineOverlay"></div><section class="kline-panel" id="klinePanel" role="dialog" aria-modal="true" aria-labelledby="klineTitle"><header class="kline-panel-header"><div><div id="klineTitle">交易 K 线</div><div id="klineMeta" class="kline-meta"></div></div><button type="button" class="panel-close" id="klineClose" aria-label="关闭 K 线">×</button></header><div class="kline-charts-area"><div class="kline-placeholder" id="klinePlaceholder">正在加载 K 线数据</div><div id="klineRenderArea" role="img" aria-label="包含买卖点的股票日 K 线图"></div></div></section>
+<header class="report-header">
+  <div class="header-main"><div><div class="report-kicker">WBR / SINGLE BACKTEST</div><div class="report-title">策略回测总览</div><div class="report-subtitle">{html_escape(signal_timing)} 信号 · {html_escape(trade_timing)} 执行 · {_fmt_pct(total_return)} 累计收益</div></div><a class="header-link" href="#detail-tabs">查看明细 <span aria-hidden="true">↓</span></a></div>
+  <div class="report-meta"><span>{html_escape(trade_period_str or period_str)}</span><span>{trade_days:,} 个调仓日</span><span>初始 {_fmt_money(init_cash)}</span><span>期末 {_fmt_money(final_asset)}</span><span>生成于 {html_escape(generated_time)}</span></div>
+</header>
+{navigation_html}
+<details class="config-details"><summary><span class="summary-label">策略配置</span><span class="summary-preview">{weights_html}</span><span class="summary-caret" aria-hidden="true">⌄</span></summary><div class="config-content"><div><strong>因子权重</strong><div class="weight-list">{weights_html}</div></div><div><strong>策略参数</strong><div class="config-params">{config_params_html}</div></div><div><strong>执行口径</strong><div class="config-params">信号 {html_escape(signal_timing)} · 执行 {html_escape(trade_timing)} · 价格 {html_escape(price_field)} · 买入 {metrics.get('executed_buy_count', 0):,} · 卖出 {metrics.get('executed_sell_count', 0):,}</div></div></div></details>
+<section class="summary-section" aria-labelledby="summary-title"><div class="section-heading"><div><span class="section-eyebrow">PERFORMANCE SNAPSHOT</span><h2 id="summary-title">核心表现</h2></div><span class="section-note">策略累计 {_fmt_pct(total_return)} · {benchmark_note}</span></div><div class="primary-metrics">{primary_metric_cards}</div></section>
+<section class="card" aria-labelledby="metric-detail-title"><div class="section-heading"><div><span class="section-eyebrow">FULL METRICS</span><h2 id="metric-detail-title">完整指标</h2></div><span class="section-note">收益、交易与成本明细</span></div><div class="metrics-grid">{metric_cards}</div></section>
+<section class="performance-section card" aria-labelledby="performance-title"><div class="section-heading"><div><span class="section-eyebrow">EQUITY CURVE</span><h2 id="performance-title">资金、回撤、仓位与调仓</h2></div><span class="section-note">单图叠加 · 曲线与柱状可在图例中开关</span></div><div id="equity-chart" class="chart-equity" role="img" aria-label="策略净值、沪深300基准、回撤、实际仓位、当日调仓资金占比与日收益率叠加组合图"></div></section>
+<section class="analysis-grid" aria-label="收益与风险分析"><div class="card analysis-panel panel-wide"><div class="section-heading"><div><span class="section-eyebrow">MONTHLY MAP</span><h2>月度收益热力图</h2></div><span class="section-note">颜色越深代表绝对收益越大</span></div><div id="monthly-heatmap" class="chart-heatmap" role="img" aria-label="月度收益热力图"></div></div><div class="card analysis-panel"><div class="section-heading"><div><span class="section-eyebrow">RETURN DISTRIBUTION</span><h2>日收益分布</h2></div></div><div id="distribution-chart" class="chart-analysis" role="img" aria-label="每日收益率分布"></div></div><div class="card analysis-panel"><div class="section-heading"><div><span class="section-eyebrow">TRADE OUTCOMES</span><h2>清仓盈亏</h2></div></div><div id="winloss-chart" class="chart-analysis" role="img" aria-label="清仓盈亏分布"></div></div><div class="card analysis-panel panel-wide"><div class="section-heading"><div><span class="section-eyebrow">DATA HEALTH</span><h2>因子有效股票数</h2></div><span class="section-note">完整股票池 {stock_pool_size:,} 只 · 按交易日观察</span></div><div id="factor-valid-chart" class="chart-factor" role="img" aria-label="各因子有效股票数量趋势"></div></div><div class="card analysis-panel panel-wide"><div class="section-heading"><div><span class="section-eyebrow">YEARLY SCORECARD</span><h2>分年度指标</h2></div></div>{_build_per_year_table(per_year_metrics, available=per_year_metrics_available)}</div></section>
+<section id="detail-tabs" class="detail-section" aria-labelledby="detail-title"><div class="section-heading"><div><span class="section-eyebrow">RESEARCH TABLES</span><h2 id="detail-title">明细工作区</h2></div><span class="section-note">共 {len(trade_log):,} 笔实际成交 · {len(positions)} 只当前持仓</span></div><div class="tab-list" role="tablist" aria-label="回测明细分类"><button class="tab-button is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-monthly" data-tab="monthly">月度</button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-trades" data-tab="trades">交易记录 <span>{len(trade_log):,}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-holdings" data-tab="holdings">当前持仓 <span>{len(positions)}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-cleared" data-tab="cleared">已清仓 <span>{len(cleared_positions) if lot_analytics_available else "N/A"}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-daily" data-tab="daily">每日快照 <span>{trade_days:,}</span></button><button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-delist" data-tab="delist">退市归零 <span>{len(delist_events)}</span></button>{extra_tab_buttons}</div><div class="tab-panels"><div class="tab-panel is-active" id="panel-monthly" role="tabpanel"><div id="monthly-host"></div></div><div class="tab-panel" id="panel-trades" role="tabpanel" hidden><div id="trade-host"></div></div><div class="tab-panel" id="panel-holdings" role="tabpanel" hidden><div id="holdings-host"></div></div><div class="tab-panel" id="panel-cleared" role="tabpanel" hidden><div id="cleared-host"></div></div><div class="tab-panel" id="panel-daily" role="tabpanel" hidden><div id="daily-host"></div></div><div class="tab-panel" id="panel-delist" role="tabpanel" hidden><div id="delist-host"></div></div>{extra_tab_panels}</div></section>
+<div class="footer">WBR 量化交易系统 · {trade_days:,} 个交易日 · {len(trade_log):,} 笔实际成交</div></div>
 <script id="report-data" type="application/json">{report_json}</script><script type="module">{module_js}</script></body></html>"""
 
     minified_html = _minify_html_document(html_content)

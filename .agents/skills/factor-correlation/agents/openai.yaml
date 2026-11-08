@@ -1,4 +1,0 @@
-interface:
-  display_name: "Factor Correlation"
-  short_description: "Run WBR single-factor correlation checks"
-  default_prompt: "Use $factor-correlation to run a WBR single-factor IC or correlation check via core.factors.benchmark.calc_correlation and save the .pkl and HTML artifacts."

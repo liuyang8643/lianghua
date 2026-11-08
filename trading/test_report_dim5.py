@@ -101,13 +101,13 @@ def test_reconcile_residual_is_per_stock_minus_account():
     assert abs(rec['account_pnl'] - 50_800.0) < 1e-6
 
 
-def test_summary_falls_back_to_account_when_unreconcilable():
+def test_summary_does_not_use_cash_changes_as_pnl_when_unreconcilable():
     # 持有 AAA 却算不出 daily_pnl(NaN) → 个股总和不可信 → 回退账户口径
     rpt = _rpt_with_live_aaa(daily_pnl=np.nan, total_asset=1_000_500.0)
     data = rpt.build()
     s = data['summary']
-    assert s['live_pnl_source'] == 'account'
-    assert abs(s['live_daily_pnl'] - 500.0) < 1e-6
+    assert s['live_pnl_source'] == 'unavailable'
+    assert s['live_daily_pnl'] is None
     assert 'AAA' in (data['reconcile'].get('unreconcilable_codes') or [])
 
 

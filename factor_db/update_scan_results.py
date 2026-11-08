@@ -1,4 +1,4 @@
-"""将单因子扫描结果写入因子库（factor_scans 表），并重新生成 factor_db/report.html。
+"""将单因子扫描结果写入本地研究库并生成报告。
 
 用法:
     uv run python factor_db/update_scan_results.py
@@ -13,7 +13,10 @@ from pathlib import Path
 
 import numpy as np
 
-_DB_PATH = Path(__file__).resolve().parent / "registry.db"
+from factor_db import REGISTRY_PATH, REPORT_PATH
+
+
+_DB_PATH = REGISTRY_PATH
 HOLDING_PERIODS = [1, 3, 7, 15, 30]
 
 _SCHEMA_SCANS = """
@@ -37,6 +40,7 @@ CREATE TABLE IF NOT EXISTS factor_scans (
 
 
 def init_scans_table():
+    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(_DB_PATH)
     conn.executescript(_SCHEMA_SCANS)
     conn.commit()
@@ -85,7 +89,7 @@ def write_scans_to_db(results: list[dict], buy_n: int, start_date: str,
 
     conn.commit()
     conn.close()
-    print(f"因子库已更新: {count} 条扫描记录 → factor_db/registry.db (factor_scans 表)")
+    print(f"因子库已更新: {count} 条扫描记录 → {_DB_PATH}")
 
 
 def query_scans_from_db() -> list[dict]:
@@ -99,7 +103,7 @@ def query_scans_from_db() -> list[dict]:
 
 
 def generate_report(results: list[dict], config: dict):
-    """生成 factor_db/report.html — 覆盖因子库报告"""
+    """生成本地因子研究报告。"""
     factor_names = sorted(set(r["factor"] for r in results))
 
     # 最优夏普
@@ -329,7 +333,7 @@ footer{{margin-top:30px;padding-top:12px;border-top:1px solid #d0d7de;color:#656
 </div>
 
 <footer>
-WBR 因子库报告 | 回测引擎: core.backtest | 成交价: T日 open | 收益计算: preClose 基准 | 生成: {config['generated_at']}
+WBR 因子库报告 | 回测引擎: env.backtest | 成交价: T日 open | 收益计算: preClose 基准 | 生成: {config['generated_at']}
 </footer>
 
 <script>
@@ -369,7 +373,8 @@ function sortTable(colIdx, tableId) {{
 </body>
 </html>"""
 
-    output_path = Path(__file__).resolve().parent / "report.html"
+    output_path = REPORT_PATH
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(html, encoding="utf-8")
     print(f"因子库报告已生成: {output_path}")
 
@@ -384,7 +389,7 @@ def main():
 
     input_path = Path(args.input)
     if not input_path.exists():
-        print(f"ERROR: 未找到 {input_path}，请先运行 scan_factors.py")
+        print(f"ERROR: 未找到 canonical factor-scan JSON: {input_path}")
         return
 
     results = load_scan_results(input_path)

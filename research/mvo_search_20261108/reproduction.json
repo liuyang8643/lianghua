@@ -1,0 +1,46 @@
+{
+  "state": "complete",
+  "python": "D:\\coding\\WBR\\.venv\\Scripts\\python.exe",
+  "version": "3.12.12 (main, Dec  5 2025, 21:31:16) [MSC v.1944 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "cwd": "D:\\coding\\WBR",
+  "pythonpath": [
+    "D:/coding/WBR/artifacts/research/qlib_open_rank_20261105/packages",
+    "D:/coding/WBR"
+  ],
+  "threads": {
+    "OMP_NUM_THREADS": 1,
+    "OPENBLAS_NUM_THREADS": 1,
+    "MKL_NUM_THREADS": 1,
+    "NUMBA_NUM_THREADS": 8
+  },
+  "commands": {
+    "search": "python scripts/run_research_guarded.py --cwd D:/coding/WBR --logs <fresh_root>/logs -- python -u <fresh_root>/run.py",
+    "audit": "python <fresh_root>/audit_results.py",
+    "delivery": "python scripts/run_research_guarded.py --cwd D:/coding/WBR --logs <fresh_root>/delivery_logs -- python -u <fresh_root>/deliver.py"
+  },
+  "fresh_root_required": true,
+  "parent_models_reused_not_retrained": "multihorizon_pre_live_20261108_volume_fix",
+  "ordinary_qlib_objective_reference": "https://github.com/microsoft/qlib/blob/main/qlib/contrib/strategy/optimizer/optimizer.py",
+  "implementation": "local correlated low-rank-plus-diagonal QP, bounded weights and stock L1 turnover; not index tracking",
+  "prior_attempt": "multihorizon_mvo_20261108 stopped after structural infeasibility;6 invalid+1complete, no external evaluation; no prior trial reused",
+  "limitations": [
+    "Scores are standardized rank utility, not calibrated expected returns.",
+    "Opening weight may already exceed cap because of price drift; no further increase above current weight allowed.",
+    "MVO replaces rank-buffer selection/holding rules; native T+1/legality/fees remain; no separate minimum holding-days rule.",
+    "First funding from cash has explicit turnover floor; later residual cash only due execution.",
+    "No static production config or broker orders changed."
+  ],
+  "package_versions": {
+    "clarabel": "0.11.1",
+    "numpy": "2.3.5",
+    "scipy": "1.16.3"
+  },
+  "solver_files_sha256": {
+    "D:\\coding\\WBR\\artifacts\\research\\qlib_open_rank_20261105\\packages\\clarabel\\clarabel.pyd": "4687781daff4828f8a34fedc446e9f7cea10aa578868d55b780097afeea2c9ff",
+    "D:\\coding\\WBR\\artifacts\\research\\qlib_open_rank_20261105\\packages\\clarabel\\__init__.py": "7c0c6f2ac3561bcc0fbca30ac34b979a559c021d77b6892c8a1210ba0d8a537b"
+  },
+  "python_exe_sha256": "4afbcfdb414b83358daf5cb7e9192910f2fc9c02c71a98a26420a048f04be86d",
+  "postprocessing_adapter": "mvo_adapter_report.py; only detailed-result aggregation fixed, no strategy/decision change",
+  "actual_elapsed_since_protocol_seconds": 2412.1709184646606
+}

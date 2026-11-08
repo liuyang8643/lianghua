@@ -1,0 +1,3635 @@
+{
+  "commit": "54355232463878d2eebb91fe0ee5fa7fa1f5976c",
+  "source_path": "qlib/contrib/data/loader.py",
+  "source_sha256": "472f9dc84abd20d7a662c12d66ec49edc09a66a6ca9b30deb1ae083ec00d0a6e",
+  "license": "MIT, Copyright Microsoft Corporation",
+  "adaptation": "whole expression shifted one completed bar; forward economic adjustment, unknown adjustment bridges split segments and mask crossing windows; native Qlib comparison/extreme missing semantics preserved; no partial pre-listing windows",
+  "features": [
+    {
+      "name": "Alpha158_KMID",
+      "family": "Alpha158",
+      "source_name": "KMID",
+      "original_expression": "($close-$open)/$open",
+      "expression": "Ref(($close-$open)/$open, 1)"
+    },
+    {
+      "name": "Alpha158_KLEN",
+      "family": "Alpha158",
+      "source_name": "KLEN",
+      "original_expression": "($high-$low)/$open",
+      "expression": "Ref(($high-$low)/$open, 1)"
+    },
+    {
+      "name": "Alpha158_KMID2",
+      "family": "Alpha158",
+      "source_name": "KMID2",
+      "original_expression": "($close-$open)/($high-$low+1e-12)",
+      "expression": "Ref(($close-$open)/($high-$low+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_KUP",
+      "family": "Alpha158",
+      "source_name": "KUP",
+      "original_expression": "($high-Greater($open, $close))/$open",
+      "expression": "Ref(($high-Greater($open, $close))/$open, 1)"
+    },
+    {
+      "name": "Alpha158_KUP2",
+      "family": "Alpha158",
+      "source_name": "KUP2",
+      "original_expression": "($high-Greater($open, $close))/($high-$low+1e-12)",
+      "expression": "Ref(($high-Greater($open, $close))/($high-$low+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_KLOW",
+      "family": "Alpha158",
+      "source_name": "KLOW",
+      "original_expression": "(Less($open, $close)-$low)/$open",
+      "expression": "Ref((Less($open, $close)-$low)/$open, 1)"
+    },
+    {
+      "name": "Alpha158_KLOW2",
+      "family": "Alpha158",
+      "source_name": "KLOW2",
+      "original_expression": "(Less($open, $close)-$low)/($high-$low+1e-12)",
+      "expression": "Ref((Less($open, $close)-$low)/($high-$low+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_KSFT",
+      "family": "Alpha158",
+      "source_name": "KSFT",
+      "original_expression": "(2*$close-$high-$low)/$open",
+      "expression": "Ref((2*$close-$high-$low)/$open, 1)"
+    },
+    {
+      "name": "Alpha158_KSFT2",
+      "family": "Alpha158",
+      "source_name": "KSFT2",
+      "original_expression": "(2*$close-$high-$low)/($high-$low+1e-12)",
+      "expression": "Ref((2*$close-$high-$low)/($high-$low+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_OPEN0",
+      "family": "Alpha158",
+      "source_name": "OPEN0",
+      "original_expression": "$open/$close",
+      "expression": "Ref($open/$close, 1)"
+    },
+    {
+      "name": "Alpha158_HIGH0",
+      "family": "Alpha158",
+      "source_name": "HIGH0",
+      "original_expression": "$high/$close",
+      "expression": "Ref($high/$close, 1)"
+    },
+    {
+      "name": "Alpha158_LOW0",
+      "family": "Alpha158",
+      "source_name": "LOW0",
+      "original_expression": "$low/$close",
+      "expression": "Ref($low/$close, 1)"
+    },
+    {
+      "name": "Alpha158_VWAP0",
+      "family": "Alpha158",
+      "source_name": "VWAP0",
+      "original_expression": "$vwap/$close",
+      "expression": "Ref($vwap/$close, 1)"
+    },
+    {
+      "name": "Alpha158_ROC5",
+      "family": "Alpha158",
+      "source_name": "ROC5",
+      "original_expression": "Ref($close, 5)/$close",
+      "expression": "Ref(Ref($close, 5)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_ROC10",
+      "family": "Alpha158",
+      "source_name": "ROC10",
+      "original_expression": "Ref($close, 10)/$close",
+      "expression": "Ref(Ref($close, 10)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_ROC20",
+      "family": "Alpha158",
+      "source_name": "ROC20",
+      "original_expression": "Ref($close, 20)/$close",
+      "expression": "Ref(Ref($close, 20)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_ROC30",
+      "family": "Alpha158",
+      "source_name": "ROC30",
+      "original_expression": "Ref($close, 30)/$close",
+      "expression": "Ref(Ref($close, 30)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_ROC60",
+      "family": "Alpha158",
+      "source_name": "ROC60",
+      "original_expression": "Ref($close, 60)/$close",
+      "expression": "Ref(Ref($close, 60)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MA5",
+      "family": "Alpha158",
+      "source_name": "MA5",
+      "original_expression": "Mean($close, 5)/$close",
+      "expression": "Ref(Mean($close, 5)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MA10",
+      "family": "Alpha158",
+      "source_name": "MA10",
+      "original_expression": "Mean($close, 10)/$close",
+      "expression": "Ref(Mean($close, 10)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MA20",
+      "family": "Alpha158",
+      "source_name": "MA20",
+      "original_expression": "Mean($close, 20)/$close",
+      "expression": "Ref(Mean($close, 20)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MA30",
+      "family": "Alpha158",
+      "source_name": "MA30",
+      "original_expression": "Mean($close, 30)/$close",
+      "expression": "Ref(Mean($close, 30)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MA60",
+      "family": "Alpha158",
+      "source_name": "MA60",
+      "original_expression": "Mean($close, 60)/$close",
+      "expression": "Ref(Mean($close, 60)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_STD5",
+      "family": "Alpha158",
+      "source_name": "STD5",
+      "original_expression": "Std($close, 5)/$close",
+      "expression": "Ref(Std($close, 5)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_STD10",
+      "family": "Alpha158",
+      "source_name": "STD10",
+      "original_expression": "Std($close, 10)/$close",
+      "expression": "Ref(Std($close, 10)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_STD20",
+      "family": "Alpha158",
+      "source_name": "STD20",
+      "original_expression": "Std($close, 20)/$close",
+      "expression": "Ref(Std($close, 20)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_STD30",
+      "family": "Alpha158",
+      "source_name": "STD30",
+      "original_expression": "Std($close, 30)/$close",
+      "expression": "Ref(Std($close, 30)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_STD60",
+      "family": "Alpha158",
+      "source_name": "STD60",
+      "original_expression": "Std($close, 60)/$close",
+      "expression": "Ref(Std($close, 60)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_BETA5",
+      "family": "Alpha158",
+      "source_name": "BETA5",
+      "original_expression": "Slope($close, 5)/$close",
+      "expression": "Ref(Slope($close, 5)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_BETA10",
+      "family": "Alpha158",
+      "source_name": "BETA10",
+      "original_expression": "Slope($close, 10)/$close",
+      "expression": "Ref(Slope($close, 10)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_BETA20",
+      "family": "Alpha158",
+      "source_name": "BETA20",
+      "original_expression": "Slope($close, 20)/$close",
+      "expression": "Ref(Slope($close, 20)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_BETA30",
+      "family": "Alpha158",
+      "source_name": "BETA30",
+      "original_expression": "Slope($close, 30)/$close",
+      "expression": "Ref(Slope($close, 30)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_BETA60",
+      "family": "Alpha158",
+      "source_name": "BETA60",
+      "original_expression": "Slope($close, 60)/$close",
+      "expression": "Ref(Slope($close, 60)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_RSQR5",
+      "family": "Alpha158",
+      "source_name": "RSQR5",
+      "original_expression": "Rsquare($close, 5)",
+      "expression": "Ref(Rsquare($close, 5), 1)"
+    },
+    {
+      "name": "Alpha158_RSQR10",
+      "family": "Alpha158",
+      "source_name": "RSQR10",
+      "original_expression": "Rsquare($close, 10)",
+      "expression": "Ref(Rsquare($close, 10), 1)"
+    },
+    {
+      "name": "Alpha158_RSQR20",
+      "family": "Alpha158",
+      "source_name": "RSQR20",
+      "original_expression": "Rsquare($close, 20)",
+      "expression": "Ref(Rsquare($close, 20), 1)"
+    },
+    {
+      "name": "Alpha158_RSQR30",
+      "family": "Alpha158",
+      "source_name": "RSQR30",
+      "original_expression": "Rsquare($close, 30)",
+      "expression": "Ref(Rsquare($close, 30), 1)"
+    },
+    {
+      "name": "Alpha158_RSQR60",
+      "family": "Alpha158",
+      "source_name": "RSQR60",
+      "original_expression": "Rsquare($close, 60)",
+      "expression": "Ref(Rsquare($close, 60), 1)"
+    },
+    {
+      "name": "Alpha158_RESI5",
+      "family": "Alpha158",
+      "source_name": "RESI5",
+      "original_expression": "Resi($close, 5)/$close",
+      "expression": "Ref(Resi($close, 5)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_RESI10",
+      "family": "Alpha158",
+      "source_name": "RESI10",
+      "original_expression": "Resi($close, 10)/$close",
+      "expression": "Ref(Resi($close, 10)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_RESI20",
+      "family": "Alpha158",
+      "source_name": "RESI20",
+      "original_expression": "Resi($close, 20)/$close",
+      "expression": "Ref(Resi($close, 20)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_RESI30",
+      "family": "Alpha158",
+      "source_name": "RESI30",
+      "original_expression": "Resi($close, 30)/$close",
+      "expression": "Ref(Resi($close, 30)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_RESI60",
+      "family": "Alpha158",
+      "source_name": "RESI60",
+      "original_expression": "Resi($close, 60)/$close",
+      "expression": "Ref(Resi($close, 60)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MAX5",
+      "family": "Alpha158",
+      "source_name": "MAX5",
+      "original_expression": "Max($high, 5)/$close",
+      "expression": "Ref(Max($high, 5)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MAX10",
+      "family": "Alpha158",
+      "source_name": "MAX10",
+      "original_expression": "Max($high, 10)/$close",
+      "expression": "Ref(Max($high, 10)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MAX20",
+      "family": "Alpha158",
+      "source_name": "MAX20",
+      "original_expression": "Max($high, 20)/$close",
+      "expression": "Ref(Max($high, 20)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MAX30",
+      "family": "Alpha158",
+      "source_name": "MAX30",
+      "original_expression": "Max($high, 30)/$close",
+      "expression": "Ref(Max($high, 30)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MAX60",
+      "family": "Alpha158",
+      "source_name": "MAX60",
+      "original_expression": "Max($high, 60)/$close",
+      "expression": "Ref(Max($high, 60)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MIN5",
+      "family": "Alpha158",
+      "source_name": "MIN5",
+      "original_expression": "Min($low, 5)/$close",
+      "expression": "Ref(Min($low, 5)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MIN10",
+      "family": "Alpha158",
+      "source_name": "MIN10",
+      "original_expression": "Min($low, 10)/$close",
+      "expression": "Ref(Min($low, 10)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MIN20",
+      "family": "Alpha158",
+      "source_name": "MIN20",
+      "original_expression": "Min($low, 20)/$close",
+      "expression": "Ref(Min($low, 20)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MIN30",
+      "family": "Alpha158",
+      "source_name": "MIN30",
+      "original_expression": "Min($low, 30)/$close",
+      "expression": "Ref(Min($low, 30)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_MIN60",
+      "family": "Alpha158",
+      "source_name": "MIN60",
+      "original_expression": "Min($low, 60)/$close",
+      "expression": "Ref(Min($low, 60)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_QTLU5",
+      "family": "Alpha158",
+      "source_name": "QTLU5",
+      "original_expression": "Quantile($close, 5, 0.8)/$close",
+      "expression": "Ref(Quantile($close, 5, 0.8)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_QTLU10",
+      "family": "Alpha158",
+      "source_name": "QTLU10",
+      "original_expression": "Quantile($close, 10, 0.8)/$close",
+      "expression": "Ref(Quantile($close, 10, 0.8)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_QTLU20",
+      "family": "Alpha158",
+      "source_name": "QTLU20",
+      "original_expression": "Quantile($close, 20, 0.8)/$close",
+      "expression": "Ref(Quantile($close, 20, 0.8)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_QTLU30",
+      "family": "Alpha158",
+      "source_name": "QTLU30",
+      "original_expression": "Quantile($close, 30, 0.8)/$close",
+      "expression": "Ref(Quantile($close, 30, 0.8)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_QTLU60",
+      "family": "Alpha158",
+      "source_name": "QTLU60",
+      "original_expression": "Quantile($close, 60, 0.8)/$close",
+      "expression": "Ref(Quantile($close, 60, 0.8)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_QTLD5",
+      "family": "Alpha158",
+      "source_name": "QTLD5",
+      "original_expression": "Quantile($close, 5, 0.2)/$close",
+      "expression": "Ref(Quantile($close, 5, 0.2)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_QTLD10",
+      "family": "Alpha158",
+      "source_name": "QTLD10",
+      "original_expression": "Quantile($close, 10, 0.2)/$close",
+      "expression": "Ref(Quantile($close, 10, 0.2)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_QTLD20",
+      "family": "Alpha158",
+      "source_name": "QTLD20",
+      "original_expression": "Quantile($close, 20, 0.2)/$close",
+      "expression": "Ref(Quantile($close, 20, 0.2)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_QTLD30",
+      "family": "Alpha158",
+      "source_name": "QTLD30",
+      "original_expression": "Quantile($close, 30, 0.2)/$close",
+      "expression": "Ref(Quantile($close, 30, 0.2)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_QTLD60",
+      "family": "Alpha158",
+      "source_name": "QTLD60",
+      "original_expression": "Quantile($close, 60, 0.2)/$close",
+      "expression": "Ref(Quantile($close, 60, 0.2)/$close, 1)"
+    },
+    {
+      "name": "Alpha158_RANK5",
+      "family": "Alpha158",
+      "source_name": "RANK5",
+      "original_expression": "Rank($close, 5)",
+      "expression": "Ref(Rank($close, 5), 1)"
+    },
+    {
+      "name": "Alpha158_RANK10",
+      "family": "Alpha158",
+      "source_name": "RANK10",
+      "original_expression": "Rank($close, 10)",
+      "expression": "Ref(Rank($close, 10), 1)"
+    },
+    {
+      "name": "Alpha158_RANK20",
+      "family": "Alpha158",
+      "source_name": "RANK20",
+      "original_expression": "Rank($close, 20)",
+      "expression": "Ref(Rank($close, 20), 1)"
+    },
+    {
+      "name": "Alpha158_RANK30",
+      "family": "Alpha158",
+      "source_name": "RANK30",
+      "original_expression": "Rank($close, 30)",
+      "expression": "Ref(Rank($close, 30), 1)"
+    },
+    {
+      "name": "Alpha158_RANK60",
+      "family": "Alpha158",
+      "source_name": "RANK60",
+      "original_expression": "Rank($close, 60)",
+      "expression": "Ref(Rank($close, 60), 1)"
+    },
+    {
+      "name": "Alpha158_RSV5",
+      "family": "Alpha158",
+      "source_name": "RSV5",
+      "original_expression": "($close-Min($low, 5))/(Max($high, 5)-Min($low, 5)+1e-12)",
+      "expression": "Ref(($close-Min($low, 5))/(Max($high, 5)-Min($low, 5)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_RSV10",
+      "family": "Alpha158",
+      "source_name": "RSV10",
+      "original_expression": "($close-Min($low, 10))/(Max($high, 10)-Min($low, 10)+1e-12)",
+      "expression": "Ref(($close-Min($low, 10))/(Max($high, 10)-Min($low, 10)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_RSV20",
+      "family": "Alpha158",
+      "source_name": "RSV20",
+      "original_expression": "($close-Min($low, 20))/(Max($high, 20)-Min($low, 20)+1e-12)",
+      "expression": "Ref(($close-Min($low, 20))/(Max($high, 20)-Min($low, 20)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_RSV30",
+      "family": "Alpha158",
+      "source_name": "RSV30",
+      "original_expression": "($close-Min($low, 30))/(Max($high, 30)-Min($low, 30)+1e-12)",
+      "expression": "Ref(($close-Min($low, 30))/(Max($high, 30)-Min($low, 30)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_RSV60",
+      "family": "Alpha158",
+      "source_name": "RSV60",
+      "original_expression": "($close-Min($low, 60))/(Max($high, 60)-Min($low, 60)+1e-12)",
+      "expression": "Ref(($close-Min($low, 60))/(Max($high, 60)-Min($low, 60)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_IMAX5",
+      "family": "Alpha158",
+      "source_name": "IMAX5",
+      "original_expression": "IdxMax($high, 5)/5",
+      "expression": "Ref(IdxMax($high, 5)/5, 1)"
+    },
+    {
+      "name": "Alpha158_IMAX10",
+      "family": "Alpha158",
+      "source_name": "IMAX10",
+      "original_expression": "IdxMax($high, 10)/10",
+      "expression": "Ref(IdxMax($high, 10)/10, 1)"
+    },
+    {
+      "name": "Alpha158_IMAX20",
+      "family": "Alpha158",
+      "source_name": "IMAX20",
+      "original_expression": "IdxMax($high, 20)/20",
+      "expression": "Ref(IdxMax($high, 20)/20, 1)"
+    },
+    {
+      "name": "Alpha158_IMAX30",
+      "family": "Alpha158",
+      "source_name": "IMAX30",
+      "original_expression": "IdxMax($high, 30)/30",
+      "expression": "Ref(IdxMax($high, 30)/30, 1)"
+    },
+    {
+      "name": "Alpha158_IMAX60",
+      "family": "Alpha158",
+      "source_name": "IMAX60",
+      "original_expression": "IdxMax($high, 60)/60",
+      "expression": "Ref(IdxMax($high, 60)/60, 1)"
+    },
+    {
+      "name": "Alpha158_IMIN5",
+      "family": "Alpha158",
+      "source_name": "IMIN5",
+      "original_expression": "IdxMin($low, 5)/5",
+      "expression": "Ref(IdxMin($low, 5)/5, 1)"
+    },
+    {
+      "name": "Alpha158_IMIN10",
+      "family": "Alpha158",
+      "source_name": "IMIN10",
+      "original_expression": "IdxMin($low, 10)/10",
+      "expression": "Ref(IdxMin($low, 10)/10, 1)"
+    },
+    {
+      "name": "Alpha158_IMIN20",
+      "family": "Alpha158",
+      "source_name": "IMIN20",
+      "original_expression": "IdxMin($low, 20)/20",
+      "expression": "Ref(IdxMin($low, 20)/20, 1)"
+    },
+    {
+      "name": "Alpha158_IMIN30",
+      "family": "Alpha158",
+      "source_name": "IMIN30",
+      "original_expression": "IdxMin($low, 30)/30",
+      "expression": "Ref(IdxMin($low, 30)/30, 1)"
+    },
+    {
+      "name": "Alpha158_IMIN60",
+      "family": "Alpha158",
+      "source_name": "IMIN60",
+      "original_expression": "IdxMin($low, 60)/60",
+      "expression": "Ref(IdxMin($low, 60)/60, 1)"
+    },
+    {
+      "name": "Alpha158_IMXD5",
+      "family": "Alpha158",
+      "source_name": "IMXD5",
+      "original_expression": "(IdxMax($high, 5)-IdxMin($low, 5))/5",
+      "expression": "Ref((IdxMax($high, 5)-IdxMin($low, 5))/5, 1)"
+    },
+    {
+      "name": "Alpha158_IMXD10",
+      "family": "Alpha158",
+      "source_name": "IMXD10",
+      "original_expression": "(IdxMax($high, 10)-IdxMin($low, 10))/10",
+      "expression": "Ref((IdxMax($high, 10)-IdxMin($low, 10))/10, 1)"
+    },
+    {
+      "name": "Alpha158_IMXD20",
+      "family": "Alpha158",
+      "source_name": "IMXD20",
+      "original_expression": "(IdxMax($high, 20)-IdxMin($low, 20))/20",
+      "expression": "Ref((IdxMax($high, 20)-IdxMin($low, 20))/20, 1)"
+    },
+    {
+      "name": "Alpha158_IMXD30",
+      "family": "Alpha158",
+      "source_name": "IMXD30",
+      "original_expression": "(IdxMax($high, 30)-IdxMin($low, 30))/30",
+      "expression": "Ref((IdxMax($high, 30)-IdxMin($low, 30))/30, 1)"
+    },
+    {
+      "name": "Alpha158_IMXD60",
+      "family": "Alpha158",
+      "source_name": "IMXD60",
+      "original_expression": "(IdxMax($high, 60)-IdxMin($low, 60))/60",
+      "expression": "Ref((IdxMax($high, 60)-IdxMin($low, 60))/60, 1)"
+    },
+    {
+      "name": "Alpha158_CORR5",
+      "family": "Alpha158",
+      "source_name": "CORR5",
+      "original_expression": "Corr($close, Log($volume+1), 5)",
+      "expression": "Ref(Corr($close, Log($volume+1), 5), 1)"
+    },
+    {
+      "name": "Alpha158_CORR10",
+      "family": "Alpha158",
+      "source_name": "CORR10",
+      "original_expression": "Corr($close, Log($volume+1), 10)",
+      "expression": "Ref(Corr($close, Log($volume+1), 10), 1)"
+    },
+    {
+      "name": "Alpha158_CORR20",
+      "family": "Alpha158",
+      "source_name": "CORR20",
+      "original_expression": "Corr($close, Log($volume+1), 20)",
+      "expression": "Ref(Corr($close, Log($volume+1), 20), 1)"
+    },
+    {
+      "name": "Alpha158_CORR30",
+      "family": "Alpha158",
+      "source_name": "CORR30",
+      "original_expression": "Corr($close, Log($volume+1), 30)",
+      "expression": "Ref(Corr($close, Log($volume+1), 30), 1)"
+    },
+    {
+      "name": "Alpha158_CORR60",
+      "family": "Alpha158",
+      "source_name": "CORR60",
+      "original_expression": "Corr($close, Log($volume+1), 60)",
+      "expression": "Ref(Corr($close, Log($volume+1), 60), 1)"
+    },
+    {
+      "name": "Alpha158_CORD5",
+      "family": "Alpha158",
+      "source_name": "CORD5",
+      "original_expression": "Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 5)",
+      "expression": "Ref(Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 5), 1)"
+    },
+    {
+      "name": "Alpha158_CORD10",
+      "family": "Alpha158",
+      "source_name": "CORD10",
+      "original_expression": "Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 10)",
+      "expression": "Ref(Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 10), 1)"
+    },
+    {
+      "name": "Alpha158_CORD20",
+      "family": "Alpha158",
+      "source_name": "CORD20",
+      "original_expression": "Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 20)",
+      "expression": "Ref(Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 20), 1)"
+    },
+    {
+      "name": "Alpha158_CORD30",
+      "family": "Alpha158",
+      "source_name": "CORD30",
+      "original_expression": "Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 30)",
+      "expression": "Ref(Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 30), 1)"
+    },
+    {
+      "name": "Alpha158_CORD60",
+      "family": "Alpha158",
+      "source_name": "CORD60",
+      "original_expression": "Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 60)",
+      "expression": "Ref(Corr($close/Ref($close,1), Log($volume/Ref($volume, 1)+1), 60), 1)"
+    },
+    {
+      "name": "Alpha158_CNTP5",
+      "family": "Alpha158",
+      "source_name": "CNTP5",
+      "original_expression": "Mean($close>Ref($close, 1), 5)",
+      "expression": "Ref(Mean($close>Ref($close, 1), 5), 1)"
+    },
+    {
+      "name": "Alpha158_CNTP10",
+      "family": "Alpha158",
+      "source_name": "CNTP10",
+      "original_expression": "Mean($close>Ref($close, 1), 10)",
+      "expression": "Ref(Mean($close>Ref($close, 1), 10), 1)"
+    },
+    {
+      "name": "Alpha158_CNTP20",
+      "family": "Alpha158",
+      "source_name": "CNTP20",
+      "original_expression": "Mean($close>Ref($close, 1), 20)",
+      "expression": "Ref(Mean($close>Ref($close, 1), 20), 1)"
+    },
+    {
+      "name": "Alpha158_CNTP30",
+      "family": "Alpha158",
+      "source_name": "CNTP30",
+      "original_expression": "Mean($close>Ref($close, 1), 30)",
+      "expression": "Ref(Mean($close>Ref($close, 1), 30), 1)"
+    },
+    {
+      "name": "Alpha158_CNTP60",
+      "family": "Alpha158",
+      "source_name": "CNTP60",
+      "original_expression": "Mean($close>Ref($close, 1), 60)",
+      "expression": "Ref(Mean($close>Ref($close, 1), 60), 1)"
+    },
+    {
+      "name": "Alpha158_CNTN5",
+      "family": "Alpha158",
+      "source_name": "CNTN5",
+      "original_expression": "Mean($close<Ref($close, 1), 5)",
+      "expression": "Ref(Mean($close<Ref($close, 1), 5), 1)"
+    },
+    {
+      "name": "Alpha158_CNTN10",
+      "family": "Alpha158",
+      "source_name": "CNTN10",
+      "original_expression": "Mean($close<Ref($close, 1), 10)",
+      "expression": "Ref(Mean($close<Ref($close, 1), 10), 1)"
+    },
+    {
+      "name": "Alpha158_CNTN20",
+      "family": "Alpha158",
+      "source_name": "CNTN20",
+      "original_expression": "Mean($close<Ref($close, 1), 20)",
+      "expression": "Ref(Mean($close<Ref($close, 1), 20), 1)"
+    },
+    {
+      "name": "Alpha158_CNTN30",
+      "family": "Alpha158",
+      "source_name": "CNTN30",
+      "original_expression": "Mean($close<Ref($close, 1), 30)",
+      "expression": "Ref(Mean($close<Ref($close, 1), 30), 1)"
+    },
+    {
+      "name": "Alpha158_CNTN60",
+      "family": "Alpha158",
+      "source_name": "CNTN60",
+      "original_expression": "Mean($close<Ref($close, 1), 60)",
+      "expression": "Ref(Mean($close<Ref($close, 1), 60), 1)"
+    },
+    {
+      "name": "Alpha158_CNTD5",
+      "family": "Alpha158",
+      "source_name": "CNTD5",
+      "original_expression": "Mean($close>Ref($close, 1), 5)-Mean($close<Ref($close, 1), 5)",
+      "expression": "Ref(Mean($close>Ref($close, 1), 5)-Mean($close<Ref($close, 1), 5), 1)"
+    },
+    {
+      "name": "Alpha158_CNTD10",
+      "family": "Alpha158",
+      "source_name": "CNTD10",
+      "original_expression": "Mean($close>Ref($close, 1), 10)-Mean($close<Ref($close, 1), 10)",
+      "expression": "Ref(Mean($close>Ref($close, 1), 10)-Mean($close<Ref($close, 1), 10), 1)"
+    },
+    {
+      "name": "Alpha158_CNTD20",
+      "family": "Alpha158",
+      "source_name": "CNTD20",
+      "original_expression": "Mean($close>Ref($close, 1), 20)-Mean($close<Ref($close, 1), 20)",
+      "expression": "Ref(Mean($close>Ref($close, 1), 20)-Mean($close<Ref($close, 1), 20), 1)"
+    },
+    {
+      "name": "Alpha158_CNTD30",
+      "family": "Alpha158",
+      "source_name": "CNTD30",
+      "original_expression": "Mean($close>Ref($close, 1), 30)-Mean($close<Ref($close, 1), 30)",
+      "expression": "Ref(Mean($close>Ref($close, 1), 30)-Mean($close<Ref($close, 1), 30), 1)"
+    },
+    {
+      "name": "Alpha158_CNTD60",
+      "family": "Alpha158",
+      "source_name": "CNTD60",
+      "original_expression": "Mean($close>Ref($close, 1), 60)-Mean($close<Ref($close, 1), 60)",
+      "expression": "Ref(Mean($close>Ref($close, 1), 60)-Mean($close<Ref($close, 1), 60), 1)"
+    },
+    {
+      "name": "Alpha158_SUMP5",
+      "family": "Alpha158",
+      "source_name": "SUMP5",
+      "original_expression": "Sum(Greater($close-Ref($close, 1), 0), 5)/(Sum(Abs($close-Ref($close, 1)), 5)+1e-12)",
+      "expression": "Ref(Sum(Greater($close-Ref($close, 1), 0), 5)/(Sum(Abs($close-Ref($close, 1)), 5)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_SUMP10",
+      "family": "Alpha158",
+      "source_name": "SUMP10",
+      "original_expression": "Sum(Greater($close-Ref($close, 1), 0), 10)/(Sum(Abs($close-Ref($close, 1)), 10)+1e-12)",
+      "expression": "Ref(Sum(Greater($close-Ref($close, 1), 0), 10)/(Sum(Abs($close-Ref($close, 1)), 10)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_SUMP20",
+      "family": "Alpha158",
+      "source_name": "SUMP20",
+      "original_expression": "Sum(Greater($close-Ref($close, 1), 0), 20)/(Sum(Abs($close-Ref($close, 1)), 20)+1e-12)",
+      "expression": "Ref(Sum(Greater($close-Ref($close, 1), 0), 20)/(Sum(Abs($close-Ref($close, 1)), 20)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_SUMP30",
+      "family": "Alpha158",
+      "source_name": "SUMP30",
+      "original_expression": "Sum(Greater($close-Ref($close, 1), 0), 30)/(Sum(Abs($close-Ref($close, 1)), 30)+1e-12)",
+      "expression": "Ref(Sum(Greater($close-Ref($close, 1), 0), 30)/(Sum(Abs($close-Ref($close, 1)), 30)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_SUMP60",
+      "family": "Alpha158",
+      "source_name": "SUMP60",
+      "original_expression": "Sum(Greater($close-Ref($close, 1), 0), 60)/(Sum(Abs($close-Ref($close, 1)), 60)+1e-12)",
+      "expression": "Ref(Sum(Greater($close-Ref($close, 1), 0), 60)/(Sum(Abs($close-Ref($close, 1)), 60)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_SUMN5",
+      "family": "Alpha158",
+      "source_name": "SUMN5",
+      "original_expression": "Sum(Greater(Ref($close, 1)-$close, 0), 5)/(Sum(Abs($close-Ref($close, 1)), 5)+1e-12)",
+      "expression": "Ref(Sum(Greater(Ref($close, 1)-$close, 0), 5)/(Sum(Abs($close-Ref($close, 1)), 5)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_SUMN10",
+      "family": "Alpha158",
+      "source_name": "SUMN10",
+      "original_expression": "Sum(Greater(Ref($close, 1)-$close, 0), 10)/(Sum(Abs($close-Ref($close, 1)), 10)+1e-12)",
+      "expression": "Ref(Sum(Greater(Ref($close, 1)-$close, 0), 10)/(Sum(Abs($close-Ref($close, 1)), 10)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_SUMN20",
+      "family": "Alpha158",
+      "source_name": "SUMN20",
+      "original_expression": "Sum(Greater(Ref($close, 1)-$close, 0), 20)/(Sum(Abs($close-Ref($close, 1)), 20)+1e-12)",
+      "expression": "Ref(Sum(Greater(Ref($close, 1)-$close, 0), 20)/(Sum(Abs($close-Ref($close, 1)), 20)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_SUMN30",
+      "family": "Alpha158",
+      "source_name": "SUMN30",
+      "original_expression": "Sum(Greater(Ref($close, 1)-$close, 0), 30)/(Sum(Abs($close-Ref($close, 1)), 30)+1e-12)",
+      "expression": "Ref(Sum(Greater(Ref($close, 1)-$close, 0), 30)/(Sum(Abs($close-Ref($close, 1)), 30)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_SUMN60",
+      "family": "Alpha158",
+      "source_name": "SUMN60",
+      "original_expression": "Sum(Greater(Ref($close, 1)-$close, 0), 60)/(Sum(Abs($close-Ref($close, 1)), 60)+1e-12)",
+      "expression": "Ref(Sum(Greater(Ref($close, 1)-$close, 0), 60)/(Sum(Abs($close-Ref($close, 1)), 60)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_SUMD5",
+      "family": "Alpha158",
+      "source_name": "SUMD5",
+      "original_expression": "(Sum(Greater($close-Ref($close, 1), 0), 5)-Sum(Greater(Ref($close, 1)-$close, 0), 5))/(Sum(Abs($close-Ref($close, 1)), 5)+1e-12)",
+      "expression": "Ref((Sum(Greater($close-Ref($close, 1), 0), 5)-Sum(Greater(Ref($close, 1)-$close, 0), 5))/(Sum(Abs($close-Ref($close, 1)), 5)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_SUMD10",
+      "family": "Alpha158",
+      "source_name": "SUMD10",
+      "original_expression": "(Sum(Greater($close-Ref($close, 1), 0), 10)-Sum(Greater(Ref($close, 1)-$close, 0), 10))/(Sum(Abs($close-Ref($close, 1)), 10)+1e-12)",
+      "expression": "Ref((Sum(Greater($close-Ref($close, 1), 0), 10)-Sum(Greater(Ref($close, 1)-$close, 0), 10))/(Sum(Abs($close-Ref($close, 1)), 10)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_SUMD20",
+      "family": "Alpha158",
+      "source_name": "SUMD20",
+      "original_expression": "(Sum(Greater($close-Ref($close, 1), 0), 20)-Sum(Greater(Ref($close, 1)-$close, 0), 20))/(Sum(Abs($close-Ref($close, 1)), 20)+1e-12)",
+      "expression": "Ref((Sum(Greater($close-Ref($close, 1), 0), 20)-Sum(Greater(Ref($close, 1)-$close, 0), 20))/(Sum(Abs($close-Ref($close, 1)), 20)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_SUMD30",
+      "family": "Alpha158",
+      "source_name": "SUMD30",
+      "original_expression": "(Sum(Greater($close-Ref($close, 1), 0), 30)-Sum(Greater(Ref($close, 1)-$close, 0), 30))/(Sum(Abs($close-Ref($close, 1)), 30)+1e-12)",
+      "expression": "Ref((Sum(Greater($close-Ref($close, 1), 0), 30)-Sum(Greater(Ref($close, 1)-$close, 0), 30))/(Sum(Abs($close-Ref($close, 1)), 30)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_SUMD60",
+      "family": "Alpha158",
+      "source_name": "SUMD60",
+      "original_expression": "(Sum(Greater($close-Ref($close, 1), 0), 60)-Sum(Greater(Ref($close, 1)-$close, 0), 60))/(Sum(Abs($close-Ref($close, 1)), 60)+1e-12)",
+      "expression": "Ref((Sum(Greater($close-Ref($close, 1), 0), 60)-Sum(Greater(Ref($close, 1)-$close, 0), 60))/(Sum(Abs($close-Ref($close, 1)), 60)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VMA5",
+      "family": "Alpha158",
+      "source_name": "VMA5",
+      "original_expression": "Mean($volume, 5)/($volume+1e-12)",
+      "expression": "Ref(Mean($volume, 5)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VMA10",
+      "family": "Alpha158",
+      "source_name": "VMA10",
+      "original_expression": "Mean($volume, 10)/($volume+1e-12)",
+      "expression": "Ref(Mean($volume, 10)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VMA20",
+      "family": "Alpha158",
+      "source_name": "VMA20",
+      "original_expression": "Mean($volume, 20)/($volume+1e-12)",
+      "expression": "Ref(Mean($volume, 20)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VMA30",
+      "family": "Alpha158",
+      "source_name": "VMA30",
+      "original_expression": "Mean($volume, 30)/($volume+1e-12)",
+      "expression": "Ref(Mean($volume, 30)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VMA60",
+      "family": "Alpha158",
+      "source_name": "VMA60",
+      "original_expression": "Mean($volume, 60)/($volume+1e-12)",
+      "expression": "Ref(Mean($volume, 60)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSTD5",
+      "family": "Alpha158",
+      "source_name": "VSTD5",
+      "original_expression": "Std($volume, 5)/($volume+1e-12)",
+      "expression": "Ref(Std($volume, 5)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSTD10",
+      "family": "Alpha158",
+      "source_name": "VSTD10",
+      "original_expression": "Std($volume, 10)/($volume+1e-12)",
+      "expression": "Ref(Std($volume, 10)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSTD20",
+      "family": "Alpha158",
+      "source_name": "VSTD20",
+      "original_expression": "Std($volume, 20)/($volume+1e-12)",
+      "expression": "Ref(Std($volume, 20)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSTD30",
+      "family": "Alpha158",
+      "source_name": "VSTD30",
+      "original_expression": "Std($volume, 30)/($volume+1e-12)",
+      "expression": "Ref(Std($volume, 30)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSTD60",
+      "family": "Alpha158",
+      "source_name": "VSTD60",
+      "original_expression": "Std($volume, 60)/($volume+1e-12)",
+      "expression": "Ref(Std($volume, 60)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_WVMA5",
+      "family": "Alpha158",
+      "source_name": "WVMA5",
+      "original_expression": "Std(Abs($close/Ref($close, 1)-1)*$volume, 5)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 5)+1e-12)",
+      "expression": "Ref(Std(Abs($close/Ref($close, 1)-1)*$volume, 5)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 5)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_WVMA10",
+      "family": "Alpha158",
+      "source_name": "WVMA10",
+      "original_expression": "Std(Abs($close/Ref($close, 1)-1)*$volume, 10)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 10)+1e-12)",
+      "expression": "Ref(Std(Abs($close/Ref($close, 1)-1)*$volume, 10)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 10)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_WVMA20",
+      "family": "Alpha158",
+      "source_name": "WVMA20",
+      "original_expression": "Std(Abs($close/Ref($close, 1)-1)*$volume, 20)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 20)+1e-12)",
+      "expression": "Ref(Std(Abs($close/Ref($close, 1)-1)*$volume, 20)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 20)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_WVMA30",
+      "family": "Alpha158",
+      "source_name": "WVMA30",
+      "original_expression": "Std(Abs($close/Ref($close, 1)-1)*$volume, 30)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 30)+1e-12)",
+      "expression": "Ref(Std(Abs($close/Ref($close, 1)-1)*$volume, 30)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 30)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_WVMA60",
+      "family": "Alpha158",
+      "source_name": "WVMA60",
+      "original_expression": "Std(Abs($close/Ref($close, 1)-1)*$volume, 60)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 60)+1e-12)",
+      "expression": "Ref(Std(Abs($close/Ref($close, 1)-1)*$volume, 60)/(Mean(Abs($close/Ref($close, 1)-1)*$volume, 60)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMP5",
+      "family": "Alpha158",
+      "source_name": "VSUMP5",
+      "original_expression": "Sum(Greater($volume-Ref($volume, 1), 0), 5)/(Sum(Abs($volume-Ref($volume, 1)), 5)+1e-12)",
+      "expression": "Ref(Sum(Greater($volume-Ref($volume, 1), 0), 5)/(Sum(Abs($volume-Ref($volume, 1)), 5)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMP10",
+      "family": "Alpha158",
+      "source_name": "VSUMP10",
+      "original_expression": "Sum(Greater($volume-Ref($volume, 1), 0), 10)/(Sum(Abs($volume-Ref($volume, 1)), 10)+1e-12)",
+      "expression": "Ref(Sum(Greater($volume-Ref($volume, 1), 0), 10)/(Sum(Abs($volume-Ref($volume, 1)), 10)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMP20",
+      "family": "Alpha158",
+      "source_name": "VSUMP20",
+      "original_expression": "Sum(Greater($volume-Ref($volume, 1), 0), 20)/(Sum(Abs($volume-Ref($volume, 1)), 20)+1e-12)",
+      "expression": "Ref(Sum(Greater($volume-Ref($volume, 1), 0), 20)/(Sum(Abs($volume-Ref($volume, 1)), 20)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMP30",
+      "family": "Alpha158",
+      "source_name": "VSUMP30",
+      "original_expression": "Sum(Greater($volume-Ref($volume, 1), 0), 30)/(Sum(Abs($volume-Ref($volume, 1)), 30)+1e-12)",
+      "expression": "Ref(Sum(Greater($volume-Ref($volume, 1), 0), 30)/(Sum(Abs($volume-Ref($volume, 1)), 30)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMP60",
+      "family": "Alpha158",
+      "source_name": "VSUMP60",
+      "original_expression": "Sum(Greater($volume-Ref($volume, 1), 0), 60)/(Sum(Abs($volume-Ref($volume, 1)), 60)+1e-12)",
+      "expression": "Ref(Sum(Greater($volume-Ref($volume, 1), 0), 60)/(Sum(Abs($volume-Ref($volume, 1)), 60)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMN5",
+      "family": "Alpha158",
+      "source_name": "VSUMN5",
+      "original_expression": "Sum(Greater(Ref($volume, 1)-$volume, 0), 5)/(Sum(Abs($volume-Ref($volume, 1)), 5)+1e-12)",
+      "expression": "Ref(Sum(Greater(Ref($volume, 1)-$volume, 0), 5)/(Sum(Abs($volume-Ref($volume, 1)), 5)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMN10",
+      "family": "Alpha158",
+      "source_name": "VSUMN10",
+      "original_expression": "Sum(Greater(Ref($volume, 1)-$volume, 0), 10)/(Sum(Abs($volume-Ref($volume, 1)), 10)+1e-12)",
+      "expression": "Ref(Sum(Greater(Ref($volume, 1)-$volume, 0), 10)/(Sum(Abs($volume-Ref($volume, 1)), 10)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMN20",
+      "family": "Alpha158",
+      "source_name": "VSUMN20",
+      "original_expression": "Sum(Greater(Ref($volume, 1)-$volume, 0), 20)/(Sum(Abs($volume-Ref($volume, 1)), 20)+1e-12)",
+      "expression": "Ref(Sum(Greater(Ref($volume, 1)-$volume, 0), 20)/(Sum(Abs($volume-Ref($volume, 1)), 20)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMN30",
+      "family": "Alpha158",
+      "source_name": "VSUMN30",
+      "original_expression": "Sum(Greater(Ref($volume, 1)-$volume, 0), 30)/(Sum(Abs($volume-Ref($volume, 1)), 30)+1e-12)",
+      "expression": "Ref(Sum(Greater(Ref($volume, 1)-$volume, 0), 30)/(Sum(Abs($volume-Ref($volume, 1)), 30)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMN60",
+      "family": "Alpha158",
+      "source_name": "VSUMN60",
+      "original_expression": "Sum(Greater(Ref($volume, 1)-$volume, 0), 60)/(Sum(Abs($volume-Ref($volume, 1)), 60)+1e-12)",
+      "expression": "Ref(Sum(Greater(Ref($volume, 1)-$volume, 0), 60)/(Sum(Abs($volume-Ref($volume, 1)), 60)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMD5",
+      "family": "Alpha158",
+      "source_name": "VSUMD5",
+      "original_expression": "(Sum(Greater($volume-Ref($volume, 1), 0), 5)-Sum(Greater(Ref($volume, 1)-$volume, 0), 5))/(Sum(Abs($volume-Ref($volume, 1)), 5)+1e-12)",
+      "expression": "Ref((Sum(Greater($volume-Ref($volume, 1), 0), 5)-Sum(Greater(Ref($volume, 1)-$volume, 0), 5))/(Sum(Abs($volume-Ref($volume, 1)), 5)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMD10",
+      "family": "Alpha158",
+      "source_name": "VSUMD10",
+      "original_expression": "(Sum(Greater($volume-Ref($volume, 1), 0), 10)-Sum(Greater(Ref($volume, 1)-$volume, 0), 10))/(Sum(Abs($volume-Ref($volume, 1)), 10)+1e-12)",
+      "expression": "Ref((Sum(Greater($volume-Ref($volume, 1), 0), 10)-Sum(Greater(Ref($volume, 1)-$volume, 0), 10))/(Sum(Abs($volume-Ref($volume, 1)), 10)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMD20",
+      "family": "Alpha158",
+      "source_name": "VSUMD20",
+      "original_expression": "(Sum(Greater($volume-Ref($volume, 1), 0), 20)-Sum(Greater(Ref($volume, 1)-$volume, 0), 20))/(Sum(Abs($volume-Ref($volume, 1)), 20)+1e-12)",
+      "expression": "Ref((Sum(Greater($volume-Ref($volume, 1), 0), 20)-Sum(Greater(Ref($volume, 1)-$volume, 0), 20))/(Sum(Abs($volume-Ref($volume, 1)), 20)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMD30",
+      "family": "Alpha158",
+      "source_name": "VSUMD30",
+      "original_expression": "(Sum(Greater($volume-Ref($volume, 1), 0), 30)-Sum(Greater(Ref($volume, 1)-$volume, 0), 30))/(Sum(Abs($volume-Ref($volume, 1)), 30)+1e-12)",
+      "expression": "Ref((Sum(Greater($volume-Ref($volume, 1), 0), 30)-Sum(Greater(Ref($volume, 1)-$volume, 0), 30))/(Sum(Abs($volume-Ref($volume, 1)), 30)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha158_VSUMD60",
+      "family": "Alpha158",
+      "source_name": "VSUMD60",
+      "original_expression": "(Sum(Greater($volume-Ref($volume, 1), 0), 60)-Sum(Greater(Ref($volume, 1)-$volume, 0), 60))/(Sum(Abs($volume-Ref($volume, 1)), 60)+1e-12)",
+      "expression": "Ref((Sum(Greater($volume-Ref($volume, 1), 0), 60)-Sum(Greater(Ref($volume, 1)-$volume, 0), 60))/(Sum(Abs($volume-Ref($volume, 1)), 60)+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE59",
+      "family": "Alpha360",
+      "source_name": "CLOSE59",
+      "original_expression": "Ref($close, 59)/$close",
+      "expression": "Ref(Ref($close, 59)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE58",
+      "family": "Alpha360",
+      "source_name": "CLOSE58",
+      "original_expression": "Ref($close, 58)/$close",
+      "expression": "Ref(Ref($close, 58)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE57",
+      "family": "Alpha360",
+      "source_name": "CLOSE57",
+      "original_expression": "Ref($close, 57)/$close",
+      "expression": "Ref(Ref($close, 57)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE56",
+      "family": "Alpha360",
+      "source_name": "CLOSE56",
+      "original_expression": "Ref($close, 56)/$close",
+      "expression": "Ref(Ref($close, 56)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE55",
+      "family": "Alpha360",
+      "source_name": "CLOSE55",
+      "original_expression": "Ref($close, 55)/$close",
+      "expression": "Ref(Ref($close, 55)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE54",
+      "family": "Alpha360",
+      "source_name": "CLOSE54",
+      "original_expression": "Ref($close, 54)/$close",
+      "expression": "Ref(Ref($close, 54)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE53",
+      "family": "Alpha360",
+      "source_name": "CLOSE53",
+      "original_expression": "Ref($close, 53)/$close",
+      "expression": "Ref(Ref($close, 53)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE52",
+      "family": "Alpha360",
+      "source_name": "CLOSE52",
+      "original_expression": "Ref($close, 52)/$close",
+      "expression": "Ref(Ref($close, 52)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE51",
+      "family": "Alpha360",
+      "source_name": "CLOSE51",
+      "original_expression": "Ref($close, 51)/$close",
+      "expression": "Ref(Ref($close, 51)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE50",
+      "family": "Alpha360",
+      "source_name": "CLOSE50",
+      "original_expression": "Ref($close, 50)/$close",
+      "expression": "Ref(Ref($close, 50)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE49",
+      "family": "Alpha360",
+      "source_name": "CLOSE49",
+      "original_expression": "Ref($close, 49)/$close",
+      "expression": "Ref(Ref($close, 49)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE48",
+      "family": "Alpha360",
+      "source_name": "CLOSE48",
+      "original_expression": "Ref($close, 48)/$close",
+      "expression": "Ref(Ref($close, 48)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE47",
+      "family": "Alpha360",
+      "source_name": "CLOSE47",
+      "original_expression": "Ref($close, 47)/$close",
+      "expression": "Ref(Ref($close, 47)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE46",
+      "family": "Alpha360",
+      "source_name": "CLOSE46",
+      "original_expression": "Ref($close, 46)/$close",
+      "expression": "Ref(Ref($close, 46)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE45",
+      "family": "Alpha360",
+      "source_name": "CLOSE45",
+      "original_expression": "Ref($close, 45)/$close",
+      "expression": "Ref(Ref($close, 45)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE44",
+      "family": "Alpha360",
+      "source_name": "CLOSE44",
+      "original_expression": "Ref($close, 44)/$close",
+      "expression": "Ref(Ref($close, 44)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE43",
+      "family": "Alpha360",
+      "source_name": "CLOSE43",
+      "original_expression": "Ref($close, 43)/$close",
+      "expression": "Ref(Ref($close, 43)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE42",
+      "family": "Alpha360",
+      "source_name": "CLOSE42",
+      "original_expression": "Ref($close, 42)/$close",
+      "expression": "Ref(Ref($close, 42)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE41",
+      "family": "Alpha360",
+      "source_name": "CLOSE41",
+      "original_expression": "Ref($close, 41)/$close",
+      "expression": "Ref(Ref($close, 41)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE40",
+      "family": "Alpha360",
+      "source_name": "CLOSE40",
+      "original_expression": "Ref($close, 40)/$close",
+      "expression": "Ref(Ref($close, 40)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE39",
+      "family": "Alpha360",
+      "source_name": "CLOSE39",
+      "original_expression": "Ref($close, 39)/$close",
+      "expression": "Ref(Ref($close, 39)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE38",
+      "family": "Alpha360",
+      "source_name": "CLOSE38",
+      "original_expression": "Ref($close, 38)/$close",
+      "expression": "Ref(Ref($close, 38)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE37",
+      "family": "Alpha360",
+      "source_name": "CLOSE37",
+      "original_expression": "Ref($close, 37)/$close",
+      "expression": "Ref(Ref($close, 37)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE36",
+      "family": "Alpha360",
+      "source_name": "CLOSE36",
+      "original_expression": "Ref($close, 36)/$close",
+      "expression": "Ref(Ref($close, 36)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE35",
+      "family": "Alpha360",
+      "source_name": "CLOSE35",
+      "original_expression": "Ref($close, 35)/$close",
+      "expression": "Ref(Ref($close, 35)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE34",
+      "family": "Alpha360",
+      "source_name": "CLOSE34",
+      "original_expression": "Ref($close, 34)/$close",
+      "expression": "Ref(Ref($close, 34)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE33",
+      "family": "Alpha360",
+      "source_name": "CLOSE33",
+      "original_expression": "Ref($close, 33)/$close",
+      "expression": "Ref(Ref($close, 33)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE32",
+      "family": "Alpha360",
+      "source_name": "CLOSE32",
+      "original_expression": "Ref($close, 32)/$close",
+      "expression": "Ref(Ref($close, 32)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE31",
+      "family": "Alpha360",
+      "source_name": "CLOSE31",
+      "original_expression": "Ref($close, 31)/$close",
+      "expression": "Ref(Ref($close, 31)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE30",
+      "family": "Alpha360",
+      "source_name": "CLOSE30",
+      "original_expression": "Ref($close, 30)/$close",
+      "expression": "Ref(Ref($close, 30)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE29",
+      "family": "Alpha360",
+      "source_name": "CLOSE29",
+      "original_expression": "Ref($close, 29)/$close",
+      "expression": "Ref(Ref($close, 29)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE28",
+      "family": "Alpha360",
+      "source_name": "CLOSE28",
+      "original_expression": "Ref($close, 28)/$close",
+      "expression": "Ref(Ref($close, 28)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE27",
+      "family": "Alpha360",
+      "source_name": "CLOSE27",
+      "original_expression": "Ref($close, 27)/$close",
+      "expression": "Ref(Ref($close, 27)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE26",
+      "family": "Alpha360",
+      "source_name": "CLOSE26",
+      "original_expression": "Ref($close, 26)/$close",
+      "expression": "Ref(Ref($close, 26)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE25",
+      "family": "Alpha360",
+      "source_name": "CLOSE25",
+      "original_expression": "Ref($close, 25)/$close",
+      "expression": "Ref(Ref($close, 25)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE24",
+      "family": "Alpha360",
+      "source_name": "CLOSE24",
+      "original_expression": "Ref($close, 24)/$close",
+      "expression": "Ref(Ref($close, 24)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE23",
+      "family": "Alpha360",
+      "source_name": "CLOSE23",
+      "original_expression": "Ref($close, 23)/$close",
+      "expression": "Ref(Ref($close, 23)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE22",
+      "family": "Alpha360",
+      "source_name": "CLOSE22",
+      "original_expression": "Ref($close, 22)/$close",
+      "expression": "Ref(Ref($close, 22)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE21",
+      "family": "Alpha360",
+      "source_name": "CLOSE21",
+      "original_expression": "Ref($close, 21)/$close",
+      "expression": "Ref(Ref($close, 21)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE20",
+      "family": "Alpha360",
+      "source_name": "CLOSE20",
+      "original_expression": "Ref($close, 20)/$close",
+      "expression": "Ref(Ref($close, 20)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE19",
+      "family": "Alpha360",
+      "source_name": "CLOSE19",
+      "original_expression": "Ref($close, 19)/$close",
+      "expression": "Ref(Ref($close, 19)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE18",
+      "family": "Alpha360",
+      "source_name": "CLOSE18",
+      "original_expression": "Ref($close, 18)/$close",
+      "expression": "Ref(Ref($close, 18)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE17",
+      "family": "Alpha360",
+      "source_name": "CLOSE17",
+      "original_expression": "Ref($close, 17)/$close",
+      "expression": "Ref(Ref($close, 17)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE16",
+      "family": "Alpha360",
+      "source_name": "CLOSE16",
+      "original_expression": "Ref($close, 16)/$close",
+      "expression": "Ref(Ref($close, 16)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE15",
+      "family": "Alpha360",
+      "source_name": "CLOSE15",
+      "original_expression": "Ref($close, 15)/$close",
+      "expression": "Ref(Ref($close, 15)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE14",
+      "family": "Alpha360",
+      "source_name": "CLOSE14",
+      "original_expression": "Ref($close, 14)/$close",
+      "expression": "Ref(Ref($close, 14)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE13",
+      "family": "Alpha360",
+      "source_name": "CLOSE13",
+      "original_expression": "Ref($close, 13)/$close",
+      "expression": "Ref(Ref($close, 13)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE12",
+      "family": "Alpha360",
+      "source_name": "CLOSE12",
+      "original_expression": "Ref($close, 12)/$close",
+      "expression": "Ref(Ref($close, 12)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE11",
+      "family": "Alpha360",
+      "source_name": "CLOSE11",
+      "original_expression": "Ref($close, 11)/$close",
+      "expression": "Ref(Ref($close, 11)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE10",
+      "family": "Alpha360",
+      "source_name": "CLOSE10",
+      "original_expression": "Ref($close, 10)/$close",
+      "expression": "Ref(Ref($close, 10)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE9",
+      "family": "Alpha360",
+      "source_name": "CLOSE9",
+      "original_expression": "Ref($close, 9)/$close",
+      "expression": "Ref(Ref($close, 9)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE8",
+      "family": "Alpha360",
+      "source_name": "CLOSE8",
+      "original_expression": "Ref($close, 8)/$close",
+      "expression": "Ref(Ref($close, 8)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE7",
+      "family": "Alpha360",
+      "source_name": "CLOSE7",
+      "original_expression": "Ref($close, 7)/$close",
+      "expression": "Ref(Ref($close, 7)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE6",
+      "family": "Alpha360",
+      "source_name": "CLOSE6",
+      "original_expression": "Ref($close, 6)/$close",
+      "expression": "Ref(Ref($close, 6)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE5",
+      "family": "Alpha360",
+      "source_name": "CLOSE5",
+      "original_expression": "Ref($close, 5)/$close",
+      "expression": "Ref(Ref($close, 5)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE4",
+      "family": "Alpha360",
+      "source_name": "CLOSE4",
+      "original_expression": "Ref($close, 4)/$close",
+      "expression": "Ref(Ref($close, 4)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE3",
+      "family": "Alpha360",
+      "source_name": "CLOSE3",
+      "original_expression": "Ref($close, 3)/$close",
+      "expression": "Ref(Ref($close, 3)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE2",
+      "family": "Alpha360",
+      "source_name": "CLOSE2",
+      "original_expression": "Ref($close, 2)/$close",
+      "expression": "Ref(Ref($close, 2)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE1",
+      "family": "Alpha360",
+      "source_name": "CLOSE1",
+      "original_expression": "Ref($close, 1)/$close",
+      "expression": "Ref(Ref($close, 1)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_CLOSE0",
+      "family": "Alpha360",
+      "source_name": "CLOSE0",
+      "original_expression": "$close/$close",
+      "expression": "Ref($close/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN59",
+      "family": "Alpha360",
+      "source_name": "OPEN59",
+      "original_expression": "Ref($open, 59)/$close",
+      "expression": "Ref(Ref($open, 59)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN58",
+      "family": "Alpha360",
+      "source_name": "OPEN58",
+      "original_expression": "Ref($open, 58)/$close",
+      "expression": "Ref(Ref($open, 58)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN57",
+      "family": "Alpha360",
+      "source_name": "OPEN57",
+      "original_expression": "Ref($open, 57)/$close",
+      "expression": "Ref(Ref($open, 57)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN56",
+      "family": "Alpha360",
+      "source_name": "OPEN56",
+      "original_expression": "Ref($open, 56)/$close",
+      "expression": "Ref(Ref($open, 56)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN55",
+      "family": "Alpha360",
+      "source_name": "OPEN55",
+      "original_expression": "Ref($open, 55)/$close",
+      "expression": "Ref(Ref($open, 55)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN54",
+      "family": "Alpha360",
+      "source_name": "OPEN54",
+      "original_expression": "Ref($open, 54)/$close",
+      "expression": "Ref(Ref($open, 54)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN53",
+      "family": "Alpha360",
+      "source_name": "OPEN53",
+      "original_expression": "Ref($open, 53)/$close",
+      "expression": "Ref(Ref($open, 53)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN52",
+      "family": "Alpha360",
+      "source_name": "OPEN52",
+      "original_expression": "Ref($open, 52)/$close",
+      "expression": "Ref(Ref($open, 52)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN51",
+      "family": "Alpha360",
+      "source_name": "OPEN51",
+      "original_expression": "Ref($open, 51)/$close",
+      "expression": "Ref(Ref($open, 51)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN50",
+      "family": "Alpha360",
+      "source_name": "OPEN50",
+      "original_expression": "Ref($open, 50)/$close",
+      "expression": "Ref(Ref($open, 50)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN49",
+      "family": "Alpha360",
+      "source_name": "OPEN49",
+      "original_expression": "Ref($open, 49)/$close",
+      "expression": "Ref(Ref($open, 49)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN48",
+      "family": "Alpha360",
+      "source_name": "OPEN48",
+      "original_expression": "Ref($open, 48)/$close",
+      "expression": "Ref(Ref($open, 48)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN47",
+      "family": "Alpha360",
+      "source_name": "OPEN47",
+      "original_expression": "Ref($open, 47)/$close",
+      "expression": "Ref(Ref($open, 47)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN46",
+      "family": "Alpha360",
+      "source_name": "OPEN46",
+      "original_expression": "Ref($open, 46)/$close",
+      "expression": "Ref(Ref($open, 46)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN45",
+      "family": "Alpha360",
+      "source_name": "OPEN45",
+      "original_expression": "Ref($open, 45)/$close",
+      "expression": "Ref(Ref($open, 45)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN44",
+      "family": "Alpha360",
+      "source_name": "OPEN44",
+      "original_expression": "Ref($open, 44)/$close",
+      "expression": "Ref(Ref($open, 44)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN43",
+      "family": "Alpha360",
+      "source_name": "OPEN43",
+      "original_expression": "Ref($open, 43)/$close",
+      "expression": "Ref(Ref($open, 43)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN42",
+      "family": "Alpha360",
+      "source_name": "OPEN42",
+      "original_expression": "Ref($open, 42)/$close",
+      "expression": "Ref(Ref($open, 42)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN41",
+      "family": "Alpha360",
+      "source_name": "OPEN41",
+      "original_expression": "Ref($open, 41)/$close",
+      "expression": "Ref(Ref($open, 41)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN40",
+      "family": "Alpha360",
+      "source_name": "OPEN40",
+      "original_expression": "Ref($open, 40)/$close",
+      "expression": "Ref(Ref($open, 40)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN39",
+      "family": "Alpha360",
+      "source_name": "OPEN39",
+      "original_expression": "Ref($open, 39)/$close",
+      "expression": "Ref(Ref($open, 39)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN38",
+      "family": "Alpha360",
+      "source_name": "OPEN38",
+      "original_expression": "Ref($open, 38)/$close",
+      "expression": "Ref(Ref($open, 38)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN37",
+      "family": "Alpha360",
+      "source_name": "OPEN37",
+      "original_expression": "Ref($open, 37)/$close",
+      "expression": "Ref(Ref($open, 37)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN36",
+      "family": "Alpha360",
+      "source_name": "OPEN36",
+      "original_expression": "Ref($open, 36)/$close",
+      "expression": "Ref(Ref($open, 36)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN35",
+      "family": "Alpha360",
+      "source_name": "OPEN35",
+      "original_expression": "Ref($open, 35)/$close",
+      "expression": "Ref(Ref($open, 35)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN34",
+      "family": "Alpha360",
+      "source_name": "OPEN34",
+      "original_expression": "Ref($open, 34)/$close",
+      "expression": "Ref(Ref($open, 34)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN33",
+      "family": "Alpha360",
+      "source_name": "OPEN33",
+      "original_expression": "Ref($open, 33)/$close",
+      "expression": "Ref(Ref($open, 33)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN32",
+      "family": "Alpha360",
+      "source_name": "OPEN32",
+      "original_expression": "Ref($open, 32)/$close",
+      "expression": "Ref(Ref($open, 32)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN31",
+      "family": "Alpha360",
+      "source_name": "OPEN31",
+      "original_expression": "Ref($open, 31)/$close",
+      "expression": "Ref(Ref($open, 31)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN30",
+      "family": "Alpha360",
+      "source_name": "OPEN30",
+      "original_expression": "Ref($open, 30)/$close",
+      "expression": "Ref(Ref($open, 30)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN29",
+      "family": "Alpha360",
+      "source_name": "OPEN29",
+      "original_expression": "Ref($open, 29)/$close",
+      "expression": "Ref(Ref($open, 29)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN28",
+      "family": "Alpha360",
+      "source_name": "OPEN28",
+      "original_expression": "Ref($open, 28)/$close",
+      "expression": "Ref(Ref($open, 28)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN27",
+      "family": "Alpha360",
+      "source_name": "OPEN27",
+      "original_expression": "Ref($open, 27)/$close",
+      "expression": "Ref(Ref($open, 27)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN26",
+      "family": "Alpha360",
+      "source_name": "OPEN26",
+      "original_expression": "Ref($open, 26)/$close",
+      "expression": "Ref(Ref($open, 26)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN25",
+      "family": "Alpha360",
+      "source_name": "OPEN25",
+      "original_expression": "Ref($open, 25)/$close",
+      "expression": "Ref(Ref($open, 25)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN24",
+      "family": "Alpha360",
+      "source_name": "OPEN24",
+      "original_expression": "Ref($open, 24)/$close",
+      "expression": "Ref(Ref($open, 24)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN23",
+      "family": "Alpha360",
+      "source_name": "OPEN23",
+      "original_expression": "Ref($open, 23)/$close",
+      "expression": "Ref(Ref($open, 23)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN22",
+      "family": "Alpha360",
+      "source_name": "OPEN22",
+      "original_expression": "Ref($open, 22)/$close",
+      "expression": "Ref(Ref($open, 22)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN21",
+      "family": "Alpha360",
+      "source_name": "OPEN21",
+      "original_expression": "Ref($open, 21)/$close",
+      "expression": "Ref(Ref($open, 21)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN20",
+      "family": "Alpha360",
+      "source_name": "OPEN20",
+      "original_expression": "Ref($open, 20)/$close",
+      "expression": "Ref(Ref($open, 20)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN19",
+      "family": "Alpha360",
+      "source_name": "OPEN19",
+      "original_expression": "Ref($open, 19)/$close",
+      "expression": "Ref(Ref($open, 19)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN18",
+      "family": "Alpha360",
+      "source_name": "OPEN18",
+      "original_expression": "Ref($open, 18)/$close",
+      "expression": "Ref(Ref($open, 18)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN17",
+      "family": "Alpha360",
+      "source_name": "OPEN17",
+      "original_expression": "Ref($open, 17)/$close",
+      "expression": "Ref(Ref($open, 17)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN16",
+      "family": "Alpha360",
+      "source_name": "OPEN16",
+      "original_expression": "Ref($open, 16)/$close",
+      "expression": "Ref(Ref($open, 16)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN15",
+      "family": "Alpha360",
+      "source_name": "OPEN15",
+      "original_expression": "Ref($open, 15)/$close",
+      "expression": "Ref(Ref($open, 15)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN14",
+      "family": "Alpha360",
+      "source_name": "OPEN14",
+      "original_expression": "Ref($open, 14)/$close",
+      "expression": "Ref(Ref($open, 14)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN13",
+      "family": "Alpha360",
+      "source_name": "OPEN13",
+      "original_expression": "Ref($open, 13)/$close",
+      "expression": "Ref(Ref($open, 13)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN12",
+      "family": "Alpha360",
+      "source_name": "OPEN12",
+      "original_expression": "Ref($open, 12)/$close",
+      "expression": "Ref(Ref($open, 12)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN11",
+      "family": "Alpha360",
+      "source_name": "OPEN11",
+      "original_expression": "Ref($open, 11)/$close",
+      "expression": "Ref(Ref($open, 11)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN10",
+      "family": "Alpha360",
+      "source_name": "OPEN10",
+      "original_expression": "Ref($open, 10)/$close",
+      "expression": "Ref(Ref($open, 10)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN9",
+      "family": "Alpha360",
+      "source_name": "OPEN9",
+      "original_expression": "Ref($open, 9)/$close",
+      "expression": "Ref(Ref($open, 9)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN8",
+      "family": "Alpha360",
+      "source_name": "OPEN8",
+      "original_expression": "Ref($open, 8)/$close",
+      "expression": "Ref(Ref($open, 8)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN7",
+      "family": "Alpha360",
+      "source_name": "OPEN7",
+      "original_expression": "Ref($open, 7)/$close",
+      "expression": "Ref(Ref($open, 7)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN6",
+      "family": "Alpha360",
+      "source_name": "OPEN6",
+      "original_expression": "Ref($open, 6)/$close",
+      "expression": "Ref(Ref($open, 6)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN5",
+      "family": "Alpha360",
+      "source_name": "OPEN5",
+      "original_expression": "Ref($open, 5)/$close",
+      "expression": "Ref(Ref($open, 5)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN4",
+      "family": "Alpha360",
+      "source_name": "OPEN4",
+      "original_expression": "Ref($open, 4)/$close",
+      "expression": "Ref(Ref($open, 4)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN3",
+      "family": "Alpha360",
+      "source_name": "OPEN3",
+      "original_expression": "Ref($open, 3)/$close",
+      "expression": "Ref(Ref($open, 3)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN2",
+      "family": "Alpha360",
+      "source_name": "OPEN2",
+      "original_expression": "Ref($open, 2)/$close",
+      "expression": "Ref(Ref($open, 2)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN1",
+      "family": "Alpha360",
+      "source_name": "OPEN1",
+      "original_expression": "Ref($open, 1)/$close",
+      "expression": "Ref(Ref($open, 1)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_OPEN0",
+      "family": "Alpha360",
+      "source_name": "OPEN0",
+      "original_expression": "$open/$close",
+      "expression": "Ref($open/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH59",
+      "family": "Alpha360",
+      "source_name": "HIGH59",
+      "original_expression": "Ref($high, 59)/$close",
+      "expression": "Ref(Ref($high, 59)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH58",
+      "family": "Alpha360",
+      "source_name": "HIGH58",
+      "original_expression": "Ref($high, 58)/$close",
+      "expression": "Ref(Ref($high, 58)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH57",
+      "family": "Alpha360",
+      "source_name": "HIGH57",
+      "original_expression": "Ref($high, 57)/$close",
+      "expression": "Ref(Ref($high, 57)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH56",
+      "family": "Alpha360",
+      "source_name": "HIGH56",
+      "original_expression": "Ref($high, 56)/$close",
+      "expression": "Ref(Ref($high, 56)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH55",
+      "family": "Alpha360",
+      "source_name": "HIGH55",
+      "original_expression": "Ref($high, 55)/$close",
+      "expression": "Ref(Ref($high, 55)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH54",
+      "family": "Alpha360",
+      "source_name": "HIGH54",
+      "original_expression": "Ref($high, 54)/$close",
+      "expression": "Ref(Ref($high, 54)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH53",
+      "family": "Alpha360",
+      "source_name": "HIGH53",
+      "original_expression": "Ref($high, 53)/$close",
+      "expression": "Ref(Ref($high, 53)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH52",
+      "family": "Alpha360",
+      "source_name": "HIGH52",
+      "original_expression": "Ref($high, 52)/$close",
+      "expression": "Ref(Ref($high, 52)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH51",
+      "family": "Alpha360",
+      "source_name": "HIGH51",
+      "original_expression": "Ref($high, 51)/$close",
+      "expression": "Ref(Ref($high, 51)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH50",
+      "family": "Alpha360",
+      "source_name": "HIGH50",
+      "original_expression": "Ref($high, 50)/$close",
+      "expression": "Ref(Ref($high, 50)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH49",
+      "family": "Alpha360",
+      "source_name": "HIGH49",
+      "original_expression": "Ref($high, 49)/$close",
+      "expression": "Ref(Ref($high, 49)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH48",
+      "family": "Alpha360",
+      "source_name": "HIGH48",
+      "original_expression": "Ref($high, 48)/$close",
+      "expression": "Ref(Ref($high, 48)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH47",
+      "family": "Alpha360",
+      "source_name": "HIGH47",
+      "original_expression": "Ref($high, 47)/$close",
+      "expression": "Ref(Ref($high, 47)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH46",
+      "family": "Alpha360",
+      "source_name": "HIGH46",
+      "original_expression": "Ref($high, 46)/$close",
+      "expression": "Ref(Ref($high, 46)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH45",
+      "family": "Alpha360",
+      "source_name": "HIGH45",
+      "original_expression": "Ref($high, 45)/$close",
+      "expression": "Ref(Ref($high, 45)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH44",
+      "family": "Alpha360",
+      "source_name": "HIGH44",
+      "original_expression": "Ref($high, 44)/$close",
+      "expression": "Ref(Ref($high, 44)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH43",
+      "family": "Alpha360",
+      "source_name": "HIGH43",
+      "original_expression": "Ref($high, 43)/$close",
+      "expression": "Ref(Ref($high, 43)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH42",
+      "family": "Alpha360",
+      "source_name": "HIGH42",
+      "original_expression": "Ref($high, 42)/$close",
+      "expression": "Ref(Ref($high, 42)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH41",
+      "family": "Alpha360",
+      "source_name": "HIGH41",
+      "original_expression": "Ref($high, 41)/$close",
+      "expression": "Ref(Ref($high, 41)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH40",
+      "family": "Alpha360",
+      "source_name": "HIGH40",
+      "original_expression": "Ref($high, 40)/$close",
+      "expression": "Ref(Ref($high, 40)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH39",
+      "family": "Alpha360",
+      "source_name": "HIGH39",
+      "original_expression": "Ref($high, 39)/$close",
+      "expression": "Ref(Ref($high, 39)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH38",
+      "family": "Alpha360",
+      "source_name": "HIGH38",
+      "original_expression": "Ref($high, 38)/$close",
+      "expression": "Ref(Ref($high, 38)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH37",
+      "family": "Alpha360",
+      "source_name": "HIGH37",
+      "original_expression": "Ref($high, 37)/$close",
+      "expression": "Ref(Ref($high, 37)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH36",
+      "family": "Alpha360",
+      "source_name": "HIGH36",
+      "original_expression": "Ref($high, 36)/$close",
+      "expression": "Ref(Ref($high, 36)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH35",
+      "family": "Alpha360",
+      "source_name": "HIGH35",
+      "original_expression": "Ref($high, 35)/$close",
+      "expression": "Ref(Ref($high, 35)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH34",
+      "family": "Alpha360",
+      "source_name": "HIGH34",
+      "original_expression": "Ref($high, 34)/$close",
+      "expression": "Ref(Ref($high, 34)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH33",
+      "family": "Alpha360",
+      "source_name": "HIGH33",
+      "original_expression": "Ref($high, 33)/$close",
+      "expression": "Ref(Ref($high, 33)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH32",
+      "family": "Alpha360",
+      "source_name": "HIGH32",
+      "original_expression": "Ref($high, 32)/$close",
+      "expression": "Ref(Ref($high, 32)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH31",
+      "family": "Alpha360",
+      "source_name": "HIGH31",
+      "original_expression": "Ref($high, 31)/$close",
+      "expression": "Ref(Ref($high, 31)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH30",
+      "family": "Alpha360",
+      "source_name": "HIGH30",
+      "original_expression": "Ref($high, 30)/$close",
+      "expression": "Ref(Ref($high, 30)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH29",
+      "family": "Alpha360",
+      "source_name": "HIGH29",
+      "original_expression": "Ref($high, 29)/$close",
+      "expression": "Ref(Ref($high, 29)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH28",
+      "family": "Alpha360",
+      "source_name": "HIGH28",
+      "original_expression": "Ref($high, 28)/$close",
+      "expression": "Ref(Ref($high, 28)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH27",
+      "family": "Alpha360",
+      "source_name": "HIGH27",
+      "original_expression": "Ref($high, 27)/$close",
+      "expression": "Ref(Ref($high, 27)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH26",
+      "family": "Alpha360",
+      "source_name": "HIGH26",
+      "original_expression": "Ref($high, 26)/$close",
+      "expression": "Ref(Ref($high, 26)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH25",
+      "family": "Alpha360",
+      "source_name": "HIGH25",
+      "original_expression": "Ref($high, 25)/$close",
+      "expression": "Ref(Ref($high, 25)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH24",
+      "family": "Alpha360",
+      "source_name": "HIGH24",
+      "original_expression": "Ref($high, 24)/$close",
+      "expression": "Ref(Ref($high, 24)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH23",
+      "family": "Alpha360",
+      "source_name": "HIGH23",
+      "original_expression": "Ref($high, 23)/$close",
+      "expression": "Ref(Ref($high, 23)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH22",
+      "family": "Alpha360",
+      "source_name": "HIGH22",
+      "original_expression": "Ref($high, 22)/$close",
+      "expression": "Ref(Ref($high, 22)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH21",
+      "family": "Alpha360",
+      "source_name": "HIGH21",
+      "original_expression": "Ref($high, 21)/$close",
+      "expression": "Ref(Ref($high, 21)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH20",
+      "family": "Alpha360",
+      "source_name": "HIGH20",
+      "original_expression": "Ref($high, 20)/$close",
+      "expression": "Ref(Ref($high, 20)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH19",
+      "family": "Alpha360",
+      "source_name": "HIGH19",
+      "original_expression": "Ref($high, 19)/$close",
+      "expression": "Ref(Ref($high, 19)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH18",
+      "family": "Alpha360",
+      "source_name": "HIGH18",
+      "original_expression": "Ref($high, 18)/$close",
+      "expression": "Ref(Ref($high, 18)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH17",
+      "family": "Alpha360",
+      "source_name": "HIGH17",
+      "original_expression": "Ref($high, 17)/$close",
+      "expression": "Ref(Ref($high, 17)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH16",
+      "family": "Alpha360",
+      "source_name": "HIGH16",
+      "original_expression": "Ref($high, 16)/$close",
+      "expression": "Ref(Ref($high, 16)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH15",
+      "family": "Alpha360",
+      "source_name": "HIGH15",
+      "original_expression": "Ref($high, 15)/$close",
+      "expression": "Ref(Ref($high, 15)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH14",
+      "family": "Alpha360",
+      "source_name": "HIGH14",
+      "original_expression": "Ref($high, 14)/$close",
+      "expression": "Ref(Ref($high, 14)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH13",
+      "family": "Alpha360",
+      "source_name": "HIGH13",
+      "original_expression": "Ref($high, 13)/$close",
+      "expression": "Ref(Ref($high, 13)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH12",
+      "family": "Alpha360",
+      "source_name": "HIGH12",
+      "original_expression": "Ref($high, 12)/$close",
+      "expression": "Ref(Ref($high, 12)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH11",
+      "family": "Alpha360",
+      "source_name": "HIGH11",
+      "original_expression": "Ref($high, 11)/$close",
+      "expression": "Ref(Ref($high, 11)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH10",
+      "family": "Alpha360",
+      "source_name": "HIGH10",
+      "original_expression": "Ref($high, 10)/$close",
+      "expression": "Ref(Ref($high, 10)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH9",
+      "family": "Alpha360",
+      "source_name": "HIGH9",
+      "original_expression": "Ref($high, 9)/$close",
+      "expression": "Ref(Ref($high, 9)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH8",
+      "family": "Alpha360",
+      "source_name": "HIGH8",
+      "original_expression": "Ref($high, 8)/$close",
+      "expression": "Ref(Ref($high, 8)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH7",
+      "family": "Alpha360",
+      "source_name": "HIGH7",
+      "original_expression": "Ref($high, 7)/$close",
+      "expression": "Ref(Ref($high, 7)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH6",
+      "family": "Alpha360",
+      "source_name": "HIGH6",
+      "original_expression": "Ref($high, 6)/$close",
+      "expression": "Ref(Ref($high, 6)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH5",
+      "family": "Alpha360",
+      "source_name": "HIGH5",
+      "original_expression": "Ref($high, 5)/$close",
+      "expression": "Ref(Ref($high, 5)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH4",
+      "family": "Alpha360",
+      "source_name": "HIGH4",
+      "original_expression": "Ref($high, 4)/$close",
+      "expression": "Ref(Ref($high, 4)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH3",
+      "family": "Alpha360",
+      "source_name": "HIGH3",
+      "original_expression": "Ref($high, 3)/$close",
+      "expression": "Ref(Ref($high, 3)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH2",
+      "family": "Alpha360",
+      "source_name": "HIGH2",
+      "original_expression": "Ref($high, 2)/$close",
+      "expression": "Ref(Ref($high, 2)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH1",
+      "family": "Alpha360",
+      "source_name": "HIGH1",
+      "original_expression": "Ref($high, 1)/$close",
+      "expression": "Ref(Ref($high, 1)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_HIGH0",
+      "family": "Alpha360",
+      "source_name": "HIGH0",
+      "original_expression": "$high/$close",
+      "expression": "Ref($high/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW59",
+      "family": "Alpha360",
+      "source_name": "LOW59",
+      "original_expression": "Ref($low, 59)/$close",
+      "expression": "Ref(Ref($low, 59)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW58",
+      "family": "Alpha360",
+      "source_name": "LOW58",
+      "original_expression": "Ref($low, 58)/$close",
+      "expression": "Ref(Ref($low, 58)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW57",
+      "family": "Alpha360",
+      "source_name": "LOW57",
+      "original_expression": "Ref($low, 57)/$close",
+      "expression": "Ref(Ref($low, 57)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW56",
+      "family": "Alpha360",
+      "source_name": "LOW56",
+      "original_expression": "Ref($low, 56)/$close",
+      "expression": "Ref(Ref($low, 56)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW55",
+      "family": "Alpha360",
+      "source_name": "LOW55",
+      "original_expression": "Ref($low, 55)/$close",
+      "expression": "Ref(Ref($low, 55)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW54",
+      "family": "Alpha360",
+      "source_name": "LOW54",
+      "original_expression": "Ref($low, 54)/$close",
+      "expression": "Ref(Ref($low, 54)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW53",
+      "family": "Alpha360",
+      "source_name": "LOW53",
+      "original_expression": "Ref($low, 53)/$close",
+      "expression": "Ref(Ref($low, 53)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW52",
+      "family": "Alpha360",
+      "source_name": "LOW52",
+      "original_expression": "Ref($low, 52)/$close",
+      "expression": "Ref(Ref($low, 52)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW51",
+      "family": "Alpha360",
+      "source_name": "LOW51",
+      "original_expression": "Ref($low, 51)/$close",
+      "expression": "Ref(Ref($low, 51)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW50",
+      "family": "Alpha360",
+      "source_name": "LOW50",
+      "original_expression": "Ref($low, 50)/$close",
+      "expression": "Ref(Ref($low, 50)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW49",
+      "family": "Alpha360",
+      "source_name": "LOW49",
+      "original_expression": "Ref($low, 49)/$close",
+      "expression": "Ref(Ref($low, 49)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW48",
+      "family": "Alpha360",
+      "source_name": "LOW48",
+      "original_expression": "Ref($low, 48)/$close",
+      "expression": "Ref(Ref($low, 48)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW47",
+      "family": "Alpha360",
+      "source_name": "LOW47",
+      "original_expression": "Ref($low, 47)/$close",
+      "expression": "Ref(Ref($low, 47)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW46",
+      "family": "Alpha360",
+      "source_name": "LOW46",
+      "original_expression": "Ref($low, 46)/$close",
+      "expression": "Ref(Ref($low, 46)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW45",
+      "family": "Alpha360",
+      "source_name": "LOW45",
+      "original_expression": "Ref($low, 45)/$close",
+      "expression": "Ref(Ref($low, 45)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW44",
+      "family": "Alpha360",
+      "source_name": "LOW44",
+      "original_expression": "Ref($low, 44)/$close",
+      "expression": "Ref(Ref($low, 44)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW43",
+      "family": "Alpha360",
+      "source_name": "LOW43",
+      "original_expression": "Ref($low, 43)/$close",
+      "expression": "Ref(Ref($low, 43)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW42",
+      "family": "Alpha360",
+      "source_name": "LOW42",
+      "original_expression": "Ref($low, 42)/$close",
+      "expression": "Ref(Ref($low, 42)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW41",
+      "family": "Alpha360",
+      "source_name": "LOW41",
+      "original_expression": "Ref($low, 41)/$close",
+      "expression": "Ref(Ref($low, 41)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW40",
+      "family": "Alpha360",
+      "source_name": "LOW40",
+      "original_expression": "Ref($low, 40)/$close",
+      "expression": "Ref(Ref($low, 40)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW39",
+      "family": "Alpha360",
+      "source_name": "LOW39",
+      "original_expression": "Ref($low, 39)/$close",
+      "expression": "Ref(Ref($low, 39)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW38",
+      "family": "Alpha360",
+      "source_name": "LOW38",
+      "original_expression": "Ref($low, 38)/$close",
+      "expression": "Ref(Ref($low, 38)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW37",
+      "family": "Alpha360",
+      "source_name": "LOW37",
+      "original_expression": "Ref($low, 37)/$close",
+      "expression": "Ref(Ref($low, 37)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW36",
+      "family": "Alpha360",
+      "source_name": "LOW36",
+      "original_expression": "Ref($low, 36)/$close",
+      "expression": "Ref(Ref($low, 36)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW35",
+      "family": "Alpha360",
+      "source_name": "LOW35",
+      "original_expression": "Ref($low, 35)/$close",
+      "expression": "Ref(Ref($low, 35)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW34",
+      "family": "Alpha360",
+      "source_name": "LOW34",
+      "original_expression": "Ref($low, 34)/$close",
+      "expression": "Ref(Ref($low, 34)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW33",
+      "family": "Alpha360",
+      "source_name": "LOW33",
+      "original_expression": "Ref($low, 33)/$close",
+      "expression": "Ref(Ref($low, 33)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW32",
+      "family": "Alpha360",
+      "source_name": "LOW32",
+      "original_expression": "Ref($low, 32)/$close",
+      "expression": "Ref(Ref($low, 32)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW31",
+      "family": "Alpha360",
+      "source_name": "LOW31",
+      "original_expression": "Ref($low, 31)/$close",
+      "expression": "Ref(Ref($low, 31)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW30",
+      "family": "Alpha360",
+      "source_name": "LOW30",
+      "original_expression": "Ref($low, 30)/$close",
+      "expression": "Ref(Ref($low, 30)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW29",
+      "family": "Alpha360",
+      "source_name": "LOW29",
+      "original_expression": "Ref($low, 29)/$close",
+      "expression": "Ref(Ref($low, 29)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW28",
+      "family": "Alpha360",
+      "source_name": "LOW28",
+      "original_expression": "Ref($low, 28)/$close",
+      "expression": "Ref(Ref($low, 28)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW27",
+      "family": "Alpha360",
+      "source_name": "LOW27",
+      "original_expression": "Ref($low, 27)/$close",
+      "expression": "Ref(Ref($low, 27)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW26",
+      "family": "Alpha360",
+      "source_name": "LOW26",
+      "original_expression": "Ref($low, 26)/$close",
+      "expression": "Ref(Ref($low, 26)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW25",
+      "family": "Alpha360",
+      "source_name": "LOW25",
+      "original_expression": "Ref($low, 25)/$close",
+      "expression": "Ref(Ref($low, 25)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW24",
+      "family": "Alpha360",
+      "source_name": "LOW24",
+      "original_expression": "Ref($low, 24)/$close",
+      "expression": "Ref(Ref($low, 24)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW23",
+      "family": "Alpha360",
+      "source_name": "LOW23",
+      "original_expression": "Ref($low, 23)/$close",
+      "expression": "Ref(Ref($low, 23)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW22",
+      "family": "Alpha360",
+      "source_name": "LOW22",
+      "original_expression": "Ref($low, 22)/$close",
+      "expression": "Ref(Ref($low, 22)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW21",
+      "family": "Alpha360",
+      "source_name": "LOW21",
+      "original_expression": "Ref($low, 21)/$close",
+      "expression": "Ref(Ref($low, 21)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW20",
+      "family": "Alpha360",
+      "source_name": "LOW20",
+      "original_expression": "Ref($low, 20)/$close",
+      "expression": "Ref(Ref($low, 20)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW19",
+      "family": "Alpha360",
+      "source_name": "LOW19",
+      "original_expression": "Ref($low, 19)/$close",
+      "expression": "Ref(Ref($low, 19)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW18",
+      "family": "Alpha360",
+      "source_name": "LOW18",
+      "original_expression": "Ref($low, 18)/$close",
+      "expression": "Ref(Ref($low, 18)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW17",
+      "family": "Alpha360",
+      "source_name": "LOW17",
+      "original_expression": "Ref($low, 17)/$close",
+      "expression": "Ref(Ref($low, 17)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW16",
+      "family": "Alpha360",
+      "source_name": "LOW16",
+      "original_expression": "Ref($low, 16)/$close",
+      "expression": "Ref(Ref($low, 16)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW15",
+      "family": "Alpha360",
+      "source_name": "LOW15",
+      "original_expression": "Ref($low, 15)/$close",
+      "expression": "Ref(Ref($low, 15)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW14",
+      "family": "Alpha360",
+      "source_name": "LOW14",
+      "original_expression": "Ref($low, 14)/$close",
+      "expression": "Ref(Ref($low, 14)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW13",
+      "family": "Alpha360",
+      "source_name": "LOW13",
+      "original_expression": "Ref($low, 13)/$close",
+      "expression": "Ref(Ref($low, 13)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW12",
+      "family": "Alpha360",
+      "source_name": "LOW12",
+      "original_expression": "Ref($low, 12)/$close",
+      "expression": "Ref(Ref($low, 12)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW11",
+      "family": "Alpha360",
+      "source_name": "LOW11",
+      "original_expression": "Ref($low, 11)/$close",
+      "expression": "Ref(Ref($low, 11)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW10",
+      "family": "Alpha360",
+      "source_name": "LOW10",
+      "original_expression": "Ref($low, 10)/$close",
+      "expression": "Ref(Ref($low, 10)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW9",
+      "family": "Alpha360",
+      "source_name": "LOW9",
+      "original_expression": "Ref($low, 9)/$close",
+      "expression": "Ref(Ref($low, 9)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW8",
+      "family": "Alpha360",
+      "source_name": "LOW8",
+      "original_expression": "Ref($low, 8)/$close",
+      "expression": "Ref(Ref($low, 8)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW7",
+      "family": "Alpha360",
+      "source_name": "LOW7",
+      "original_expression": "Ref($low, 7)/$close",
+      "expression": "Ref(Ref($low, 7)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW6",
+      "family": "Alpha360",
+      "source_name": "LOW6",
+      "original_expression": "Ref($low, 6)/$close",
+      "expression": "Ref(Ref($low, 6)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW5",
+      "family": "Alpha360",
+      "source_name": "LOW5",
+      "original_expression": "Ref($low, 5)/$close",
+      "expression": "Ref(Ref($low, 5)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW4",
+      "family": "Alpha360",
+      "source_name": "LOW4",
+      "original_expression": "Ref($low, 4)/$close",
+      "expression": "Ref(Ref($low, 4)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW3",
+      "family": "Alpha360",
+      "source_name": "LOW3",
+      "original_expression": "Ref($low, 3)/$close",
+      "expression": "Ref(Ref($low, 3)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW2",
+      "family": "Alpha360",
+      "source_name": "LOW2",
+      "original_expression": "Ref($low, 2)/$close",
+      "expression": "Ref(Ref($low, 2)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW1",
+      "family": "Alpha360",
+      "source_name": "LOW1",
+      "original_expression": "Ref($low, 1)/$close",
+      "expression": "Ref(Ref($low, 1)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_LOW0",
+      "family": "Alpha360",
+      "source_name": "LOW0",
+      "original_expression": "$low/$close",
+      "expression": "Ref($low/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP59",
+      "family": "Alpha360",
+      "source_name": "VWAP59",
+      "original_expression": "Ref($vwap, 59)/$close",
+      "expression": "Ref(Ref($vwap, 59)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP58",
+      "family": "Alpha360",
+      "source_name": "VWAP58",
+      "original_expression": "Ref($vwap, 58)/$close",
+      "expression": "Ref(Ref($vwap, 58)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP57",
+      "family": "Alpha360",
+      "source_name": "VWAP57",
+      "original_expression": "Ref($vwap, 57)/$close",
+      "expression": "Ref(Ref($vwap, 57)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP56",
+      "family": "Alpha360",
+      "source_name": "VWAP56",
+      "original_expression": "Ref($vwap, 56)/$close",
+      "expression": "Ref(Ref($vwap, 56)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP55",
+      "family": "Alpha360",
+      "source_name": "VWAP55",
+      "original_expression": "Ref($vwap, 55)/$close",
+      "expression": "Ref(Ref($vwap, 55)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP54",
+      "family": "Alpha360",
+      "source_name": "VWAP54",
+      "original_expression": "Ref($vwap, 54)/$close",
+      "expression": "Ref(Ref($vwap, 54)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP53",
+      "family": "Alpha360",
+      "source_name": "VWAP53",
+      "original_expression": "Ref($vwap, 53)/$close",
+      "expression": "Ref(Ref($vwap, 53)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP52",
+      "family": "Alpha360",
+      "source_name": "VWAP52",
+      "original_expression": "Ref($vwap, 52)/$close",
+      "expression": "Ref(Ref($vwap, 52)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP51",
+      "family": "Alpha360",
+      "source_name": "VWAP51",
+      "original_expression": "Ref($vwap, 51)/$close",
+      "expression": "Ref(Ref($vwap, 51)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP50",
+      "family": "Alpha360",
+      "source_name": "VWAP50",
+      "original_expression": "Ref($vwap, 50)/$close",
+      "expression": "Ref(Ref($vwap, 50)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP49",
+      "family": "Alpha360",
+      "source_name": "VWAP49",
+      "original_expression": "Ref($vwap, 49)/$close",
+      "expression": "Ref(Ref($vwap, 49)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP48",
+      "family": "Alpha360",
+      "source_name": "VWAP48",
+      "original_expression": "Ref($vwap, 48)/$close",
+      "expression": "Ref(Ref($vwap, 48)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP47",
+      "family": "Alpha360",
+      "source_name": "VWAP47",
+      "original_expression": "Ref($vwap, 47)/$close",
+      "expression": "Ref(Ref($vwap, 47)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP46",
+      "family": "Alpha360",
+      "source_name": "VWAP46",
+      "original_expression": "Ref($vwap, 46)/$close",
+      "expression": "Ref(Ref($vwap, 46)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP45",
+      "family": "Alpha360",
+      "source_name": "VWAP45",
+      "original_expression": "Ref($vwap, 45)/$close",
+      "expression": "Ref(Ref($vwap, 45)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP44",
+      "family": "Alpha360",
+      "source_name": "VWAP44",
+      "original_expression": "Ref($vwap, 44)/$close",
+      "expression": "Ref(Ref($vwap, 44)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP43",
+      "family": "Alpha360",
+      "source_name": "VWAP43",
+      "original_expression": "Ref($vwap, 43)/$close",
+      "expression": "Ref(Ref($vwap, 43)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP42",
+      "family": "Alpha360",
+      "source_name": "VWAP42",
+      "original_expression": "Ref($vwap, 42)/$close",
+      "expression": "Ref(Ref($vwap, 42)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP41",
+      "family": "Alpha360",
+      "source_name": "VWAP41",
+      "original_expression": "Ref($vwap, 41)/$close",
+      "expression": "Ref(Ref($vwap, 41)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP40",
+      "family": "Alpha360",
+      "source_name": "VWAP40",
+      "original_expression": "Ref($vwap, 40)/$close",
+      "expression": "Ref(Ref($vwap, 40)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP39",
+      "family": "Alpha360",
+      "source_name": "VWAP39",
+      "original_expression": "Ref($vwap, 39)/$close",
+      "expression": "Ref(Ref($vwap, 39)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP38",
+      "family": "Alpha360",
+      "source_name": "VWAP38",
+      "original_expression": "Ref($vwap, 38)/$close",
+      "expression": "Ref(Ref($vwap, 38)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP37",
+      "family": "Alpha360",
+      "source_name": "VWAP37",
+      "original_expression": "Ref($vwap, 37)/$close",
+      "expression": "Ref(Ref($vwap, 37)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP36",
+      "family": "Alpha360",
+      "source_name": "VWAP36",
+      "original_expression": "Ref($vwap, 36)/$close",
+      "expression": "Ref(Ref($vwap, 36)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP35",
+      "family": "Alpha360",
+      "source_name": "VWAP35",
+      "original_expression": "Ref($vwap, 35)/$close",
+      "expression": "Ref(Ref($vwap, 35)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP34",
+      "family": "Alpha360",
+      "source_name": "VWAP34",
+      "original_expression": "Ref($vwap, 34)/$close",
+      "expression": "Ref(Ref($vwap, 34)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP33",
+      "family": "Alpha360",
+      "source_name": "VWAP33",
+      "original_expression": "Ref($vwap, 33)/$close",
+      "expression": "Ref(Ref($vwap, 33)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP32",
+      "family": "Alpha360",
+      "source_name": "VWAP32",
+      "original_expression": "Ref($vwap, 32)/$close",
+      "expression": "Ref(Ref($vwap, 32)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP31",
+      "family": "Alpha360",
+      "source_name": "VWAP31",
+      "original_expression": "Ref($vwap, 31)/$close",
+      "expression": "Ref(Ref($vwap, 31)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP30",
+      "family": "Alpha360",
+      "source_name": "VWAP30",
+      "original_expression": "Ref($vwap, 30)/$close",
+      "expression": "Ref(Ref($vwap, 30)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP29",
+      "family": "Alpha360",
+      "source_name": "VWAP29",
+      "original_expression": "Ref($vwap, 29)/$close",
+      "expression": "Ref(Ref($vwap, 29)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP28",
+      "family": "Alpha360",
+      "source_name": "VWAP28",
+      "original_expression": "Ref($vwap, 28)/$close",
+      "expression": "Ref(Ref($vwap, 28)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP27",
+      "family": "Alpha360",
+      "source_name": "VWAP27",
+      "original_expression": "Ref($vwap, 27)/$close",
+      "expression": "Ref(Ref($vwap, 27)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP26",
+      "family": "Alpha360",
+      "source_name": "VWAP26",
+      "original_expression": "Ref($vwap, 26)/$close",
+      "expression": "Ref(Ref($vwap, 26)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP25",
+      "family": "Alpha360",
+      "source_name": "VWAP25",
+      "original_expression": "Ref($vwap, 25)/$close",
+      "expression": "Ref(Ref($vwap, 25)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP24",
+      "family": "Alpha360",
+      "source_name": "VWAP24",
+      "original_expression": "Ref($vwap, 24)/$close",
+      "expression": "Ref(Ref($vwap, 24)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP23",
+      "family": "Alpha360",
+      "source_name": "VWAP23",
+      "original_expression": "Ref($vwap, 23)/$close",
+      "expression": "Ref(Ref($vwap, 23)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP22",
+      "family": "Alpha360",
+      "source_name": "VWAP22",
+      "original_expression": "Ref($vwap, 22)/$close",
+      "expression": "Ref(Ref($vwap, 22)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP21",
+      "family": "Alpha360",
+      "source_name": "VWAP21",
+      "original_expression": "Ref($vwap, 21)/$close",
+      "expression": "Ref(Ref($vwap, 21)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP20",
+      "family": "Alpha360",
+      "source_name": "VWAP20",
+      "original_expression": "Ref($vwap, 20)/$close",
+      "expression": "Ref(Ref($vwap, 20)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP19",
+      "family": "Alpha360",
+      "source_name": "VWAP19",
+      "original_expression": "Ref($vwap, 19)/$close",
+      "expression": "Ref(Ref($vwap, 19)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP18",
+      "family": "Alpha360",
+      "source_name": "VWAP18",
+      "original_expression": "Ref($vwap, 18)/$close",
+      "expression": "Ref(Ref($vwap, 18)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP17",
+      "family": "Alpha360",
+      "source_name": "VWAP17",
+      "original_expression": "Ref($vwap, 17)/$close",
+      "expression": "Ref(Ref($vwap, 17)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP16",
+      "family": "Alpha360",
+      "source_name": "VWAP16",
+      "original_expression": "Ref($vwap, 16)/$close",
+      "expression": "Ref(Ref($vwap, 16)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP15",
+      "family": "Alpha360",
+      "source_name": "VWAP15",
+      "original_expression": "Ref($vwap, 15)/$close",
+      "expression": "Ref(Ref($vwap, 15)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP14",
+      "family": "Alpha360",
+      "source_name": "VWAP14",
+      "original_expression": "Ref($vwap, 14)/$close",
+      "expression": "Ref(Ref($vwap, 14)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP13",
+      "family": "Alpha360",
+      "source_name": "VWAP13",
+      "original_expression": "Ref($vwap, 13)/$close",
+      "expression": "Ref(Ref($vwap, 13)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP12",
+      "family": "Alpha360",
+      "source_name": "VWAP12",
+      "original_expression": "Ref($vwap, 12)/$close",
+      "expression": "Ref(Ref($vwap, 12)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP11",
+      "family": "Alpha360",
+      "source_name": "VWAP11",
+      "original_expression": "Ref($vwap, 11)/$close",
+      "expression": "Ref(Ref($vwap, 11)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP10",
+      "family": "Alpha360",
+      "source_name": "VWAP10",
+      "original_expression": "Ref($vwap, 10)/$close",
+      "expression": "Ref(Ref($vwap, 10)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP9",
+      "family": "Alpha360",
+      "source_name": "VWAP9",
+      "original_expression": "Ref($vwap, 9)/$close",
+      "expression": "Ref(Ref($vwap, 9)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP8",
+      "family": "Alpha360",
+      "source_name": "VWAP8",
+      "original_expression": "Ref($vwap, 8)/$close",
+      "expression": "Ref(Ref($vwap, 8)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP7",
+      "family": "Alpha360",
+      "source_name": "VWAP7",
+      "original_expression": "Ref($vwap, 7)/$close",
+      "expression": "Ref(Ref($vwap, 7)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP6",
+      "family": "Alpha360",
+      "source_name": "VWAP6",
+      "original_expression": "Ref($vwap, 6)/$close",
+      "expression": "Ref(Ref($vwap, 6)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP5",
+      "family": "Alpha360",
+      "source_name": "VWAP5",
+      "original_expression": "Ref($vwap, 5)/$close",
+      "expression": "Ref(Ref($vwap, 5)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP4",
+      "family": "Alpha360",
+      "source_name": "VWAP4",
+      "original_expression": "Ref($vwap, 4)/$close",
+      "expression": "Ref(Ref($vwap, 4)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP3",
+      "family": "Alpha360",
+      "source_name": "VWAP3",
+      "original_expression": "Ref($vwap, 3)/$close",
+      "expression": "Ref(Ref($vwap, 3)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP2",
+      "family": "Alpha360",
+      "source_name": "VWAP2",
+      "original_expression": "Ref($vwap, 2)/$close",
+      "expression": "Ref(Ref($vwap, 2)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP1",
+      "family": "Alpha360",
+      "source_name": "VWAP1",
+      "original_expression": "Ref($vwap, 1)/$close",
+      "expression": "Ref(Ref($vwap, 1)/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VWAP0",
+      "family": "Alpha360",
+      "source_name": "VWAP0",
+      "original_expression": "$vwap/$close",
+      "expression": "Ref($vwap/$close, 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME59",
+      "family": "Alpha360",
+      "source_name": "VOLUME59",
+      "original_expression": "Ref($volume, 59)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 59)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME58",
+      "family": "Alpha360",
+      "source_name": "VOLUME58",
+      "original_expression": "Ref($volume, 58)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 58)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME57",
+      "family": "Alpha360",
+      "source_name": "VOLUME57",
+      "original_expression": "Ref($volume, 57)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 57)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME56",
+      "family": "Alpha360",
+      "source_name": "VOLUME56",
+      "original_expression": "Ref($volume, 56)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 56)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME55",
+      "family": "Alpha360",
+      "source_name": "VOLUME55",
+      "original_expression": "Ref($volume, 55)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 55)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME54",
+      "family": "Alpha360",
+      "source_name": "VOLUME54",
+      "original_expression": "Ref($volume, 54)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 54)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME53",
+      "family": "Alpha360",
+      "source_name": "VOLUME53",
+      "original_expression": "Ref($volume, 53)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 53)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME52",
+      "family": "Alpha360",
+      "source_name": "VOLUME52",
+      "original_expression": "Ref($volume, 52)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 52)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME51",
+      "family": "Alpha360",
+      "source_name": "VOLUME51",
+      "original_expression": "Ref($volume, 51)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 51)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME50",
+      "family": "Alpha360",
+      "source_name": "VOLUME50",
+      "original_expression": "Ref($volume, 50)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 50)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME49",
+      "family": "Alpha360",
+      "source_name": "VOLUME49",
+      "original_expression": "Ref($volume, 49)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 49)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME48",
+      "family": "Alpha360",
+      "source_name": "VOLUME48",
+      "original_expression": "Ref($volume, 48)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 48)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME47",
+      "family": "Alpha360",
+      "source_name": "VOLUME47",
+      "original_expression": "Ref($volume, 47)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 47)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME46",
+      "family": "Alpha360",
+      "source_name": "VOLUME46",
+      "original_expression": "Ref($volume, 46)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 46)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME45",
+      "family": "Alpha360",
+      "source_name": "VOLUME45",
+      "original_expression": "Ref($volume, 45)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 45)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME44",
+      "family": "Alpha360",
+      "source_name": "VOLUME44",
+      "original_expression": "Ref($volume, 44)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 44)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME43",
+      "family": "Alpha360",
+      "source_name": "VOLUME43",
+      "original_expression": "Ref($volume, 43)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 43)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME42",
+      "family": "Alpha360",
+      "source_name": "VOLUME42",
+      "original_expression": "Ref($volume, 42)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 42)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME41",
+      "family": "Alpha360",
+      "source_name": "VOLUME41",
+      "original_expression": "Ref($volume, 41)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 41)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME40",
+      "family": "Alpha360",
+      "source_name": "VOLUME40",
+      "original_expression": "Ref($volume, 40)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 40)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME39",
+      "family": "Alpha360",
+      "source_name": "VOLUME39",
+      "original_expression": "Ref($volume, 39)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 39)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME38",
+      "family": "Alpha360",
+      "source_name": "VOLUME38",
+      "original_expression": "Ref($volume, 38)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 38)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME37",
+      "family": "Alpha360",
+      "source_name": "VOLUME37",
+      "original_expression": "Ref($volume, 37)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 37)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME36",
+      "family": "Alpha360",
+      "source_name": "VOLUME36",
+      "original_expression": "Ref($volume, 36)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 36)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME35",
+      "family": "Alpha360",
+      "source_name": "VOLUME35",
+      "original_expression": "Ref($volume, 35)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 35)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME34",
+      "family": "Alpha360",
+      "source_name": "VOLUME34",
+      "original_expression": "Ref($volume, 34)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 34)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME33",
+      "family": "Alpha360",
+      "source_name": "VOLUME33",
+      "original_expression": "Ref($volume, 33)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 33)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME32",
+      "family": "Alpha360",
+      "source_name": "VOLUME32",
+      "original_expression": "Ref($volume, 32)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 32)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME31",
+      "family": "Alpha360",
+      "source_name": "VOLUME31",
+      "original_expression": "Ref($volume, 31)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 31)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME30",
+      "family": "Alpha360",
+      "source_name": "VOLUME30",
+      "original_expression": "Ref($volume, 30)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 30)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME29",
+      "family": "Alpha360",
+      "source_name": "VOLUME29",
+      "original_expression": "Ref($volume, 29)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 29)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME28",
+      "family": "Alpha360",
+      "source_name": "VOLUME28",
+      "original_expression": "Ref($volume, 28)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 28)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME27",
+      "family": "Alpha360",
+      "source_name": "VOLUME27",
+      "original_expression": "Ref($volume, 27)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 27)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME26",
+      "family": "Alpha360",
+      "source_name": "VOLUME26",
+      "original_expression": "Ref($volume, 26)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 26)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME25",
+      "family": "Alpha360",
+      "source_name": "VOLUME25",
+      "original_expression": "Ref($volume, 25)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 25)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME24",
+      "family": "Alpha360",
+      "source_name": "VOLUME24",
+      "original_expression": "Ref($volume, 24)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 24)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME23",
+      "family": "Alpha360",
+      "source_name": "VOLUME23",
+      "original_expression": "Ref($volume, 23)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 23)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME22",
+      "family": "Alpha360",
+      "source_name": "VOLUME22",
+      "original_expression": "Ref($volume, 22)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 22)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME21",
+      "family": "Alpha360",
+      "source_name": "VOLUME21",
+      "original_expression": "Ref($volume, 21)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 21)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME20",
+      "family": "Alpha360",
+      "source_name": "VOLUME20",
+      "original_expression": "Ref($volume, 20)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 20)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME19",
+      "family": "Alpha360",
+      "source_name": "VOLUME19",
+      "original_expression": "Ref($volume, 19)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 19)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME18",
+      "family": "Alpha360",
+      "source_name": "VOLUME18",
+      "original_expression": "Ref($volume, 18)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 18)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME17",
+      "family": "Alpha360",
+      "source_name": "VOLUME17",
+      "original_expression": "Ref($volume, 17)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 17)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME16",
+      "family": "Alpha360",
+      "source_name": "VOLUME16",
+      "original_expression": "Ref($volume, 16)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 16)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME15",
+      "family": "Alpha360",
+      "source_name": "VOLUME15",
+      "original_expression": "Ref($volume, 15)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 15)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME14",
+      "family": "Alpha360",
+      "source_name": "VOLUME14",
+      "original_expression": "Ref($volume, 14)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 14)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME13",
+      "family": "Alpha360",
+      "source_name": "VOLUME13",
+      "original_expression": "Ref($volume, 13)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 13)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME12",
+      "family": "Alpha360",
+      "source_name": "VOLUME12",
+      "original_expression": "Ref($volume, 12)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 12)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME11",
+      "family": "Alpha360",
+      "source_name": "VOLUME11",
+      "original_expression": "Ref($volume, 11)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 11)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME10",
+      "family": "Alpha360",
+      "source_name": "VOLUME10",
+      "original_expression": "Ref($volume, 10)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 10)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME9",
+      "family": "Alpha360",
+      "source_name": "VOLUME9",
+      "original_expression": "Ref($volume, 9)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 9)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME8",
+      "family": "Alpha360",
+      "source_name": "VOLUME8",
+      "original_expression": "Ref($volume, 8)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 8)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME7",
+      "family": "Alpha360",
+      "source_name": "VOLUME7",
+      "original_expression": "Ref($volume, 7)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 7)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME6",
+      "family": "Alpha360",
+      "source_name": "VOLUME6",
+      "original_expression": "Ref($volume, 6)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 6)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME5",
+      "family": "Alpha360",
+      "source_name": "VOLUME5",
+      "original_expression": "Ref($volume, 5)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 5)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME4",
+      "family": "Alpha360",
+      "source_name": "VOLUME4",
+      "original_expression": "Ref($volume, 4)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 4)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME3",
+      "family": "Alpha360",
+      "source_name": "VOLUME3",
+      "original_expression": "Ref($volume, 3)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 3)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME2",
+      "family": "Alpha360",
+      "source_name": "VOLUME2",
+      "original_expression": "Ref($volume, 2)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 2)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME1",
+      "family": "Alpha360",
+      "source_name": "VOLUME1",
+      "original_expression": "Ref($volume, 1)/($volume+1e-12)",
+      "expression": "Ref(Ref($volume, 1)/($volume+1e-12), 1)"
+    },
+    {
+      "name": "Alpha360_VOLUME0",
+      "family": "Alpha360",
+      "source_name": "VOLUME0",
+      "original_expression": "$volume/($volume+1e-12)",
+      "expression": "Ref($volume/($volume+1e-12), 1)"
+    }
+  ]
+}

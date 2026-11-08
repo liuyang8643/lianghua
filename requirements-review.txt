@@ -1,0 +1,7 @@
+# CPU-only offline backtests and HTML reports. Python 3.12 recommended.
+# Install separately from the full trading/training environment in pyproject.toml.
+numpy==2.3.5
+pandas==2.3.3
+numba==0.63.1
+loguru==0.7.3
+PyYAML==6.0.3

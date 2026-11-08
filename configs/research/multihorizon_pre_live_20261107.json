@@ -1,0 +1,82 @@
+{
+  "state": "configuration_prepared_not_launched",
+  "train": [
+    "2005-01-01",
+    "2021-12-31"
+  ],
+  "validation": [
+    "2022-01-01",
+    "2026-10-31"
+  ],
+  "test": null,
+  "validation_role": "observation_only_no_fit_selection_search_or_early_stop",
+  "horizons": [
+    3,
+    7,
+    15,
+    30,
+    60
+  ],
+  "fold_years": [
+    2011,
+    2012,
+    2013,
+    2014,
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021
+  ],
+  "fold_rule": "fit2005..Y-2; early_stopY-1; OOFY; labels must finish inside their own split",
+  "factor_selection": "all local admitted factors includingQlib; ban microcap overnight gap; positive fold-fit RankIC per horizon; abs mean dailySpearman<0.8; horizon union",
+  "model": "one categorical-horizon LightGBM",
+  "max_rounds": 1000,
+  "early_stopping_rounds": 60,
+  "threads": 8,
+  "final_rounds": "median best iteration of11 folds; refit2005..2021",
+  "search": {
+    "weights": "five nonnegative0.1 steps sum1",
+    "buy_n": [
+      20,
+      30,
+      40
+    ],
+    "sell_m": [
+      40,
+      60,
+      80
+    ],
+    "hold_thresh": [
+      3,
+      7,
+      15
+    ],
+    "max_replacements": [
+      1,
+      2,
+      3,
+      5,
+      10
+    ],
+    "population": 32,
+    "generations": 60,
+    "patience": 10,
+    "min_improvement": 0.0001,
+    "selection": "net Calmar on continuous2011..2021OOF; annual diagnostics saved; no validation selection"
+  },
+  "data_root": "artifacts/research/multihorizon_2026_explain_20261107_reference_complete",
+  "data_runtime_sha256": "cc0a86df54d0f582f653eaf625e8ba7b4bf2db0b1681bfcebd292dea5bcf735b",
+  "decision_timing": "Topen and previously known information; noTHLCVA",
+  "fees": "same local frozen FeeSchedule",
+  "cleared_positions": "must implement economic position episodes with partial sells/topups/corporate-action quantity and cash residual/delisting reconciliation; not FIFO inferred from trades alone",
+  "live_deployment": false,
+  "pending": [
+    "admit complete candidate-factor inputs on corrected snapshot and reject old preClose-dependent2026 cache",
+    "remove legacy hardcoded old period/runtime/output assumptions from setup and workflow",
+    "implement and verify economic closed-position accounting then regenerate report",
+    "independent prelaunch check and fresh-root full workflow execution"
+  ]
+}

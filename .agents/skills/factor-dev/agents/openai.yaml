@@ -1,4 +1,0 @@
-interface:
-  display_name: "Factor Dev"
-  short_description: "A股量化因子迭代研发 — 编写→GA→分析→搜索→循环"
-  default_prompt: "Use $factor-dev for the full factor development loop: agent-team writes factors, run GA 500 gens, analyze weights/Sharpe, discard useless ones, web search for new ideas, repeat until Sharpe > 2.5 on all sets."

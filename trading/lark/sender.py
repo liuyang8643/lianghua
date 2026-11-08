@@ -100,7 +100,10 @@ def make_v2_table(*, columns: list[dict], rows: list[dict],
       'header_style': {'text_align': 'center', 'bold': True,
                        'background_style': 'grey', 'text_color': 'grey'},
       'columns': norm_cols,
-      'rows': rows,
+      'rows': [dict(row, **{
+          c['name']: ('' if row.get(c['name']) is None else str(row[c['name']]))
+          for c in norm_cols if c['data_type'] in ('lark_md', 'text')
+      }) for row in rows],
   }
 
 
@@ -111,7 +114,7 @@ class LarkSender:
   def __init__(self, app_id: str, app_secret: str):
     self._configured = bool(app_id and app_secret)
     if self._configured:
-      self.client = lark.Client.builder().app_id(app_id).app_secret(app_secret).build()
+      self.client = lark.Client.builder().app_id(app_id).app_secret(app_secret).timeout(10).build()
     else:
       self.client = None
 
@@ -154,7 +157,7 @@ class LarkSender:
       lark.logger.error(f"send_msg 异常: {e}")
 
   # ── v2 schema 卡片（任意 dict） ─────────────────
-  def send_card(self, card_data: dict) -> str | None:
+  def send_card(self, card_data: dict, *, idempotency_key: str | None = None) -> str | None:
     """发送任意 v2 schema card。
 
     Returns:
@@ -164,11 +167,14 @@ class LarkSender:
       _audit({'method': 'send_card', 'card': card_data, 'skipped': 'not_configured'})
       return None
     try:
+      body = (CreateMessageRequestBody.builder()
+              .receive_id(LARK_RECEIVE_ID).msg_type("interactive")
+              .content(lark.JSON.marshal(card_data)))
+      if idempotency_key:
+        body.uuid(idempotency_key)
       req = (CreateMessageRequest.builder()
              .receive_id_type('chat_id')
-             .request_body(CreateMessageRequestBody.builder()
-                           .receive_id(LARK_RECEIVE_ID).msg_type("interactive")
-                           .content(lark.JSON.marshal(card_data)).build())
+             .request_body(body.build())
              .build())
       res = self.client.im.v1.message.create(req)
       message_id = None
@@ -177,6 +183,7 @@ class LarkSender:
       self._log_and_audit(
           res,
           {'method': 'send_card',
+           'idempotency_key': idempotency_key,
            'title': card_data.get('header', {}).get('title', {}).get('content'),
            'template': card_data.get('header', {}).get('template'),
            'message_id': message_id,
@@ -293,6 +300,7 @@ class LarkSender:
       summary_md: str | None = None,
       tables: list[dict] | None = None,
       footer_md: str | None = None,
+      render_only: bool = False,
   ):
     """通用「标题 + 概要 + 多张表格 + 脚注」卡片。
 
@@ -322,6 +330,8 @@ class LarkSender:
       elements.append({'tag': 'hr'})
       elements.append(md_div(footer_md))
     card = make_v2_card(title=title, level=level, subtitle=subtitle, elements=elements)
+    if render_only:
+      return card
     return self.send_card(card)
 
 

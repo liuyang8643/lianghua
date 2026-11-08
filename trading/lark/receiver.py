@@ -1,8 +1,12 @@
 import logging as _stdlib_logging
 from datetime import timedelta
+from pathlib import Path
 
-from trading.trader import Trader, get_position
+from trading.file_account import FileAccount as Trader, get_position
 from trading.logger import trading_logger
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _silence_lark_unknown_event_errors():
@@ -76,23 +80,17 @@ def create_lark_handler(trader: Trader):
     )
 
   def handle_action_kill():
-    """ 结束程序 """
-    from utils.sys import terminate_process_tree
-    from trading.persistence import _TRADE_DIR
-    trading_logger.debug(f"准备结束程序")
-    lark_sender.send_notification_card(
-      level=LarkMsgLevel.Info,
-      title="紧急制动",
-      content="程序已手动结束",
-    )
-    pid_path = _TRADE_DIR / "trading_main.pid"
-    if pid_path.exists():
-      pid = int(pid_path.read_text(encoding="utf-8").strip())
-      trading_logger.warning(f"飞书紧急制动: 终止交易主进程 PID={pid}")
-      terminate_process_tree(pid)
-    else:
-      trading_logger.warning("飞书紧急制动: 未找到 trading_main.pid，终止当前飞书服务")
-      terminate_process_tree()
+    """Stop the verified file executor only; never terminate the broker client."""
+    from trading.file_control import request_file_stop
+    try:
+      pid = request_file_stop(_REPO_ROOT)
+    except Exception as exc:
+      trading_logger.warning(f'文件执行器制动未执行: {exc}')
+      lark_sender.send_notification_card(level=LarkMsgLevel.Danger,
+        title='紧急制动未执行', content=str(exc))
+      return
+    lark_sender.send_notification_card(level=LarkMsgLevel.Warning,
+      title='紧急制动', content=f'已验证策略进程 PID={pid} 并写入制动/停止文件，保留券商客户端')
 
   handlers = {
     "query_positions": handle_action_query_positions,

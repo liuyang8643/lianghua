@@ -1,0 +1,66 @@
+{
+  "state": "prepared_drift_cap_revision",
+  "created_epoch": 1794132471.416666,
+  "budget_seconds": 7200,
+  "parent": "artifacts/research/multihorizon_pre_live_20261108_volume_fix",
+  "search": "continuous OOF2011-2021,11annual models; no reset across years",
+  "external": "2022-2026-10-31 observation only after winner frozen",
+  "weights": [
+    2,
+    3,
+    1,
+    3,
+    1
+  ],
+  "grid": {
+    "risk_aversion": [
+      10.0,
+      50.0,
+      200.0
+    ],
+    "turnover_limit": [
+      0.05,
+      0.1
+    ],
+    "max_weight": [
+      0.025,
+      0.05
+    ],
+    "pool_size": [
+      80,
+      160
+    ]
+  },
+  "risk": {
+    "lookback": 120,
+    "shrinkage": 0.5,
+    "horizon": 1,
+    "cutoff": "open-to-open returns ending no later than previous trading day open"
+  },
+  "signal": "global eligible percentile centered and standardized, scaled to median candidate daily volatility; ranking utility, not calibrated expected return",
+  "execution": "native WBR; full stock target budget, fee/lot residual cash; locked overweight holdings grandfathered only; first cash funding floor explicit",
+  "runtime_policy": "representative100day benchmark;24if predicted search within4200sec,otherwise12pool80; no outcome-based grid reduction",
+  "selection": "positive annual return first, continuous netCalmar, lower turnover tie; report annual rows",
+  "no_training": true,
+  "prior_attempt": "artifacts\\research\\multihorizon_mvo_20261108",
+  "cap_semantics": "No increase above max(configured cap, current opening weight); existing price drift grandfathered, allowed gradual reduction within unchanged turnover. Locked positions remain exact lower bound.",
+  "revision_basis": {
+    "calls": 1682,
+    "configured_turnover": 0.05,
+    "date": "2017-12-01",
+    "lp_message": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+    "lp_success": true,
+    "minimum_feasible_turnover": 0.1943845046583414,
+    "qp": {
+      "dual_residual": 2.5653250046635693e-15,
+      "iterations": 15,
+      "primal_residual": 0.052760140038973925,
+      "solver": "factor_clarabel",
+      "status": "PrimalInfeasible",
+      "turnover_limit": 0.05
+    },
+    "sum_current": 0.9999377213678485,
+    "sum_lower": 0.037405107975407394,
+    "sum_upper": 3.0124051079754075
+  }
+}

@@ -134,6 +134,8 @@ class PostCloseReport:
         self._asset: float | None = None
         self._prev_asset: float | None = None
         self._net_cash_flow: float = 0.0
+        self._reconcile_warned = False
+        self._execution = None
         # code → name 映射（feed 数据时累积，飞书卡片只显示名称）
         self._code_to_name: dict[str, str] = {}
 
@@ -175,6 +177,19 @@ class PostCloseReport:
 
     def feed_backtest(self, bt_result: dict):
         self._bt = bt_result
+
+    def feed_execution_reference(self, previous, targets, closes):
+        from trading.execution_reconciliation import reconcile_execution
+        self._execution = reconcile_execution(
+            previous, self._positions, self._fills, targets, closes)
+        if self._fills is not None and not self._fills.empty and self._execution['available']:
+            self._fills = self._fills.copy()
+            for code, directions in self._execution['reference_prices'].items():
+                for direction, reference in directions.items():
+                    mask = (self._fills['code'] == code) & (self._fills['direction'] == direction)
+                    self._fills.loc[mask, 'est_price'] = reference
+        for row in self._execution.get('rows', []):
+            row['name'] = self._name_of(row['code'])
 
     def feed_asset(self, total_asset: Optional[float],
                    prev_asset: Optional[float], net_cash_flow: float = 0.0):
@@ -327,17 +342,17 @@ class PostCloseReport:
         rows = []
         total_cost = 0.0
         for _, r in df.iterrows():
-            if pd.isna(r.get('slippage_pct')):
+            if pd.isna(r.get('est_price')) or float(r['est_price']) <= 0 or int(r['shares']) <= 0:
                 continue
-            sp = float(r['slippage_pct'])
+            sp = (float(r['amount']) / int(r['shares']) / float(r['est_price']) - 1) * 100
             # 滑点成本：买入正滑点=多付，卖出负滑点=少收，绝对值都是成本
             sign = 1 if r['direction'] == 'buy' else -1
-            cost = sign * sp / 100 * float(r['amount'])
+            cost = sign * (float(r['amount']) - float(r['est_price']) * int(r['shares']))
             rows.append({
                 'code': r['code'], 'name': r.get('name', ''),
                 'direction': r['direction'],
                 'est_price': float(r['est_price']) if not pd.isna(r['est_price']) else None,
-                'traded_price': float(r['price']),
+                'traded_price': float(r['amount']) / int(r['shares']),
                 'slippage_pct': sp,
                 'amount': float(r['amount']),
                 'slippage_cost': cost,
@@ -349,11 +364,8 @@ class PostCloseReport:
     def build_dim5_pnl(self) -> dict:
         """维度5：日 P&L diff（结果层）。逐股对比。
 
-        链路断裂（缺 T-1 快照）时，存档 daily_pnl 不可信（vs-昨收口径无昨日基线）：
-          - 持有仓位(volume>0)：改用成本基线 持仓盈亏 = 市值 - 买入成本(avg×vol)，
-            纯由 avg_price/last_price/volume 计算，不依赖任何链路；
-          - 已清仓(volume==0)：卖出无成本基线 → None 剔除（不计入合计）。
-        链路完整时沿用存档 daily_pnl（vs-昨收的当日盈亏，口径更准）。
+        缺 T-1 快照时不能把累计持仓盈亏作为当日盈亏。
+        执行基准单独使用原始计划及昨日/今日持仓重建。
         """
         chain_broken = self._chain_broken()
         live_pnl: dict[str, dict] = {}
@@ -363,12 +375,7 @@ class PostCloseReport:
                 dp = float(r['daily_pnl']) if not pd.isna(r.get('daily_pnl')) else None
                 dr = float(r['daily_return_pct']) if not pd.isna(r.get('daily_return_pct')) else None
                 if chain_broken:
-                    if vol > 0:
-                        cost = float(r['avg_price']) * vol
-                        dp = float(r['market_value']) - cost
-                        dr = (dp / cost * 100) if cost > 0 else None
-                    else:
-                        dp, dr = None, None
+                    dp, dr = None, None
                 live_pnl[r['code']] = {
                     'volume': vol,
                     'mv': float(r['market_value']),
@@ -455,15 +462,15 @@ class PostCloseReport:
         account = summary.get('live_account_pnl')
         # 只把「实盘确实持有(volume>0)却算不出 P&L」的票算作无法对账;
         # 实盘根本没持有的票贡献为 0、可对账,不应计入。
-        unrec = [r['code'] for r in dim5.get('rows', [])
-                 if r.get('live_daily_pnl') is None and int(r.get('live_volume', 0) or 0) > 0]
+        unrec = [r['code'] for r in dim5.get('rows', []) if r.get('_l_eff') is None]
         tolerance = self._reconcile_tolerance(summary)
         diff = None
-        within = True
+        within = not unrec and per_stock is not None and account is not None
         if per_stock is not None and account is not None:
             diff = per_stock - account
-            within = abs(diff) <= tolerance
-            if not within:
+            within = abs(diff) <= tolerance and not unrec
+            if not within and not self._reconcile_warned:
+                self._reconcile_warned = True
                 trading_logger.warning(
                     f"[PostClose 校验] 个股日 P&L 总和 ¥{per_stock:+,.2f} "
                     f"!= 账户日变化 ¥{account:+,.2f}, 差 ¥{diff:+,.2f} (容差 ±¥{tolerance:.0f})。"
@@ -480,12 +487,7 @@ class PostCloseReport:
         }
 
     def _chain_broken(self) -> bool:
-        """T-1 持仓快照链路是否断裂（缺 T-1 但存在更早快照）。
-
-        断裂时**卖出仓位**无成本基线（已实现 P&L 不可计算，旧公式会把卖出金额误当
-        利润）；但**持有仓位**仍可用成本基线 (close-avg)×vol 算持仓盈亏，不受影响。
-        真正首日（无任何更早快照）不算断裂——全是当日新开仓。
-        """
+        """缺少 T-1、但存在更早实盘快照时，当日盈亏不可验证。"""
         from datetime import timedelta
         from utils.stock.time import get_last_trading_day
         prev = get_last_trading_day(self.trade_date - timedelta(days=1))
@@ -501,13 +503,10 @@ class PostCloseReport:
         return False  # 首日
 
     def build_summary(self, dim5: dict | None = None) -> dict:
-        """整体汇总（账户层）。
+        """逐股金额汇总；未知证券盈亏不使用可能含出入金的资产变化替代。
 
-        「今日盈亏」口径：优先取**个股日 P&L 总和**（dim5.live_total_pnl）。
-        个股口径 = Σ[(T市值-Y市值)+卖出-买入-费用]，天然免疫未记账的银证出入金，
-        故作为权威总盈亏。仅当存在「持有却算不出 P&L」的持仓（疑似漏记成交）时，
-        个股总和不可信，回退账户层 (asset - prev_asset - net_cash_flow)。
-        账户层数值仍保留在 live_account_pnl，供 reconcile 对账与异常告警使用。
+        两边收益率共用昨日资产作展示分母，金额始终直接逐股相加。
+        live_account_pnl 独立保留，用于说明账户其他变动。
         """
         bt_snap = self._bt_snap()
         bt_total_asset = bt_snap.get('total_asset', 0.0) if bt_snap else 0.0
@@ -518,25 +517,23 @@ class PostCloseReport:
         if self._prev_asset and self._asset and self._prev_asset > 0:
             live_account_pnl = self._asset - self._prev_asset - self._net_cash_flow
 
-        # 个股口径：仅当所有「实盘持有(volume>0)」的票都能算出 P&L（无 unreconcilable）
-        # 时才采信。链路断裂时卖出仓位的 P&L 已在 build_dim5_pnl 置 None 剔除（不计入
-        # 合计），剩余持有仓位用成本基线 (close-avg)×vol 计算，结果即「持仓盈亏」。
+        # 包括已清仓行：任何已知参与股票的未知盈亏都使合计不可验证。
         per_stock_pnl = None
         if dim5 is not None:
-            unrec = [r for r in dim5.get('rows', [])
-                     if r.get('live_daily_pnl') is None and int(r.get('live_volume', 0) or 0) > 0]
+            unrec = [r for r in dim5.get('rows', []) if r.get('_l_eff') is None]
             if not unrec:
                 per_stock_pnl = dim5.get('live_total_pnl')
 
-        live_daily_pnl = per_stock_pnl if per_stock_pnl is not None else live_account_pnl
-        live_pnl_source = 'per_stock' if per_stock_pnl is not None else 'account'
+        live_daily_pnl = per_stock_pnl
+        live_pnl_source = 'per_stock' if per_stock_pnl is not None else 'unavailable'
         live_daily_ret = None
         if live_daily_pnl is not None and self._prev_asset and self._prev_asset > 0:
             live_daily_ret = live_daily_pnl / self._prev_asset * 100
 
-        bt_daily_pnl = None
-        if self._prev_asset and self._prev_asset > 0:
-            bt_daily_pnl = self._prev_asset * bt_daily_ret / 100
+        # 汇总必须等于逐股金额之和，不能把另一资金基线的收益率乘实盘资产。
+        bt_daily_pnl = dim5.get('bt_total_pnl') if dim5 is not None else None
+        if bt_daily_pnl is not None and self._prev_asset and self._prev_asset > 0:
+            bt_daily_ret = bt_daily_pnl / self._prev_asset * 100
 
         return {
             'live_total_asset': self._asset,
@@ -565,8 +562,15 @@ class PostCloseReport:
         实盘和回测共用同一个 select_topn / batch_limit_check，结果必然一致；
         如出现差异即 bug，由单元测试覆盖，不在日常报告里耗注意力。
         """
-        dim5 = self.build_dim5_pnl()
+        strategy_dim5 = self.build_dim5_pnl()
+        dim5 = strategy_dim5
+        if self._execution is not None and self._execution['available']:
+            dim5 = self._execution
         summary = self.build_summary(dim5)
+        summary['comparison_basis'] = ('同计划零磨损回放' if dim5 is self._execution else '策略回测')
+        if dim5 is self._execution:
+            # 零磨损执行基准仅比较当日盈亏，没有独立账户总资产。
+            summary['bt_total_asset'] = None
         return {
             'date': self.trade_date.isoformat(),
             'dim3_orders': self.build_dim3_orders(),
@@ -574,6 +578,8 @@ class PostCloseReport:
             'dim5_pnl': dim5,
             'summary': summary,
             'reconcile': self.reconcile_pnl(dim5, summary),
+            'execution': self._execution,
+            'strategy_dim5_pnl': strategy_dim5,
         }
 
     def send(self, html_path: Optional[Path] = None, attach_html: bool = True):
@@ -630,7 +636,7 @@ class PostCloseReport:
             if shares <= 0:
                 continue
             vwap = amount / shares
-            est = float(grp['est_price'].iloc[0])
+            est = float((grp['est_price'] * grp['shares']).sum()) / shares
             if est <= 0:
                 continue
             sp = (vwap / est - 1) * 100
@@ -645,7 +651,7 @@ class PostCloseReport:
         out.sort(key=lambda r: abs(r['slippage_cost']), reverse=True)
         return out
 
-    def _send_pnl_slippage_card(self, data: dict):
+    def _send_pnl_slippage_card(self, data: dict, *, render_only=False):
         """飞书明细卡：表1 个股盈亏差异（实盘 vs 回测）；表2 实盘滑点（vs 开盘价）。"""
         d5 = data.get('dim5_pnl') or {}
         pnl_rows = d5.get('rows') or []
@@ -714,24 +720,46 @@ class PostCloseReport:
         pnl_gap = (live_pnl - bt_pnl) if (live_pnl is not None and bt_pnl is not None) else None
         total_slip_cost = sum(r['slippage_cost'] for r in slip_rows)
         summary_parts = [
+            f"基准：{s.get('comparison_basis', '策略回测')}",
             f"盈亏差异(实盘-回测) **{fmt_diff_money(pnl_gap)}**"
             if pnl_gap is not None else None,
             f"总滑点成本 **{fmt_diff_money(total_slip_cost)}**" if slip_rows else None,
         ]
+        execution = data.get('execution')
+        if execution is not None:
+            summary_parts.append(self._execution_text(execution))
+            if execution['available']:
+                tables.append({
+                    'title': '**执行归因（同计划零磨损）**', 'element_id': 'execution_tbl',
+                    'page_size': 15,
+                    'columns': [{'name': key, 'display_name': label, 'horizontal_align': 'right'}
+                                for key, label in [('name', '股票'), ('buy', '未买股数'),
+                                                   ('sell', '未卖股数'), ('wear', '磨损'),
+                                                   ('quantity', '数量差损益'), ('residual', '未解释')]],
+                    'rows': [{'name': self._name_of(r['code']),
+                              'buy': str(r['buy_shares_gap']), 'sell': str(r['sell_shares_gap']),
+                              'wear': f"{r['slippage_cost'] + r['fee_cost']:+.2f}",
+                              'quantity': f"{r['quantity_pnl']:+.2f}",
+                              'residual': f"{r['residual']:+.2f}"} for r in execution['rows']],
+                })
         level = LarkMsgLevel.Info
         if pnl_gap is not None:
             level = LarkMsgLevel.Warning if abs(pnl_gap) > 1000 else LarkMsgLevel.Info
 
-        lark_sender.send_table_card(
+        result = lark_sender.send_table_card(
             title=f"📊 盈亏差异 & 滑点 @ {self.trade_date.isoformat()}",
             level=level,
             subtitle=f"实盘 {fmt_diff_money(live_pnl)} vs 回测 {fmt_diff_money(bt_pnl)}",
             summary_md=' · '.join(p for p in summary_parts if p) or None,
             tables=tables,
+            render_only=render_only,
         )
+        if render_only:
+            return result
         trading_logger.info(
             f"[PostClose] 盈亏差异&滑点卡片已发送 "
             f"(P&L行={len(pnl_rows)}, 滑点行={len(slip_rows)})")
+        return result
 
     def _maybe_alert_reconcile(self, data: dict):
         """账户日盈亏 ≠ 个股盈亏总和（超容差）时，飞书推送残差告警，待人工确认是否出入金。
@@ -739,6 +767,16 @@ class PostCloseReport:
         残差 diff = Σ个股 - 账户；疑似未记账净出入金 = 账户 - Σ个股 = -diff
         （>0 入金 / <0 出金）。报告「今日盈亏」已以个股口径为准，此处只做提示。
         """
+        execution = data.get('execution')
+        if execution is not None:
+            # 账户现金变化与交易执行分开：未知资金变动不能触发执行失败告警。
+            if execution['available'] and execution['within_tolerance'] and execution['all_filled']:
+                return
+            lark_sender.send_notification_card(
+                content=self._execution_text(execution), level=LarkMsgLevel.Warning,
+                title=f"执行对账待核查 @ {self.trade_date.isoformat()}",
+                sub_title='成交数量 / 未解释残差')
+            return
         rec = (data or {}).get('reconcile') or {}
         if rec.get('within_tolerance', True):
             return
@@ -787,8 +825,28 @@ class PostCloseReport:
 
     # ── HTML 报告 ───────────────────────────────────────────
 
+    @staticmethod
+    def _execution_text(execution):
+        if not execution['available']:
+            return f"执行对账不可验证：{execution['reason']}"
+        status = '全部按量成交' if execution['all_filled'] else '存在未成交或计划外成交'
+        checked = '归因通过' if execution['within_tolerance'] else '待核查'
+        return (f"{status} · {checked} · 滑点成本 {fmt_diff_money(execution['slippage_cost'])} · "
+                f"手续费（估算）{fmt_diff_money(execution['fee_cost'])} · "
+                f"成交数量差损益 {fmt_diff_money(execution['quantity_pnl'])} · "
+                f"未解释残差 {fmt_diff_money(execution['residual'])}")
+
     def _reconcile_html(self, rec: dict) -> str:
         """对账校验区块的 HTML 片段。"""
+        valuation_note = ''
+        if hasattr(self, '_valuation_proof'):
+            unpriced = self._valuation_proof['unpriced_holdings']
+            valuation_note = (
+                '<div>估值：使用对应交易日收盘价；原始券商快照保留。'
+                + ('未独立取得净值的持仓：' + ', '.join(unpriced)
+                   + '，沿用券商市值并与账户总资产交叉核对。' if unpriced else '')
+                + '银证流水仅按已登记记录归因，接口查询为空不代表已独立证实无出入金；'
+                  '手续费为估算，小额剩余差不自动认定为费用。</div>')
         if not rec or rec.get('per_stock_pnl_sum') is None or rec.get('account_pnl') is None:
             return (
                 "<div class='summary' style='border-left: 4px solid #8899a6;'>"
@@ -797,6 +855,14 @@ class PostCloseReport:
                 "</div>"
             )
         diff = rec['diff']
+        if self._execution is not None and self._execution['available']:
+            return (
+                "<div class='summary'><div class='label'>账户其他变动（与执行归因分开）</div>"
+                f"账户变化减已登记出入金：{fmt_diff_money(rec['account_pnl'])}；"
+                f"证券盈亏：{fmt_diff_money(rec['per_stock_pnl_sum'])}；"
+                f"其余变动：{fmt_diff_money(-diff)}。"
+                "可能包含未登记出入金、利息、分红及费用差额，不自动认定为出入金。"
+                + valuation_note + '</div>')
         within = rec.get('within_tolerance', True)
         unrec = rec.get('unreconcilable_codes') or []
         color = '#089981' if within else '#f23645'
@@ -827,6 +893,16 @@ class PostCloseReport:
     def _build_html(self, data: dict) -> str:
         s = data['summary']
         d3, d4, d5 = data['dim3_orders'], data['dim4_slippage'], data['dim5_pnl']
+        execution_html = ''
+        execution = data.get('execution')
+        if execution and execution['available']:
+            execution_html = '<h2>逐股执行归因（负缺口表示计划外多成交）</h2><table><tr><th>代码</th><th>未买股数</th><th>未卖股数</th><th>滑点</th><th>估算费用</th><th>数量差损益</th><th>未解释残差</th></tr>'
+            for row in execution['rows']:
+                execution_html += (f"<tr><td>{row['code']}</td><td>{row['buy_shares_gap']}</td>"
+                                   f"<td>{row['sell_shares_gap']}</td>" + ''.join(
+                                       f"<td>{row[key]:+.2f}</td>" for key in (
+                                           'slippage_cost', 'fee_cost', 'quantity_pnl', 'residual')) + '</tr>')
+            execution_html += '</table>'
 
         def _orders_table(rows):
             html = ['<table><thead><tr><th>代码</th><th>名称</th>',
@@ -913,6 +989,9 @@ class PostCloseReport:
   .match-bad {{ color: #f23645; }}
 </style></head><body>
 <h1>盘后 Diff 报告 — {data['date']}</h1>
+<div class='summary'>比较基准：{s.get('comparison_basis', '策略回测')}<br>
+{self._execution_text(data['execution']) if data.get('execution') is not None else ''}<br>
+收益差 = -滑点成本 - 手续费 + 成交数量差损益 + 未解释残差。账户资金变化单独列示。</div>
 
 <div class='summary'>
   <div class='metric'><div class='label'>实盘总资产</div><div class='value'>{fmt_money(s['live_total_asset'])}</div></div>
@@ -921,9 +1000,10 @@ class PostCloseReport:
   <div class='metric'><div class='label'>回测日 P&L</div><div class='value'>{fmt_diff_money(s['bt_daily_pnl'])} ({fmt_pct(s['bt_daily_return_pct'], sign=True)})</div></div>
 </div>
 {self._reconcile_html(data.get('reconcile') or {})}
+{execution_html}
 
 <div class='section'>
-  <h2>操作差距（多退少补：实盘 vs 回测）</h2>
+  <h2>策略诊断：实盘 vs 独立策略回测（含资金基线与计划差异，不代表执行失败）</h2>
   <div>买入: 实盘 {fmt_money(d3['live_buy_total'])} · 回测 {fmt_money(d3['bt_buy_total'])} · 买量缺口合计 {d3.get('buy_shares_gap_total', 0):+d} 股</div>
   <div>卖出: 实盘 {fmt_money(d3['live_sell_total'])} · 回测 {fmt_money(d3['bt_sell_total'])}</div>
   {_orders_table(d3['rows'])}

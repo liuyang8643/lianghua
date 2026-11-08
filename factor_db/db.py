@@ -4,7 +4,7 @@
 - 只提供 add_factor() 写入与若干只读查询接口。
 - 绝不提供 update / delete —— 模块级未定义任何此类函数，且 SQLite 触发器在底层
   拦截 UPDATE / DELETE，保证 factors 表 append-only。
-- SQLite 文件固定在 factor_db/registry.db。
+- SQLite 文件位于 artifacts/factor_discovery/registry.db。
 """
 import hashlib
 import sqlite3
@@ -12,7 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-_DB_PATH = Path(__file__).resolve().parent / 'registry.db'
+from factor_db import REGISTRY_PATH, require_allowed_factor_names
+
+
+_DB_PATH = REGISTRY_PATH
 _FACTORS_DIR = Path(__file__).resolve().parent / 'factors'
 
 _SCHEMA = """
@@ -59,9 +62,8 @@ END;
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    from utils.sqlite_connection import connect
+    return connect(_DB_PATH)
 
 
 def init_db() -> None:
@@ -104,6 +106,7 @@ def add_factor(
 
     code_sha256 缺省时按 file_path 对应文件内容计算。
     """
+    require_allowed_factor_names((name, Path(file_path).stem))
     init_db()
     if code_sha256 is None:
         code_sha256 = file_sha256(_FACTORS_DIR.parent.parent / file_path)

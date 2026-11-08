@@ -214,7 +214,6 @@ footer {{ margin-top:40px; padding-top:16px; border-top:1px solid #30363d; color
 <div class="config-item"><span class="config-key">持仓周期</span><span class="config-val">{', '.join(map(str, HOLDING_PERIODS))} 日</span></div>
 <div class="config-item"><span class="config-key">调仓方式</span><span class="config-val">均仓多退少补 (rebalance)</span></div>
 <div class="config-item"><span class="config-key">涨停保护</span><span class="config-val">禁用 (limit_up_protection=false)</span></div>
-<div class="config-item"><span class="config-key">滑点</span><span class="config-val">默认 (SIM_SLIPPAGE_RATE)</span></div>
 <div class="config-item"><span class="config-key">费率</span><span class="config-val">默认 (佣金+印花税+过户费)</span></div>
 <div class="config-item"><span class="config-key">生成时间</span><span class="config-val">{config['generated_at']}</span></div>
 </div>
@@ -320,7 +319,7 @@ footer {{ margin-top:40px; padding-top:16px; border-top:1px solid #30363d; color
 
 <footer>
 生成时间: {config['generated_at']} | 数据来源: {config.get('data_source', 'factor_scan.json')}<br>
-回测引擎: WBR core.backtest | 成交价: T日 open | 收益基准: preClose
+回测引擎: WBR env.backtest | 成交价: T日 open | 收益基准: preClose
 </footer>
 
 <script>
@@ -381,7 +380,7 @@ def main():
 
     input_path = Path(args.input)
     if not input_path.exists():
-        print(f"ERROR: 未找到 {input_path}，请先运行 scan_factors.py")
+        print(f"ERROR: 未找到 canonical factor-scan JSON: {input_path}")
         return
 
     results = json.loads(input_path.read_text(encoding="utf-8"))

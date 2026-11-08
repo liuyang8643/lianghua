@@ -6,8 +6,8 @@
 import inspect
 from pathlib import Path
 
-from core.factors.registry import get_all_factor_classes
 from factor_db import db
+from factor_db.discovery import get_all_factor_classes
 
 _ROOT = Path(__file__).resolve().parent.parent
 

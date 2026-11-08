@@ -1,0 +1,128 @@
+{
+  "state": "pass",
+  "source_sha256": "f6867e10a9f38b4e730f663374c6f932e951c735aece66d776039d5d9fe91158",
+  "scope": "Independent code-only admission of explicit normalized-input explanation adapter. Not financial-data, observation, SHAP-result, report or deployment acceptance.",
+  "created_utc": "2026-11-08T06:03:45.740238+00:00",
+  "before_source_sha256": "6ad91cb04192d7a42430f3385709df385c8a557671ae4af48eaae76baee40eb1",
+  "only_explain_changed": true,
+  "all_other_module_AST_exact": true,
+  "unchanged_helper_AST": {
+    "ReplayAudit": "a52e8eb5fe4dc157004cbfe33c48aca000ecaa22b413f733f5ef13ccd8e9fa74",
+    "json_value": "55755f06ab5290ffde9f7ecc5ca7a80b751cce51733d8d99b431e9cbd69e8d80",
+    "tree_contributions": "8dfe4be57d92944ba2fda63865d7f4455b6bcfea6b7084a41eb49d25062a79bf",
+    "feature_descriptions": "643dd9a1a14e7a4c09c703c1b47e5325a94f90d00edd67b31a7c439994bce1c7"
+  },
+  "math_AST_exact_after_removing_only_reviewed_input_display_metadata_UTF8_changes": true,
+  "actual_input_loop_checks": [
+    {
+      "case": "absent",
+      "result": "ValueError",
+      "passed": true
+    },
+    {
+      "case": "false",
+      "result": "ValueError",
+      "passed": true
+    },
+    {
+      "case": "string",
+      "result": "ValueError",
+      "passed": true
+    },
+    {
+      "case": "int1",
+      "result": "ValueError",
+      "passed": true
+    },
+    {
+      "case": "null",
+      "result": "ValueError",
+      "passed": true
+    },
+    {
+      "case": "exactTrue",
+      "result": "accepted",
+      "passed": true
+    },
+    {
+      "case": "legacy",
+      "result": "accepted",
+      "passed": true
+    },
+    {
+      "case": "bad_raw",
+      "result": "AssertionError",
+      "passed": true
+    },
+    {
+      "case": "bad_normalized",
+      "result": "AssertionError",
+      "passed": true
+    },
+    {
+      "case": "bad_normalized_with_raw",
+      "result": "AssertionError",
+      "passed": true
+    }
+  ],
+  "primary_tests": {
+    "command": "pytest artifacts/research/multihorizon_pre_live_20261108_volume_fix/adapter_fixture_tests.py tests/test_supervised_explain_report.py -q",
+    "exec_chunk": "7da4e8",
+    "exit_code": 0,
+    "financial_market_model_fits": 0,
+    "passed": 11,
+    "seconds": 2.15
+  },
+  "primary_tests_verification": "Bound primary actual execution receipt and reviewed all11test definitions; no repeated synthetic fit/account tests. Independent probes execute the actual new input-loop/rawdisplay AST only.",
+  "primary_terminal": {
+    "event": "child_exit",
+    "time": 1794116902.959278,
+    "pid": 36272,
+    "returncode": 0
+  },
+  "ten_regression_terminal": {
+    "event": "child_exit",
+    "time": 1794117348.3122065,
+    "pid": 40104,
+    "returncode": 0
+  },
+  "ten_regressions_complete_zero_audit_and_sixarray_flags_checked": true,
+  "source_mtime_after_regression_terminal": true,
+  "provided_raw_and_normalized_hashes_always_checked": true,
+  "missing_raw_requires_exact_True": true,
+  "missing_raw_value_is_None_not0": true,
+  "model_and_winner_current_hashes_unchanged": true,
+  "raw_values_available_and_observation_scope_metadata_added": true,
+  "exposure_source_or_labels_changed": false,
+  "independent_model_fits": 0,
+  "independent_account_replays": 0,
+  "independent_real_model_prediction_calls": 0,
+  "bindings": {
+    "D:\\coding\\WBR\\ai\\supervised\\explainability.py": "f6867e10a9f38b4e730f663374c6f932e951c735aece66d776039d5d9fe91158",
+    "D:\\coding\\WBR\\artifacts\\research\\multihorizon_pre_live_20261108_volume_fix\\explainability_before_normalized_adapter.py": "6ad91cb04192d7a42430f3385709df385c8a557671ae4af48eaae76baee40eb1",
+    "D:\\coding\\WBR\\artifacts\\research\\multihorizon_pre_live_20261108_volume_fix\\explanation_adapter_implementation.json": "b1303c6e35ebc289657b57db73409c62f507db6f45c2f484d30d66f282fc8016",
+    "D:\\coding\\WBR\\artifacts\\research\\multihorizon_pre_live_20261108_volume_fix\\adapter_fixture_tests.py": "f253d7f3c9629216febce317a21b34c7b644f7e79e9ebb67307ad4bfcdfc95d9",
+    "D:\\coding\\WBR\\tests\\test_supervised_explain_report.py": "7e1cedd01eb6f3fe84fead91ef31eb2eb163581361952fa36e10ffd4301540fd",
+    "D:\\coding\\WBR\\artifacts\\research\\multihorizon_pre_live_20261108_volume_fix\\execution_source_check.json": "c8faec1d5bbf47faa2a3194c98cae8ebd553cdf1de4e49e99b7fa8a047e40266",
+    "D:\\coding\\WBR\\artifacts\\research\\multihorizon_pre_live_20261108_volume_fix\\regression_admission.json": "3c69f492fb24f76b39d1237f6cbcc844e49b8eed28c05d2f67a7e7d3ffe7b0da",
+    "D:\\coding\\WBR\\artifacts\\research\\multihorizon_pre_live_20261108_volume_fix\\regression\\complete.json": "146236f8964c32380cb70d733c75bf7184b686eb2d854a393cbcba8e084ed21a",
+    "D:\\coding\\WBR\\artifacts\\research\\multihorizon_pre_live_20261108_volume_fix\\regression\\inputs.json": "f6d3121ca51668db3f5b7b165968db7992fb4284460ec49735b380a972867b70",
+    "D:\\coding\\WBR\\artifacts\\research\\multihorizon_pre_live_20261108_volume_fix\\regression_logs\\guard.jsonl": "3b6fb5b45ea70791b1ededd19992eccf4b5be7c2e91b3b52426e1c0d2edca915",
+    "D:\\coding\\WBR\\artifacts\\research\\multihorizon_pre_live_20261108_volume_fix\\workflow_logs\\guard.jsonl": "239ea367f4f9631b7406a8cce2b8ad2bc6cbf1af4a6ad1e85e8a2a4fa0215cb2",
+    "D:\\coding\\WBR\\artifacts\\research\\multihorizon_pre_live_20261108_volume_fix\\models\\final\\complete.json": "130460e35ef4061db05389e6aa7f1c37959a94cdae91cabbaffe1c1a2642a777",
+    "D:\\coding\\WBR\\artifacts\\research\\multihorizon_pre_live_20261108_volume_fix\\models\\final\\model.txt": "042010db5216148bd4150cbd17b4d04e53aca47afc6d23c702016c4c47d78c7f",
+    "D:\\coding\\WBR\\artifacts\\research\\multihorizon_pre_live_20261108_volume_fix\\search\\winner.json": "6e909e72c075d9786f5b598283401a4efcc15a01a6d436bb548327fe9aca86e1",
+    "D:\\coding\\WBR\\artifacts\\research\\multihorizon_pre_live_20261108_volume_fix\\reviewer\\review_adapter_implementation.py": "96cf475028f91dd16ff544506fa50d3eb7b0dd27d1e256ec623607d8b7c84d24"
+  },
+  "limits": [
+    "Actual2026explanation output and native TreeSHAP/prediction equality still require result review after guarded execution.",
+    "The primary tiny legacy-vs-normalized test exercises activeN3; four helpers and the entire remaining explain mathematical AST were independently proved unchanged."
+  ],
+  "independent_review_guard_terminal": {
+    "event": "child_exit",
+    "time": 1794117825.8049753,
+    "pid": 16752,
+    "returncode": 0
+  },
+  "candidate_review_sha256": "b19c7dcb748ddc5f13a619a24d3b48eaf100c8b02f4044a7ef64877486a07d63"
+}

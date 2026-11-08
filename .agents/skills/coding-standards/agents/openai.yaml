@@ -1,4 +1,0 @@
-interface:
-  display_name: "编码规范"
-  short_description: "架构或依赖变更时同步更新 AGENTS.md"
-  default_prompt: "使用 $coding-standards，在项目架构或依赖关系变化后同步更新仓库说明。"

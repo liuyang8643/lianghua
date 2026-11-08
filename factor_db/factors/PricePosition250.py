@@ -1,13 +1,9 @@
+from utils.numeric_panel import _shift
 import numpy as np
 
 MIN_RAW_PRICE = 2.0
 
 
-def _shift(arr):
-    result = np.empty_like(arr)
-    result[0] = np.nan
-    result[1:] = arr[:-1]
-    return result
 
 
 class PricePosition250:

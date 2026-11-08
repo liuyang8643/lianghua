@@ -5,12 +5,12 @@
 from configs import TRADE_ACCOUNT
 from trading.lark.receiver import create_lark_handler
 from trading.logger import trading_logger
-from trading.trader import Trader
+from trading.file_account import FileAccount
 
 
 def main():
     trading_logger.info("启动飞书交互服务")
-    trader = Trader(TRADE_ACCOUNT)
+    trader = FileAccount(TRADE_ACCOUNT)
     create_lark_handler(trader)
 
 

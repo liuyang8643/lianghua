@@ -9,16 +9,12 @@ def test_update_current_names_uses_tencent_fetcher(tmp_path, monkeypatch):
     monkeypatch.setattr(update_all, "DATA_DIR", tmp_path)
     monkeypatch.setattr(update_all, "TODAY", date.today())
 
-    def fail_akshare():
-        raise AssertionError("akshare current-name fetch should not be called")
-
-    monkeypatch.setattr(update_all.ak, "stock_info_a_code_name", fail_akshare)
     monkeypatch.setattr(
         update_all,
         "_fetch_current_stock_names",
         lambda codes: pd.DataFrame({
-            "code": ["000001", "600000", "430001"],
-            "name": ["平安银行", "浦发银行", "北交测试"],
+            "code": ["000001", "600000", "430001", "900901"],
+            "name": ["平安银行", "浦发银行", "北交测试", "云赛B股"],
         }),
     )
 
@@ -29,7 +25,35 @@ def test_update_current_names_uses_tencent_fetcher(tmp_path, monkeypatch):
         {"bare_code": "000001", "stock_code": "000001.SZ", "name": "平安银行"},
         {"bare_code": "600000", "stock_code": "600000.SH", "name": "浦发银行"},
         {"bare_code": "430001", "stock_code": "430001.BJ", "name": "北交测试"},
+        {"bare_code": "900901", "stock_code": "900901.SH", "name": "云赛B股"},
     ]
+
+
+def test_update_current_names_rejects_partial_response_without_overwrite(
+    tmp_path, monkeypatch,
+):
+    import data.update_all as update_all
+
+    monkeypatch.setattr(update_all, "DATA_DIR", tmp_path)
+    path = tmp_path / "stock_name" / "current_names.parquet"
+    path.parent.mkdir(parents=True)
+    previous = pd.DataFrame(
+        [{"bare_code": "000001", "stock_code": "000001.SZ", "name": "旧简称"}]
+    )
+    previous.to_parquet(path, index=False)
+    original = path.read_bytes()
+    monkeypatch.setattr(
+        update_all,
+        "_fetch_current_stock_names",
+        lambda _codes: pd.DataFrame({"code": ["000001"], "name": ["平安银行"]}),
+    )
+    monkeypatch.setattr(update_all, "TODAY", date(2000, 1, 1))
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="未覆盖完整股票轴"):
+        update_all._update_current_names(["000001.SZ", "600000.SH"])
+    assert path.read_bytes() == original
 
 
 def test_tencent_quote_symbol_routes_boards():
@@ -52,6 +76,9 @@ def test_fetch_current_stock_names_parses_tencent_response(monkeypatch):
     class _Resp:
         def __init__(self, text):
             self.content = text.encode("gbk")
+
+        def raise_for_status(self):
+            return None
 
     def fake_get(url, headers, timeout):
         calls.append({"url": url, "headers": headers, "timeout": timeout})
