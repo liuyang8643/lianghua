@@ -27,7 +27,7 @@ flowchart LR
 
 ### 2.2 红线规则
 
-- **数据源红线（按是否联网判断）**：除 `data/update_*.py`、`data/kline_mootdx.py` 预下载入口、`trading/` 买卖模块（QMT/xtdata）外，**所有其它模块禁止任何形式的网络获取**（akshare / requests / xtdata / CNINFO 等）。NPZ + 预下载产物 parquet 均可读，因为它们不联网。mootdx（腾讯通达信）为 K 线唯一数据源，无需本地 QMT。
+- **数据源红线（按是否联网判断）**：除 `data/update_*.py`、`data/kline_mootdx.py` 预下载入口、`trading/` 买卖模块（QMT/xtdata）外，**所有其它模块禁止任何形式的网络获取**（akshare / requests / xtdata / CNINFO 等）。NPZ + 预下载产物 parquet 均可读，因为它们不联网。历史 K 线统一由 data/update_kline.py 预下载：优先 mootdx，失败后使用已登录券商 QMT 不复权日线及官方 preClose。
 - **T 日价格红线（最高优先级，防数据泄露）**：信号触发、买卖合法性检查、账户成交价 **只允许使用 `open[T]`**。当日的 `high[T] / low[T] / close[T] / volume[T] / amount[T]` 全部视为前视野泄露，禁止出现在选股 / 风控 / 估值路径。需要"前收"时统一使用 `close[T-1]`。
 - **因子 `calc_batch` 纯 numpy 向量化，禁止逐股票遍历**。5000+ 股票 × 20 年耗时应 < 1s，超过必有 bug。
 - **多进程/多线程红线**：仅 `_run_ga` 中 GA 个体评估可用 `multiprocessing.Pool`。其他所有地方（因子计算、数据加载、实盘路径）禁止多进程/多线程。
@@ -43,7 +43,7 @@ flowchart LR
 
 | 数据 | 来源 | 产物 |
 |---|---|---|
-| K线日线 · 不复权 | mootdx `fq=0`（OHLCV）+ `xdxr()` 自算 preClose | `data/k-line/{code}.parquet` |
+| K线日线 · 不复权 | mootdx `fq=0` + `xdxr()`；备用券商 QMT 不复权日线及官方 preClose | `data/k-line/{code}.parquet` |
 | 股票列表 | xtdata | `data/stock_list/` |
 | 退市列表 | akshare | `data/delist/` |
 | 名称/ST 历史 | CNINFO API | `data/stock_name/` |
@@ -53,7 +53,7 @@ flowchart LR
 
 目录：`data/{k-line, runtime, db, financial, stock_list, stock_name, ...}`。
 
-K线下载唯一入口 `data/kline_mootdx.py`（腾讯通达信，免 QMT）：`update_full()` 全量、`update_recent(days)` 增量合并最近 N 个交易日；`update_all._update_kline` 与 `update_live._download_kline_all` 均复用它。
+K线下载统一入口 `data/update_kline.py`（mootdx 优先，券商 QMT 备用）：`update_full()` 全量、`update_recent(days)` 增量合并最近 N 个交易日；`update_all._update_kline` 与 `update_live._download_kline_all` 均复用它。
 
 ### 3.2 Runtime 构建
 
@@ -75,7 +75,7 @@ np.savez_compressed('runtime_{start}_{end}.npz',
 
 全部使用不复权真实价。
 
-- **K线唯一源 = mootdx（腾讯通达信），一套不复权 parquet**：`data/kline_mootdx.py` 取 `fq=0` 的不复权 OHLCV，preClose 由 `xdxr()` 除权除息数据按交易所公式自算（99.4% 除权日与官方一致），→ `data/k-line/`。
+- **K线使用 mootdx 优先、券商 QMT 备用，一套不复权 parquet**：`data/kline_mootdx.py` 取 `fq=0` 的不复权 OHLCV，preClose 由 `xdxr()` 除权除息数据按交易所公式自算（99.4% 除权日与官方一致），→ `data/k-line/`。
 - **收益计算用 preClose**：个股日收益 `r[t]=close[t]/preClose[t]-1`（普通日 preClose=昨收，除权日=除权参考价，已吸收分红送转配股），除权日不产生假跳空。不需要后复权价格序列。
 - **涨跌停 / 合法性判断（`legality`）一律用「原始 OHLC + 官方 preClose」**：`涨停价=preClose×(1+板块涨跌幅)`、`一字板=open≥涨停价`。preClose 已是除权参考价，除权日 open/preClose 天然不假跳空——研究与实盘对账口径完全一致。
 - **所有成交量/金额/市值/财务因子用原始真实价**（`TrueMarketCap`/`AmountBasedSmallCap`/`VolumeCV`/`deep_value` 及全部 `Factor_*` 等，绝对规模口径）。

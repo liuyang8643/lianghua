@@ -1,0 +1,58 @@
+[
+  {
+    "SECUCODE": "000016.SZ",
+    "SUSPEND_START_TIME": "2026-08-24 09:30:00",
+    "SUSPEND_END_TIME": "2026-08-27 15:00:00",
+    "source": "https://vip.stock.finance.sina.com.cn/corp/view/vCB_AllBulletinDetail.php?CompanyCode=10000605&gather=1&id=12563805"
+  },
+  {
+    "SECUCODE": "002731.SZ",
+    "SUSPEND_START_TIME": "2026-05-06 09:30:00",
+    "SUSPEND_END_TIME": "2026-07-06 15:00:00",
+    "source": "https://disc.static.szse.cn/download/disc/disk03/finalpage/2026-07-06/2ff408da-fb79-4c86-a18a-bd07ad1be299.PDF"
+  },
+  {
+    "SECUCODE": "300862.SZ",
+    "SUSPEND_START_TIME": "2026-07-27 09:30:00",
+    "SUSPEND_END_TIME": "2026-08-07 15:00:00",
+    "source": "https://vip.stock.finance.sina.com.cn/corp/view/vCB_AllBulletinDetail.php?id=12484424&stockid=300862"
+  },
+  {
+    "SECUCODE": "600491.SH",
+    "SUSPEND_START_TIME": "2026-07-03 09:30:00",
+    "SUSPEND_END_TIME": "2026-07-09 15:00:00",
+    "source": "https://money.finance.sina.com.cn/corp/view/vCB_AllBulletinDetail.php?id=12438940&stockid=600491"
+  },
+  {
+    "SECUCODE": "603159.SH",
+    "SUSPEND_START_TIME": "2026-06-15 09:30:00",
+    "SUSPEND_END_TIME": "2026-06-22 15:00:00",
+    "source": "https://static.cninfo.com.cn/finalpage/2026-06-23/1225380530.PDF"
+  },
+  {
+    "SECUCODE": "603221.SH",
+    "SUSPEND_START_TIME": "2026-08-03 09:30:00",
+    "SUSPEND_END_TIME": "2026-08-05 15:00:00",
+    "source": "https://static.cninfo.com.cn/finalpage/2026-08-18/1225478854.PDF"
+  },
+  {
+    "SECUCODE": "301139.SZ",
+    "SUSPEND_START_TIME": "2026-08-31 09:30:00",
+    "SUSPEND_END_TIME": "2026-09-29 15:00:00",
+    "source": "https://vip.stock.finance.sina.com.cn/corp/view/vCB_AllBulletinDetail.php?CompanyCode=80537124&gather=1&id=12573917",
+    "resumption_source": "https://money.finance.sina.com.cn/corp/view/vCB_AllBulletinDetail.php?id=12615127&stockid=301139"
+  },
+  {
+    "SECUCODE": "600825.SH",
+    "SUSPEND_START_TIME": "2026-09-07 09:30:00",
+    "SUSPEND_END_TIME": "2026-09-18 15:00:00",
+    "source": "https://money.finance.sina.com.cn/corp/view/vCB_AllBulletinDetail.php?id=12588319&stockid=600825",
+    "resumption_source": "https://vip.stock.finance.sina.com.cn/corp/view/vCB_AllBulletinDetail.php?id=12610631"
+  },
+  {
+    "SECUCODE": "603580.SH",
+    "SUSPEND_START_TIME": "2026-06-30 09:30:00",
+    "SUSPEND_END_TIME": "2026-06-30 15:00:00",
+    "source": "https://vip.stock.finance.sina.com.cn/corp/view/vCB_AllBulletinDetail.php?id=12419706&stockid=603580"
+  }
+]

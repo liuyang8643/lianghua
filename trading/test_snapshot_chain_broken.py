@@ -61,7 +61,7 @@ def test_chain_broken_sold_to_zero_marks_none(recorder, tmp_path):
     assert pd.isna(row['daily_pnl']), f"链路断裂清仓应标 None, 实得 {row['daily_pnl']}"
 
 
-def test_chain_broken_held_uses_cost_basis(recorder, tmp_path):
+def test_chain_broken_held_is_not_daily_pnl(recorder, tmp_path):
     # 链路断裂下，仍持有的票应按成本基线 (close-avg)×vol - fee 计算持仓盈亏
     pd.DataFrame([{
         'code': '000001.SZ', 'name': 'A', 'volume': 1000,
@@ -76,8 +76,7 @@ def test_chain_broken_held_uses_cost_basis(recorder, tmp_path):
     df = pd.read_parquet(tmp_path / "positions_2026-06-05.parquet")
     row = df[df['code'] == '000003.SZ'].iloc[0]
     # mv 19500 - 成本 20000 - fee 2 = -502
-    assert pd.notna(row['daily_pnl']), "持有仓位链路断裂下应可计算"
-    assert abs(row['daily_pnl'] - (19500.0 - 20000.0 - 2.0)) < 1e-6
+    assert pd.isna(row['daily_pnl'])  # 缺昨日基线，不能把累计持仓盈亏当日盈亏
 
 
 def test_first_day_computes_pnl(recorder, tmp_path):

@@ -30,21 +30,67 @@ RAW_DIR = DATA_DIR / "k-line"
 
 # 除权除息类别：1=除权除息 5=股本变化(不调价)。其他(9转配股/15等)标记为不可计算
 XD_CAT_STANDARD = 1       # 除权除息 — 可用公式
+XD_CAT_UNSUPPORTED = frozenset((9, 11, 12, 15))
 
 START_DEFAULT = '19901219'
 
 PAGE_SIZE = 800            # 单次 API 最大返回条数
 MAX_HISTORY_BARS = 10000   # 全量拉取上限（覆盖 1990-至今约 8500 交易日）
 RECENT_BARS = 400          # 增量拉取条数上限
+RECENT_HEALTH_PROBE_SIZE = 3
+RECENT_EMPTY_CIRCUIT_BREAKER = 12
+RECENT_PROGRESS_INTERVAL = 200
+MOOTDX_CONNECT_TIMEOUT = 3
+MOOTDX_SERVERS = (
+    ('110.41.147.114', 7709),
+    ('8.129.13.54', 7709),
+    ('120.24.149.49', 7709),
+    ('180.153.18.172', 80),
+    ('180.153.18.170', 7709),
+    ('115.238.90.165', 7709),
+)
 
 
 def _log(msg: str):
     print(f"[{datetime.now():%H:%M:%S}] {msg}", flush=True)
 
 
-def _connect_mootdx():
+def _connect_mootdx(*, require_daily=True):
     from mootdx.quotes import Quotes
-    return Quotes.factory(market='std')
+    failures = []
+    last_error = None
+    for server in MOOTDX_SERVERS:
+        quote = None
+        try:
+            quote = Quotes.factory(
+                market='std', server=server, timeout=MOOTDX_CONNECT_TIMEOUT,
+                auto_retry=False, raise_exception=True,
+            )
+            probe = (quote.bars(symbol='000001', frequency=9, start=0, offset=1, fq=0)
+                     if require_daily else quote.stocks(market=0))
+            if probe is not None and not probe.empty:
+                _log(f"mootdx 节点: {server[0]}:{server[1]}")
+                return quote
+            failures.append(f'{server[0]}:{server[1]}=empty')
+        except Exception as exc:
+            last_error = exc
+            cause = getattr(exc, 'original_exception', exc)
+            failures.append(f'{server[0]}:{server[1]}={type(cause).__name__}: {cause}')
+        finally:
+            if quote is not None and failures and failures[-1].startswith(
+                    f'{server[0]}:{server[1]}='):
+                try:
+                    quote.close()
+                except Exception:
+                    pass
+    raise RuntimeError(f"mootdx 无可用行情节点: {'; '.join(failures)}") from last_error
+
+
+def _close_mootdx(mdx):
+    try:
+        mdx.close()
+    except Exception:
+        pass
 
 
 def _ms_to_date_ymd(ts_ms):
@@ -134,6 +180,7 @@ def _compute_preclose(closes: np.ndarray, time_ms: np.ndarray,
 
     # 构建 xdxr 除权日 → record 映射: YYYYMMDD int → row
     xd_map = {}
+    unsupported_dates = set()
     if xdxr_df is not None and not xdxr_df.empty:
         xd = xdxr_df.copy()
         xd['ymd'] = (xd['year'].astype(int) * 10000
@@ -143,11 +190,15 @@ def _compute_preclose(closes: np.ndarray, time_ms: np.ndarray,
             d = int(row['ymd'])
             if int(row['category']) == XD_CAT_STANDARD:
                 xd_map[d] = row
+            elif int(row['category']) in XD_CAT_UNSUPPORTED:
+                unsupported_dates.add(d)
 
     dates_ymd = _ms_to_date_ymd(time_ms)
 
     for i in range(1, n):
         d = int(dates_ymd[i])
+        if d in unsupported_dates:
+            continue  # 保留 NaN，禁止将无法计算的除权参考价当成昨收。
         if d in xd_map:
             row = xd_map[d]
             fh = float(row['fenhong']) if pd.notna(row['fenhong']) else 0.0
@@ -193,11 +244,19 @@ def _fetch_bars_recent(mdx, code: str) -> pd.DataFrame | None:
 
 def fetch_one(mdx, code: str, start: str | None = None, end: str | None = None) -> pd.DataFrame | None:
     """取单只股票全量 K 线 + preClose（调试用）。"""
-    xd = mdx.xdxr(symbol=code[:6])
+    xd = _fetch_xdxr(mdx, code)
     bars = _fetch_bars_all(mdx, code)
     if bars is None:
         return None
     return _mootdx_bars_to_df(bars, xdxr_df=xd)
+
+
+def _fetch_xdxr(mdx, code: str) -> pd.DataFrame:
+    """空表允许表示无除权记录；请求失败不得降级为普通昨收。"""
+    result = mdx.xdxr(symbol=code[:6])
+    if result is None:
+        raise RuntimeError(f'mootdx 除权信息获取失败: {code}')
+    return result
 
 
 def download(mdx, codes: list[str], start: str, end: str) -> dict[str, pd.DataFrame]:
@@ -209,20 +268,26 @@ def download(mdx, codes: list[str], start: str, end: str) -> dict[str, pd.DataFr
     empty = 0
     out: dict = {}
 
-    # 预拉取 xdxr 数据
-    xdxr_cache: dict[str, pd.DataFrame | None] = {}
-    for code in codes:
-        try:
-            xdxr_cache[code] = mdx.xdxr(symbol=code[:6])
-        except Exception:
-            xdxr_cache[code] = None
-
+    consecutive_empty = 0
     for i, code in enumerate(codes):
+        xdxr = _fetch_xdxr(mdx, code)
         bars = _fetch_bars_all(mdx, code)
-        raw = _mootdx_bars_to_df(bars, xdxr_df=xdxr_cache.get(code)) if bars is not None else None
+        raw = _mootdx_bars_to_df(bars, xdxr_df=xdxr) if bars is not None else None
+        if raw is not None:
+            raw = raw[(raw['time'] >= int(pd.Timestamp(start).timestamp() * 1000))
+                      & (raw['time'] < int((pd.Timestamp(end) + pd.Timedelta(days=1)).timestamp() * 1000))]
+            if raw.empty:
+                raw = None
         if raw is None:
             empty += 1
+            consecutive_empty += 1
+            if consecutive_empty >= RECENT_EMPTY_CIRCUIT_BREAKER:
+                raise RuntimeError(
+                    f"mootdx 连续 {consecutive_empty} 只无数据，"
+                    f"已在全量下载 {i + 1}/{total} 熔断"
+                )
         else:
+            consecutive_empty = 0
             raw.to_parquet(RAW_DIR / f'{code}.parquet', index=False)
             out[code] = _combined_bar_dict(raw)
             written += 1
@@ -283,24 +348,69 @@ def update_full(start: str = START_DEFAULT, end: str | None = None,
                 codes: list[str] | None = None):
     """全量拉取到 end（默认今天）。"""
     mdx = _connect_mootdx()
-    end = end or datetime.now().strftime('%Y%m%d')
-    codes = codes or _all_codes()
-    _log(f"全量 {len(codes)} 只 → {RAW_DIR} (start={start} end={end})")
-    download(mdx, codes, start, end)
+    try:
+        end = end or datetime.now().strftime('%Y%m%d')
+        codes = codes or _all_codes()
+        _log(f"全量 {len(codes)} 只 → {RAW_DIR} (start={start} end={end})")
+        return download(mdx, codes, start, end)
+    finally:
+        _close_mootdx(mdx)
 
 
-def update_recent(days: int, *, anchor_date: date | None = None, collect: bool = False) -> dict:
+def update_recent(days: int, *, anchor_date: date | None = None, collect: bool = False,
+                  codes: list[str] | None = None) -> dict:
     """刷新最近 days 个交易日并合并进 parquet；新股全量补齐。"""
     mdx = _connect_mootdx()
+    try:
+        return _update_recent_connected(
+            mdx, days, anchor_date=anchor_date, collect=collect, codes=codes,
+        )
+    finally:
+        _close_mootdx(mdx)
+
+
+def _update_recent_connected(mdx, days: int, *, anchor_date: date | None = None,
+                             collect: bool = False,
+                             codes: list[str] | None = None) -> dict:
     start, end, end_d = resolve_recent_range(days, anchor_date)
 
-    all_codes = _all_codes()
+    all_codes = sorted(codes) if codes is not None else _all_codes()
     existing = {f.stem for f in RAW_DIR.glob('*.parquet')}
     new_codes = [c for c in all_codes if c not in existing]
     upd_codes = [c for c in all_codes if c in existing]
 
     _log(f"增量刷新最近 {days} 日 [{start}~{end}] 锚定={end_d.isoformat()}: "
          f"更新 {len(upd_codes)} 只, 新股全量 {len(new_codes)} 只")
+
+    # mootdx 的坏节点可能不抛异常，而是每只等待数秒后返回空 DataFrame。
+    # 若直接进入 5000+ 只串行循环，会表现为数小时“卡死”。先用流动性较好的
+    # 沪深股票探测；探测结果后续直接复用，避免重复请求。
+    preferred = ('000001.SZ', '600000.SH', '000002.SZ')
+    probe_codes = [c for c in preferred if c in all_codes]
+    if len(probe_codes) < RECENT_HEALTH_PROBE_SIZE:
+        probe_codes.extend(
+            c for c in all_codes
+            if c not in probe_codes
+        )
+    probe_codes = probe_codes[:RECENT_HEALTH_PROBE_SIZE]
+    prefetched: dict[str, pd.DataFrame] = {}
+    if probe_codes:
+        _log(f"  数据源健康探测 {len(probe_codes)} 只...")
+        for code in probe_codes:
+            try:
+                bars = mdx.bars(
+                    symbol=code[:6], frequency=9, start=0,
+                    offset=min(days * 5, RECENT_BARS), fq=0,
+                )
+            except Exception:
+                continue
+            if bars is not None and not bars.empty:
+                prefetched[code] = bars
+        if not prefetched:
+            raise RuntimeError(
+                f"mootdx 数据源不可用: 健康探测 {len(probe_codes)} 只全部无数据，"
+                "已中止全市场逐股更新"
+            )
 
     out = {}
     if new_codes:
@@ -313,16 +423,31 @@ def update_recent(days: int, *, anchor_date: date | None = None, collect: bool =
         t0 = time.time()
         written = empty = 0
 
+        consecutive_empty = 0
         for i, code in enumerate(upd_codes):
             try:
-                bars = mdx.bars(symbol=code[:6], frequency=9, start=0, offset=min(days * 5, RECENT_BARS), fq=0)
+                bars = prefetched.get(code)
+                if bars is None:
+                    bars = mdx.bars(symbol=code[:6], frequency=9, start=0,
+                                    offset=min(days * 5, RECENT_BARS), fq=0)
             except Exception:
                 empty += 1
-                continue
-            raw = _mootdx_bars_to_df(bars, xdxr_df=None)
+                consecutive_empty += 1
+                bars = None
+            xdxr = _fetch_xdxr(mdx, code) if bars is not None and not bars.empty else None
+            raw = _mootdx_bars_to_df(bars, xdxr_df=xdxr)
             if raw is None:
-                empty += 1
+                if bars is not None:
+                    empty += 1
+                    consecutive_empty += 1
+                if consecutive_empty >= RECENT_EMPTY_CIRCUIT_BREAKER:
+                    raise RuntimeError(
+                        f"mootdx 连续 {consecutive_empty} 只无数据，"
+                        f"已在 {i + 1}/{len(upd_codes)} 熔断"
+                    )
                 continue
+            consecutive_empty = 0
+            raw = raw[raw['time'] < int((pd.Timestamp(end) + pd.Timedelta(days=1)).timestamp() * 1000)]
             df_new = raw[raw['time'] >= int(pd.Timestamp(start).timestamp() * 1000)]
             if df_new.empty:
                 written += 1
@@ -331,8 +456,9 @@ def update_recent(days: int, *, anchor_date: date | None = None, collect: bool =
             if collect:
                 out[code] = _combined_bar_dict(raw)
             written += 1
-            if (i + 1) % 2000 == 0:
-                _log(f"  增量 {i+1}/{len(upd_codes)} 写入 {written} | {time.time()-t0:.0f}s")
+            if (i + 1) % RECENT_PROGRESS_INTERVAL == 0:
+                _log(f"  增量 {i+1}/{len(upd_codes)} 写入 {written} "
+                     f"无数据 {empty} | {time.time()-t0:.0f}s")
         _log(f"  增量完成: 写入 {written} 无数据 {empty} 用时 {time.time()-t0:.0f}s")
 
     return out

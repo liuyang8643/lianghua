@@ -30,8 +30,10 @@
   uv run python data/build_runtime.py --max-stocks 100  # 调试模式
 """
 import argparse
+import os
 import time
 import sys
+import uuid
 from datetime import date, datetime
 from pathlib import Path
 
@@ -44,6 +46,35 @@ KLINE_DIR = DATA_DIR / "k-line"             # mootdx 不复权（唯一原始价
 
 # 原始字段（含官方 preClose）
 RAW_FIELDS = ['open', 'high', 'low', 'close', 'volume', 'amount', 'preClose']
+
+
+def save_runtime_npz_atomic(output_path: Path, **arrays) -> Path:
+    """Write a complete Runtime archive before atomically publishing it.
+
+    The previous Runtime remains readable if compression is interrupted. The
+    temporary file lives beside the destination so ``os.replace`` stays on the
+    same filesystem and is atomic.
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = output_path.with_name(
+        f".{output_path.name}.tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}"
+    )
+    try:
+        with tmp.open('wb') as fh:
+            np.savez_compressed(fh, **arrays)
+            fh.flush()
+            os.fsync(fh.fileno())
+
+        # Reading the small date member verifies the ZIP directory and the
+        # field needed by the live loader without expanding every large matrix.
+        with np.load(tmp, allow_pickle=False) as check:
+            if 'trade_dates' not in check.files or len(check['trade_dates']) == 0:
+                raise RuntimeError(f"Runtime 临时文件缺少 trade_dates: {tmp}")
+        os.replace(tmp, output_path)
+        return output_path
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _align_into(arr_cols: list[np.ndarray], df: pd.DataFrame, src_fields: list[str],
@@ -102,46 +133,10 @@ def build_st_mask(
     Returns:
         bool ndarray (n_dates, n_stocks), True = ST/*ST/退市状态
     """
-    n_dates = len(trade_dates)
-    n_stocks = len(stock_codes)
-    st_path = DATA_DIR / "stock_name" / "st_changes.parquet"
-
-    if not st_path.exists():
-        print("警告: st_changes.parquet 不存在，ST 掩码全部为 False")
-        return np.zeros((n_dates, n_stocks), dtype=bool)
-
-    df_st = pd.read_parquet(st_path)
-    if df_st.empty:
-        print("警告: st_changes.parquet 为空，ST 掩码全部为 False")
-        return np.zeros((n_dates, n_stocks), dtype=bool)
-
-    trade_date_arr = trade_dates.astype('datetime64[ns]')
-    result = np.zeros((n_dates, n_stocks), dtype=bool)
-
-    _KEEP_ST_KEYWORDS = ("披*", "退市整理", "戴帽", "暂停上市", "终止上市")
-    _CLEAR_KEYWORDS = ("摘帽", "恢复上市", "新股上市", "重新上市", "转板上市", "摘*摘帽", "发行失败", "拟上市")
-
-    for j, code in enumerate(stock_codes):
-        bare = str(code).split('.')[0]
-        sc_records = df_st[df_st['bare_code'] == bare]
-        if sc_records.empty:
-            continue
-
-        dates = sc_records['date'].values.astype('datetime64[ns]')
-        events = sc_records['event'].values
-
-        # _KEEP_ST_KEYWORDS 优先：命中则保持 ST
-        is_keep = np.array([any(kw in str(e) for kw in _KEEP_ST_KEYWORDS) for e in events])
-        is_clear = np.array([any(kw in str(e) for kw in _CLEAR_KEYWORDS) for e in events])
-        # keep 优先级最高, clear 次之, 其余保持 ST
-        status_changes = np.where(is_keep, True, ~is_clear)
-
-        indices = np.searchsorted(dates, trade_date_arr, side='right') - 1
-        valid = indices >= 0
-        if valid.any():
-            result[valid, j] = status_changes[indices[valid]]
-
-    print(f"ST掩码: {result.sum()} 个 True / {result.size} ({result.sum()/result.size*100:.1f}%)")
+    from data.db.stock_name import build_st_mask as from_events
+    frame = pd.read_parquet(DATA_DIR / 'stock_name' / 'st_changes.parquet')
+    result = from_events(stock_codes, trade_dates, frame)
+    print(f'ST掩码: {result.sum()} 个 True / {result.size}')
     return result
 
 
@@ -410,14 +405,7 @@ def build_runtime(
     output_path = OUT_DIR / output_name
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 删除旧的全量 NPZ 文件，避免堆积（与 _patch_npz_incremental 口径一致）
-    for old in OUT_DIR.glob("runtime_*.npz"):
-        if old.name != output_name:
-            old.unlink()
-            print(f"  删除旧文件: {old.name}")
-
-    np.savez_compressed(
-        output_path,
+    runtime_arrays = dict(
         stock_codes=stock_codes,
         trade_dates=all_trade_dates,
         open=kline_arrays['open'],
@@ -439,6 +427,19 @@ def build_runtime(
         operating_cf_ps=fin_arrays['operating_cf_ps'],
         gross_margin=fin_arrays['gross_margin'],
     )
+    save_runtime_npz_atomic(output_path, **runtime_arrays)
+
+    # 新文件发布成功后才删除旧版；构建中断时旧 Runtime 始终可用。
+    for old in OUT_DIR.glob("runtime_*.npz"):
+        if old.name != output_name:
+            try:
+                old.unlink()
+                print(f"  删除旧文件: {old.name}")
+            except OSError as exc:
+                # Windows 上另一进程短暂持有旧 NPZ 时可能无法立即删除。
+                # 新 Runtime 已原子发布且 loader 支持多文件，清理失败不应
+                # 把整个已成功构建误报为失败。
+                print(f"  警告: 旧文件暂时无法删除 {old.name}: {exc}")
 
     file_size_mb = output_path.stat().st_size / (1024 * 1024)
     elapsed = time.time() - overall_t0

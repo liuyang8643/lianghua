@@ -60,6 +60,18 @@ def min_sell_shares(stock_code: str) -> int:
     return 200
   return 100
 
+
+def floor_sell_shares(stock_code: str, requested: int, available: int, holding: int) -> int:
+  """Execution quantity: cap by holdings/availability; permit odd-lot full liquidation."""
+  quantity = min(int(requested), int(available), int(holding))
+  if quantity <= 0:
+    return 0
+  if quantity == int(holding):
+    return quantity
+  if is_kcb_stock(stock_code):
+    return quantity if quantity >= min_sell_shares(stock_code) else 0
+  return quantity // min_sell_shares(stock_code) * min_sell_shares(stock_code)
+
 def board_limit_ratio(stock_code: str) -> float:
   """板块常规涨跌幅比例：科创/创业板0.20，北交所0.30，主板0.10。"""
   if is_kcb_stock(stock_code) or is_cyb_stock(stock_code):

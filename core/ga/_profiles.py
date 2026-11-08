@@ -59,7 +59,7 @@ def _load():
         return
     _loaded = True
 
-    cfg = yaml.safe_load((_get_yaml_path()).read_text())
+    cfg = yaml.safe_load((_get_yaml_path()).read_text(encoding="utf-8"))
     INTRINSIC_PARAMS = deepcopy(cfg['strategy_parameters'])
     DEFAULT_GA_PROFILE = cfg['default_profile']
     SEARCH_SPACE_VERSION = cfg['version']
