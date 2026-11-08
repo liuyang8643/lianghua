@@ -136,6 +136,7 @@ def build_rebalance_day(
     market_order_freeze: bool = True,
     limit_up_protection: bool = False,
     buy_filter_mask: np.ndarray | None = None,
+    rank_within_candidates: bool = False,
 ) -> RebalanceDayPlan:
   if is_rebalance_day:
     n_target = max(buy_n, sell_m)
@@ -145,6 +146,7 @@ def build_rebalance_day(
       force_codes=force_codes if force_codes else None,
       filter_mask=buy_filter_mask,
       filter_exempt_codes=set(positions) if buy_filter_mask is not None else None,
+      rank_within_candidates=rank_within_candidates,
     )
     buy_n_stocks = topn_max[:buy_n]
     sell_m_stocks = topn_max[:sell_m]
@@ -201,7 +203,7 @@ def build_rebalance_day(
       pos_vals=pos_vals, cash=cash,
       buy_n_stocks=buy_n_stocks, tradable_buy_stocks=tradable_buy_stocks,
       sellable_ok=sellable_ok, prices=prices, limit_prices=limit_prices,
-      base_target=base_target, rebalance=rebalance,
+      base_target=base_target, keep_stocks=sell_m_stocks, rebalance=rebalance,
     )
 
   return RebalanceDayPlan(

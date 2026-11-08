@@ -1,5 +1,24 @@
 """T-1 策略排名预过滤：回测与实盘共用，确保股票池对齐逻辑唯一。"""
 
+import numpy as np
+from core.scoring import compute_weighted_scores
+
+
+def prefilter_quote_codes(candidates, positions):
+    """Quote held stocks even outside the buy pool; do not grant buy eligibility."""
+    return list(dict.fromkeys([*candidates, *positions]))
+
+
+def select_prefilter_candidates(all_scores, previous_idx, all_stocks,
+                                stock_indices, weights, prefilter_n, positions):
+    """Use the previous session's full scores, never today's historical prices."""
+    if previous_idx < 0:
+        raise ValueError('prefilter requires the previous trading session')
+    columns = np.array([stock_indices[s] for s in all_stocks], dtype=np.intp)
+    scores = compute_weighted_scores(all_scores, previous_idx, columns, weights)
+    ranking = [all_stocks[i] for i in np.argsort(-scores)]
+    return apply_prefilter(ranking, prefilter_n, all_stocks, positions)
+
 
 def apply_prefilter(t1_ranking: list[str], prefilter_n: int,
                     all_stocks_full: list[str],

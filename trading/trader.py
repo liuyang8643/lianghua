@@ -1,9 +1,13 @@
 import os
+import math
+import time
 from datetime import datetime
 from typing import List, Optional
 from xtquant.xttrader import XtQuantTrader
 from xtquant.xttype import StockAccount, XtOrder, XtAsset, XtPosition, XtTrade
 from xtquant import xtconstant, xtdata
+
+xtdata.enable_hello = False
 
 from configs import TRADE_ACCOUNT
 from trading.helper import get_price_type
@@ -11,28 +15,43 @@ from trading.watcher import TraderCallback
 from trading.logger import trading_logger
 from utils.stock.info import is_convertible_bond
 
-qmt_data_dir = os.path.dirname(xtdata.get_data_dir())
-
 class Trader:
   strategy_name = 'FlashMan'
 
-  def __init__(self, account_id: str):
+  def __init__(self, account_id: str, *, enable_callbacks: bool = True, enable_orders: bool = True,
+               backend: str = 'bridge'):
+    self.enable_orders = enable_orders
+    self.backend = backend
     # 创建交易对象
-    self.client = XtQuantTrader(
-      qmt_data_dir,
-      int(datetime.now().timestamp())
-    )
+    if backend == 'bridge':
+      from trading.bridge_client import BridgeClient
+      self.client = BridgeClient(account_id)
+    elif backend == 'native':
+      # Bridge mode must not depend on a separate native xtdata connection.
+      qmt_data_dir = os.path.dirname(xtdata.get_data_dir())
+      self.client = XtQuantTrader(qmt_data_dir, int(datetime.now().timestamp()))
+    else:
+      raise ValueError(f'未知交易后端: {backend}')
     # 开启主动请求接口的专用线程 开启后在on_stock_xxx回调函数里调用XtQuantTrader.query_xxx函数不会卡住回调线程，但是查询和推送的数据在时序上会变得不确定
     # 详见: https://dict.thinktrader.net/nativeApi/xttrader.html?id=e2M5nZ#%E5%BC%80%E5%90%AF%E4%B8%BB%E5%8A%A8%E8%AF%B7%E6%B1%82%E6%8E%A5%E5%8F%A3%E7%9A%84%E4%B8%93%E7%94%A8%E7%BA%BF%E7%A8%8B
     self.client.set_relaxed_response_order_enabled(True)
-    # 创建交易回调类对象，并声明接收回调
-    self.client.register_callback(TraderCallback(self))
+    # dry-run / 历史回放只查询账户，不得监听并落盘真实账户回调。
+    self.callback = TraderCallback(self) if enable_callbacks else None
+    if self.callback is not None:
+      self.client.register_callback(self.callback)
     # 启动交易线程
     self.client.start()
     # 连接交易服务器
     connect_res = self.client.connect()
     if connect_res != 0:
       raise Exception(f'Connect failed, connect_res: {connect_res}')
+    if backend == 'bridge' and enable_orders and not self.client.live_enabled:
+      raise RuntimeError('客户端桥接尚未启用实盘执行，禁止启动可下单主进程')
+    if backend == 'bridge' and enable_orders:
+      readiness = self.client.verify_live_owner(os.getpid())
+      if not (readiness.owner_verified and readiness.order_api_callable and readiness.cancel_api_callable):
+        raise RuntimeError('客户端桥接无法核验实盘进程或交易接口')
+      trading_logger.info('客户端桥接已核验实盘进程身份、单实例锁与报撤单接口')
     # 创建账号对象
     self.account = StockAccount(account_id, 'STOCK')
     # 订阅账号
@@ -49,7 +68,9 @@ class Trader:
       order_remark=''
   ):
     """ 下单 """
-    trading_logger.info(f"[QMT] order_stock {stock_code} {'买' if order_type == xtconstant.STOCK_BUY else '卖'} {volume}股 ...")
+    if not self.enable_orders:
+      raise RuntimeError('只读 Trader 禁止真实下单')
+    trading_logger.debug(f"[QMT] order_stock {stock_code} {'买' if order_type == xtconstant.STOCK_BUY else '卖'} {volume}股 ...")
     price_type = get_price_type(order_type, stock_code, price)
     order_id = self.client.order_stock(
       self.account,
@@ -69,7 +90,9 @@ class Trader:
 
   def cancel_order(self, order_id: int):
     """ 撤单 """
-    trading_logger.info(f"[QMT] cancel_order_stock {order_id} ...")
+    if not self.enable_orders:
+      raise RuntimeError('只读 Trader 禁止真实撤单')
+    trading_logger.debug(f"[QMT] cancel_order_stock {order_id} ...")
     res = self.client.cancel_order_stock(self.account, order_id)
     if res != 0:
       raise Exception(f'Cancel order({order_id}) failed: {res}')
@@ -78,18 +101,46 @@ class Trader:
     """查询委托"""
     return self.client.query_stock_order(self.account, order_id)
 
+  def check_connection(self):
+    if self.backend == 'bridge':
+      self.client.ensure_alive()
+
   def query_asset(self) -> Optional[XtAsset]:
     """查询证券资产"""
-    trading_logger.info("[QMT] query_stock_asset ...")
+    trading_logger.debug("[QMT] query_stock_asset ...")
     try:
       return self.client.query_stock_asset(self.account)
     except Exception as e:
       trading_logger.exception(f"查询证券资产失败: {str(e)}")
       return None
 
+  def query_account_snapshot(self, attempts=3, retry_delay=1.0):
+    """重试完整账户查询。空响应不是空仓，资金和持仓市值必须相互一致。"""
+    for attempt in range(attempts):
+      try:
+        asset = self.client.query_stock_asset(self.account)
+        positions = self.client.query_stock_positions(self.account)
+        from trading.account_snapshot import validate_account_snapshot
+        return validate_account_snapshot(asset, positions)
+      except Exception as exc:
+        if attempt + 1 == attempts:
+          raise RuntimeError(f'QMT 账户快照不可信: {exc}') from exc
+        time.sleep(retry_delay)
+
+  def query_orders(self):
+    orders = self.client.query_stock_orders(self.account, cancelable_only=False)
+    if orders is None:
+      raise RuntimeError('QMT 委托查询失败，禁止恢复时重发')
+    return orders
+
+  def query_not_submitted_intents(self, requests):
+    if self.backend != 'bridge':
+      return []
+    return self.client.query_not_submitted_intents(requests)
+
   def query_positions(self) -> Optional[List[XtPosition]]:
     """查询持仓"""
-    trading_logger.info("[QMT] query_stock_positions ...")
+    trading_logger.debug("[QMT] query_stock_positions ...")
     try:
       return self.client.query_stock_positions(self.account)
     except Exception as e:
@@ -108,7 +159,7 @@ class Trader:
 
   def query_buy_trades(self) -> List[XtTrade]:
     """查询当日成交"""
-    trading_logger.info("[QMT] query_stock_trades (仅买单) ...")
+    trading_logger.debug("[QMT] query_stock_trades (仅买单) ...")
     all_trades = self.client.query_stock_trades(self.account)
     qmt_buy_trades = filter(
       lambda x: x.strategy_name == self.strategy_name and x.order_type == xtconstant.STOCK_BUY,
@@ -123,7 +174,7 @@ class Trader:
     post_close 兜底回填用：watcher.on_stock_order 回调有时漏触发，
     导致 fills_{T}.parquet 不完整；用此 API 与 fills 对账后补齐。
     """
-    trading_logger.info("[QMT] query_stock_trades (全部成交) ...")
+    trading_logger.debug("[QMT] query_stock_trades (全部成交) ...")
     all_trades = self.client.query_stock_trades(self.account)
     return list(all_trades) if all_trades is not None else []
 
@@ -137,7 +188,7 @@ class Trader:
         BankTransferStream 列表。每条含 business_type / occur_amount / transfer_time 等。
         若未连通或 QMT 不支持，返回 []。
     """
-    trading_logger.info(f"[QMT] query_bank_transfer_stream {start_date}-{end_date} ...")
+    trading_logger.debug(f"[QMT] query_bank_transfer_stream {start_date}-{end_date} ...")
     try:
       stream = self.client.query_bank_transfer_stream(
         self.account, start_date, end_date
@@ -158,5 +209,5 @@ def get_position(trader: Trader, only_can_sell: bool) -> List[XtPosition]:
   ]
 
 if __name__ == "__main__":
-  td = Trader(TRADE_ACCOUNT)
+  td = Trader(TRADE_ACCOUNT, enable_callbacks=False, enable_orders=False)
   td.query_buy_trades()

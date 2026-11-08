@@ -66,6 +66,24 @@ def test_target_equity_falls_back_without_baseline():
     assert p.total_eq == 88_888.0
 
 
+def test_sell_m_keeps_ranked_holding_outside_buy_n():
+    """Top buy_n 负责补仓，Top sell_m 负责保留，二者之间的持仓不能被清仓。"""
+    data, all_scores, valid_stocks, stock_indices, valid_cols = _strategy_fixture()
+    p = build_rebalance_day(
+        data=data, all_scores=all_scores, date_idx=0, trade_idx=0,
+        signal_date=date(2026, 6, 2), valid_stocks=valid_stocks,
+        valid_cols=valid_cols, stock_indices=stock_indices, weights={'F': 1.0},
+        buy_n=1, sell_m=2, checker=_AlwaysOkChecker(),
+        positions={'B.SH': 1000, 'C.SH': 1000},
+        sellable_volumes={'B.SH': 1000, 'C.SH': 1000},
+        cash=0.0, rebalance=True,
+    )
+    assert p.buy_n_stocks == ['A.SZ']
+    assert p.sell_m_stocks == ['A.SZ', 'B.SH']
+    assert ('B.SH', -1) not in p.sell_orders
+    assert ('C.SH', -1) in p.sell_orders
+
+
 def test_missing_open_is_suspended_no_trade_and_uses_previous_close_for_equity():
     """T 日 open 缺失视为停牌：不买不卖，不用历史 open 回退成交。"""
     data, all_scores, valid_stocks, stock_indices, valid_cols = _strategy_fixture()

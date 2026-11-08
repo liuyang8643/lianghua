@@ -14,8 +14,8 @@ warnings.filterwarnings('ignore', category=RuntimeWarning)
 from core.strategy_config import load_strategy_config
 from core.metrics import compute_core_metrics
 from core.runtime import load_runtime_npz
-from core.scoring import scores_to_ranks, compute_weighted_scores
-from core.prefilter import apply_prefilter
+from core.scoring import scores_to_ranks, FactorScoreMatrices
+from core.prefilter import select_prefilter_candidates
 from core.legality import LegalityChecker
 from core.sim.account import StockAccountMocker
 from core.strategy import build_rebalance_day
@@ -226,11 +226,12 @@ def _compute_factor_scores(backtest_datetime_list, all_stocks, weights, factor_c
 
   py_dates = [d.astype('datetime64[D]').item() for d in npz_dates]
   factor_data = {**data, 'stock_codes': npz_stocks, 'trade_dates': py_dates}
-  all_scores: dict[str, np.ndarray] = {}
+  all_scores = FactorScoreMatrices()
   all_raw = []
   for name, f in factor_meta:
     raw = f.calc_batch(factor_data)
-    all_scores[name] = scores_to_ranks(raw.astype(np.float32, copy=False))
+    all_scores.raw_scores[name] = raw.astype(np.float32, copy=False)
+    all_scores[name] = scores_to_ranks(all_scores.raw_scores[name])
     all_raw.append(raw.astype(np.float32, copy=False))
 
   # 多因子 NaN 并集过滤：任一因子对某股票返回 NaN，该股票就该天排除
@@ -301,7 +302,6 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
   prices: dict[str, float] = {}
   delist_events: List[Dict] = []
 
-  full_cols = np.array([stock_indices[s] for s in valid_stocks], dtype=np.intp)
 
   # 临退禁买：把退市股摘牌/暂停日传入合法性闸门（实盘不传，由 allow_buy 名单剔除）
   delist_dates_map = {c: info.delist_date for c, info in delist_stock_info.items()}
@@ -342,7 +342,6 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
     _lw_topn: List[List[str]] = []
     _lw_last_asset = account.init_cash
 
-  t1_ranking: list[str] = []
   for i, dt in enumerate(valid_dates):
     signal_date = dt.date()
     date_idx = date_indices[i]
@@ -358,9 +357,11 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
     pos_volumes = {c: p['volume'] for c, p in account.positions.items()}
     timing_mult = position_multipliers[i] if (position_multipliers is not None and not np.isnan(position_multipliers[i])) else 1.0
 
-    # prefilter：首日全量，后续用 T-1 排名限制候选池
-    if prefilter_n and i > 0 and t1_ranking:
-      day_stocks = apply_prefilter(t1_ranking, prefilter_n, valid_stocks, pos_volumes)
+    # First-day and single-day replay obey the same previous-session shortlist.
+    if prefilter_n:
+      day_stocks = select_prefilter_candidates(
+          all_scores, date_idx - 1, valid_stocks, stock_indices,
+          weights, prefilter_n, pos_volumes)
     else:
       day_stocks = valid_stocks
     day_cols = np.array([stock_indices[s] for s in day_stocks], dtype=np.intp)
@@ -382,16 +383,13 @@ def _backtest_direct(data, all_scores, valid_dates, date_indices, valid_stocks, 
         market_order_freeze=market_order_freeze,
         limit_up_protection=limit_up_protection,
         buy_filter_mask=buy_filter_mask,
+        rank_within_candidates=bool(prefilter_n),
     )
     buy_n_stocks = day_plan.buy_n_stocks
     sell_m_stocks = day_plan.sell_m_stocks
     prices = day_plan.prices
     close_prices = day_plan.close_prices
 
-    # 全量排名供 T+1 prefilter
-    if prefilter_n:
-      t_full = compute_weighted_scores(all_scores, date_idx, full_cols, weights)
-      t1_ranking = [valid_stocks[i] for i in np.argsort(-t_full)]
     tradable_buy_stocks = day_plan.tradable_buy_stocks
 
     executed_sell_list: List[str] = []
@@ -682,7 +680,9 @@ def run_live_simulation(data, all_scores, stock_codes, all_valid_stocks,
 
     live_data = {k: _slice(v) if k not in ('stock_codes', 'issue_price') else v for k, v in data.items()}
     live_data['stock_codes'] = stock_codes
-    live_scores = {k: _slice(v) for k, v in all_scores.items()}
+    live_scores = FactorScoreMatrices()
+    live_scores.update({k: _slice(v) for k, v in all_scores.items()})
+    live_scores.raw_scores = {k: _slice(v) for k, v in all_scores.raw_scores.items()}
 
     trade_dates = live_data['trade_dates']
     py_dates = [d.astype('datetime64[D]').item() for d in trade_dates]
@@ -731,7 +731,8 @@ def run_live_simulation(data, all_scores, stock_codes, all_valid_stocks,
                 holding_period=config.get('holding_period'),
                 position_multipliers=timing, list_dates_map=list_dates_map,
                 lightweight=True, limit_up_protection=config.get('limit_up_protection', False),
-                rebalance=config.get('rebalance', True))
+                rebalance=config.get('rebalance', True),
+                prefilter_n=config.get('prefilter_n'))
             m = compute_core_metrics(r['daily_returns'])
             price_results[label] = {'sharpe': m['sharpe'], 'annualized': m['annualized'], 'max_drawdown': m['max_drawdown']}
 

@@ -10,6 +10,14 @@ import numpy as np
 from typing import Optional
 
 
+class FactorScoreMatrices(dict):
+    """Full-market ranks for yesterday's shortlist; raw values for today's ranks."""
+
+    def __init__(self):
+        super().__init__()
+        self.raw_scores = {}
+
+
 def compute_weighted_scores(
     all_scores: dict,
     score_idx: int,
@@ -36,6 +44,7 @@ def select_topn(
     force_codes: Optional[list[str]] = None,
     filter_mask: Optional[np.ndarray] = None,
     filter_exempt_codes: Optional[set[str]] = None,
+    rank_within_candidates: bool = False,
 ) -> tuple[list[str], np.ndarray]:
     """加权打分 + 截面排序 + 取前 N。回测和实盘必须共用此函数。
 
@@ -54,7 +63,16 @@ def select_topn(
             topn_stocks: 选出的 top-N 股票代码列表
             final_score_arr: 全候选股的加权打分（按 valid_stocks 顺序，用于落地 plan）
     """
-    final_score = compute_weighted_scores(all_scores, score_idx, valid_cols, weights)
+    if rank_within_candidates:
+        # Rank raw values in the explicit quote/selection universe. Historical
+        # bars outside that universe must not alter any candidate's score.
+        final_score = np.zeros(len(valid_cols))
+        for name, raw in all_scores.raw_scores.items():
+            if weights[name] != 0:
+                values = raw[score_idx, valid_cols][None, :].copy()
+                final_score += scores_to_ranks(values)[0] * weights[name]
+    else:
+        final_score = compute_weighted_scores(all_scores, score_idx, valid_cols, weights)
 
     if filter_mask is not None:
         if filter_exempt_codes:

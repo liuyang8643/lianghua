@@ -4,9 +4,15 @@
 prepared/executed/post_close_done/update_all_done 全为 True，导致 06-04 开盘
 不再触发选股(before_trade)与下单(execute_trade)，只误发一张「盘中交易开始」卡片却零成交。
 """
-from datetime import datetime
+from datetime import datetime, time
 
-from trading.scheduler import TradingScheduler
+from trading.scheduler import (
+    POST_CLOSE_END,
+    POST_CLOSE_START,
+    PREPARE_REBALANCE_START,
+    UPDATE_ALL_START,
+    TradingScheduler,
+)
 
 
 class _Clock:
@@ -60,6 +66,8 @@ def test_cross_day_resets_all_daily_flags():
   sch.executed = True
   sch.post_close_done = True
   sch.update_all_done = True
+  sch._post_close_retry_at = datetime(2026, 6, 3, 16, 10)
+  sch._update_all_retry_at = datetime(2026, 6, 3, 16, 10)
 
   clock.set(datetime(2026, 6, 4, 0, 5))
   changed = sch._check_day_rollover(sch._now())
@@ -71,6 +79,8 @@ def test_cross_day_resets_all_daily_flags():
   assert sch.post_close_done is False
   assert sch.update_all_done is False
   assert sch.trading is False
+  assert sch._post_close_retry_at is None
+  assert sch._update_all_retry_at is None
 
 
 def test_cross_day_allows_new_day_prepare_condition():
@@ -100,6 +110,13 @@ def test_open_rebalance_waits_until_092510():
   sch = _make_scheduler(datetime(2026, 6, 4, 9, 25, 10))
   assert sch._in_prepare_window(sch._now()) is True
   assert sch._in_execute_window(sch._now()) is True
+
+
+def test_liuyang_dev_live_stage_boundaries_are_preserved():
+  assert PREPARE_REBALANCE_START == time(9, 25, 10)
+  assert POST_CLOSE_START == time(15, 35)
+  assert POST_CLOSE_END == time(16, 0)
+  assert UPDATE_ALL_START == time(16, 0)
 
 
 def test_fast_forward_runs_prepare_and_execute_synchronously(monkeypatch):
@@ -137,3 +154,113 @@ def test_fast_forward_advances_from_092500_to_rebalance_start(monkeypatch):
 
   assert calls[0] == ("before", datetime(2026, 6, 4, 9, 25, 10).time())
   assert [name for name, _ in calls] == ["before", "execute", "post_close", "update_all"]
+
+
+def test_fast_forward_single_point_stops_after_open_stage(monkeypatch):
+  calls = []
+  clock = _Clock(datetime(2026, 6, 4, 9, 25, 10))
+  sch = TradingScheduler(
+      trader=object(), time_provider=clock, fast_forward=True,
+      fast_forward_through_day=False,
+      before_trade=lambda store: calls.append("before"),
+      execute_trade=lambda store: calls.append("execute"),
+      post_close=lambda store: calls.append("post_close"),
+      update_all=lambda store: calls.append("update_all"),
+  )
+  monkeypatch.setattr("trading.scheduler.is_trading_day", lambda d: True)
+  monkeypatch.setattr("trading.scheduler.is_current_trading", lambda now: False)
+
+  sch.start_check_trading()
+
+  assert calls == ["before", "execute"]
+  assert clock().time() == datetime(2026, 6, 4, 9, 25, 10).time()
+
+
+def test_failed_open_callback_is_not_marked_prepared(monkeypatch):
+  clock = _Clock(datetime(2026, 6, 4, 9, 25, 10))
+
+  def fail_before(store):
+    raise RuntimeError("factor data missing")
+
+  sch = TradingScheduler(
+      trader=object(), time_provider=clock, fast_forward=True,
+      fast_forward_through_day=False, before_trade=fail_before,
+  )
+  monkeypatch.setattr("trading.scheduler.is_trading_day", lambda d: True)
+  monkeypatch.setattr("trading.scheduler.is_current_trading", lambda now: False)
+
+  sch.start_check_trading()
+
+  assert sch.prepared is False
+  assert sch.executed is False
+
+
+def test_execution_error_after_ten_can_resume_without_process_restart(monkeypatch):
+  clock = _Clock(datetime(2026, 9, 4, 9, 25, 10))
+  calls = []
+  def execute(store):
+    calls.append(clock())
+    if len(calls) == 1:
+      clock.set(datetime(2026, 9, 4, 10, 1))
+      raise RuntimeError('connection lost after market open')
+  sch = TradingScheduler(trader=object(), time_provider=clock, fast_forward=True,
+                         fast_forward_through_day=False,
+                         before_trade=lambda store: None, execute_trade=execute)
+  monkeypatch.setattr('trading.scheduler.is_trading_day', lambda d: True)
+  monkeypatch.setattr('trading.scheduler.is_current_trading', lambda d: False)
+  sch.start_check_trading()
+  assert not sch.executed and sch._resume_execution
+  clock.set(datetime(2026, 9, 4, 10, 1, 30))
+  sch.start_check_trading()
+  assert sch.executed and len(calls) == 2
+
+
+def test_post_close_failure_does_not_block_update_or_mark_done(monkeypatch):
+  calls = []
+  clock = _Clock(datetime(2026, 6, 4, 16, 1))
+  sch = TradingScheduler(
+      trader=object(), time_provider=clock, fast_forward=True,
+      post_close=lambda store: calls.append("post_close") and False,
+      update_all=lambda store: calls.append("update_all") or True,
+  )
+  monkeypatch.setattr("trading.scheduler.is_trading_day", lambda d: True)
+  monkeypatch.setattr("trading.scheduler.is_current_trading", lambda now: False)
+
+  sch.start_check_trading()
+
+  assert calls == ["post_close", "update_all"]
+  assert sch.post_close_done is False
+  assert sch.update_all_done is True
+
+
+def test_update_failure_is_not_marked_done(monkeypatch):
+  clock = _Clock(datetime(2026, 6, 4, 16, 1))
+  sch = TradingScheduler(
+      trader=object(), time_provider=clock, fast_forward=True,
+      update_all=lambda store: False,
+  )
+  monkeypatch.setattr("trading.scheduler.is_trading_day", lambda d: True)
+  monkeypatch.setattr("trading.scheduler.is_current_trading", lambda now: False)
+
+  sch.start_check_trading()
+
+  assert sch.update_all_done is False
+  assert sch._update_all_retry_at == datetime(2026, 6, 4, 16, 6)
+
+
+def test_late_start_still_runs_post_close(monkeypatch):
+  calls = []
+  clock = _Clock(datetime(2026, 6, 4, 16, 30))
+  sch = TradingScheduler(
+      trader=object(), time_provider=clock, fast_forward=True,
+      post_close=lambda store: calls.append("post_close") or True,
+      update_all=lambda store: calls.append("update_all") or True,
+  )
+  monkeypatch.setattr("trading.scheduler.is_trading_day", lambda d: True)
+  monkeypatch.setattr("trading.scheduler.is_current_trading", lambda now: False)
+
+  sch.start_check_trading()
+
+  assert calls == ["post_close", "update_all"]
+  assert sch.post_close_done is True
+  assert sch.update_all_done is True

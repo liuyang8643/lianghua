@@ -6,6 +6,7 @@
   2. 不在 callback 里做任何聚合 / 计算 / 网络 IO
   3. callback 异常不影响 QMT 主线程（每个分发块独立 try）
 """
+from datetime import date, datetime
 from xtquant import xtconstant
 from xtquant.xttrader import XtQuantTraderCallback
 from xtquant.xttype import XtOrder, XtTrade, XtOrderError, XtCancelError
@@ -24,11 +25,22 @@ def _stock_name(code: str) -> str:
   return (detail.get('InstrumentName', '') if detail else '').strip()
 
 
+def _bridge_event_time(event):
+  timestamp = getattr(event, '_bridge_event_time', None)
+  return datetime.fromtimestamp(timestamp) if timestamp is not None else None
+
+
+def _current_event(event):
+  timestamp = _bridge_event_time(event)
+  return timestamp is None or timestamp.date() == date.today()
+
+
 class TraderCallback(XtQuantTraderCallback):
 
   def __init__(self, trader):
     self.trader = trader
-    self._seen_order_status = {}  # order_id -> (status, status_msg) 去重刷屏
+    self._seen_order_status = {}  # (order_id, code) -> 状态快照，去重刷屏
+    self._seen_trades = set()
     self._seen_errors = set()     # (order_id, error_msg) 去重刷屏
 
   def on_connected(self):
@@ -43,22 +55,32 @@ class TraderCallback(XtQuantTraderCallback):
     status_label = get_order_status_label(order.order_status)
     price_label = get_price_type_label(order.price_type)
     status = order.order_status
+    state_key = (
+        status, int(order.order_volume or 0),
+        int(getattr(order, 'traded_volume', 0) or 0),
+        float(order.price or 0),
+        float(getattr(order, 'traded_price', 0) or 0),
+        order.status_msg or '',
+    )
+    callback_time = _bridge_event_time(order)
+    event_day = callback_time.date() if callback_time is not None else date.today()
+    order_key = (event_day, order.order_id, order.stock_code)
+    if self._seen_order_status.get(order_key) == state_key:
+      return
+    self._seen_order_status[order_key] = state_key
 
     if status == xtconstant.ORDER_SUCCEEDED:
-      trading_logger.success(
+      trading_logger.debug(
           f"已成: order_id={order.order_id} {op_label} {name} {price_label} "
           f"委托{order.order_volume}股 成交{getattr(order, 'traded_volume', 0)}股 "
           f"委托价={float(order.price or 0):.4f} 成交价={float(getattr(order, 'traded_price', 0) or 0):.4f}")
     elif status in (xtconstant.ORDER_CANCELED, xtconstant.ORDER_JUNK, xtconstant.ORDER_PART_CANCEL):
-      key = (order.order_id, status, order.status_msg)
-      if self._seen_order_status.get(order.order_id) != key:
-        self._seen_order_status[order.order_id] = key
-        trading_logger.warning(
-            f"废单/已撤: order_id={order.order_id} {op_label} {name} [{status_label}] "
-            f"委托{order.order_volume}股 成交{getattr(order, 'traded_volume', 0)}股 "
-            f"委托价={float(order.price or 0):.4f} msg={order.status_msg}")
+      trading_logger.warning(
+          f"废单/已撤: order_id={order.order_id} {op_label} {name} [{status_label}] "
+          f"委托{order.order_volume}股 成交{getattr(order, 'traded_volume', 0)}股 "
+          f"委托价={float(order.price or 0):.4f} msg={order.status_msg}")
     elif status == xtconstant.ORDER_REPORTED:
-      trading_logger.info(
+      trading_logger.debug(
           f"已报: order_id={order.order_id} {op_label} {name} {price_label} "
           f"委托{order.order_volume}股 委托价={float(order.price or 0):.4f}")
     else:
@@ -70,6 +92,7 @@ class TraderCallback(XtQuantTraderCallback):
     try:
       live_trade_recorder.record_event(
           EVT_ORDER,
+          event_time=_bridge_event_time(order),
           code=order.stock_code, name=name,
           order_id=int(order.order_id),
           order_type=int(order.order_type),
@@ -85,14 +108,31 @@ class TraderCallback(XtQuantTraderCallback):
 
     try:
       from .day_board import day_board
-      day_board.record_order(order)
+      if _current_event(order):
+        day_board.record_order(order)
     except Exception as e:
       trading_logger.warning(f"战报订单状态更新失败: {e}")
 
   def on_stock_trade(self, trade: XtTrade):
+    traded_id = str(getattr(trade, 'traded_id', '') or '')
+    trade_identity = traded_id or (
+        int(trade.order_id), trade.stock_code,
+        int(trade.traded_volume), float(trade.traded_price),
+    )
+    callback_time = _bridge_event_time(trade)
+    event_day = callback_time.date() if callback_time is not None else date.today()
+    trade_key = (event_day, trade_identity)
+    if trade_key in self._seen_trades:
+      return
+    self._seen_trades.add(trade_key)
     name = _stock_name(trade.stock_code) or trade.stock_code
     op_label = get_order_type_label(trade.order_type)
-    trading_logger.success(
+    log_trade = (
+        trading_logger.success
+        if getattr(trade, 'strategy_name', '') == self.trader.strategy_name
+        else trading_logger.debug
+    )
+    log_trade(
         f"成交: order_id={trade.order_id} traded_id={getattr(trade, 'traded_id', '')} "
         f"{op_label} {name} ¥{trade.traded_price:.4f} × {trade.traded_volume}股 "
         f"≈ ¥{trade.traded_amount:.2f}"
@@ -102,6 +142,7 @@ class TraderCallback(XtQuantTraderCallback):
     try:
       live_trade_recorder.record_event(
           EVT_TRADE,
+          event_time=_bridge_event_time(trade),
           code=trade.stock_code, name=name,
           order_id=int(trade.order_id),
           traded_id=str(getattr(trade, 'traded_id', '') or ''),
@@ -116,7 +157,8 @@ class TraderCallback(XtQuantTraderCallback):
 
     try:
       from .day_board import day_board
-      day_board.record_trade(trade)
+      if _current_event(trade):
+        day_board.record_trade(trade)
     except Exception as e:
       trading_logger.warning(f"战报成交记录失败: {e}")
 
@@ -124,7 +166,9 @@ class TraderCallback(XtQuantTraderCallback):
     """订单错误 — events + 战报聚合（不再发独立卡）。"""
     oid = int(getattr(order_error, 'order_id', 0) or 0)
     msg = getattr(order_error, 'error_msg', '') or ''
-    key = (oid, msg)
+    callback_time = _bridge_event_time(order_error)
+    event_day = callback_time.date() if callback_time is not None else date.today()
+    key = (event_day, oid, msg)
     if key not in self._seen_errors:
       self._seen_errors.add(key)
       trading_logger.warning(f"订单错误：{msg}")
@@ -132,6 +176,7 @@ class TraderCallback(XtQuantTraderCallback):
     try:
       live_trade_recorder.record_event(
           EVT_ORDER_ERROR,
+          event_time=_bridge_event_time(order_error),
           code=code, name=_stock_name(code) if code else '',
           order_id=int(getattr(order_error, 'order_id', 0) or 0),
           status_msg=getattr(order_error, 'error_msg', '') or '',
@@ -141,7 +186,8 @@ class TraderCallback(XtQuantTraderCallback):
 
     try:
       from .day_board import day_board
-      day_board.record_order_error(order_error)
+      if _current_event(order_error):
+        day_board.record_order_error(order_error)
     except Exception as e:
       trading_logger.warning(f"战报错误聚合失败: {e}")
 
@@ -151,6 +197,7 @@ class TraderCallback(XtQuantTraderCallback):
     try:
       live_trade_recorder.record_event(
           EVT_CANCEL_ERROR,
+          event_time=_bridge_event_time(cancel_error),
           code=code, name=_stock_name(code) if code else '',
           order_id=int(getattr(cancel_error, 'order_id', 0) or 0),
           status_msg=getattr(cancel_error, 'error_msg', '') or '',

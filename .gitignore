@@ -30,6 +30,10 @@ logs/
 # ---- Data products (large, non-code)。仅保留 data 下的脚本 *.py ----
 data/*
 !data/*.py
+# Keep the live delisting cache fix reviewable without including data products.
+!data/db/
+data/db/*
+!data/db/delist.py
 results/
 core/factors/results/
 
