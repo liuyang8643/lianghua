@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "state": "preflight_not_search_launched",
+  "parent": "artifacts/research/multihorizon_pre_live_20261108_volume_fix",
+  "output": "artifacts/research/topk_multistart_20261109",
+  "model_training": false,
+  "horizons": [3, 7, 15, 30, 60],
+  "space": {
+    "weight_units": 10,
+    "buy_n": [20, 30, 40],
+    "sell_m": [40, 60, 80],
+    "hold_thresh": [3, 7, 15],
+    "max_replacements": [1, 2, 3, 5, 10],
+    "total_combinations": 135135
+  },
+  "oof_years": [2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021],
+  "scored_years": [2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021],
+  "initialization": "Every trading day in the previous calendar OOF year; start with equal cash, carry actual account and ages across model-year switch. 2011 is initialization only because no earlier OOF exists. No synthetic account reset at scoring boundary.",
+  "scoring_calendar": "Returns whose next-open valuation date falls in evaluation year; identical masks for every candidate/start. No post-2021 outcome in search.",
+  "stages": [12, 48, "all_prior_year_trading_days"],
+  "starts": "Deterministic evenly spaced nested subsets chosen without returns; all candidates at a stage use identical starts.",
+  "ga": {"seed": 20261109, "population": 32, "patience": 10, "min_improvement": 0.0001, "generation_safety_limit": 60},
+  "selection": {"typical": "equal-fold mean of within-fold median Calmar", "tail": "equal-fold mean of within-fold linear-quantile 0.20 Calmar", "typical_tolerance_absolute": 0.05, "ties": ["worst fold median", "lower turnover", "lexicographic parameter key"]},
+  "baseline": {"weights": [2, 3, 1, 3, 1], "buy_n": 40, "sell_m": 40, "hold_thresh": 3, "max_replacements": 1},
+  "execution": {"method": "rank_buffer", "version": "accumulating_nav_slots_v2", "initial_cash": 1000000, "allow_cash": true, "top_up_existing_positions": false, "entry_budget": "NAV/sell_m", "fees": "exact parent FeeSchedule", "engine": "native WBR EpisodeSession"},
+  "holdout": {"start": "2022-01-01", "end": "2026-11-06", "access": "only after winner locked; never used for selection", "historically_observed": true},
+  "additional_diagnostics": ["equal-length fresh-account launches within available OOF", "holding overlap and convergence", "neighbour parameter stability"],
+  "limitations": ["same-open signal/execution retains existing idealized timing", "corporate action settlement retains existing economic approximation", "overlapping starts are not independent markets", "final model differs from rolling fold models", "existing features and outer history are not newly blind"]
+}

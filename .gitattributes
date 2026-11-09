@@ -3,3 +3,4 @@
 *.zip binary
 *.npz binary
 snapshots/runtime/runtime.part* binary -delta
+configs/selected_supervised_strategy_20261109.json -text whitespace=cr-at-eol

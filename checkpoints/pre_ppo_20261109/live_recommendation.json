@@ -1,0 +1,39 @@
+{
+  "allow_cash": true,
+  "audit_sha256": "721a62a5eabd476c35bcbddb334646ffdfc894ffa97316871e3fe7e4566fce84",
+  "basis": "Recent validation multistart2/3year advantage with similar execution capacity, turnover and realized style mix; defaults five highly correlated heads provide little independent diversification.",
+  "counterevidence": [
+    "OOF long-window drawdown and tail Calmar worse",
+    "Recent under1year validation launches weaker",
+    "Slightly smaller-cap/less liquid tilt",
+    "No historical industry field",
+    "Fixed-path cost stress is not an execution/impact replay"
+  ],
+  "decision": "selected_frozen_multistart_parameters",
+  "deployment_modified": false,
+  "entry_budget": "current_NAV/40",
+  "horizons": [
+    3,
+    7,
+    15,
+    30,
+    60
+  ],
+  "model_sha256": "042010db5216148bd4150cbd17b4d04e53aca47afc6d23c702016c4c47d78c7f",
+  "parameters": {
+    "buy_n": 30,
+    "hold_thresh": 7,
+    "max_replacements": 1,
+    "sell_m": 40
+  },
+  "report_sha256": "43447221a90656f03a548f1ed1845d67552a1375ac13e6c8e04173c64f273956",
+  "sources_zip_sha256": "f9e27d27b3fcedc6f25d9bf4e62f7da519c7b0064ba062c2bbd8f982dbb99407",
+  "top_up_existing_positions": false,
+  "weights": [
+    0,
+    0,
+    0.3,
+    0,
+    0.7
+  ]
+}

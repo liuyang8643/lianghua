@@ -1,0 +1,26 @@
+{
+  "parent_protocol": "research/topk_multistart_20261109/protocol.json",
+  "state": "refinement_predeclared_while_stage12_running",
+  "execution_workers": 4,
+  "execution_semantics": "Concurrent independent candidate backtests, consumed in identical parameter order; unchanged neighbourhood, RNG, score and patience. Same native engine and cache validated by actual probes.",
+  "stage48": {
+    "initial_candidates": "all stage12 shortlisted parameters plus frozen default",
+    "search": "GA with local one-coordinate or one-weight-unit-transfer mutation",
+    "population": 16,
+    "new_candidates_per_generation": 4,
+    "patience": 10,
+    "generation_safety_limit": 60,
+    "min_improvement": 0.0001,
+    "seed": 20261110,
+    "reuse": "only exact matching parameter/year/start traces from completed stage12; additional starts run native account",
+    "selection": "parent typical gate plus tail rule, identical start coverage"
+  },
+  "final_candidates": {
+    "rule": "top3 stage48 typical plus top3 stage48 tail among candidates within0.05 of best typical, plus stage48 winner plus default; deduplicate",
+    "coverage": "every previous-year OOF trading-day start for scored years2012..2021",
+    "reuse": "exact stage12/stage48 per-path results only",
+    "selection": "original parent typical gate within0.05 then maximum mean q20; no holdout access before winner lock"
+  },
+  "source_policy": "Never modify running stage12 bound sources; refinements are separate entry points and separately sealed",
+  "resume_policy": "Restore exact generation population/RNG/checkpoint; future partial-generation trials cannot participate in earlier-generation selection"
+}

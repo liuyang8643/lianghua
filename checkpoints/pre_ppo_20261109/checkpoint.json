@@ -1,0 +1,22 @@
+{
+  "base_commit": "98075c29b34ac4a8f8643082e4789d40008aa9e8",
+  "current_default_config_sha256": "51f2bb7be380f8ee660dd299c5a03eb1d71345637aab4f1c40bc29da4597543a",
+  "evidence": {
+    "live_recommendation.json": "4010f1b1c9977be9e817675eca5cb9e92de24fbfd9d66f174fcee865b02e78b8",
+    "original_environment.json": "c74e92ff5d9307c13ea0e6027ae92d8e6d0b6f293aa49677606219295af172ed",
+    "paired_launch_comparison.csv": "dd2c3a8265132a571f58ba2305cc8cbb59fd8c957c924752f7d5c5322bd64feb",
+    "paired_launch_distributions.json": "d7e71ed14cf59ca2ab7dfbe75015574e5a1e374748b14674c0af64b0c3923cab",
+    "period_comparison.csv": "720fc735b240edf829cd4e9f98868f4cbf481f28930d5d881879f3853c6471b5",
+    "selection_protocol.json": "91054c539345c88c016d2f96de778e0821a1f4e912c1a9d75f0114643e2959b1",
+    "stage48_protocol.json": "9ccd5bd8cc34a1c9dc27b10b5578267ead72b04ce1ed5fe17d30362a9fa714f6",
+    "today_first_day.json": "797f8f746b446442ffd614ae6358cacc56e15487c3393faca1d0289d48629bf1",
+    "winner_lock.json": "ca4cd8192cdd21ba8eb4f4cfe1f326770b5238cc0d099ef9a7628ea244c66ce4"
+  },
+  "model_sha256": "042010db5216148bd4150cbd17b4d04e53aca47afc6d23c702016c4c47d78c7f",
+  "scope": "All current strategy runtime/research dependencies from prior verified source closures plus this chat research modules. Both portable strategy bundles preserved. Unrelated dirty worktree changes are not directly staged. Raw market datasets/large intermediate arrays remain local and are not a remote data backup. No deployed default changed.",
+  "selected_config_sha256": "d6f5bfda82a698745eb5a57038c59229f2773d1aec28e70a3dcf255267164e54",
+  "source_archive_sha256": "476c07e0c574c445684849ddfa44e718ab4a4d484cf92e3f3e0311591a7d36c0",
+  "source_manifest_sha256": "e8489ab6d1b8b141c0b5cb0a209ddea864f9eedeba4c6b5a79197fb12a4db947",
+  "sources_count": 357,
+  "state": "verified_code_and_strategy_backup"
+}

@@ -1,0 +1,6 @@
+{
+  "bundle": "strategy_release/multistart_topk_20261109",
+  "manifest_sha256": "8159e736b71c5c1ad959f543351d596bd59b2976d33286022b40c77f318910f2",
+  "mvo_enabled": false,
+  "strategy": "new_model_topk"
+}
