@@ -57,6 +57,8 @@ uv run python testback/run_ga.py --mode ga
 
 ## 策略分支切换（2026-11-09）
 
+停机期间没有真实昨日账户基线时，恢复当天可先手动运行 `python -m trading.resume_baseline --date YYYY-MM-DD`。它只登记一次性恢复请求；随后按原流程手动启动本地 planner 和客户端策略。09:25:10后使用当天新鲜真实账户冻结预算基准，不伪造昨日日终，不补算断档期间盈亏。发生当天委托/成交、未知订单或冻结后账户变化会阻断，必须先对账；已有执行计划不受此命令重置。
+
 完整静态版本：`codex/live-static-20261109`；完整模型版本：`codex/live-model-topk-20261109`。两个分支各自只有一个生效的生产策略入口，不需要恢复 stash 或手工拼文件。
 
 ```powershell

@@ -429,17 +429,9 @@ def build_runtime(
     )
     save_runtime_npz_atomic(output_path, **runtime_arrays)
 
-    # 新文件发布成功后才删除旧版；构建中断时旧 Runtime 始终可用。
-    for old in OUT_DIR.glob("runtime_*.npz"):
-        if old.name != output_name:
-            try:
-                old.unlink()
-                print(f"  删除旧文件: {old.name}")
-            except OSError as exc:
-                # Windows 上另一进程短暂持有旧 NPZ 时可能无法立即删除。
-                # 新 Runtime 已原子发布且 loader 支持多文件，清理失败不应
-                # 把整个已成功构建误报为失败。
-                print(f"  警告: 旧文件暂时无法删除 {old.name}: {exc}")
+    # Other Runtime archives can be immutable research inputs referenced by
+    # manifests. Publishing a new date must not delete those audit sources.
+    # The reader selects by actual last trading date, not directory contents.
 
     file_size_mb = output_path.stat().st_size / (1024 * 1024)
     elapsed = time.time() - overall_t0

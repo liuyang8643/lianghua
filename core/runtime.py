@@ -20,7 +20,10 @@ def latest_runtime_npz_path() -> Path:
     npz_files = sorted(_RUNTIME_DIR.glob("runtime_*.npz"))
     if not npz_files:
         raise FileNotFoundError(f"未找到 runtime npz 文件: {_RUNTIME_DIR}")
-    return npz_files[-1]
+    def actual_end(path):
+        with np.load(path, allow_pickle=False) as data:
+            return data['trade_dates'][-1], path.stat().st_mtime_ns
+    return max(npz_files, key=actual_end)
 
 
 def load_runtime_stock_codes() -> list[str]:

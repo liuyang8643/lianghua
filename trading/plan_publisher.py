@@ -138,7 +138,14 @@ def publish_target(config_path, directory, *, now=None, now_fn=None, overlay=Non
     snapshot, asset, positions = load_account_file(directory / 'account_latest.json',
                                                   deployment['account'], today,
                                                   lambda: clock().timestamp())
-    old_cash, old_positions = previous_baseline(directory, previous, deployment['account'])
+    budget_metadata = None
+    if (not (directory / ('account_eod_' + previous.isoformat() + '.json')).exists()
+            and (directory / ('resume_request_' + today.isoformat() + '.json')).exists()):
+        from trading.resume_baseline import load_resume_budget
+        old_cash, old_positions, budget_metadata = load_resume_budget(
+            directory, snapshot, config_path, clock())
+    else:
+        old_cash, old_positions = previous_baseline(directory, previous, deployment['account'])
     strategy = load_strategy_config(config_path)
     config = strategy['individual_config']
     weights, classes = config['weights'], strategy['factor_classes']
@@ -180,6 +187,10 @@ def publish_target(config_path, directory, *, now=None, now_fn=None, overlay=Non
         raise RuntimeError('Target calculation finished outside the new-plan window')
     document = document_from_day_plan(plan, positions, deployment['account'], today,
                                       completed.timestamp(), snapshot['captured_at'])
+    if budget_metadata is not None:
+        if completed.timestamp() - snapshot['captured_at'] > 30:
+            raise RuntimeError('Recovery account expired during calculation; retry with fresh facts')
+        document['budget_baseline'] = budget_metadata
     if simulation:
         document['simulation'] = True
     validate_target(document, deployment['account'], today, completed.timestamp(), allow_simulation=simulation)

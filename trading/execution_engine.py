@@ -11,14 +11,12 @@ from xtquant import xtconstant
 from core.fees import LIVE_BUY_FEE_RATE
 from trading.helper import get_order_status_label
 from utils.stock.info import floor_buy_shares, floor_sell_shares, min_buy_shares
+from trading.target_protocol import TERMINAL_ORDER_STATUSES
 
 EVT_EXECUTION_ACTION = 'execution_action'
 SRC_EXECUTOR = 'executor_monitor'
 
-TERMINAL_STATUS = {
-    xtconstant.ORDER_SUCCEEDED, xtconstant.ORDER_CANCELED,
-    xtconstant.ORDER_JUNK, xtconstant.ORDER_PART_CANCEL,
-}
+TERMINAL_STATUS = TERMINAL_ORDER_STATUSES
 
 
 CANCELABLE_STATUS = {

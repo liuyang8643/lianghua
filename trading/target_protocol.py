@@ -7,6 +7,10 @@ import os
 import re
 import uuid
 
+# XtQuant's locked order-status protocol. Shared by local fact checks and the
+# Python 3.6 executor without importing a brokerage SDK in the local planner.
+TERMINAL_ORDER_STATUSES = frozenset((53, 54, 56, 57))
+
 def read_document(path):
     raw = path.read_bytes()
     return json.loads(raw.decode('utf-8')), hashlib.sha256(raw).hexdigest()
