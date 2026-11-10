@@ -10,6 +10,44 @@ from trading.bridge_wire import atomic_json
 from trading.file_post_close import mirror_previous_baseline
 
 
+def test_missing_baseline_report_never_converts_unknown_pnl_to_zero(tmp_path, monkeypatch):
+    import trading.report as module
+    monkeypatch.setattr(module, '_TRADE_DIR', tmp_path)
+    report = module.PostCloseReport(date(2026, 11, 10))
+    report.feed_asset(2000, None)
+    report.feed_positions_df(pd.DataFrame([dict(code='600001.SH', name='测试', volume=100,
+        market_value=1000, daily_pnl=None, daily_return_pct=None)]))
+    report.feed_fills_df(pd.DataFrame(columns=['code', 'direction', 'shares', 'price', 'amount', 'fee_est']))
+    report._baseline_unavailable_reason = '缺少昨日真实基线'
+    report._execution = dict(available=False, reason=report._baseline_unavailable_reason)
+    result = report.build()
+    assert result['summary']['live_total_asset'] == 2000
+    for key in ('prev_asset', 'live_daily_pnl', 'live_account_pnl', 'bt_daily_pnl',
+                'live_daily_return_pct', 'bt_daily_return_pct', 'bt_total_asset'):
+        assert result['summary'][key] is None
+    assert not result['execution']['available']
+    assert result['dim5_pnl']['bt_total_pnl'] is None
+    assert result['dim5_pnl']['rows'][0]['pnl_diff'] is None
+    report.to_html(tmp_path / 'report.html')
+    assert (tmp_path / 'report.html').exists()
+
+
+def test_final_daily_card_marks_unknown_pnl_neutrally():
+    from trading.day_board import TradingDayBoard
+    board = TradingDayBoard(auto_publish=False)
+    board.start_session(trade_date=date(2026, 11, 10), plan_rows=[],
+                        bt_ref=dict(buy={}, sell={}, positions={}), y_positions={})
+    board.feed_bt_reference(dict(buy={}, sell={}, positions={}),
+                            comparison_basis='缺昨日真实基线')
+    board.feed_close_data(live_pnl=None, live_return=None)
+    board.finalize()
+    card = board._build_card()
+    text = json.dumps(card, ensure_ascii=False)
+    assert '日盈亏不可核验' in text and '缺昨日真实基线' in text
+    assert '交易中...' not in text
+    assert card['header']['template'] == 'wathet'
+
+
 def test_today_facts_are_saved_before_missing_previous_baseline(tmp_path, monkeypatch):
     from trading import file_post_close, post_close
     events = []
@@ -30,6 +68,9 @@ def test_today_facts_are_saved_before_missing_previous_baseline(tmp_path, monkey
     def missing(*args, **kwargs):
         events.append('baseline'); raise FileNotFoundError('missing baseline')
     monkeypatch.setattr(file_post_close, 'mirror_previous_baseline', missing)
+    # An existing but unusable baseline must still block, rather than taking
+    # the missing-baseline factual-report path.
+    atomic_json(tmp_path / 'account_eod_2026-11-02.json', {})
     with pytest.raises(FileNotFoundError):
         file_post_close.reconcile_from_files(date(2026, 11, 3), 'unused', tmp_path)
     assert events == ['today_facts', 'baseline']

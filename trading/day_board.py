@@ -739,11 +739,13 @@ class TradingDayBoard:
         if self._bt_return is not None:
             parts.append(f"{self._comparison_basis} {fmt_pct(self._bt_return, sign=True)}")
         if not parts:
-            parts.append('交易中...')
+            parts.append(('日盈亏不可核验 · ' + self._comparison_basis)
+                         if self._finalized else '交易中...')
 
         if self._finalized:
             live_ret = self._live_return
-            tpl = LarkMsgLevel.Success if (live_ret or 0) >= 0 else LarkMsgLevel.Danger
+            tpl = (LarkMsgLevel.Info if live_ret is None else
+                   LarkMsgLevel.Success if live_ret >= 0 else LarkMsgLevel.Danger)
         else:
             tpl = LarkMsgLevel.Info
         sub = ' · '.join(parts)
@@ -784,7 +786,7 @@ def build_file_daily_card(planner, execution=None, close_report=None):
     target_positions = {**{c: q for c, q in actual.items() if c not in document['targets']},
                         **{c: r['shares'] for c, r in document['targets'].items()}}
     reference = dict(buy={}, sell={}, positions=target_positions)
-    if close_report is not None and 'execution' in close_report:
+    if close_report is not None and close_report.get('execution', {}).get('available'):
         reference['positions'] = {r['code']: r['bt_volume'] for r in close_report['execution']['rows']}
     rows = file_plan_rows(planner)
     for row in rows:
@@ -810,7 +812,7 @@ def build_file_daily_card(planner, execution=None, close_report=None):
         board.feed_close_data(live_pnl=summary['live_daily_pnl'],
                               live_return=summary['live_daily_return_pct'])
         board.feed_bt_reference(reference, bt_daily_return=summary['bt_daily_return_pct'],
-                                comparison_basis='同计划零磨损')
+                                comparison_basis=summary.get('comparison_basis', '同计划零磨损'))
         board._live_positions = close_report['holdings']
         board.finalize()
     return board._build_card()

@@ -56,9 +56,37 @@ def reconcile_from_files(trade_date, config_path, directory):
         account._fixed_snapshot = valued
         store._valuation_proof = proof
     store._prepare_close_valuation = prepare_valuation
-    result = run_post_close(store)
+    from utils.stock.time import get_last_trading_day
+    previous_day = get_last_trading_day(trade_date - timedelta(days=1))
+    baseline_missing = not (directory / ('account_eod_' + previous_day.isoformat() + '.json')).exists()
+    if baseline_missing:
+        # A missing baseline makes P&L unavailable, not today's broker facts.
+        # Never seed a substitute backtest or manufacture an earlier snapshot.
+        from trading.report import PostCloseReport
+        from trading.close_valuation import value_at_close
+        import pandas as pd
+        valued, proof = value_at_close(facts, directory.parent / 'k-line')
+        proof['source_sha256'] = hashlib.sha256((directory / ('account_eod_' + trade_date.isoformat() + '.json')).read_bytes()).hexdigest()
+        store._valuation_proof = proof
+        account._fixed_snapshot = valued
+        captured = _capture_live_close_facts(SimpleNamespace(trader=account), trade_date, skip_account=False)
+        if not captured['ok']:
+            raise RuntimeError('Closing facts persistence failed')
+        report = PostCloseReport(trade_date)
+        report._baseline_unavailable_reason = '缺少同账户前一交易日真实收盘基线，日盈亏及回测对账不可核验'
+        report.feed_asset(captured['live_asset'], None)
+        report.feed_fills_df(captured['live_fills'])
+        report.feed_positions_df(captured['live_positions_df'])
+        report.feed_plan_df(pd.read_parquet(_TRADE_DIR / ('plan_' + trade_date.isoformat() + '.parquet')))
+        report._execution = dict(available=False, reason=report._baseline_unavailable_reason)
+        store._post_close_report = report
+        html = _TRADE_DIR / 'reports' / ('diff_' + trade_date.isoformat() + '.html')
+        report.to_html(html)
+        result = report.build()
+    else:
+        result = run_post_close(store)
     if result is not None:
-        if not result['execution']['available']:
+        if not result['execution']['available'] and not baseline_missing:
             raise RuntimeError('Final execution report is unverifiable: ' + result['execution']['reason'])
         report = store._post_close_report
         html = _TRADE_DIR / 'reports' / ('diff_' + trade_date.isoformat() + '.html')

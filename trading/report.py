@@ -567,7 +567,20 @@ class PostCloseReport:
         if self._execution is not None and self._execution['available']:
             dim5 = self._execution
         summary = self.build_summary(dim5)
+        if getattr(self, '_baseline_unavailable_reason', None):
+            for row in dim5['rows']:
+                for key in ('live_daily_pnl', 'bt_daily_pnl', 'live_daily_return_pct',
+                            'bt_daily_return_pct', 'pnl_diff', 'ret_diff', '_l_eff', '_b_eff'):
+                    row[key] = None
+            dim5['live_total_pnl'] = dim5['bt_total_pnl'] = None
+            for key in ('prev_asset', 'live_daily_pnl', 'live_account_pnl', 'bt_daily_pnl',
+                        'live_daily_return_pct', 'bt_daily_return_pct', 'bt_total_asset'):
+                summary[key] = None
+            summary['live_pnl_source'] = 'unavailable'
+            summary['unavailable_reason'] = self._baseline_unavailable_reason
         summary['comparison_basis'] = ('同计划零磨损回放' if dim5 is self._execution else '策略回测')
+        if getattr(self, '_baseline_unavailable_reason', None):
+            summary['comparison_basis'] = self._baseline_unavailable_reason
         if dim5 is self._execution:
             # 零磨损执行基准仅比较当日盈亏，没有独立账户总资产。
             summary['bt_total_asset'] = None
