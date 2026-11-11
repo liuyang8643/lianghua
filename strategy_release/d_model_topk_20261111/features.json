@@ -1,0 +1,2917 @@
+{
+  "feature_names": [
+    "AccrualsYield",
+    "Alpha158_CNTN10",
+    "Alpha158_CNTN20",
+    "Alpha158_CNTN30",
+    "Alpha158_CNTN5",
+    "Alpha158_CNTN60",
+    "Alpha158_IMIN10",
+    "Alpha158_IMIN20",
+    "Alpha158_IMIN30",
+    "Alpha158_IMIN5",
+    "Alpha158_IMIN60",
+    "Alpha158_KLOW2",
+    "Alpha158_LOW0",
+    "Alpha158_MA30",
+    "Alpha158_MA60",
+    "Alpha158_MAX10",
+    "Alpha158_MAX20",
+    "Alpha158_MAX30",
+    "Alpha158_MAX5",
+    "Alpha158_MAX60",
+    "Alpha158_MIN10",
+    "Alpha158_MIN20",
+    "Alpha158_MIN30",
+    "Alpha158_MIN5",
+    "Alpha158_MIN60",
+    "Alpha158_OPEN0",
+    "Alpha158_QTLD30",
+    "Alpha158_QTLD60",
+    "Alpha158_QTLU10",
+    "Alpha158_QTLU30",
+    "Alpha158_QTLU60",
+    "Alpha158_RSQR10",
+    "Alpha158_RSQR20",
+    "Alpha158_RSQR30",
+    "Alpha158_RSQR5",
+    "Alpha158_RSQR60",
+    "Alpha158_SUMN60",
+    "Alpha158_VMA20",
+    "Alpha158_VMA60",
+    "Alpha158_VSUMN20",
+    "Alpha158_VSUMN30",
+    "Alpha158_VSUMN60",
+    "Alpha158_VWAP0",
+    "Alpha158_WVMA60",
+    "Alpha360_HIGH1",
+    "Alpha360_HIGH3",
+    "Alpha360_HIGH31",
+    "Alpha360_LOW1",
+    "Alpha360_LOW11",
+    "Alpha360_LOW12",
+    "Alpha360_LOW17",
+    "Alpha360_LOW18",
+    "Alpha360_LOW2",
+    "Alpha360_LOW24",
+    "Alpha360_LOW27",
+    "Alpha360_LOW28",
+    "Alpha360_LOW3",
+    "Alpha360_LOW38",
+    "Alpha360_LOW39",
+    "Alpha360_LOW4",
+    "Alpha360_LOW5",
+    "Alpha360_LOW52",
+    "Alpha360_LOW54",
+    "Alpha360_LOW55",
+    "Alpha360_LOW6",
+    "Alpha360_LOW7",
+    "Alpha360_LOW8",
+    "Alpha360_LOW9",
+    "Alpha360_VOLUME1",
+    "Alpha360_VOLUME10",
+    "Alpha360_VOLUME11",
+    "Alpha360_VOLUME12",
+    "Alpha360_VOLUME13",
+    "Alpha360_VOLUME14",
+    "Alpha360_VOLUME15",
+    "Alpha360_VOLUME16",
+    "Alpha360_VOLUME17",
+    "Alpha360_VOLUME19",
+    "Alpha360_VOLUME2",
+    "Alpha360_VOLUME21",
+    "Alpha360_VOLUME23",
+    "Alpha360_VOLUME24",
+    "Alpha360_VOLUME25",
+    "Alpha360_VOLUME26",
+    "Alpha360_VOLUME27",
+    "Alpha360_VOLUME29",
+    "Alpha360_VOLUME3",
+    "Alpha360_VOLUME31",
+    "Alpha360_VOLUME32",
+    "Alpha360_VOLUME33",
+    "Alpha360_VOLUME34",
+    "Alpha360_VOLUME35",
+    "Alpha360_VOLUME36",
+    "Alpha360_VOLUME37",
+    "Alpha360_VOLUME38",
+    "Alpha360_VOLUME39",
+    "Alpha360_VOLUME4",
+    "Alpha360_VOLUME40",
+    "Alpha360_VOLUME41",
+    "Alpha360_VOLUME42",
+    "Alpha360_VOLUME43",
+    "Alpha360_VOLUME44",
+    "Alpha360_VOLUME45",
+    "Alpha360_VOLUME46",
+    "Alpha360_VOLUME47",
+    "Alpha360_VOLUME48",
+    "Alpha360_VOLUME49",
+    "Alpha360_VOLUME5",
+    "Alpha360_VOLUME51",
+    "Alpha360_VOLUME52",
+    "Alpha360_VOLUME53",
+    "Alpha360_VOLUME54",
+    "Alpha360_VOLUME55",
+    "Alpha360_VOLUME56",
+    "Alpha360_VOLUME57",
+    "Alpha360_VOLUME58",
+    "Alpha360_VOLUME6",
+    "Alpha360_VOLUME7",
+    "Alpha360_VOLUME8",
+    "Alpha360_VOLUME9",
+    "Alpha360_VWAP2",
+    "AmountBasedSmallCap5",
+    "BiliAdjustedIssueDiscount",
+    "BiliKDJOversoldCross",
+    "BiliLowAmountAttention20__history_120__recent_20",
+    "BiliLowAmountAttention20__history_252__recent_10",
+    "BiliLowAmountAttention20__history_252__recent_30",
+    "BiliLowAmountAttention20__history_252__recent_60",
+    "BiliLowAmountAttention20__history_60__recent_10",
+    "BiliLowAmountAttention20__history_60__recent_30",
+    "BiliLowAmountAttention20__history_60__recent_60",
+    "BiliLowLifetimeRangeRatio",
+    "BiliLowPriceAbove2",
+    "BiliLowPriceSmallCap200",
+    "BiliLowReturnAttention20__window_120",
+    "BiliLowReturnAttention20__window_5",
+    "BiliLowReturnAttention20__window_60",
+    "BiliMACDBottomDivergence30",
+    "BiliNineDownReversal",
+    "BiliRawIssueDiscount",
+    "BookToMarket",
+    "BookToMarketQuality",
+    "CashFlowYield",
+    "Completed52WeekHighProximityStrict",
+    "Completed6030PoolBeta60Strict",
+    "CompletedAmihudIlliquidity20__window_60",
+    "CompletedAmountConditionedReversal20Strict",
+    "CompletedDividendConsistency3YPIT",
+    "CompletedDividendYield504PIT",
+    "CompletedPriorMonthTurnoverStrict",
+    "CompletedRangeVolatility20",
+    "DeepValueComposite",
+    "DownsideOpenVolatilityStrict",
+    "EarningsYield",
+    "Factor_20260530_195339_g10_0",
+    "Factor_20260530_195339_g17_0",
+    "Factor_20260530_195339_g17_4",
+    "Factor_20260530_195339_g32_3",
+    "Factor_20260530_195339_g3_2",
+    "Factor_20260531_005210_g11_0",
+    "Factor_20260531_005210_g11_3",
+    "Factor_20260531_005210_g15_4",
+    "Factor_20260531_005210_g17_0",
+    "Factor_20260531_005210_g1_0",
+    "Factor_20260531_005210_g20_0",
+    "Factor_20260531_005210_g20_3",
+    "Factor_20260531_005210_g22_2",
+    "Factor_20260531_005210_g24_2",
+    "Factor_20260531_005210_g25_3",
+    "Factor_20260531_005210_g26_4",
+    "Factor_20260531_005210_g28_2",
+    "Factor_20260531_005210_g29_2",
+    "Factor_20260531_005210_g29_3",
+    "Factor_20260531_005210_g2_0",
+    "Factor_20260531_005210_g30_3",
+    "Factor_20260531_005210_g32_0",
+    "Factor_20260531_005210_g32_1",
+    "Factor_20260531_005210_g34_1",
+    "Factor_20260531_005210_g35_0",
+    "Factor_20260531_005210_g37_2",
+    "Factor_20260531_005210_g38_1",
+    "Factor_20260531_005210_g39_1",
+    "Factor_20260531_005210_g3_3",
+    "Factor_20260531_005210_g40_1",
+    "Factor_20260531_005210_g41_0",
+    "Factor_20260531_005210_g8_1",
+    "Factor_20260605_192540_g5_2",
+    "FinancialQualityGrowthNeutralPIT",
+    "GrossMarginQuality",
+    "High52Week",
+    "HighAbnormalGrossProfit",
+    "HighInventoryOtherPayable",
+    "HighOperatingCashSurplus",
+    "HighOperatingProfitRevenueGrowthSpread",
+    "HighReceivableOtherPayable",
+    "IndustryPeerReversal120Strict",
+    "IndustryPeerReversal20Strict",
+    "IndustryPeerReversal60Strict",
+    "LongHorizonVol36MStrict",
+    "LowCashOutflowProfitGrowthSpread__penalty_0",
+    "LowCashOutflowProfitGrowthSpread__penalty_1.5",
+    "LowFloatTurnover20_10",
+    "LowPRDecile",
+    "LowResidualVol20",
+    "MainTurnover",
+    "Optimized__TrueMarketCap",
+    "PB3ROE5Signal",
+    "PBBelowTwoROEAbove10Signal",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.05",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.1",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.15",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.2",
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.05",
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.1",
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.15",
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.1",
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.15",
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.2",
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.05",
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.15",
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.2",
+    "PBBelowTwoROEAbove10Signal__pb_3__roe_0.1",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.05",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.1",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.15",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.2",
+    "PricePosition250",
+    "ProfitGrowth",
+    "SameCalendarMonthReturn3YStrict",
+    "TrendIndividualV5",
+    "TrendOpenSignalV2",
+    "TrendOpenSignalV3",
+    "TrendReversalPreCloseStrict",
+    "TrendReversalV11",
+    "TrueMarketCapT1",
+    "VolumeCVStrict",
+    "VolumeCV__window_10",
+    "VolumeCV__window_120",
+    "VolumeCV__window_30",
+    "VolumeCV__window_5",
+    "VolumeCV__window_60",
+    "VolumeContraction5v15Strict",
+    "attention_contraction_10_60__attention_10__prior_120__recent_20__weight_0.75",
+    "attention_contraction_10_60__attention_10__prior_120__recent_5__weight_0.75",
+    "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.25",
+    "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.5",
+    "attention_contraction_10_60__attention_10__prior_60__recent_20__weight_0.25",
+    "attention_contraction_10_60__attention_20__prior_120__recent_20__weight_0.75",
+    "attention_contraction_10_60__attention_30__prior_120__recent_20__weight_0.25",
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.25",
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.5",
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.75",
+    "attention_contraction_10_60__attention_30__prior_20__recent_10__weight_0.25",
+    "attention_contraction_10_60__attention_30__prior_20__recent_20__weight_0.5",
+    "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.25",
+    "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.75",
+    "attention_contraction_40_20",
+    "attention_contraction_40_60",
+    "attention_decay20_60",
+    "contraction_10_60",
+    "contraction_20_20",
+    "contraction_20_60",
+    "contraction_40_20",
+    "contraction_40_60",
+    "gradual_quiet20_60",
+    "high_to_quiet_10_20",
+    "high_to_quiet_20_20",
+    "high_to_quiet_20_60",
+    "high_to_quiet_40_20",
+    "high_to_quiet_40_60",
+    "low_residual_vol20__window_10",
+    "low_residual_vol20__window_120",
+    "low_residual_vol20__window_30",
+    "low_residual_vol20__window_5",
+    "persistent_quiet20_60__prior_120__recent_10",
+    "persistent_quiet20_60__prior_120__recent_60",
+    "persistent_quiet20_60__prior_20__recent_30",
+    "persistent_quiet20_60__prior_60__recent_10"
+  ],
+  "normalization": {
+    "AccrualsYield": "daily_PIT_percentile",
+    "Alpha158_CNTN10": "daily_PIT_percentile",
+    "Alpha158_CNTN20": "daily_PIT_percentile",
+    "Alpha158_CNTN30": "daily_PIT_percentile",
+    "Alpha158_CNTN5": "daily_PIT_percentile",
+    "Alpha158_CNTN60": "daily_PIT_percentile",
+    "Alpha158_IMIN10": "daily_PIT_percentile",
+    "Alpha158_IMIN20": "daily_PIT_percentile",
+    "Alpha158_IMIN30": "daily_PIT_percentile",
+    "Alpha158_IMIN5": "daily_PIT_percentile",
+    "Alpha158_IMIN60": "daily_PIT_percentile",
+    "Alpha158_KLOW2": "daily_PIT_percentile",
+    "Alpha158_LOW0": "daily_PIT_percentile",
+    "Alpha158_MA30": "daily_PIT_percentile",
+    "Alpha158_MA60": "daily_PIT_percentile",
+    "Alpha158_MAX10": "daily_PIT_percentile",
+    "Alpha158_MAX20": "daily_PIT_percentile",
+    "Alpha158_MAX30": "daily_PIT_percentile",
+    "Alpha158_MAX5": "daily_PIT_percentile",
+    "Alpha158_MAX60": "daily_PIT_percentile",
+    "Alpha158_MIN10": "daily_PIT_percentile",
+    "Alpha158_MIN20": "daily_PIT_percentile",
+    "Alpha158_MIN30": "daily_PIT_percentile",
+    "Alpha158_MIN5": "daily_PIT_percentile",
+    "Alpha158_MIN60": "daily_PIT_percentile",
+    "Alpha158_OPEN0": "daily_PIT_percentile",
+    "Alpha158_QTLD30": "daily_PIT_percentile",
+    "Alpha158_QTLD60": "daily_PIT_percentile",
+    "Alpha158_QTLU10": "daily_PIT_percentile",
+    "Alpha158_QTLU30": "daily_PIT_percentile",
+    "Alpha158_QTLU60": "daily_PIT_percentile",
+    "Alpha158_RSQR10": "daily_PIT_percentile",
+    "Alpha158_RSQR20": "daily_PIT_percentile",
+    "Alpha158_RSQR30": "daily_PIT_percentile",
+    "Alpha158_RSQR5": "daily_PIT_percentile",
+    "Alpha158_RSQR60": "daily_PIT_percentile",
+    "Alpha158_SUMN60": "daily_PIT_percentile",
+    "Alpha158_VMA20": "daily_PIT_percentile",
+    "Alpha158_VMA60": "daily_PIT_percentile",
+    "Alpha158_VSUMN20": "daily_PIT_percentile",
+    "Alpha158_VSUMN30": "daily_PIT_percentile",
+    "Alpha158_VSUMN60": "daily_PIT_percentile",
+    "Alpha158_VWAP0": "daily_PIT_percentile",
+    "Alpha158_WVMA60": "daily_PIT_percentile",
+    "Alpha360_HIGH1": "daily_PIT_percentile",
+    "Alpha360_HIGH3": "daily_PIT_percentile",
+    "Alpha360_HIGH31": "daily_PIT_percentile",
+    "Alpha360_LOW1": "daily_PIT_percentile",
+    "Alpha360_LOW11": "daily_PIT_percentile",
+    "Alpha360_LOW12": "daily_PIT_percentile",
+    "Alpha360_LOW17": "daily_PIT_percentile",
+    "Alpha360_LOW18": "daily_PIT_percentile",
+    "Alpha360_LOW2": "daily_PIT_percentile",
+    "Alpha360_LOW24": "daily_PIT_percentile",
+    "Alpha360_LOW27": "daily_PIT_percentile",
+    "Alpha360_LOW28": "daily_PIT_percentile",
+    "Alpha360_LOW3": "daily_PIT_percentile",
+    "Alpha360_LOW38": "daily_PIT_percentile",
+    "Alpha360_LOW39": "daily_PIT_percentile",
+    "Alpha360_LOW4": "daily_PIT_percentile",
+    "Alpha360_LOW5": "daily_PIT_percentile",
+    "Alpha360_LOW52": "daily_PIT_percentile",
+    "Alpha360_LOW54": "daily_PIT_percentile",
+    "Alpha360_LOW55": "daily_PIT_percentile",
+    "Alpha360_LOW6": "daily_PIT_percentile",
+    "Alpha360_LOW7": "daily_PIT_percentile",
+    "Alpha360_LOW8": "daily_PIT_percentile",
+    "Alpha360_LOW9": "daily_PIT_percentile",
+    "Alpha360_VOLUME1": "daily_PIT_percentile",
+    "Alpha360_VOLUME10": "daily_PIT_percentile",
+    "Alpha360_VOLUME11": "daily_PIT_percentile",
+    "Alpha360_VOLUME12": "daily_PIT_percentile",
+    "Alpha360_VOLUME13": "daily_PIT_percentile",
+    "Alpha360_VOLUME14": "daily_PIT_percentile",
+    "Alpha360_VOLUME15": "daily_PIT_percentile",
+    "Alpha360_VOLUME16": "daily_PIT_percentile",
+    "Alpha360_VOLUME17": "daily_PIT_percentile",
+    "Alpha360_VOLUME19": "daily_PIT_percentile",
+    "Alpha360_VOLUME2": "daily_PIT_percentile",
+    "Alpha360_VOLUME21": "daily_PIT_percentile",
+    "Alpha360_VOLUME23": "daily_PIT_percentile",
+    "Alpha360_VOLUME24": "daily_PIT_percentile",
+    "Alpha360_VOLUME25": "daily_PIT_percentile",
+    "Alpha360_VOLUME26": "daily_PIT_percentile",
+    "Alpha360_VOLUME27": "daily_PIT_percentile",
+    "Alpha360_VOLUME29": "daily_PIT_percentile",
+    "Alpha360_VOLUME3": "daily_PIT_percentile",
+    "Alpha360_VOLUME31": "daily_PIT_percentile",
+    "Alpha360_VOLUME32": "daily_PIT_percentile",
+    "Alpha360_VOLUME33": "daily_PIT_percentile",
+    "Alpha360_VOLUME34": "daily_PIT_percentile",
+    "Alpha360_VOLUME35": "daily_PIT_percentile",
+    "Alpha360_VOLUME36": "daily_PIT_percentile",
+    "Alpha360_VOLUME37": "daily_PIT_percentile",
+    "Alpha360_VOLUME38": "daily_PIT_percentile",
+    "Alpha360_VOLUME39": "daily_PIT_percentile",
+    "Alpha360_VOLUME4": "daily_PIT_percentile",
+    "Alpha360_VOLUME40": "daily_PIT_percentile",
+    "Alpha360_VOLUME41": "daily_PIT_percentile",
+    "Alpha360_VOLUME42": "daily_PIT_percentile",
+    "Alpha360_VOLUME43": "daily_PIT_percentile",
+    "Alpha360_VOLUME44": "daily_PIT_percentile",
+    "Alpha360_VOLUME45": "daily_PIT_percentile",
+    "Alpha360_VOLUME46": "daily_PIT_percentile",
+    "Alpha360_VOLUME47": "daily_PIT_percentile",
+    "Alpha360_VOLUME48": "daily_PIT_percentile",
+    "Alpha360_VOLUME49": "daily_PIT_percentile",
+    "Alpha360_VOLUME5": "daily_PIT_percentile",
+    "Alpha360_VOLUME51": "daily_PIT_percentile",
+    "Alpha360_VOLUME52": "daily_PIT_percentile",
+    "Alpha360_VOLUME53": "daily_PIT_percentile",
+    "Alpha360_VOLUME54": "daily_PIT_percentile",
+    "Alpha360_VOLUME55": "daily_PIT_percentile",
+    "Alpha360_VOLUME56": "daily_PIT_percentile",
+    "Alpha360_VOLUME57": "daily_PIT_percentile",
+    "Alpha360_VOLUME58": "daily_PIT_percentile",
+    "Alpha360_VOLUME6": "daily_PIT_percentile",
+    "Alpha360_VOLUME7": "daily_PIT_percentile",
+    "Alpha360_VOLUME8": "daily_PIT_percentile",
+    "Alpha360_VOLUME9": "daily_PIT_percentile",
+    "Alpha360_VWAP2": "daily_PIT_percentile",
+    "AmountBasedSmallCap5": "daily_PIT_percentile",
+    "BiliAdjustedIssueDiscount": "daily_PIT_percentile",
+    "BiliKDJOversoldCross": "binary",
+    "BiliLowAmountAttention20__history_120__recent_20": "daily_PIT_percentile",
+    "BiliLowAmountAttention20__history_252__recent_10": "daily_PIT_percentile",
+    "BiliLowAmountAttention20__history_252__recent_30": "daily_PIT_percentile",
+    "BiliLowAmountAttention20__history_252__recent_60": "daily_PIT_percentile",
+    "BiliLowAmountAttention20__history_60__recent_10": "daily_PIT_percentile",
+    "BiliLowAmountAttention20__history_60__recent_30": "daily_PIT_percentile",
+    "BiliLowAmountAttention20__history_60__recent_60": "daily_PIT_percentile",
+    "BiliLowLifetimeRangeRatio": "daily_PIT_percentile",
+    "BiliLowPriceAbove2": "daily_PIT_percentile",
+    "BiliLowPriceSmallCap200": "binary",
+    "BiliLowReturnAttention20__window_120": "daily_PIT_percentile",
+    "BiliLowReturnAttention20__window_5": "daily_PIT_percentile",
+    "BiliLowReturnAttention20__window_60": "daily_PIT_percentile",
+    "BiliMACDBottomDivergence30": "binary",
+    "BiliNineDownReversal": "binary",
+    "BiliRawIssueDiscount": "daily_PIT_percentile",
+    "BookToMarket": "daily_PIT_percentile",
+    "BookToMarketQuality": "daily_PIT_percentile",
+    "CashFlowYield": "daily_PIT_percentile",
+    "Completed52WeekHighProximityStrict": "daily_PIT_percentile",
+    "Completed6030PoolBeta60Strict": "daily_PIT_percentile",
+    "CompletedAmihudIlliquidity20__window_60": "daily_PIT_percentile",
+    "CompletedAmountConditionedReversal20Strict": "daily_PIT_percentile",
+    "CompletedDividendConsistency3YPIT": "daily_PIT_percentile",
+    "CompletedDividendYield504PIT": "daily_PIT_percentile",
+    "CompletedPriorMonthTurnoverStrict": "daily_PIT_percentile",
+    "CompletedRangeVolatility20": "daily_PIT_percentile",
+    "DeepValueComposite": "daily_PIT_percentile",
+    "DownsideOpenVolatilityStrict": "daily_PIT_percentile",
+    "EarningsYield": "daily_PIT_percentile",
+    "Factor_20260530_195339_g10_0": "daily_PIT_percentile",
+    "Factor_20260530_195339_g17_0": "daily_PIT_percentile",
+    "Factor_20260530_195339_g17_4": "daily_PIT_percentile",
+    "Factor_20260530_195339_g32_3": "daily_PIT_percentile",
+    "Factor_20260530_195339_g3_2": "daily_PIT_percentile",
+    "Factor_20260531_005210_g11_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g11_3": "daily_PIT_percentile",
+    "Factor_20260531_005210_g15_4": "daily_PIT_percentile",
+    "Factor_20260531_005210_g17_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g1_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g20_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g20_3": "daily_PIT_percentile",
+    "Factor_20260531_005210_g22_2": "daily_PIT_percentile",
+    "Factor_20260531_005210_g24_2": "daily_PIT_percentile",
+    "Factor_20260531_005210_g25_3": "daily_PIT_percentile",
+    "Factor_20260531_005210_g26_4": "daily_PIT_percentile",
+    "Factor_20260531_005210_g28_2": "daily_PIT_percentile",
+    "Factor_20260531_005210_g29_2": "daily_PIT_percentile",
+    "Factor_20260531_005210_g29_3": "daily_PIT_percentile",
+    "Factor_20260531_005210_g2_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g30_3": "daily_PIT_percentile",
+    "Factor_20260531_005210_g32_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g32_1": "daily_PIT_percentile",
+    "Factor_20260531_005210_g34_1": "daily_PIT_percentile",
+    "Factor_20260531_005210_g35_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g37_2": "daily_PIT_percentile",
+    "Factor_20260531_005210_g38_1": "daily_PIT_percentile",
+    "Factor_20260531_005210_g39_1": "daily_PIT_percentile",
+    "Factor_20260531_005210_g3_3": "daily_PIT_percentile",
+    "Factor_20260531_005210_g40_1": "daily_PIT_percentile",
+    "Factor_20260531_005210_g41_0": "daily_PIT_percentile",
+    "Factor_20260531_005210_g8_1": "daily_PIT_percentile",
+    "Factor_20260605_192540_g5_2": "daily_PIT_percentile",
+    "FinancialQualityGrowthNeutralPIT": "daily_PIT_percentile",
+    "GrossMarginQuality": "daily_PIT_percentile",
+    "High52Week": "daily_PIT_percentile",
+    "HighAbnormalGrossProfit": "daily_PIT_percentile",
+    "HighInventoryOtherPayable": "daily_PIT_percentile",
+    "HighOperatingCashSurplus": "daily_PIT_percentile",
+    "HighOperatingProfitRevenueGrowthSpread": "daily_PIT_percentile",
+    "HighReceivableOtherPayable": "daily_PIT_percentile",
+    "IndustryPeerReversal120Strict": "daily_PIT_percentile",
+    "IndustryPeerReversal20Strict": "daily_PIT_percentile",
+    "IndustryPeerReversal60Strict": "daily_PIT_percentile",
+    "LongHorizonVol36MStrict": "daily_PIT_percentile",
+    "LowCashOutflowProfitGrowthSpread__penalty_0": "daily_PIT_percentile",
+    "LowCashOutflowProfitGrowthSpread__penalty_1.5": "daily_PIT_percentile",
+    "LowFloatTurnover20_10": "daily_PIT_percentile",
+    "LowPRDecile": "daily_PIT_percentile",
+    "LowResidualVol20": "daily_PIT_percentile",
+    "MainTurnover": "daily_PIT_percentile",
+    "Optimized__TrueMarketCap": "daily_PIT_percentile",
+    "PB3ROE5Signal": "binary",
+    "PBBelowTwoROEAbove10Signal": "binary",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.05": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.1": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.15": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.2": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.05": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.1": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.15": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.1": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.15": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.2": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.05": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.15": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.2": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_3__roe_0.1": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.05": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.1": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.15": "daily_PIT_percentile",
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.2": "daily_PIT_percentile",
+    "PricePosition250": "daily_PIT_percentile",
+    "ProfitGrowth": "daily_PIT_percentile",
+    "SameCalendarMonthReturn3YStrict": "daily_PIT_percentile",
+    "TrendIndividualV5": "daily_PIT_percentile",
+    "TrendOpenSignalV2": "daily_PIT_percentile",
+    "TrendOpenSignalV3": "daily_PIT_percentile",
+    "TrendReversalPreCloseStrict": "daily_PIT_percentile",
+    "TrendReversalV11": "daily_PIT_percentile",
+    "TrueMarketCapT1": "daily_PIT_percentile",
+    "VolumeCVStrict": "daily_PIT_percentile",
+    "VolumeCV__window_10": "daily_PIT_percentile",
+    "VolumeCV__window_120": "daily_PIT_percentile",
+    "VolumeCV__window_30": "daily_PIT_percentile",
+    "VolumeCV__window_5": "daily_PIT_percentile",
+    "VolumeCV__window_60": "daily_PIT_percentile",
+    "VolumeContraction5v15Strict": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_10__prior_120__recent_20__weight_0.75": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_10__prior_120__recent_5__weight_0.75": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.25": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.5": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_10__prior_60__recent_20__weight_0.25": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_20__prior_120__recent_20__weight_0.75": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_120__recent_20__weight_0.25": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.25": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.5": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.75": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_20__recent_10__weight_0.25": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_20__recent_20__weight_0.5": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.25": "daily_PIT_percentile",
+    "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.75": "daily_PIT_percentile",
+    "attention_contraction_40_20": "daily_PIT_percentile",
+    "attention_contraction_40_60": "daily_PIT_percentile",
+    "attention_decay20_60": "daily_PIT_percentile",
+    "contraction_10_60": "daily_PIT_percentile",
+    "contraction_20_20": "daily_PIT_percentile",
+    "contraction_20_60": "daily_PIT_percentile",
+    "contraction_40_20": "daily_PIT_percentile",
+    "contraction_40_60": "daily_PIT_percentile",
+    "gradual_quiet20_60": "daily_PIT_percentile",
+    "high_to_quiet_10_20": "daily_PIT_percentile",
+    "high_to_quiet_20_20": "daily_PIT_percentile",
+    "high_to_quiet_20_60": "daily_PIT_percentile",
+    "high_to_quiet_40_20": "daily_PIT_percentile",
+    "high_to_quiet_40_60": "daily_PIT_percentile",
+    "low_residual_vol20__window_10": "daily_PIT_percentile",
+    "low_residual_vol20__window_120": "daily_PIT_percentile",
+    "low_residual_vol20__window_30": "daily_PIT_percentile",
+    "low_residual_vol20__window_5": "daily_PIT_percentile",
+    "persistent_quiet20_60__prior_120__recent_10": "daily_PIT_percentile",
+    "persistent_quiet20_60__prior_120__recent_60": "daily_PIT_percentile",
+    "persistent_quiet20_60__prior_20__recent_30": "daily_PIT_percentile",
+    "persistent_quiet20_60__prior_60__recent_10": "daily_PIT_percentile"
+  },
+  "factors": {
+    "AccrualsYield": {
+      "name": "AccrualsYield",
+      "rank_ic_by_horizon": {
+        "15": 0.0016685646729221353,
+        "30": 0.003895972690678429
+      }
+    },
+    "Alpha158_CNTN10": {
+      "name": "Alpha158_CNTN10",
+      "rank_ic_by_horizon": {
+        "3": 0.020070593434654383,
+        "7": 0.009231702869602596,
+        "15": 0.006152581190298549,
+        "30": 0.01299574797121896,
+        "60": 0.012333650850199355
+      }
+    },
+    "Alpha158_CNTN20": {
+      "name": "Alpha158_CNTN20",
+      "rank_ic_by_horizon": {
+        "3": 0.016738822578645018,
+        "7": 0.012387721528710524,
+        "15": 0.014343158208034503,
+        "30": 0.017942387096215276,
+        "60": 0.014657976905839108
+      }
+    },
+    "Alpha158_CNTN30": {
+      "name": "Alpha158_CNTN30",
+      "rank_ic_by_horizon": {
+        "3": 0.01675666480705608,
+        "7": 0.014996482845575127,
+        "15": 0.015703933083957913,
+        "30": 0.017534773691374027,
+        "60": 0.011581295637508216
+      }
+    },
+    "Alpha158_CNTN5": {
+      "name": "Alpha158_CNTN5",
+      "rank_ic_by_horizon": {
+        "3": 0.03547126977893767,
+        "7": 0.019676764173698857,
+        "15": 0.00982471209312719,
+        "30": 0.013901175828636142,
+        "60": 0.011514055315064041
+      }
+    },
+    "Alpha158_CNTN60": {
+      "name": "Alpha158_CNTN60",
+      "rank_ic_by_horizon": {
+        "3": 0.00864812898868539,
+        "7": 0.007493498439294851,
+        "15": 0.008083682238097106,
+        "30": 0.00667839372649317
+      }
+    },
+    "Alpha158_IMIN10": {
+      "name": "Alpha158_IMIN10",
+      "rank_ic_by_horizon": {
+        "3": 0.022758620466291592,
+        "7": 0.01908896079740572,
+        "15": 0.019331823135671028,
+        "30": 0.02457296365312338,
+        "60": 0.02260830552971131
+      }
+    },
+    "Alpha158_IMIN20": {
+      "name": "Alpha158_IMIN20",
+      "rank_ic_by_horizon": {
+        "3": 0.017108367337043257,
+        "7": 0.024975450451130303,
+        "15": 0.0352314430435256,
+        "30": 0.03999625615103248,
+        "60": 0.033125249316208485
+      }
+    },
+    "Alpha158_IMIN30": {
+      "name": "Alpha158_IMIN30",
+      "rank_ic_by_horizon": {
+        "3": 0.01855786333582115,
+        "7": 0.030265363215854692,
+        "15": 0.03948927300775732,
+        "30": 0.04309094017113002,
+        "60": 0.03564763669759286
+      }
+    },
+    "Alpha158_IMIN5": {
+      "name": "Alpha158_IMIN5",
+      "rank_ic_by_horizon": {
+        "3": 0.041567641631867276,
+        "7": 0.02860119062899916,
+        "15": 0.018714396906083924,
+        "30": 0.02030841530821386,
+        "60": 0.017284066610854822
+      }
+    },
+    "Alpha158_IMIN60": {
+      "name": "Alpha158_IMIN60",
+      "rank_ic_by_horizon": {
+        "3": 0.01379601751012966,
+        "7": 0.02469730937451653,
+        "15": 0.03666461004040926,
+        "30": 0.041292623276993616,
+        "60": 0.03208994189187002
+      }
+    },
+    "Alpha158_KLOW2": {
+      "name": "Alpha158_KLOW2",
+      "rank_ic_by_horizon": {
+        "3": 0.00033922844776747556,
+        "15": 0.00011936969676876233,
+        "30": 0.0012789940324885905,
+        "60": 0.006782585213974726
+      }
+    },
+    "Alpha158_LOW0": {
+      "name": "Alpha158_LOW0",
+      "rank_ic_by_horizon": {
+        "3": 0.04195462432622235,
+        "7": 0.04376113957495637,
+        "15": 0.04044246499395945,
+        "30": 0.046999877464544114,
+        "60": 0.05043567822014295
+      }
+    },
+    "Alpha158_MA30": {
+      "name": "Alpha158_MA30",
+      "rank_ic_by_horizon": {
+        "3": 0.06247397156911009
+      }
+    },
+    "Alpha158_MA60": {
+      "name": "Alpha158_MA60",
+      "rank_ic_by_horizon": {
+        "7": 0.0705179265436547
+      }
+    },
+    "Alpha158_MAX10": {
+      "name": "Alpha158_MAX10",
+      "rank_ic_by_horizon": {
+        "3": 0.01879359533303458,
+        "7": 0.003712521882113546
+      }
+    },
+    "Alpha158_MAX20": {
+      "name": "Alpha158_MAX20",
+      "rank_ic_by_horizon": {
+        "7": 0.009526860049732626,
+        "15": 0.0030982948422641414
+      }
+    },
+    "Alpha158_MAX30": {
+      "name": "Alpha158_MAX30",
+      "rank_ic_by_horizon": {
+        "3": 0.026365588807977958,
+        "30": 0.013321836799296282
+      }
+    },
+    "Alpha158_MAX5": {
+      "name": "Alpha158_MAX5",
+      "rank_ic_by_horizon": {
+        "3": 0.015902315406283618,
+        "7": 0.00459840781355616
+      }
+    },
+    "Alpha158_MAX60": {
+      "name": "Alpha158_MAX60",
+      "rank_ic_by_horizon": {
+        "3": 0.030503268887788766,
+        "7": 0.028519964329831688,
+        "15": 0.026638955303721144,
+        "60": 0.0008716161942222514
+      }
+    },
+    "Alpha158_MIN10": {
+      "name": "Alpha158_MIN10",
+      "rank_ic_by_horizon": {
+        "30": 0.06139793950419296
+      }
+    },
+    "Alpha158_MIN20": {
+      "name": "Alpha158_MIN20",
+      "rank_ic_by_horizon": {
+        "3": 0.05412777329354322,
+        "60": 0.0758300378844345
+      }
+    },
+    "Alpha158_MIN30": {
+      "name": "Alpha158_MIN30",
+      "rank_ic_by_horizon": {
+        "30": 0.07298394847482294
+      }
+    },
+    "Alpha158_MIN5": {
+      "name": "Alpha158_MIN5",
+      "rank_ic_by_horizon": {
+        "3": 0.06292304613939693,
+        "7": 0.05755881325052692,
+        "15": 0.04897986825845254,
+        "60": 0.0635349676049253
+      }
+    },
+    "Alpha158_MIN60": {
+      "name": "Alpha158_MIN60",
+      "rank_ic_by_horizon": {
+        "7": 0.05766255619230635,
+        "15": 0.0656620517624454,
+        "60": 0.08610618626220289
+      }
+    },
+    "Alpha158_OPEN0": {
+      "name": "Alpha158_OPEN0",
+      "rank_ic_by_horizon": {
+        "3": 0.02771018444438231,
+        "7": 0.02784377389819556,
+        "15": 0.017390003343166996,
+        "30": 0.019001824202160306,
+        "60": 0.017922825444006536
+      }
+    },
+    "Alpha158_QTLD30": {
+      "name": "Alpha158_QTLD30",
+      "rank_ic_by_horizon": {
+        "7": 0.06541328056322397,
+        "15": 0.07002153910521634
+      }
+    },
+    "Alpha158_QTLD60": {
+      "name": "Alpha158_QTLD60",
+      "rank_ic_by_horizon": {
+        "3": 0.06055581445060898,
+        "30": 0.08737376682108693
+      }
+    },
+    "Alpha158_QTLU10": {
+      "name": "Alpha158_QTLU10",
+      "rank_ic_by_horizon": {
+        "3": 0.054070479367970214,
+        "7": 0.042801532113910114,
+        "15": 0.02778915277044453,
+        "30": 0.030786613667249555,
+        "60": 0.02158973668793914
+      }
+    },
+    "Alpha158_QTLU30": {
+      "name": "Alpha158_QTLU30",
+      "rank_ic_by_horizon": {
+        "7": 0.05808562073002283,
+        "15": 0.059646119928431676
+      }
+    },
+    "Alpha158_QTLU60": {
+      "name": "Alpha158_QTLU60",
+      "rank_ic_by_horizon": {
+        "30": 0.06672580273437205
+      }
+    },
+    "Alpha158_RSQR10": {
+      "name": "Alpha158_RSQR10",
+      "rank_ic_by_horizon": {
+        "15": 0.0061718877423950595,
+        "30": 0.012966202078465638,
+        "60": 0.008565018852634564
+      }
+    },
+    "Alpha158_RSQR20": {
+      "name": "Alpha158_RSQR20",
+      "rank_ic_by_horizon": {
+        "7": 0.002601603607370136,
+        "15": 0.010930076132119167,
+        "30": 0.019204224089911324,
+        "60": 0.012218385467453862
+      }
+    },
+    "Alpha158_RSQR30": {
+      "name": "Alpha158_RSQR30",
+      "rank_ic_by_horizon": {
+        "3": 0.0008746255226139389,
+        "7": 0.0055172266665093625,
+        "15": 0.012655774987015197,
+        "30": 0.02040871507675191,
+        "60": 0.011062686112966309
+      }
+    },
+    "Alpha158_RSQR5": {
+      "name": "Alpha158_RSQR5",
+      "rank_ic_by_horizon": {
+        "15": 0.0026189637076446774,
+        "30": 0.005154853423472696,
+        "60": 0.004359638840548026
+      }
+    },
+    "Alpha158_RSQR60": {
+      "name": "Alpha158_RSQR60",
+      "rank_ic_by_horizon": {
+        "3": 0.006994660595997321,
+        "7": 0.011608674379037252,
+        "15": 0.01418006787413642,
+        "30": 0.011512149163770634,
+        "60": 0.009775635329409907
+      }
+    },
+    "Alpha158_SUMN60": {
+      "name": "Alpha158_SUMN60",
+      "rank_ic_by_horizon": {
+        "7": 0.049839909587719285
+      }
+    },
+    "Alpha158_VMA20": {
+      "name": "Alpha158_VMA20",
+      "rank_ic_by_horizon": {
+        "3": 0.032213559205797083,
+        "7": 0.025785495632846326,
+        "15": 0.019123869343445787,
+        "30": 0.02211625633943057,
+        "60": 0.02132810394759255
+      }
+    },
+    "Alpha158_VMA60": {
+      "name": "Alpha158_VMA60",
+      "rank_ic_by_horizon": {
+        "3": 0.04840153124577101,
+        "7": 0.04746214979847662,
+        "15": 0.04474650809370928,
+        "30": 0.04620972385955478,
+        "60": 0.04105247159009478
+      }
+    },
+    "Alpha158_VSUMN20": {
+      "name": "Alpha158_VSUMN20",
+      "rank_ic_by_horizon": {
+        "3": 0.03692598130558027,
+        "7": 0.03559985922545326,
+        "15": 0.03332472412164887,
+        "30": 0.03603607943782637,
+        "60": 0.03147306759302172
+      }
+    },
+    "Alpha158_VSUMN30": {
+      "name": "Alpha158_VSUMN30",
+      "rank_ic_by_horizon": {
+        "3": 0.041860473224657156,
+        "7": 0.043740132653150306,
+        "15": 0.04267839740851312,
+        "30": 0.04497181439092154,
+        "60": 0.03861496261566566
+      }
+    },
+    "Alpha158_VSUMN60": {
+      "name": "Alpha158_VSUMN60",
+      "rank_ic_by_horizon": {
+        "3": 0.04468945882062777,
+        "7": 0.04919821692183816,
+        "15": 0.050650314348059076,
+        "30": 0.05050272943000233,
+        "60": 0.04807791810996994
+      }
+    },
+    "Alpha158_VWAP0": {
+      "name": "Alpha158_VWAP0",
+      "rank_ic_by_horizon": {
+        "3": 0.03360438377106063,
+        "7": 0.03095447168144579,
+        "15": 0.02064507093800605,
+        "30": 0.019011830848599993,
+        "60": 0.01290068743826144
+      }
+    },
+    "Alpha158_WVMA60": {
+      "name": "Alpha158_WVMA60",
+      "rank_ic_by_horizon": {
+        "60": 0.002751902798174986
+      }
+    },
+    "Alpha360_HIGH1": {
+      "name": "Alpha360_HIGH1",
+      "rank_ic_by_horizon": {
+        "3": 0.018662536842060026,
+        "7": 0.01850573245682989,
+        "15": 0.0027102677470486718,
+        "30": 1.817032217425396e-05
+      }
+    },
+    "Alpha360_HIGH3": {
+      "name": "Alpha360_HIGH3",
+      "rank_ic_by_horizon": {
+        "3": 0.04730754611931395,
+        "7": 0.037965341802876355,
+        "15": 0.02155718540455148,
+        "30": 0.021968106264038265
+      }
+    },
+    "Alpha360_HIGH31": {
+      "name": "Alpha360_HIGH31",
+      "rank_ic_by_horizon": {
+        "3": 0.054124571129286626
+      }
+    },
+    "Alpha360_LOW1": {
+      "name": "Alpha360_LOW1",
+      "rank_ic_by_horizon": {
+        "3": 0.04725113877973082,
+        "7": 0.04889982284524805,
+        "15": 0.038386530364423806,
+        "30": 0.042857059752466106,
+        "60": 0.042490699562465074
+      }
+    },
+    "Alpha360_LOW11": {
+      "name": "Alpha360_LOW11",
+      "rank_ic_by_horizon": {
+        "7": 0.050987830879548904,
+        "15": 0.05509766526935553,
+        "30": 0.06517761564573214
+      }
+    },
+    "Alpha360_LOW12": {
+      "name": "Alpha360_LOW12",
+      "rank_ic_by_horizon": {
+        "60": 0.0638169808437244
+      }
+    },
+    "Alpha360_LOW17": {
+      "name": "Alpha360_LOW17",
+      "rank_ic_by_horizon": {
+        "30": 0.07475203030370263
+      }
+    },
+    "Alpha360_LOW18": {
+      "name": "Alpha360_LOW18",
+      "rank_ic_by_horizon": {
+        "60": 0.071313539719981
+      }
+    },
+    "Alpha360_LOW2": {
+      "name": "Alpha360_LOW2",
+      "rank_ic_by_horizon": {
+        "3": 0.0555894943058036,
+        "7": 0.05392230463578819,
+        "15": 0.04152367739487607,
+        "30": 0.04559073824851664
+      }
+    },
+    "Alpha360_LOW24": {
+      "name": "Alpha360_LOW24",
+      "rank_ic_by_horizon": {
+        "30": 0.08065843030827449
+      }
+    },
+    "Alpha360_LOW27": {
+      "name": "Alpha360_LOW27",
+      "rank_ic_by_horizon": {
+        "60": 0.07516909784193082
+      }
+    },
+    "Alpha360_LOW28": {
+      "name": "Alpha360_LOW28",
+      "rank_ic_by_horizon": {
+        "15": 0.07912082811205093
+      }
+    },
+    "Alpha360_LOW3": {
+      "name": "Alpha360_LOW3",
+      "rank_ic_by_horizon": {
+        "60": 0.04616082583316884
+      }
+    },
+    "Alpha360_LOW38": {
+      "name": "Alpha360_LOW38",
+      "rank_ic_by_horizon": {
+        "60": 0.0723493424570411
+      }
+    },
+    "Alpha360_LOW39": {
+      "name": "Alpha360_LOW39",
+      "rank_ic_by_horizon": {
+        "15": 0.07464022766879476
+      }
+    },
+    "Alpha360_LOW4": {
+      "name": "Alpha360_LOW4",
+      "rank_ic_by_horizon": {
+        "3": 0.06843374940625485,
+        "7": 0.05784423811631922,
+        "15": 0.04581649059840303,
+        "30": 0.05207677576764934
+      }
+    },
+    "Alpha360_LOW5": {
+      "name": "Alpha360_LOW5",
+      "rank_ic_by_horizon": {
+        "60": 0.050593906772052215
+      }
+    },
+    "Alpha360_LOW52": {
+      "name": "Alpha360_LOW52",
+      "rank_ic_by_horizon": {
+        "60": 0.07168403512389548
+      }
+    },
+    "Alpha360_LOW54": {
+      "name": "Alpha360_LOW54",
+      "rank_ic_by_horizon": {
+        "3": 0.04915321338613758,
+        "30": 0.07408861417556169
+      }
+    },
+    "Alpha360_LOW55": {
+      "name": "Alpha360_LOW55",
+      "rank_ic_by_horizon": {
+        "15": 0.07110350868898176
+      }
+    },
+    "Alpha360_LOW6": {
+      "name": "Alpha360_LOW6",
+      "rank_ic_by_horizon": {
+        "3": 0.06417825913202631,
+        "7": 0.053923511081980784
+      }
+    },
+    "Alpha360_LOW7": {
+      "name": "Alpha360_LOW7",
+      "rank_ic_by_horizon": {
+        "15": 0.04770928395161371,
+        "30": 0.057086876713112744
+      }
+    },
+    "Alpha360_LOW8": {
+      "name": "Alpha360_LOW8",
+      "rank_ic_by_horizon": {
+        "60": 0.05518692628311147
+      }
+    },
+    "Alpha360_LOW9": {
+      "name": "Alpha360_LOW9",
+      "rank_ic_by_horizon": {
+        "3": 0.05539226365927389
+      }
+    },
+    "Alpha360_VOLUME1": {
+      "name": "Alpha360_VOLUME1",
+      "rank_ic_by_horizon": {
+        "3": 0.005037000973046279,
+        "7": 0.00826654864558344,
+        "15": 0.003875972527762337,
+        "30": 0.0034629724042234303,
+        "60": 0.0032087667552811367
+      }
+    },
+    "Alpha360_VOLUME10": {
+      "name": "Alpha360_VOLUME10",
+      "rank_ic_by_horizon": {
+        "3": 0.03194169408232746,
+        "7": 0.026304454253643306,
+        "15": 0.02047408684510904,
+        "30": 0.022165823035179756,
+        "60": 0.02072988265833325
+      }
+    },
+    "Alpha360_VOLUME11": {
+      "name": "Alpha360_VOLUME11",
+      "rank_ic_by_horizon": {
+        "3": 0.0321468034213377,
+        "7": 0.026736705221789232,
+        "15": 0.02153634145367313,
+        "30": 0.023402166018245817,
+        "60": 0.022216426945329736
+      }
+    },
+    "Alpha360_VOLUME12": {
+      "name": "Alpha360_VOLUME12",
+      "rank_ic_by_horizon": {
+        "3": 0.03197102672473957,
+        "7": 0.02688674569818712,
+        "15": 0.022990102412986702,
+        "30": 0.024844480891766225,
+        "60": 0.023730557097400965
+      }
+    },
+    "Alpha360_VOLUME13": {
+      "name": "Alpha360_VOLUME13",
+      "rank_ic_by_horizon": {
+        "3": 0.03218387397605004,
+        "7": 0.027090565213560278,
+        "15": 0.024215966384364095,
+        "30": 0.026232904927260138,
+        "60": 0.02468781134768247
+      }
+    },
+    "Alpha360_VOLUME14": {
+      "name": "Alpha360_VOLUME14",
+      "rank_ic_by_horizon": {
+        "3": 0.03236773022859791,
+        "7": 0.02783682588018211,
+        "15": 0.025248626564301404,
+        "30": 0.027404760831763592,
+        "60": 0.02584433203972831
+      }
+    },
+    "Alpha360_VOLUME15": {
+      "name": "Alpha360_VOLUME15",
+      "rank_ic_by_horizon": {
+        "3": 0.03298955176105251,
+        "7": 0.029271820856473705,
+        "15": 0.026389805487153608,
+        "30": 0.028732952797421114,
+        "60": 0.026987669267566433
+      }
+    },
+    "Alpha360_VOLUME16": {
+      "name": "Alpha360_VOLUME16",
+      "rank_ic_by_horizon": {
+        "3": 0.03343549632078755
+      }
+    },
+    "Alpha360_VOLUME17": {
+      "name": "Alpha360_VOLUME17",
+      "rank_ic_by_horizon": {
+        "7": 0.03214717743606476,
+        "15": 0.029113723668449876,
+        "30": 0.031650654790328615,
+        "60": 0.028984940221721114
+      }
+    },
+    "Alpha360_VOLUME19": {
+      "name": "Alpha360_VOLUME19",
+      "rank_ic_by_horizon": {
+        "3": 0.03554339128429574,
+        "7": 0.03417551889328066,
+        "15": 0.031838405937407,
+        "30": 0.03473958554733241,
+        "60": 0.030716592780985128
+      }
+    },
+    "Alpha360_VOLUME2": {
+      "name": "Alpha360_VOLUME2",
+      "rank_ic_by_horizon": {
+        "3": 0.010306800592883657,
+        "7": 0.014221074658295453,
+        "15": 0.008205473478637997,
+        "30": 0.007033904772528518,
+        "60": 0.006172773169549286
+      }
+    },
+    "Alpha360_VOLUME21": {
+      "name": "Alpha360_VOLUME21",
+      "rank_ic_by_horizon": {
+        "3": 0.03849443402477664,
+        "7": 0.03723499325778649,
+        "15": 0.0350465559976704,
+        "30": 0.03748779917025149,
+        "60": 0.032923358872071526
+      }
+    },
+    "Alpha360_VOLUME23": {
+      "name": "Alpha360_VOLUME23",
+      "rank_ic_by_horizon": {
+        "7": 0.038148477454512095,
+        "15": 0.03687073981397625,
+        "30": 0.039248614152350945,
+        "60": 0.03410785960747735
+      }
+    },
+    "Alpha360_VOLUME24": {
+      "name": "Alpha360_VOLUME24",
+      "rank_ic_by_horizon": {
+        "3": 0.03913986087095844
+      }
+    },
+    "Alpha360_VOLUME25": {
+      "name": "Alpha360_VOLUME25",
+      "rank_ic_by_horizon": {
+        "7": 0.03945612860885108,
+        "15": 0.03828307895743316,
+        "30": 0.04112105378864439,
+        "60": 0.035327083900545904
+      }
+    },
+    "Alpha360_VOLUME26": {
+      "name": "Alpha360_VOLUME26",
+      "rank_ic_by_horizon": {
+        "3": 0.04029564716709341
+      }
+    },
+    "Alpha360_VOLUME27": {
+      "name": "Alpha360_VOLUME27",
+      "rank_ic_by_horizon": {
+        "7": 0.04088741151578137,
+        "15": 0.039571724947058594,
+        "30": 0.04236478481604195,
+        "60": 0.036126146491154344
+      }
+    },
+    "Alpha360_VOLUME29": {
+      "name": "Alpha360_VOLUME29",
+      "rank_ic_by_horizon": {
+        "3": 0.04067817096974765,
+        "7": 0.042533707792902595,
+        "15": 0.04103517161463522,
+        "30": 0.04385527219044831,
+        "60": 0.03751673234529897
+      }
+    },
+    "Alpha360_VOLUME3": {
+      "name": "Alpha360_VOLUME3",
+      "rank_ic_by_horizon": {
+        "3": 0.018359839122980455,
+        "7": 0.01733371511508102,
+        "15": 0.010969518029371567,
+        "30": 0.010128995743291609,
+        "60": 0.008829709974594055
+      }
+    },
+    "Alpha360_VOLUME31": {
+      "name": "Alpha360_VOLUME31",
+      "rank_ic_by_horizon": {
+        "15": 0.042690989201363085,
+        "60": 0.039081317512151895
+      }
+    },
+    "Alpha360_VOLUME32": {
+      "name": "Alpha360_VOLUME32",
+      "rank_ic_by_horizon": {
+        "3": 0.04276732126938588,
+        "7": 0.043833907116735835,
+        "30": 0.045584870109462605
+      }
+    },
+    "Alpha360_VOLUME33": {
+      "name": "Alpha360_VOLUME33",
+      "rank_ic_by_horizon": {
+        "15": 0.04382328950407964,
+        "60": 0.04012242604336144
+      }
+    },
+    "Alpha360_VOLUME34": {
+      "name": "Alpha360_VOLUME34",
+      "rank_ic_by_horizon": {
+        "3": 0.04353174671431534,
+        "7": 0.044488664104121826,
+        "30": 0.046304401554301065
+      }
+    },
+    "Alpha360_VOLUME35": {
+      "name": "Alpha360_VOLUME35",
+      "rank_ic_by_horizon": {
+        "15": 0.04446555796192644,
+        "60": 0.041416993255839314
+      }
+    },
+    "Alpha360_VOLUME36": {
+      "name": "Alpha360_VOLUME36",
+      "rank_ic_by_horizon": {
+        "3": 0.04262398430817367,
+        "7": 0.044688530393296705
+      }
+    },
+    "Alpha360_VOLUME37": {
+      "name": "Alpha360_VOLUME37",
+      "rank_ic_by_horizon": {
+        "15": 0.04496167057594061,
+        "30": 0.046289130336359834,
+        "60": 0.04211921014153582
+      }
+    },
+    "Alpha360_VOLUME38": {
+      "name": "Alpha360_VOLUME38",
+      "rank_ic_by_horizon": {
+        "3": 0.042681796142202334,
+        "7": 0.04525321386140718
+      }
+    },
+    "Alpha360_VOLUME39": {
+      "name": "Alpha360_VOLUME39",
+      "rank_ic_by_horizon": {
+        "15": 0.046109844929126786,
+        "30": 0.04697607891239218,
+        "60": 0.04296934535420851
+      }
+    },
+    "Alpha360_VOLUME4": {
+      "name": "Alpha360_VOLUME4",
+      "rank_ic_by_horizon": {
+        "3": 0.026966645286249796,
+        "7": 0.021522292172704006,
+        "15": 0.013812822776531872,
+        "30": 0.013364824184507795,
+        "60": 0.011879072341724277
+      }
+    },
+    "Alpha360_VOLUME40": {
+      "name": "Alpha360_VOLUME40",
+      "rank_ic_by_horizon": {
+        "3": 0.04399218427300795,
+        "7": 0.046413493291597975
+      }
+    },
+    "Alpha360_VOLUME41": {
+      "name": "Alpha360_VOLUME41",
+      "rank_ic_by_horizon": {
+        "15": 0.046960083396593175,
+        "30": 0.04746039599640516,
+        "60": 0.043998900403726386
+      }
+    },
+    "Alpha360_VOLUME42": {
+      "name": "Alpha360_VOLUME42",
+      "rank_ic_by_horizon": {
+        "3": 0.044020274554118,
+        "7": 0.0469821667283479
+      }
+    },
+    "Alpha360_VOLUME43": {
+      "name": "Alpha360_VOLUME43",
+      "rank_ic_by_horizon": {
+        "15": 0.04692632977818854,
+        "30": 0.04797760180223184,
+        "60": 0.04445629094339677
+      }
+    },
+    "Alpha360_VOLUME44": {
+      "name": "Alpha360_VOLUME44",
+      "rank_ic_by_horizon": {
+        "3": 0.04424198311104713
+      }
+    },
+    "Alpha360_VOLUME45": {
+      "name": "Alpha360_VOLUME45",
+      "rank_ic_by_horizon": {
+        "7": 0.047220769466307336,
+        "15": 0.046913669361525884,
+        "30": 0.04796271986733064,
+        "60": 0.04514224378272378
+      }
+    },
+    "Alpha360_VOLUME46": {
+      "name": "Alpha360_VOLUME46",
+      "rank_ic_by_horizon": {
+        "3": 0.044917488881423565
+      }
+    },
+    "Alpha360_VOLUME47": {
+      "name": "Alpha360_VOLUME47",
+      "rank_ic_by_horizon": {
+        "7": 0.04746070910029013,
+        "30": 0.0480136381506114,
+        "60": 0.04574409759558153
+      }
+    },
+    "Alpha360_VOLUME48": {
+      "name": "Alpha360_VOLUME48",
+      "rank_ic_by_horizon": {
+        "3": 0.044541989898463086,
+        "15": 0.04666288470571203
+      }
+    },
+    "Alpha360_VOLUME49": {
+      "name": "Alpha360_VOLUME49",
+      "rank_ic_by_horizon": {
+        "7": 0.04779280095392175,
+        "30": 0.04811772012398049,
+        "60": 0.046582525519933395
+      }
+    },
+    "Alpha360_VOLUME5": {
+      "name": "Alpha360_VOLUME5",
+      "rank_ic_by_horizon": {
+        "3": 0.033566147033506376,
+        "7": 0.0252138706467081,
+        "15": 0.016369240533716727,
+        "30": 0.016447954284069456,
+        "60": 0.014289814025398405
+      }
+    },
+    "Alpha360_VOLUME51": {
+      "name": "Alpha360_VOLUME51",
+      "rank_ic_by_horizon": {
+        "3": 0.04463758594107767,
+        "15": 0.046488072772541245,
+        "30": 0.04762613930456301,
+        "60": 0.04689749515332423
+      }
+    },
+    "Alpha360_VOLUME52": {
+      "name": "Alpha360_VOLUME52",
+      "rank_ic_by_horizon": {
+        "7": 0.04805242251207135
+      }
+    },
+    "Alpha360_VOLUME53": {
+      "name": "Alpha360_VOLUME53",
+      "rank_ic_by_horizon": {
+        "3": 0.04527074019096232,
+        "15": 0.047318452893221306,
+        "30": 0.04825041517151229,
+        "60": 0.0473699904128007
+      }
+    },
+    "Alpha360_VOLUME54": {
+      "name": "Alpha360_VOLUME54",
+      "rank_ic_by_horizon": {
+        "7": 0.04759593768196485
+      }
+    },
+    "Alpha360_VOLUME55": {
+      "name": "Alpha360_VOLUME55",
+      "rank_ic_by_horizon": {
+        "15": 0.04748201598202002,
+        "60": 0.04704811499716318
+      }
+    },
+    "Alpha360_VOLUME56": {
+      "name": "Alpha360_VOLUME56",
+      "rank_ic_by_horizon": {
+        "3": 0.04485631070848968,
+        "30": 0.04809380803303586
+      }
+    },
+    "Alpha360_VOLUME57": {
+      "name": "Alpha360_VOLUME57",
+      "rank_ic_by_horizon": {
+        "7": 0.04790875047809503,
+        "15": 0.048149968448220275
+      }
+    },
+    "Alpha360_VOLUME58": {
+      "name": "Alpha360_VOLUME58",
+      "rank_ic_by_horizon": {
+        "3": 0.04400900144455428,
+        "30": 0.04885182462352847,
+        "60": 0.04759882089330666
+      }
+    },
+    "Alpha360_VOLUME6": {
+      "name": "Alpha360_VOLUME6",
+      "rank_ic_by_horizon": {
+        "3": 0.03276696569678275,
+        "7": 0.025182338732835926,
+        "15": 0.016776042066447686,
+        "30": 0.017597143077900185,
+        "60": 0.015287137948433982
+      }
+    },
+    "Alpha360_VOLUME7": {
+      "name": "Alpha360_VOLUME7",
+      "rank_ic_by_horizon": {
+        "3": 0.03021284950742056,
+        "7": 0.02463637746463237,
+        "15": 0.01700914420253187,
+        "30": 0.018245640335853318,
+        "60": 0.015995504898662277
+      }
+    },
+    "Alpha360_VOLUME8": {
+      "name": "Alpha360_VOLUME8",
+      "rank_ic_by_horizon": {
+        "3": 0.029564060010350963,
+        "7": 0.02427142836918198,
+        "15": 0.017912687769707336,
+        "30": 0.019291648592605834,
+        "60": 0.01737908459799379
+      }
+    },
+    "Alpha360_VOLUME9": {
+      "name": "Alpha360_VOLUME9",
+      "rank_ic_by_horizon": {
+        "3": 0.03037231681678149,
+        "7": 0.024934856007979605,
+        "15": 0.01921805881631621,
+        "30": 0.020623095471563838,
+        "60": 0.018928744802482425
+      }
+    },
+    "Alpha360_VWAP2": {
+      "name": "Alpha360_VWAP2",
+      "rank_ic_by_horizon": {
+        "60": 0.02368451295153918
+      }
+    },
+    "AmountBasedSmallCap5": {
+      "name": "AmountBasedSmallCap5",
+      "rank_ic_by_horizon": {
+        "3": 0.0663439085459825,
+        "7": 0.08561717485951409,
+        "15": 0.10852463953274293,
+        "30": 0.13003146368149612,
+        "60": 0.15337415217749742
+      }
+    },
+    "BiliAdjustedIssueDiscount": {
+      "name": "BiliAdjustedIssueDiscount",
+      "rank_ic_by_horizon": {
+        "3": 0.01714782733240571,
+        "7": 0.02387844868590733,
+        "15": 0.03213990968367306,
+        "30": 0.040794047979551044,
+        "60": 0.04850224881142719
+      }
+    },
+    "BiliKDJOversoldCross": {
+      "name": "BiliKDJOversoldCross",
+      "rank_ic_by_horizon": {
+        "30": 0.0007960562544028506
+      }
+    },
+    "BiliLowAmountAttention20__history_120__recent_20": {
+      "name": "BiliLowAmountAttention20__history_120__recent_20",
+      "rank_ic_by_horizon": {
+        "3": 0.057753926598213434,
+        "7": 0.07301534667039387,
+        "15": 0.08281882921749731,
+        "30": 0.08660113797110383,
+        "60": 0.08690101474453157
+      }
+    },
+    "BiliLowAmountAttention20__history_252__recent_10": {
+      "name": "BiliLowAmountAttention20__history_252__recent_10",
+      "rank_ic_by_horizon": {
+        "3": 0.0667200608744127,
+        "7": 0.08208584285875928,
+        "15": 0.09444824126450073,
+        "30": 0.1025870587928785,
+        "60": 0.09621824696172616
+      }
+    },
+    "BiliLowAmountAttention20__history_252__recent_30": {
+      "name": "BiliLowAmountAttention20__history_252__recent_30",
+      "rank_ic_by_horizon": {
+        "3": 0.05597308937718585,
+        "7": 0.07252801657054088,
+        "15": 0.08414332483490021,
+        "30": 0.08981602216475658,
+        "60": 0.08828326900120027
+      }
+    },
+    "BiliLowAmountAttention20__history_252__recent_60": {
+      "name": "BiliLowAmountAttention20__history_252__recent_60",
+      "rank_ic_by_horizon": {
+        "3": 0.04152312578438579,
+        "7": 0.05408236047195859,
+        "15": 0.06370077008400532,
+        "30": 0.07358465467539135,
+        "60": 0.07837572053606799
+      }
+    },
+    "BiliLowAmountAttention20__history_60__recent_10": {
+      "name": "BiliLowAmountAttention20__history_60__recent_10",
+      "rank_ic_by_horizon": {
+        "3": 0.05477489808284776,
+        "7": 0.06354220713261592,
+        "15": 0.06944387876881976,
+        "30": 0.07015587164930087,
+        "60": 0.06698357851265391
+      }
+    },
+    "BiliLowAmountAttention20__history_60__recent_30": {
+      "name": "BiliLowAmountAttention20__history_60__recent_30",
+      "rank_ic_by_horizon": {
+        "3": 0.04590259700534474,
+        "7": 0.05712636114091845,
+        "15": 0.06314783377197702,
+        "30": 0.06243965360631799,
+        "60": 0.0650698599424008
+      }
+    },
+    "BiliLowAmountAttention20__history_60__recent_60": {
+      "name": "BiliLowAmountAttention20__history_60__recent_60",
+      "rank_ic_by_horizon": {
+        "3": 0.03601601215198428,
+        "7": 0.045041485394764456,
+        "15": 0.05066243278573513,
+        "30": 0.05289270428555936,
+        "60": 0.05725480250261538
+      }
+    },
+    "BiliLowLifetimeRangeRatio": {
+      "name": "BiliLowLifetimeRangeRatio",
+      "rank_ic_by_horizon": {
+        "3": 0.006019087902451684,
+        "7": 0.008228498205789303,
+        "15": 0.01199617573767567,
+        "30": 0.015545122815483382,
+        "60": 0.019428305864725107
+      }
+    },
+    "BiliLowPriceAbove2": {
+      "name": "BiliLowPriceAbove2",
+      "rank_ic_by_horizon": {
+        "3": 0.021111983301233227,
+        "7": 0.029828379867935545,
+        "15": 0.03884302664128256,
+        "30": 0.050119320627123355,
+        "60": 0.062242645123470094
+      }
+    },
+    "BiliLowPriceSmallCap200": {
+      "name": "BiliLowPriceSmallCap200",
+      "rank_ic_by_horizon": {
+        "3": 0.009701934927728521,
+        "7": 0.013473618332242424,
+        "15": 0.016470217826091187,
+        "30": 0.019406949572732084,
+        "60": 0.024071301807466743
+      }
+    },
+    "BiliLowReturnAttention20__window_120": {
+      "name": "BiliLowReturnAttention20__window_120",
+      "rank_ic_by_horizon": {
+        "3": 0.04030275966371062,
+        "7": 0.05145965614253166,
+        "15": 0.0627166584068858,
+        "30": 0.07702999506144549,
+        "60": 0.09948952473156711
+      }
+    },
+    "BiliLowReturnAttention20__window_5": {
+      "name": "BiliLowReturnAttention20__window_5",
+      "rank_ic_by_horizon": {
+        "30": 0.10389855572050614,
+        "60": 0.11285973945833197
+      }
+    },
+    "BiliLowReturnAttention20__window_60": {
+      "name": "BiliLowReturnAttention20__window_60",
+      "rank_ic_by_horizon": {
+        "7": 0.06410166695736536,
+        "30": 0.09396006315653294,
+        "60": 0.1091047621288697
+      }
+    },
+    "BiliMACDBottomDivergence30": {
+      "name": "BiliMACDBottomDivergence30",
+      "rank_ic_by_horizon": {
+        "3": 0.0001610777126667347,
+        "7": 4.376379923012312e-05,
+        "15": 0.00015546159531074845,
+        "30": 0.000684639693316401
+      }
+    },
+    "BiliNineDownReversal": {
+      "name": "BiliNineDownReversal",
+      "rank_ic_by_horizon": {
+        "3": 0.00738577217550021,
+        "7": 0.0025121087596272082,
+        "15": 0.003107284344739047,
+        "30": 0.006403815439062907,
+        "60": 0.0033354023541710956
+      }
+    },
+    "BiliRawIssueDiscount": {
+      "name": "BiliRawIssueDiscount",
+      "rank_ic_by_horizon": {
+        "3": 0.021094770012167502,
+        "7": 0.02970771576834895,
+        "15": 0.03942540218835652,
+        "30": 0.04962262438933466,
+        "60": 0.0601131231180495
+      }
+    },
+    "BookToMarket": {
+      "name": "BookToMarket",
+      "rank_ic_by_horizon": {
+        "3": 0.0334477230640483,
+        "7": 0.042267641334064396
+      }
+    },
+    "BookToMarketQuality": {
+      "name": "BookToMarketQuality",
+      "rank_ic_by_horizon": {
+        "15": 0.05371416034580528,
+        "30": 0.06881295813938641,
+        "60": 0.08525849886840527
+      }
+    },
+    "CashFlowYield": {
+      "name": "CashFlowYield",
+      "rank_ic_by_horizon": {
+        "3": 0.008883532847507111,
+        "7": 0.010715168863503184,
+        "60": 0.024189975449954913
+      }
+    },
+    "Completed52WeekHighProximityStrict": {
+      "name": "Completed52WeekHighProximityStrict",
+      "rank_ic_by_horizon": {
+        "3": 8.904789488144431e-05,
+        "30": 0.002856184309264039,
+        "60": 0.01794803373924006
+      }
+    },
+    "Completed6030PoolBeta60Strict": {
+      "name": "Completed6030PoolBeta60Strict",
+      "rank_ic_by_horizon": {
+        "30": 0.004895005205316371,
+        "60": 0.02447148982873541
+      }
+    },
+    "CompletedAmihudIlliquidity20__window_60": {
+      "name": "CompletedAmihudIlliquidity20__window_60",
+      "rank_ic_by_horizon": {
+        "3": 0.02088764235029793,
+        "7": 0.03515257810653113,
+        "15": 0.052006392971689144,
+        "30": 0.06900266336864225,
+        "60": 0.08978383843919015
+      }
+    },
+    "CompletedAmountConditionedReversal20Strict": {
+      "name": "CompletedAmountConditionedReversal20Strict",
+      "rank_ic_by_horizon": {
+        "3": 0.028666272547702636,
+        "7": 0.03285770188377184,
+        "15": 0.03714931018181819,
+        "30": 0.04109180091112317,
+        "60": 0.03968210451197076
+      }
+    },
+    "CompletedDividendConsistency3YPIT": {
+      "name": "CompletedDividendConsistency3YPIT",
+      "rank_ic_by_horizon": {
+        "3": 0.016233704143766087,
+        "7": 0.01962249330481324,
+        "15": 0.023976267336618,
+        "30": 0.03136568831237745,
+        "60": 0.04138404593818333
+      }
+    },
+    "CompletedDividendYield504PIT": {
+      "name": "CompletedDividendYield504PIT",
+      "rank_ic_by_horizon": {
+        "3": 0.024280519349516555,
+        "7": 0.029428208149115027,
+        "15": 0.03681855969867735,
+        "30": 0.04764508359964237,
+        "60": 0.060734847255829096
+      }
+    },
+    "CompletedPriorMonthTurnoverStrict": {
+      "name": "CompletedPriorMonthTurnoverStrict",
+      "rank_ic_by_horizon": {
+        "3": 0.026979965571214962,
+        "7": 0.03832315300877229,
+        "15": 0.05193213872314941,
+        "30": 0.06694084222369007
+      }
+    },
+    "CompletedRangeVolatility20": {
+      "name": "CompletedRangeVolatility20",
+      "rank_ic_by_horizon": {
+        "3": 0.047115859814020146,
+        "7": 0.05900787306606287,
+        "15": 0.07411524123696116,
+        "30": 0.09177151448200517,
+        "60": 0.11400489786183675
+      }
+    },
+    "DeepValueComposite": {
+      "name": "DeepValueComposite",
+      "rank_ic_by_horizon": {
+        "3": 0.030655459922469628,
+        "7": 0.03716914612285562,
+        "15": 0.04607648588898306,
+        "30": 0.05862701368221328,
+        "60": 0.06927531591582574
+      }
+    },
+    "DownsideOpenVolatilityStrict": {
+      "name": "DownsideOpenVolatilityStrict",
+      "rank_ic_by_horizon": {
+        "3": 0.009951098406621253,
+        "7": 0.01676134863540709,
+        "15": 0.027623582369780846,
+        "30": 0.04294873378282537,
+        "60": 0.06695735403090285
+      }
+    },
+    "EarningsYield": {
+      "name": "EarningsYield",
+      "rank_ic_by_horizon": {
+        "3": 0.0215551779787423
+      }
+    },
+    "Factor_20260530_195339_g10_0": {
+      "name": "Factor_20260530_195339_g10_0",
+      "rank_ic_by_horizon": {
+        "7": 0.025334729413983997,
+        "15": 0.03169472231957919,
+        "30": 0.04002749880600714,
+        "60": 0.04246500246573673
+      }
+    },
+    "Factor_20260530_195339_g17_0": {
+      "name": "Factor_20260530_195339_g17_0",
+      "rank_ic_by_horizon": {
+        "3": 0.014711164787559333,
+        "7": 0.017837012940014572,
+        "15": 0.02276210024712475,
+        "30": 0.02979352943345634,
+        "60": 0.0315481574820217
+      }
+    },
+    "Factor_20260530_195339_g17_4": {
+      "name": "Factor_20260530_195339_g17_4",
+      "rank_ic_by_horizon": {
+        "3": 0.012961844739897154,
+        "7": 0.015567951690227715,
+        "15": 0.019171035898996765,
+        "30": 0.024775768579559453,
+        "60": 0.029167570332436027
+      }
+    },
+    "Factor_20260530_195339_g32_3": {
+      "name": "Factor_20260530_195339_g32_3",
+      "rank_ic_by_horizon": {
+        "3": 0.017839278664402228
+      }
+    },
+    "Factor_20260530_195339_g3_2": {
+      "name": "Factor_20260530_195339_g3_2",
+      "rank_ic_by_horizon": {
+        "3": 0.008089006006678636,
+        "7": 0.009772896241885763,
+        "60": 0.01791005630365458
+      }
+    },
+    "Factor_20260531_005210_g11_0": {
+      "name": "Factor_20260531_005210_g11_0",
+      "rank_ic_by_horizon": {
+        "7": 0.02234339691006336,
+        "15": 0.027926610796378277,
+        "30": 0.03469802206995555,
+        "60": 0.03931620945037656
+      }
+    },
+    "Factor_20260531_005210_g11_3": {
+      "name": "Factor_20260531_005210_g11_3",
+      "rank_ic_by_horizon": {
+        "7": 0.016252571621333374,
+        "15": 0.020280546134536667,
+        "30": 0.02618807081505226,
+        "60": 0.03067963905917237
+      }
+    },
+    "Factor_20260531_005210_g15_4": {
+      "name": "Factor_20260531_005210_g15_4",
+      "rank_ic_by_horizon": {
+        "3": 0.01197382409867682,
+        "7": 0.015899787066013565,
+        "15": 0.020069386669019935,
+        "30": 0.025643065705102018,
+        "60": 0.03448266307314329
+      }
+    },
+    "Factor_20260531_005210_g17_0": {
+      "name": "Factor_20260531_005210_g17_0",
+      "rank_ic_by_horizon": {
+        "3": 0.0023541297291100913,
+        "7": 0.002587980968801619,
+        "15": 0.002392006818487566,
+        "30": 0.0036393739537804214,
+        "60": 0.0047434902670370075
+      }
+    },
+    "Factor_20260531_005210_g1_0": {
+      "name": "Factor_20260531_005210_g1_0",
+      "rank_ic_by_horizon": {
+        "3": 0.02041107697274988
+      }
+    },
+    "Factor_20260531_005210_g20_0": {
+      "name": "Factor_20260531_005210_g20_0",
+      "rank_ic_by_horizon": {
+        "3": 0.00545153276956259,
+        "7": 0.007186758400876758,
+        "15": 0.009815027263689963,
+        "30": 0.012867382090949788,
+        "60": 0.014005919044894127
+      }
+    },
+    "Factor_20260531_005210_g20_3": {
+      "name": "Factor_20260531_005210_g20_3",
+      "rank_ic_by_horizon": {
+        "3": 0.011408097615595896,
+        "7": 0.015008320630603941,
+        "15": 0.01987182550827098,
+        "30": 0.026393517106871097,
+        "60": 0.032533804746996596
+      }
+    },
+    "Factor_20260531_005210_g22_2": {
+      "name": "Factor_20260531_005210_g22_2",
+      "rank_ic_by_horizon": {
+        "3": 0.021080809469620123,
+        "7": 0.027563871261119418,
+        "15": 0.03576954453714985,
+        "30": 0.04619074685859591,
+        "60": 0.056350907264118684
+      }
+    },
+    "Factor_20260531_005210_g24_2": {
+      "name": "Factor_20260531_005210_g24_2",
+      "rank_ic_by_horizon": {
+        "3": 0.008651523374695368,
+        "7": 0.012148166565288972,
+        "15": 0.016081791424213166,
+        "30": 0.021388321236763312,
+        "60": 0.027046404154493192
+      }
+    },
+    "Factor_20260531_005210_g25_3": {
+      "name": "Factor_20260531_005210_g25_3",
+      "rank_ic_by_horizon": {
+        "3": 0.014234216589847139,
+        "7": 0.017421695252403308,
+        "15": 0.021422860717383828,
+        "30": 0.027824724166414898,
+        "60": 0.03247272942090689
+      }
+    },
+    "Factor_20260531_005210_g26_4": {
+      "name": "Factor_20260531_005210_g26_4",
+      "rank_ic_by_horizon": {
+        "3": 0.00940635774518532,
+        "7": 0.012265551486180687,
+        "15": 0.016220763197099933,
+        "30": 0.0204192571770446,
+        "60": 0.02022019399422989
+      }
+    },
+    "Factor_20260531_005210_g28_2": {
+      "name": "Factor_20260531_005210_g28_2",
+      "rank_ic_by_horizon": {
+        "3": 0.020084815002699496,
+        "7": 0.025115415932404572,
+        "15": 0.031304052822412894,
+        "30": 0.039501094312668614,
+        "60": 0.04369493804338279
+      }
+    },
+    "Factor_20260531_005210_g29_2": {
+      "name": "Factor_20260531_005210_g29_2",
+      "rank_ic_by_horizon": {
+        "3": 0.01134259667187868,
+        "7": 0.014376947620003442,
+        "15": 0.017885225027494712,
+        "30": 0.022675327247244532,
+        "60": 0.024937201504831637
+      }
+    },
+    "Factor_20260531_005210_g29_3": {
+      "name": "Factor_20260531_005210_g29_3",
+      "rank_ic_by_horizon": {
+        "3": 0.009804263254954631,
+        "7": 0.011363110880640683,
+        "15": 0.013795354712555821,
+        "30": 0.016965972752731595,
+        "60": 0.016283334931065856
+      }
+    },
+    "Factor_20260531_005210_g2_0": {
+      "name": "Factor_20260531_005210_g2_0",
+      "rank_ic_by_horizon": {
+        "3": 0.013542223827854426,
+        "7": 0.01699635935608358,
+        "15": 0.021117861464359004,
+        "30": 0.027184906852647468,
+        "60": 0.03259442231984141
+      }
+    },
+    "Factor_20260531_005210_g30_3": {
+      "name": "Factor_20260531_005210_g30_3",
+      "rank_ic_by_horizon": {
+        "3": 0.013582807150189493,
+        "7": 0.01698350467119707,
+        "15": 0.021158048148269822,
+        "30": 0.02707281878803884,
+        "60": 0.028670342816622986
+      }
+    },
+    "Factor_20260531_005210_g32_0": {
+      "name": "Factor_20260531_005210_g32_0",
+      "rank_ic_by_horizon": {
+        "3": 0.01812139394500118,
+        "7": 0.021759913250540962,
+        "15": 0.027140509448835497,
+        "30": 0.03388579622059915,
+        "60": 0.033661623304481414
+      }
+    },
+    "Factor_20260531_005210_g32_1": {
+      "name": "Factor_20260531_005210_g32_1",
+      "rank_ic_by_horizon": {
+        "3": 0.025080044321938146,
+        "7": 0.03055450918964001,
+        "15": 0.0385049208724354,
+        "30": 0.04984731857659769,
+        "60": 0.05683368789807847
+      }
+    },
+    "Factor_20260531_005210_g34_1": {
+      "name": "Factor_20260531_005210_g34_1",
+      "rank_ic_by_horizon": {
+        "7": 0.01848838702868925,
+        "15": 0.022799454691111477,
+        "30": 0.029069073903705642,
+        "60": 0.03376999019622889
+      }
+    },
+    "Factor_20260531_005210_g35_0": {
+      "name": "Factor_20260531_005210_g35_0",
+      "rank_ic_by_horizon": {
+        "3": 0.012621282009882818,
+        "7": 0.0173190692656482,
+        "15": 0.022261115818678442,
+        "30": 0.028817780701388962,
+        "60": 0.03848356906066992
+      }
+    },
+    "Factor_20260531_005210_g37_2": {
+      "name": "Factor_20260531_005210_g37_2",
+      "rank_ic_by_horizon": {
+        "3": 0.0015813520682005707,
+        "7": 0.0030687951716837285,
+        "15": 0.005025047378505437,
+        "30": 0.007183329354001762,
+        "60": 0.01067659741030492
+      }
+    },
+    "Factor_20260531_005210_g38_1": {
+      "name": "Factor_20260531_005210_g38_1",
+      "rank_ic_by_horizon": {
+        "3": 0.015169204205639573,
+        "7": 0.018592713188276138,
+        "15": 0.023100821831011187,
+        "30": 0.029125693712755057,
+        "60": 0.03431173058679163
+      }
+    },
+    "Factor_20260531_005210_g39_1": {
+      "name": "Factor_20260531_005210_g39_1",
+      "rank_ic_by_horizon": {
+        "3": 0.011597084332417143,
+        "7": 0.01518708922890678,
+        "15": 0.019631850331301447,
+        "30": 0.025861706590779118,
+        "60": 0.03197191496827614
+      }
+    },
+    "Factor_20260531_005210_g3_3": {
+      "name": "Factor_20260531_005210_g3_3",
+      "rank_ic_by_horizon": {
+        "3": 0.0119605026265278,
+        "7": 0.014102064247689375,
+        "15": 0.017367469310004376,
+        "30": 0.02199944247380364,
+        "60": 0.023869352198482376
+      }
+    },
+    "Factor_20260531_005210_g40_1": {
+      "name": "Factor_20260531_005210_g40_1",
+      "rank_ic_by_horizon": {
+        "3": 0.01706841453803507,
+        "7": 0.02149940485021871,
+        "15": 0.02710242153076359,
+        "30": 0.03437050786265566,
+        "60": 0.036180744541560915
+      }
+    },
+    "Factor_20260531_005210_g41_0": {
+      "name": "Factor_20260531_005210_g41_0",
+      "rank_ic_by_horizon": {
+        "3": 0.013137921577644845,
+        "7": 0.017023364249143247,
+        "15": 0.021852649270632962,
+        "30": 0.02789532867849669,
+        "60": 0.03445916837955292
+      }
+    },
+    "Factor_20260531_005210_g8_1": {
+      "name": "Factor_20260531_005210_g8_1",
+      "rank_ic_by_horizon": {
+        "3": 0.013776057765237326,
+        "7": 0.017994933969713856,
+        "15": 0.02298190898599096,
+        "30": 0.029095978131662373,
+        "60": 0.03296704639848842
+      }
+    },
+    "Factor_20260605_192540_g5_2": {
+      "name": "Factor_20260605_192540_g5_2",
+      "rank_ic_by_horizon": {
+        "3": 0.01752532747911511,
+        "7": 0.022493072425580834,
+        "15": 0.02836294287454825,
+        "30": 0.03521630880764796,
+        "60": 0.04197798260008488
+      }
+    },
+    "FinancialQualityGrowthNeutralPIT": {
+      "name": "FinancialQualityGrowthNeutralPIT",
+      "rank_ic_by_horizon": {
+        "15": 0.013432281827495157,
+        "30": 0.018527821663916377
+      }
+    },
+    "GrossMarginQuality": {
+      "name": "GrossMarginQuality",
+      "rank_ic_by_horizon": {
+        "3": 0.0027150529615870026,
+        "7": 0.0036474479519691687,
+        "15": 0.004904908534481094,
+        "30": 0.006175288042603397,
+        "60": 0.006485767998880544
+      }
+    },
+    "High52Week": {
+      "name": "High52Week",
+      "rank_ic_by_horizon": {
+        "15": 0.02030376793564877,
+        "30": 0.019060832939405963,
+        "60": 0.007892306216077321
+      }
+    },
+    "HighAbnormalGrossProfit": {
+      "name": "HighAbnormalGrossProfit",
+      "rank_ic_by_horizon": {
+        "3": 0.008258845311408925,
+        "7": 0.012030862489600495,
+        "15": 0.016846402493609493,
+        "30": 0.022956450854545504,
+        "60": 0.031150161771019737
+      }
+    },
+    "HighInventoryOtherPayable": {
+      "name": "HighInventoryOtherPayable",
+      "rank_ic_by_horizon": {
+        "3": 0.0007192621448290646,
+        "7": 0.0008207000917706187,
+        "15": 0.0011961705809910442,
+        "30": 0.0005646657001701085
+      }
+    },
+    "HighOperatingCashSurplus": {
+      "name": "HighOperatingCashSurplus",
+      "rank_ic_by_horizon": {
+        "3": 0.006164236620735745,
+        "7": 0.007000088115033372,
+        "15": 0.010447832724625376,
+        "30": 0.014405026568533154,
+        "60": 0.01939304516364901
+      }
+    },
+    "HighOperatingProfitRevenueGrowthSpread": {
+      "name": "HighOperatingProfitRevenueGrowthSpread",
+      "rank_ic_by_horizon": {
+        "3": 0.013246779670203952,
+        "7": 0.017221425051254954,
+        "15": 0.02237060634023346,
+        "30": 0.028675496389295504,
+        "60": 0.03187861248931695
+      }
+    },
+    "HighReceivableOtherPayable": {
+      "name": "HighReceivableOtherPayable",
+      "rank_ic_by_horizon": {
+        "3": 0.00025450271817671697,
+        "7": 0.0006814982314325681,
+        "15": 0.0012316353257922669,
+        "30": 0.0006383178866078837
+      }
+    },
+    "IndustryPeerReversal120Strict": {
+      "name": "IndustryPeerReversal120Strict",
+      "rank_ic_by_horizon": {
+        "3": 0.05025457995093199,
+        "7": 0.054957955013349824,
+        "15": 0.05495380562801013,
+        "30": 0.04978861342678654,
+        "60": 0.04303005405372062
+      }
+    },
+    "IndustryPeerReversal20Strict": {
+      "name": "IndustryPeerReversal20Strict",
+      "rank_ic_by_horizon": {
+        "3": 0.04951653357785618,
+        "7": 0.03934952450353272,
+        "15": 0.02617424334900741,
+        "30": 0.026717249750893218,
+        "60": 0.021318755630335764
+      }
+    },
+    "IndustryPeerReversal60Strict": {
+      "name": "IndustryPeerReversal60Strict",
+      "rank_ic_by_horizon": {
+        "3": 0.043052069560600065,
+        "7": 0.0369143963981531,
+        "15": 0.0358571522461375,
+        "30": 0.03553839643301722,
+        "60": 0.029220437439928124
+      }
+    },
+    "LongHorizonVol36MStrict": {
+      "name": "LongHorizonVol36MStrict",
+      "rank_ic_by_horizon": {
+        "3": 0.03423223451025429,
+        "7": 0.04379215295938509,
+        "15": 0.05622283234622776,
+        "30": 0.07757729068416061,
+        "60": 0.10617543337427884
+      }
+    },
+    "LowCashOutflowProfitGrowthSpread__penalty_0": {
+      "name": "LowCashOutflowProfitGrowthSpread__penalty_0",
+      "rank_ic_by_horizon": {
+        "3": 0.015332426291136762,
+        "7": 0.020180601188968576,
+        "15": 0.02658988287338029,
+        "30": 0.03414205289508328,
+        "60": 0.03856696390638099
+      }
+    },
+    "LowCashOutflowProfitGrowthSpread__penalty_1.5": {
+      "name": "LowCashOutflowProfitGrowthSpread__penalty_1.5",
+      "rank_ic_by_horizon": {
+        "3": 0.01095037430538327,
+        "7": 0.014136302421417786,
+        "15": 0.018012519796263702,
+        "30": 0.022869067658435452,
+        "60": 0.02612262055582723
+      }
+    },
+    "LowFloatTurnover20_10": {
+      "name": "LowFloatTurnover20_10",
+      "rank_ic_by_horizon": {
+        "60": 0.09777216556026094
+      }
+    },
+    "LowPRDecile": {
+      "name": "LowPRDecile",
+      "rank_ic_by_horizon": {
+        "3": 0.013378966626462926,
+        "7": 0.014899792867852816,
+        "15": 0.018532063051561104,
+        "30": 0.023904997159137475,
+        "60": 0.023962041077120803
+      }
+    },
+    "LowResidualVol20": {
+      "name": "LowResidualVol20",
+      "rank_ic_by_horizon": {
+        "15": 0.10524536350777786
+      }
+    },
+    "MainTurnover": {
+      "name": "MainTurnover",
+      "rank_ic_by_horizon": {
+        "3": 0.04215611273344279,
+        "7": 0.0540255843238875,
+        "15": 0.0781320466452108,
+        "30": 0.10586134708538636,
+        "60": 0.1418331522654341
+      }
+    },
+    "Optimized__TrueMarketCap": {
+      "name": "Optimized__TrueMarketCap",
+      "rank_ic_by_horizon": {
+        "3": 0.026594852713177054,
+        "7": 0.038721814398980564,
+        "15": 0.0510309693734416,
+        "30": 0.06280653033464541
+      }
+    },
+    "PB3ROE5Signal": {
+      "name": "PB3ROE5Signal",
+      "rank_ic_by_horizon": {
+        "3": 0.01929152498819874,
+        "7": 0.022888794095159523,
+        "15": 0.029237734700505717,
+        "30": 0.037924150692598246,
+        "60": 0.04382878494452987
+      }
+    },
+    "PBBelowTwoROEAbove10Signal": {
+      "name": "PBBelowTwoROEAbove10Signal",
+      "rank_ic_by_horizon": {
+        "3": 0.008781787129086175,
+        "7": 0.010200042691835763,
+        "15": 0.012962219977628002,
+        "30": 0.017401714000327632,
+        "60": 0.020614743125200504
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.05": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.05",
+      "rank_ic_by_horizon": {
+        "3": 0.012707178894592063,
+        "7": 0.015094683926736975,
+        "15": 0.019850871743998487,
+        "30": 0.027155215284126233,
+        "60": 0.03410280062329371
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.1": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.1",
+      "rank_ic_by_horizon": {
+        "3": 0.006729578437742148,
+        "7": 0.007910856640582971,
+        "15": 0.010571407975074205,
+        "30": 0.015183660105642626,
+        "60": 0.019606395860556507
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.15": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.15",
+      "rank_ic_by_horizon": {
+        "3": 0.0018760547090689254,
+        "7": 0.002014828602927628,
+        "15": 0.0036029590823589983,
+        "30": 0.005556553152650401,
+        "60": 0.006753130600242934
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.2": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.2",
+      "rank_ic_by_horizon": {
+        "3": 0.0001836267620540642,
+        "7": 0.00012666376034662903,
+        "15": 0.0005519473049058244,
+        "30": 0.00035440971283497386,
+        "60": 0.0006749678617248091
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.05": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.05",
+      "rank_ic_by_horizon": {
+        "3": 0.008103321359843747,
+        "7": 0.0091728816171521,
+        "15": 0.010841860276195355,
+        "30": 0.01397485032106731,
+        "60": 0.018398154858243407
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.1": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.1",
+      "rank_ic_by_horizon": {
+        "3": 0.004507095897937634,
+        "7": 0.0052067673557858515,
+        "15": 0.006369987879229801,
+        "30": 0.008785502712540446,
+        "60": 0.012272790376225888
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_1__roe_0.15": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.15",
+      "rank_ic_by_horizon": {
+        "3": 0.0012209658458902691,
+        "7": 0.0016427838204941723,
+        "15": 0.0021816525530906263,
+        "30": 0.0022896101015559733,
+        "60": 0.003705452969758775
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.1": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.1",
+      "rank_ic_by_horizon": {
+        "30": 0.01814469957124581,
+        "60": 0.020178727045979124
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.15": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.15",
+      "rank_ic_by_horizon": {
+        "3": 0.0027887114777132346,
+        "7": 0.0021806926924852017,
+        "15": 0.002840264113621555,
+        "30": 0.004366288225911631,
+        "60": 0.0049969245656694816
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.2": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.2",
+      "rank_ic_by_horizon": {
+        "3": 0.0005487850419415137
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.05": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.05",
+      "rank_ic_by_horizon": {
+        "3": 0.0169880971177559,
+        "7": 0.02053890891206079,
+        "15": 0.026573499757779374,
+        "30": 0.035123340136508106,
+        "60": 0.04285972749834798
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.15": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.15",
+      "rank_ic_by_horizon": {
+        "3": 0.0027175671998638223,
+        "7": 0.002709462872722392,
+        "15": 0.004016657198533294,
+        "30": 0.0060104247541825796,
+        "60": 0.008071455577751869
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_2__roe_0.2": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.2",
+      "rank_ic_by_horizon": {
+        "3": 0.0006980408912240376,
+        "7": 0.0002743487995289338,
+        "15": 0.00069924684172363,
+        "30": 0.0014390617647791503,
+        "60": 0.0032287599334257272
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_3__roe_0.1": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_3__roe_0.1",
+      "rank_ic_by_horizon": {
+        "3": 0.009726827322897176,
+        "7": 0.010604011951639602,
+        "15": 0.013042943370284835
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.05": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.05",
+      "rank_ic_by_horizon": {
+        "3": 0.019511415043054134,
+        "7": 0.022854083662831953,
+        "15": 0.028410523158190825,
+        "30": 0.03524167489100073,
+        "60": 0.040074641438297094
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.1": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.1",
+      "rank_ic_by_horizon": {
+        "3": 0.010384682318447958,
+        "7": 0.011324870179114209,
+        "15": 0.013268706640807041,
+        "30": 0.01667972508789904,
+        "60": 0.015791742710182397
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.15": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.15",
+      "rank_ic_by_horizon": {
+        "3": 0.0032180232769698234,
+        "7": 0.0024504459818993777,
+        "15": 0.002039037719736525,
+        "30": 0.002391401226423461,
+        "60": 0.000285565413486859
+      }
+    },
+    "PBBelowTwoROEAbove10Signal__pb_4__roe_0.2": {
+      "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.2",
+      "rank_ic_by_horizon": {
+        "3": 0.0003968623412023086
+      }
+    },
+    "PricePosition250": {
+      "name": "PricePosition250",
+      "rank_ic_by_horizon": {
+        "3": 0.018511855851789372,
+        "7": 0.020450170187309966
+      }
+    },
+    "ProfitGrowth": {
+      "name": "ProfitGrowth",
+      "rank_ic_by_horizon": {
+        "3": 0.010351705102097751,
+        "7": 0.013220874744073048,
+        "15": 0.016293135535245543,
+        "30": 0.020284697006015987,
+        "60": 0.018711868289442837
+      }
+    },
+    "SameCalendarMonthReturn3YStrict": {
+      "name": "SameCalendarMonthReturn3YStrict",
+      "rank_ic_by_horizon": {
+        "3": 0.004703813087986737,
+        "7": 0.005447900943070846,
+        "15": 0.00134619549379936
+      }
+    },
+    "TrendIndividualV5": {
+      "name": "TrendIndividualV5",
+      "rank_ic_by_horizon": {
+        "3": 0.0411735726144922,
+        "7": 0.049991536175171936,
+        "15": 0.06056197865154268,
+        "30": 0.07327667526836769,
+        "60": 0.08747296024665106
+      }
+    },
+    "TrendOpenSignalV2": {
+      "name": "TrendOpenSignalV2",
+      "rank_ic_by_horizon": {
+        "3": 0.0066204614198783415,
+        "7": 0.011017991454486155,
+        "15": 0.014702510125916548,
+        "30": 0.014463641146166798,
+        "60": 0.015056276108636888
+      }
+    },
+    "TrendOpenSignalV3": {
+      "name": "TrendOpenSignalV3",
+      "rank_ic_by_horizon": {
+        "3": 0.009807128515829749,
+        "7": 0.0159579654388176,
+        "15": 0.02093961582413345,
+        "30": 0.022839406771495763,
+        "60": 0.023455034613291143
+      }
+    },
+    "TrendReversalPreCloseStrict": {
+      "name": "TrendReversalPreCloseStrict",
+      "rank_ic_by_horizon": {
+        "15": 0.07959139915318757
+      }
+    },
+    "TrendReversalV11": {
+      "name": "TrendReversalV11",
+      "rank_ic_by_horizon": {
+        "60": 0.08087907176115933
+      }
+    },
+    "TrueMarketCapT1": {
+      "name": "TrueMarketCapT1",
+      "rank_ic_by_horizon": {
+        "60": 0.07814526178163944
+      }
+    },
+    "VolumeCVStrict": {
+      "name": "VolumeCVStrict",
+      "rank_ic_by_horizon": {
+        "3": 0.04266575682015048,
+        "7": 0.04954339954459448,
+        "15": 0.04896848602054199,
+        "30": 0.04349018423931322,
+        "60": 0.03707955898667804
+      }
+    },
+    "VolumeCV__window_10": {
+      "name": "VolumeCV__window_10",
+      "rank_ic_by_horizon": {
+        "3": 0.040611402499783594,
+        "7": 0.04547005545992082,
+        "15": 0.04420068536640536,
+        "30": 0.03803016216792011,
+        "60": 0.03128639849580579
+      }
+    },
+    "VolumeCV__window_120": {
+      "name": "VolumeCV__window_120",
+      "rank_ic_by_horizon": {
+        "3": 0.02026323329990796,
+        "7": 0.02328450967054859,
+        "15": 0.02302323605167976,
+        "30": 0.02213064881465892,
+        "60": 0.020463367553361884
+      }
+    },
+    "VolumeCV__window_30": {
+      "name": "VolumeCV__window_30",
+      "rank_ic_by_horizon": {
+        "3": 0.037273134924561004,
+        "7": 0.04398490698117273,
+        "15": 0.04495351337570971,
+        "30": 0.0405341407453269,
+        "60": 0.0350267602864962
+      }
+    },
+    "VolumeCV__window_5": {
+      "name": "VolumeCV__window_5",
+      "rank_ic_by_horizon": {
+        "3": 0.03808587897425017,
+        "7": 0.03771186666347775,
+        "15": 0.03308253794303956,
+        "30": 0.027566765278252227,
+        "60": 0.020951502158081687
+      }
+    },
+    "VolumeCV__window_60": {
+      "name": "VolumeCV__window_60",
+      "rank_ic_by_horizon": {
+        "3": 0.02921424397741612,
+        "7": 0.0346590052611905,
+        "15": 0.03524977703167438,
+        "30": 0.03180286030001775,
+        "60": 0.027026228786202353
+      }
+    },
+    "VolumeContraction5v15Strict": {
+      "name": "VolumeContraction5v15Strict",
+      "rank_ic_by_horizon": {
+        "3": 0.033887802836473364,
+        "7": 0.02513251242302602,
+        "15": 0.022105122305952636,
+        "30": 0.026500611885127742,
+        "60": 0.024530171514250403
+      }
+    },
+    "attention_contraction_10_60__attention_10__prior_120__recent_20__weight_0.75": {
+      "name": "attention_contraction_10_60__attention_10__prior_120__recent_20__weight_0.75",
+      "rank_ic_by_horizon": {
+        "3": 0.07740588123448455,
+        "7": 0.0941544775796897,
+        "30": 0.10741853829477038
+      }
+    },
+    "attention_contraction_10_60__attention_10__prior_120__recent_5__weight_0.75": {
+      "name": "attention_contraction_10_60__attention_10__prior_120__recent_5__weight_0.75",
+      "rank_ic_by_horizon": {
+        "15": 0.09872062949793463
+      }
+    },
+    "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.25": {
+      "name": "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.25",
+      "rank_ic_by_horizon": {
+        "15": 0.05519455660374712
+      }
+    },
+    "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.5": {
+      "name": "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.5",
+      "rank_ic_by_horizon": {
+        "7": 0.0753623636124185
+      }
+    },
+    "attention_contraction_10_60__attention_10__prior_60__recent_20__weight_0.25": {
+      "name": "attention_contraction_10_60__attention_10__prior_60__recent_20__weight_0.25",
+      "rank_ic_by_horizon": {
+        "15": 0.07538801586908729
+      }
+    },
+    "attention_contraction_10_60__attention_20__prior_120__recent_20__weight_0.75": {
+      "name": "attention_contraction_10_60__attention_20__prior_120__recent_20__weight_0.75",
+      "rank_ic_by_horizon": {
+        "60": 0.11555949889456638
+      }
+    },
+    "attention_contraction_10_60__attention_30__prior_120__recent_20__weight_0.25": {
+      "name": "attention_contraction_10_60__attention_30__prior_120__recent_20__weight_0.25",
+      "rank_ic_by_horizon": {
+        "3": 0.0619942831139186,
+        "7": 0.07678870921775749
+      }
+    },
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.25": {
+      "name": "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.25",
+      "rank_ic_by_horizon": {
+        "15": 0.0808877561623139
+      }
+    },
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.5": {
+      "name": "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.5",
+      "rank_ic_by_horizon": {
+        "7": 0.08898037707373825
+      }
+    },
+    "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.75": {
+      "name": "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.75",
+      "rank_ic_by_horizon": {
+        "3": 0.0722810390362479
+      }
+    },
+    "attention_contraction_10_60__attention_30__prior_20__recent_10__weight_0.25": {
+      "name": "attention_contraction_10_60__attention_30__prior_20__recent_10__weight_0.25",
+      "rank_ic_by_horizon": {
+        "3": 0.054711107302016275,
+        "15": 0.06361493278814367,
+        "30": 0.06486604533740493,
+        "60": 0.06696293059535446
+      }
+    },
+    "attention_contraction_10_60__attention_30__prior_20__recent_20__weight_0.5": {
+      "name": "attention_contraction_10_60__attention_30__prior_20__recent_20__weight_0.5",
+      "rank_ic_by_horizon": {
+        "30": 0.09065841595439887
+      }
+    },
+    "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.25": {
+      "name": "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.25",
+      "rank_ic_by_horizon": {
+        "30": 0.061041758348472516,
+        "60": 0.06236072373067875
+      }
+    },
+    "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.75": {
+      "name": "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.75",
+      "rank_ic_by_horizon": {
+        "15": 0.0978498015943257,
+        "30": 0.11113304761519041
+      }
+    },
+    "attention_contraction_40_20": {
+      "name": "attention_contraction_40_20",
+      "rank_ic_by_horizon": {
+        "15": 0.07600450013975038
+      }
+    },
+    "attention_contraction_40_60": {
+      "name": "attention_contraction_40_60",
+      "rank_ic_by_horizon": {
+        "30": 0.09204551836229234
+      }
+    },
+    "attention_decay20_60": {
+      "name": "attention_decay20_60",
+      "rank_ic_by_horizon": {
+        "3": 0.033421632312627785,
+        "7": 0.041785400103752784,
+        "15": 0.04679219744961105,
+        "30": 0.0503102351067669,
+        "60": 0.04964643239712518
+      }
+    },
+    "contraction_10_60": {
+      "name": "contraction_10_60",
+      "rank_ic_by_horizon": {
+        "7": 0.05753810540412785
+      }
+    },
+    "contraction_20_20": {
+      "name": "contraction_20_20",
+      "rank_ic_by_horizon": {
+        "30": 0.03943945151882891
+      }
+    },
+    "contraction_20_60": {
+      "name": "contraction_20_60",
+      "rank_ic_by_horizon": {
+        "60": 0.052268893416036175
+      }
+    },
+    "contraction_40_20": {
+      "name": "contraction_40_20",
+      "rank_ic_by_horizon": {
+        "3": 0.027125123634289768,
+        "7": 0.03240456941534159,
+        "30": 0.031300024745214663,
+        "60": 0.033027588350598415
+      }
+    },
+    "contraction_40_60": {
+      "name": "contraction_40_60",
+      "rank_ic_by_horizon": {
+        "3": 0.035403614616146675,
+        "60": 0.048798614168611504
+      }
+    },
+    "gradual_quiet20_60": {
+      "name": "gradual_quiet20_60",
+      "rank_ic_by_horizon": {
+        "7": 0.07226922345260817
+      }
+    },
+    "high_to_quiet_10_20": {
+      "name": "high_to_quiet_10_20",
+      "rank_ic_by_horizon": {
+        "3": 0.052886141861156505,
+        "7": 0.062352123546303234,
+        "15": 0.06967501579363213,
+        "30": 0.07429588736652253,
+        "60": 0.07966771773576115
+      }
+    },
+    "high_to_quiet_20_20": {
+      "name": "high_to_quiet_20_20",
+      "rank_ic_by_horizon": {
+        "3": 0.05021753101124517,
+        "7": 0.06211898234289734,
+        "15": 0.07077378088540172,
+        "60": 0.08066824206405891
+      }
+    },
+    "high_to_quiet_20_60": {
+      "name": "high_to_quiet_20_60",
+      "rank_ic_by_horizon": {
+        "30": 0.0700587620648092
+      }
+    },
+    "high_to_quiet_40_20": {
+      "name": "high_to_quiet_40_20",
+      "rank_ic_by_horizon": {
+        "3": 0.04989606689335619,
+        "60": 0.09040345313558233
+      }
+    },
+    "high_to_quiet_40_60": {
+      "name": "high_to_quiet_40_60",
+      "rank_ic_by_horizon": {
+        "7": 0.06226995546661471,
+        "15": 0.07260928896711441
+      }
+    },
+    "low_residual_vol20__window_10": {
+      "name": "low_residual_vol20__window_10",
+      "rank_ic_by_horizon": {
+        "60": 0.1263246660296792
+      }
+    },
+    "low_residual_vol20__window_120": {
+      "name": "low_residual_vol20__window_120",
+      "rank_ic_by_horizon": {
+        "30": 0.1022960887985199
+      }
+    },
+    "low_residual_vol20__window_30": {
+      "name": "low_residual_vol20__window_30",
+      "rank_ic_by_horizon": {
+        "7": 0.08388375790607078,
+        "60": 0.13811517765719158
+      }
+    },
+    "low_residual_vol20__window_5": {
+      "name": "low_residual_vol20__window_5",
+      "rank_ic_by_horizon": {
+        "3": 0.08056929219444021
+      }
+    },
+    "persistent_quiet20_60__prior_120__recent_10": {
+      "name": "persistent_quiet20_60__prior_120__recent_10",
+      "rank_ic_by_horizon": {
+        "3": 0.07002322768732375,
+        "7": 0.08718442577426162,
+        "15": 0.10293743090193254,
+        "60": 0.147633033947892
+      }
+    },
+    "persistent_quiet20_60__prior_120__recent_60": {
+      "name": "persistent_quiet20_60__prior_120__recent_60",
+      "rank_ic_by_horizon": {
+        "3": 0.047906649140890496,
+        "7": 0.061626010263051145,
+        "15": 0.07768666983802026,
+        "60": 0.11932479380304695
+      }
+    },
+    "persistent_quiet20_60__prior_20__recent_30": {
+      "name": "persistent_quiet20_60__prior_20__recent_30",
+      "rank_ic_by_horizon": {
+        "3": 0.052619070724363386,
+        "15": 0.08676501202206163
+      }
+    },
+    "persistent_quiet20_60__prior_60__recent_10": {
+      "name": "persistent_quiet20_60__prior_60__recent_10",
+      "rank_ic_by_horizon": {
+        "30": 0.12098138424007975
+      }
+    }
+  },
+  "timing": "T open permitted; T high/low/close/volume/amount forbidden as decision inputs; prior completed bars and PIT known events only",
+  "universe": "complete stock axis; listing_age>=0,notST,notdelisted,finite open>=2 before cross-sectional normalization; separate directional buy/sell legality"
+}

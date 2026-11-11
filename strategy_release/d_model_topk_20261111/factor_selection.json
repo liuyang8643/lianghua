@@ -1,0 +1,4825 @@
+{
+  "fit": [
+    "2005-01-01",
+    "2025-12-31"
+  ],
+  "horizons": {
+    "3": [
+      {
+        "name": "low_residual_vol20__window_5",
+        "rank_ic": 0.08056929219444021,
+        "valid_days": 5041
+      },
+      {
+        "name": "attention_contraction_10_60__attention_10__prior_120__recent_20__weight_0.75",
+        "rank_ic": 0.07740588123448455,
+        "valid_days": 4413
+      },
+      {
+        "name": "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.75",
+        "rank_ic": 0.0722810390362479,
+        "valid_days": 4532
+      },
+      {
+        "name": "persistent_quiet20_60__prior_120__recent_10",
+        "rank_ic": 0.07002322768732375,
+        "valid_days": 4493
+      },
+      {
+        "name": "Alpha360_LOW4",
+        "rank_ic": 0.06843374940625485,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_10",
+        "rank_ic": 0.0667200608744127,
+        "valid_days": 5041
+      },
+      {
+        "name": "AmountBasedSmallCap5",
+        "rank_ic": 0.0663439085459825,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_LOW6",
+        "rank_ic": 0.06417825913202631,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_MIN5",
+        "rank_ic": 0.06292304613939693,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_MA30",
+        "rank_ic": 0.06247397156911009,
+        "valid_days": 5041
+      },
+      {
+        "name": "attention_contraction_10_60__attention_30__prior_120__recent_20__weight_0.25",
+        "rank_ic": 0.0619942831139186,
+        "valid_days": 4413
+      },
+      {
+        "name": "Alpha158_QTLD60",
+        "rank_ic": 0.06055581445060898,
+        "valid_days": 5032
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_120__recent_20",
+        "rank_ic": 0.057753926598213434,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_30",
+        "rank_ic": 0.05597308937718585,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_LOW2",
+        "rank_ic": 0.0555894943058036,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_LOW9",
+        "rank_ic": 0.05539226365927389,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_10",
+        "rank_ic": 0.05477489808284776,
+        "valid_days": 5041
+      },
+      {
+        "name": "attention_contraction_10_60__attention_30__prior_20__recent_10__weight_0.25",
+        "rank_ic": 0.054711107302016275,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_MIN20",
+        "rank_ic": 0.05412777329354322,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_HIGH31",
+        "rank_ic": 0.054124571129286626,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_QTLU10",
+        "rank_ic": 0.054070479367970214,
+        "valid_days": 5041
+      },
+      {
+        "name": "high_to_quiet_10_20",
+        "rank_ic": 0.052886141861156505,
+        "valid_days": 5041
+      },
+      {
+        "name": "persistent_quiet20_60__prior_20__recent_30",
+        "rank_ic": 0.052619070724363386,
+        "valid_days": 5041
+      },
+      {
+        "name": "IndustryPeerReversal120Strict",
+        "rank_ic": 0.05025457995093199,
+        "valid_days": 4406
+      },
+      {
+        "name": "high_to_quiet_20_20",
+        "rank_ic": 0.05021753101124517,
+        "valid_days": 5041
+      },
+      {
+        "name": "high_to_quiet_40_20",
+        "rank_ic": 0.04989606689335619,
+        "valid_days": 5032
+      },
+      {
+        "name": "IndustryPeerReversal20Strict",
+        "rank_ic": 0.04951653357785618,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_LOW54",
+        "rank_ic": 0.04915321338613758,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VMA60",
+        "rank_ic": 0.04840153124577101,
+        "valid_days": 5032
+      },
+      {
+        "name": "persistent_quiet20_60__prior_120__recent_60",
+        "rank_ic": 0.047906649140890496,
+        "valid_days": 4056
+      },
+      {
+        "name": "Alpha360_HIGH3",
+        "rank_ic": 0.04730754611931395,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_LOW1",
+        "rank_ic": 0.04725113877973082,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedRangeVolatility20",
+        "rank_ic": 0.047115859814020146,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_30",
+        "rank_ic": 0.04590259700534474,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME53",
+        "rank_ic": 0.04527074019096232,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME46",
+        "rank_ic": 0.044917488881423565,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME56",
+        "rank_ic": 0.04485631070848968,
+        "valid_days": 5039
+      },
+      {
+        "name": "Alpha158_VSUMN60",
+        "rank_ic": 0.04468945882062777,
+        "valid_days": 5031
+      },
+      {
+        "name": "Alpha360_VOLUME51",
+        "rank_ic": 0.04463758594107767,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME48",
+        "rank_ic": 0.044541989898463086,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME44",
+        "rank_ic": 0.04424198311104713,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME42",
+        "rank_ic": 0.044020274554118,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME58",
+        "rank_ic": 0.04400900144455428,
+        "valid_days": 5037
+      },
+      {
+        "name": "Alpha360_VOLUME40",
+        "rank_ic": 0.04399218427300795,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME34",
+        "rank_ic": 0.04353174671431534,
+        "valid_days": 5041
+      },
+      {
+        "name": "IndustryPeerReversal60Strict",
+        "rank_ic": 0.043052069560600065,
+        "valid_days": 5001
+      },
+      {
+        "name": "Alpha360_VOLUME32",
+        "rank_ic": 0.04276732126938588,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME38",
+        "rank_ic": 0.042681796142202334,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCVStrict",
+        "rank_ic": 0.04266575682015048,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME36",
+        "rank_ic": 0.04262398430817367,
+        "valid_days": 5041
+      },
+      {
+        "name": "MainTurnover",
+        "rank_ic": 0.04215611273344279,
+        "valid_days": 137
+      },
+      {
+        "name": "Alpha158_LOW0",
+        "rank_ic": 0.04195462432622235,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VSUMN30",
+        "rank_ic": 0.041860473224657156,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_IMIN5",
+        "rank_ic": 0.041567641631867276,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_60",
+        "rank_ic": 0.04152312578438579,
+        "valid_days": 5041
+      },
+      {
+        "name": "TrendIndividualV5",
+        "rank_ic": 0.0411735726144922,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME29",
+        "rank_ic": 0.04067817096974765,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_10",
+        "rank_ic": 0.040611402499783594,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowReturnAttention20__window_120",
+        "rank_ic": 0.04030275966371062,
+        "valid_days": 4575
+      },
+      {
+        "name": "Alpha360_VOLUME26",
+        "rank_ic": 0.04029564716709341,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME24",
+        "rank_ic": 0.03913986087095844,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME21",
+        "rank_ic": 0.03849443402477664,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_5",
+        "rank_ic": 0.03808587897425017,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_30",
+        "rank_ic": 0.037273134924561004,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VSUMN20",
+        "rank_ic": 0.03692598130558027,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_60",
+        "rank_ic": 0.03601601215198428,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME19",
+        "rank_ic": 0.03554339128429574,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_CNTN5",
+        "rank_ic": 0.03547126977893767,
+        "valid_days": 5041
+      },
+      {
+        "name": "contraction_40_60",
+        "rank_ic": 0.035403614616146675,
+        "valid_days": 4749
+      },
+      {
+        "name": "LongHorizonVol36MStrict",
+        "rank_ic": 0.03423223451025429,
+        "valid_days": 2557
+      },
+      {
+        "name": "VolumeContraction5v15Strict",
+        "rank_ic": 0.033887802836473364,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VWAP0",
+        "rank_ic": 0.03360438377106063,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME5",
+        "rank_ic": 0.033566147033506376,
+        "valid_days": 5041
+      },
+      {
+        "name": "BookToMarket",
+        "rank_ic": 0.0334477230640483,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha360_VOLUME16",
+        "rank_ic": 0.03343549632078755,
+        "valid_days": 5041
+      },
+      {
+        "name": "attention_decay20_60",
+        "rank_ic": 0.033421632312627785,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME15",
+        "rank_ic": 0.03298955176105251,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME6",
+        "rank_ic": 0.03276696569678275,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME14",
+        "rank_ic": 0.03236773022859791,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VMA20",
+        "rank_ic": 0.032213559205797083,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME13",
+        "rank_ic": 0.03218387397605004,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME11",
+        "rank_ic": 0.0321468034213377,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME12",
+        "rank_ic": 0.03197102672473957,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME10",
+        "rank_ic": 0.03194169408232746,
+        "valid_days": 5041
+      },
+      {
+        "name": "DeepValueComposite",
+        "rank_ic": 0.030655459922469628,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha158_MAX60",
+        "rank_ic": 0.030503268887788766,
+        "valid_days": 5032
+      },
+      {
+        "name": "Alpha360_VOLUME9",
+        "rank_ic": 0.03037231681678149,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME7",
+        "rank_ic": 0.03021284950742056,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME8",
+        "rank_ic": 0.029564060010350963,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_60",
+        "rank_ic": 0.02921424397741612,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedAmountConditionedReversal20Strict",
+        "rank_ic": 0.028666272547702636,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_OPEN0",
+        "rank_ic": 0.02771018444438231,
+        "valid_days": 5041
+      },
+      {
+        "name": "contraction_40_20",
+        "rank_ic": 0.027125123634289768,
+        "valid_days": 5032
+      },
+      {
+        "name": "CompletedPriorMonthTurnoverStrict",
+        "rank_ic": 0.026979965571214962,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME4",
+        "rank_ic": 0.026966645286249796,
+        "valid_days": 5041
+      },
+      {
+        "name": "Optimized__TrueMarketCap",
+        "rank_ic": 0.026594852713177054,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_MAX30",
+        "rank_ic": 0.026365588807977958,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g32_1",
+        "rank_ic": 0.025080044321938146,
+        "valid_days": 4490
+      },
+      {
+        "name": "CompletedDividendYield504PIT",
+        "rank_ic": 0.024280519349516555,
+        "valid_days": 3158
+      },
+      {
+        "name": "Alpha158_IMIN10",
+        "rank_ic": 0.022758620466291592,
+        "valid_days": 5041
+      },
+      {
+        "name": "EarningsYield",
+        "rank_ic": 0.0215551779787423,
+        "valid_days": 4490
+      },
+      {
+        "name": "BiliLowPriceAbove2",
+        "rank_ic": 0.021111983301233227,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliRawIssueDiscount",
+        "rank_ic": 0.021094770012167502,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g22_2",
+        "rank_ic": 0.021080809469620123,
+        "valid_days": 4490
+      },
+      {
+        "name": "CompletedAmihudIlliquidity20__window_60",
+        "rank_ic": 0.02088764235029793,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g1_0",
+        "rank_ic": 0.02041107697274988,
+        "valid_days": 4490
+      },
+      {
+        "name": "VolumeCV__window_120",
+        "rank_ic": 0.02026323329990796,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g28_2",
+        "rank_ic": 0.020084815002699496,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha158_CNTN10",
+        "rank_ic": 0.020070593434654383,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.05",
+        "rank_ic": 0.019511415043054134,
+        "valid_days": 5041
+      },
+      {
+        "name": "PB3ROE5Signal",
+        "rank_ic": 0.01929152498819874,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_MAX10",
+        "rank_ic": 0.01879359533303458,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_HIGH1",
+        "rank_ic": 0.018662536842060026,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_IMIN30",
+        "rank_ic": 0.01855786333582115,
+        "valid_days": 5041
+      },
+      {
+        "name": "PricePosition250",
+        "rank_ic": 0.018511855851789372,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME3",
+        "rank_ic": 0.018359839122980455,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g32_0",
+        "rank_ic": 0.01812139394500118,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260530_195339_g32_3",
+        "rank_ic": 0.017839278664402228,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260605_192540_g5_2",
+        "rank_ic": 0.01752532747911511,
+        "valid_days": 4496
+      },
+      {
+        "name": "BiliAdjustedIssueDiscount",
+        "rank_ic": 0.01714782733240571,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_IMIN20",
+        "rank_ic": 0.017108367337043257,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g40_1",
+        "rank_ic": 0.01706841453803507,
+        "valid_days": 4490
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.05",
+        "rank_ic": 0.0169880971177559,
+        "valid_days": 4970
+      },
+      {
+        "name": "Alpha158_CNTN30",
+        "rank_ic": 0.01675666480705608,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_CNTN20",
+        "rank_ic": 0.016738822578645018,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedDividendConsistency3YPIT",
+        "rank_ic": 0.016233704143766087,
+        "valid_days": 3098
+      },
+      {
+        "name": "Alpha158_MAX5",
+        "rank_ic": 0.015902315406283618,
+        "valid_days": 5041
+      },
+      {
+        "name": "LowCashOutflowProfitGrowthSpread__penalty_0",
+        "rank_ic": 0.015332426291136762,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g38_1",
+        "rank_ic": 0.015169204205639573,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260530_195339_g17_0",
+        "rank_ic": 0.014711164787559333,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g25_3",
+        "rank_ic": 0.014234216589847139,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha158_IMIN60",
+        "rank_ic": 0.01379601751012966,
+        "valid_days": 5032
+      },
+      {
+        "name": "Factor_20260531_005210_g8_1",
+        "rank_ic": 0.013776057765237326,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g30_3",
+        "rank_ic": 0.013582807150189493,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g2_0",
+        "rank_ic": 0.013542223827854426,
+        "valid_days": 4490
+      },
+      {
+        "name": "LowPRDecile",
+        "rank_ic": 0.013378966626462926,
+        "valid_days": 5041
+      },
+      {
+        "name": "HighOperatingProfitRevenueGrowthSpread",
+        "rank_ic": 0.013246779670203952,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g41_0",
+        "rank_ic": 0.013137921577644845,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260530_195339_g17_4",
+        "rank_ic": 0.012961844739897154,
+        "valid_days": 4490
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.05",
+        "rank_ic": 0.012707178894592063,
+        "valid_days": 4763
+      },
+      {
+        "name": "Factor_20260531_005210_g35_0",
+        "rank_ic": 0.012621282009882818,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g15_4",
+        "rank_ic": 0.01197382409867682,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g3_3",
+        "rank_ic": 0.0119605026265278,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g39_1",
+        "rank_ic": 0.011597084332417143,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g20_3",
+        "rank_ic": 0.011408097615595896,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g29_2",
+        "rank_ic": 0.01134259667187868,
+        "valid_days": 4490
+      },
+      {
+        "name": "LowCashOutflowProfitGrowthSpread__penalty_1.5",
+        "rank_ic": 0.01095037430538327,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.1",
+        "rank_ic": 0.010384682318447958,
+        "valid_days": 5041
+      },
+      {
+        "name": "ProfitGrowth",
+        "rank_ic": 0.010351705102097751,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha360_VOLUME2",
+        "rank_ic": 0.010306800592883657,
+        "valid_days": 5041
+      },
+      {
+        "name": "DownsideOpenVolatilityStrict",
+        "rank_ic": 0.009951098406621253,
+        "valid_days": 5041
+      },
+      {
+        "name": "TrendOpenSignalV3",
+        "rank_ic": 0.009807128515829749,
+        "valid_days": 2426
+      },
+      {
+        "name": "Factor_20260531_005210_g29_3",
+        "rank_ic": 0.009804263254954631,
+        "valid_days": 4490
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_3__roe_0.1",
+        "rank_ic": 0.009726827322897176,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowPriceSmallCap200",
+        "rank_ic": 0.009701934927728521,
+        "valid_days": 4622
+      },
+      {
+        "name": "Factor_20260531_005210_g26_4",
+        "rank_ic": 0.00940635774518532,
+        "valid_days": 4490
+      },
+      {
+        "name": "CashFlowYield",
+        "rank_ic": 0.008883532847507111,
+        "valid_days": 4490
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal",
+        "rank_ic": 0.008781787129086175,
+        "valid_days": 4867
+      },
+      {
+        "name": "Factor_20260531_005210_g24_2",
+        "rank_ic": 0.008651523374695368,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha158_CNTN60",
+        "rank_ic": 0.00864812898868539,
+        "valid_days": 5031
+      },
+      {
+        "name": "HighAbnormalGrossProfit",
+        "rank_ic": 0.008258845311408925,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.05",
+        "rank_ic": 0.008103321359843747,
+        "valid_days": 4277
+      },
+      {
+        "name": "Factor_20260530_195339_g3_2",
+        "rank_ic": 0.008089006006678636,
+        "valid_days": 4490
+      },
+      {
+        "name": "BiliNineDownReversal",
+        "rank_ic": 0.00738577217550021,
+        "valid_days": 4456
+      },
+      {
+        "name": "Alpha158_RSQR60",
+        "rank_ic": 0.006994660595997321,
+        "valid_days": 5032
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.1",
+        "rank_ic": 0.006729578437742148,
+        "valid_days": 4497
+      },
+      {
+        "name": "TrendOpenSignalV2",
+        "rank_ic": 0.0066204614198783415,
+        "valid_days": 1994
+      },
+      {
+        "name": "HighOperatingCashSurplus",
+        "rank_ic": 0.006164236620735745,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowLifetimeRangeRatio",
+        "rank_ic": 0.006019087902451684,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g20_0",
+        "rank_ic": 0.00545153276956259,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha360_VOLUME1",
+        "rank_ic": 0.005037000973046279,
+        "valid_days": 5041
+      },
+      {
+        "name": "SameCalendarMonthReturn3YStrict",
+        "rank_ic": 0.004703813087986737,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.1",
+        "rank_ic": 0.004507095897937634,
+        "valid_days": 3961
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.15",
+        "rank_ic": 0.0032180232769698234,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.15",
+        "rank_ic": 0.0027887114777132346,
+        "valid_days": 4944
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.15",
+        "rank_ic": 0.0027175671998638223,
+        "valid_days": 4734
+      },
+      {
+        "name": "GrossMarginQuality",
+        "rank_ic": 0.0027150529615870026,
+        "valid_days": 4489
+      },
+      {
+        "name": "Factor_20260531_005210_g17_0",
+        "rank_ic": 0.0023541297291100913,
+        "valid_days": 4490
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.15",
+        "rank_ic": 0.0018760547090689254,
+        "valid_days": 4437
+      },
+      {
+        "name": "Factor_20260531_005210_g37_2",
+        "rank_ic": 0.0015813520682005707,
+        "valid_days": 4490
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.15",
+        "rank_ic": 0.0012209658458902691,
+        "valid_days": 3401
+      },
+      {
+        "name": "Alpha158_RSQR30",
+        "rank_ic": 0.0008746255226139389,
+        "valid_days": 5041
+      },
+      {
+        "name": "HighInventoryOtherPayable",
+        "rank_ic": 0.0007192621448290646,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.2",
+        "rank_ic": 0.0006980408912240376,
+        "valid_days": 4449
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.2",
+        "rank_ic": 0.0005487850419415137,
+        "valid_days": 4693
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.2",
+        "rank_ic": 0.0003968623412023086,
+        "valid_days": 5003
+      },
+      {
+        "name": "Alpha158_KLOW2",
+        "rank_ic": 0.00033922844776747556,
+        "valid_days": 5041
+      },
+      {
+        "name": "HighReceivableOtherPayable",
+        "rank_ic": 0.00025450271817671697,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.2",
+        "rank_ic": 0.0001836267620540642,
+        "valid_days": 3509
+      },
+      {
+        "name": "BiliMACDBottomDivergence30",
+        "rank_ic": 0.0001610777126667347,
+        "valid_days": 3048
+      },
+      {
+        "name": "Completed52WeekHighProximityStrict",
+        "rank_ic": 8.904789488144431e-05,
+        "valid_days": 3175
+      }
+    ],
+    "7": [
+      {
+        "name": "attention_contraction_10_60__attention_10__prior_120__recent_20__weight_0.75",
+        "rank_ic": 0.0941544775796897,
+        "valid_days": 4377
+      },
+      {
+        "name": "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.5",
+        "rank_ic": 0.08898037707373825,
+        "valid_days": 4500
+      },
+      {
+        "name": "persistent_quiet20_60__prior_120__recent_10",
+        "rank_ic": 0.08718442577426162,
+        "valid_days": 4464
+      },
+      {
+        "name": "AmountBasedSmallCap5",
+        "rank_ic": 0.08561717485951409,
+        "valid_days": 5041
+      },
+      {
+        "name": "low_residual_vol20__window_30",
+        "rank_ic": 0.08388375790607078,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_10",
+        "rank_ic": 0.08208584285875928,
+        "valid_days": 5041
+      },
+      {
+        "name": "attention_contraction_10_60__attention_30__prior_120__recent_20__weight_0.25",
+        "rank_ic": 0.07678870921775749,
+        "valid_days": 4377
+      },
+      {
+        "name": "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.5",
+        "rank_ic": 0.0753623636124185,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_120__recent_20",
+        "rank_ic": 0.07301534667039387,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_30",
+        "rank_ic": 0.07252801657054088,
+        "valid_days": 5041
+      },
+      {
+        "name": "gradual_quiet20_60",
+        "rank_ic": 0.07226922345260817,
+        "valid_days": 5028
+      },
+      {
+        "name": "Alpha158_MA60",
+        "rank_ic": 0.0705179265436547,
+        "valid_days": 5028
+      },
+      {
+        "name": "Alpha158_QTLD30",
+        "rank_ic": 0.06541328056322397,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowReturnAttention20__window_60",
+        "rank_ic": 0.06410166695736536,
+        "valid_days": 5028
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_10",
+        "rank_ic": 0.06354220713261592,
+        "valid_days": 5041
+      },
+      {
+        "name": "high_to_quiet_10_20",
+        "rank_ic": 0.062352123546303234,
+        "valid_days": 5041
+      },
+      {
+        "name": "high_to_quiet_40_60",
+        "rank_ic": 0.06226995546661471,
+        "valid_days": 4718
+      },
+      {
+        "name": "high_to_quiet_20_20",
+        "rank_ic": 0.06211898234289734,
+        "valid_days": 5041
+      },
+      {
+        "name": "persistent_quiet20_60__prior_120__recent_60",
+        "rank_ic": 0.061626010263051145,
+        "valid_days": 4019
+      },
+      {
+        "name": "CompletedRangeVolatility20",
+        "rank_ic": 0.05900787306606287,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_QTLU30",
+        "rank_ic": 0.05808562073002283,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_LOW4",
+        "rank_ic": 0.05784423811631922,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_MIN60",
+        "rank_ic": 0.05766255619230635,
+        "valid_days": 5028
+      },
+      {
+        "name": "Alpha158_MIN5",
+        "rank_ic": 0.05755881325052692,
+        "valid_days": 5041
+      },
+      {
+        "name": "contraction_10_60",
+        "rank_ic": 0.05753810540412785,
+        "valid_days": 4972
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_30",
+        "rank_ic": 0.05712636114091845,
+        "valid_days": 5041
+      },
+      {
+        "name": "IndustryPeerReversal120Strict",
+        "rank_ic": 0.054957955013349824,
+        "valid_days": 4374
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_60",
+        "rank_ic": 0.05408236047195859,
+        "valid_days": 5041
+      },
+      {
+        "name": "MainTurnover",
+        "rank_ic": 0.0540255843238875,
+        "valid_days": 137
+      },
+      {
+        "name": "Alpha360_LOW6",
+        "rank_ic": 0.053923511081980784,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_LOW2",
+        "rank_ic": 0.05392230463578819,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowReturnAttention20__window_120",
+        "rank_ic": 0.05145965614253166,
+        "valid_days": 4541
+      },
+      {
+        "name": "Alpha360_LOW11",
+        "rank_ic": 0.050987830879548904,
+        "valid_days": 5041
+      },
+      {
+        "name": "TrendIndividualV5",
+        "rank_ic": 0.049991536175171936,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_SUMN60",
+        "rank_ic": 0.049839909587719285,
+        "valid_days": 5026
+      },
+      {
+        "name": "VolumeCVStrict",
+        "rank_ic": 0.04954339954459448,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VSUMN60",
+        "rank_ic": 0.04919821692183816,
+        "valid_days": 5026
+      },
+      {
+        "name": "Alpha360_LOW1",
+        "rank_ic": 0.04889982284524805,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME52",
+        "rank_ic": 0.04805242251207135,
+        "valid_days": 5039
+      },
+      {
+        "name": "Alpha360_VOLUME57",
+        "rank_ic": 0.04790875047809503,
+        "valid_days": 5030
+      },
+      {
+        "name": "Alpha360_VOLUME49",
+        "rank_ic": 0.04779280095392175,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME54",
+        "rank_ic": 0.04759593768196485,
+        "valid_days": 5037
+      },
+      {
+        "name": "Alpha158_VMA60",
+        "rank_ic": 0.04746214979847662,
+        "valid_days": 5028
+      },
+      {
+        "name": "Alpha360_VOLUME47",
+        "rank_ic": 0.04746070910029013,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME45",
+        "rank_ic": 0.047220769466307336,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME42",
+        "rank_ic": 0.0469821667283479,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME40",
+        "rank_ic": 0.046413493291597975,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_10",
+        "rank_ic": 0.04547005545992082,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME38",
+        "rank_ic": 0.04525321386140718,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_60",
+        "rank_ic": 0.045041485394764456,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME36",
+        "rank_ic": 0.044688530393296705,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME34",
+        "rank_ic": 0.044488664104121826,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_30",
+        "rank_ic": 0.04398490698117273,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME32",
+        "rank_ic": 0.043833907116735835,
+        "valid_days": 5041
+      },
+      {
+        "name": "LongHorizonVol36MStrict",
+        "rank_ic": 0.04379215295938509,
+        "valid_days": 2557
+      },
+      {
+        "name": "Alpha158_LOW0",
+        "rank_ic": 0.04376113957495637,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VSUMN30",
+        "rank_ic": 0.043740132653150306,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_QTLU10",
+        "rank_ic": 0.042801532113910114,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME29",
+        "rank_ic": 0.042533707792902595,
+        "valid_days": 5041
+      },
+      {
+        "name": "BookToMarket",
+        "rank_ic": 0.042267641334064396,
+        "valid_days": 4490
+      },
+      {
+        "name": "attention_decay20_60",
+        "rank_ic": 0.041785400103752784,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME27",
+        "rank_ic": 0.04088741151578137,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME25",
+        "rank_ic": 0.03945612860885108,
+        "valid_days": 5041
+      },
+      {
+        "name": "IndustryPeerReversal20Strict",
+        "rank_ic": 0.03934952450353272,
+        "valid_days": 5041
+      },
+      {
+        "name": "Optimized__TrueMarketCap",
+        "rank_ic": 0.038721814398980564,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedPriorMonthTurnoverStrict",
+        "rank_ic": 0.03832315300877229,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME23",
+        "rank_ic": 0.038148477454512095,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_HIGH3",
+        "rank_ic": 0.037965341802876355,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_5",
+        "rank_ic": 0.03771186666347775,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME21",
+        "rank_ic": 0.03723499325778649,
+        "valid_days": 5041
+      },
+      {
+        "name": "DeepValueComposite",
+        "rank_ic": 0.03716914612285562,
+        "valid_days": 4490
+      },
+      {
+        "name": "IndustryPeerReversal60Strict",
+        "rank_ic": 0.0369143963981531,
+        "valid_days": 4968
+      },
+      {
+        "name": "Alpha158_VSUMN20",
+        "rank_ic": 0.03559985922545326,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedAmihudIlliquidity20__window_60",
+        "rank_ic": 0.03515257810653113,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_60",
+        "rank_ic": 0.0346590052611905,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME19",
+        "rank_ic": 0.03417551889328066,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedAmountConditionedReversal20Strict",
+        "rank_ic": 0.03285770188377184,
+        "valid_days": 5041
+      },
+      {
+        "name": "contraction_40_20",
+        "rank_ic": 0.03240456941534159,
+        "valid_days": 5028
+      },
+      {
+        "name": "Alpha360_VOLUME17",
+        "rank_ic": 0.03214717743606476,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VWAP0",
+        "rank_ic": 0.03095447168144579,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g32_1",
+        "rank_ic": 0.03055450918964001,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha158_IMIN30",
+        "rank_ic": 0.030265363215854692,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowPriceAbove2",
+        "rank_ic": 0.029828379867935545,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliRawIssueDiscount",
+        "rank_ic": 0.02970771576834895,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedDividendYield504PIT",
+        "rank_ic": 0.029428208149115027,
+        "valid_days": 3158
+      },
+      {
+        "name": "Alpha360_VOLUME15",
+        "rank_ic": 0.029271820856473705,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_IMIN5",
+        "rank_ic": 0.02860119062899916,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_MAX60",
+        "rank_ic": 0.028519964329831688,
+        "valid_days": 5028
+      },
+      {
+        "name": "Alpha158_OPEN0",
+        "rank_ic": 0.02784377389819556,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME14",
+        "rank_ic": 0.02783682588018211,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g22_2",
+        "rank_ic": 0.027563871261119418,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha360_VOLUME13",
+        "rank_ic": 0.027090565213560278,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME12",
+        "rank_ic": 0.02688674569818712,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME11",
+        "rank_ic": 0.026736705221789232,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME10",
+        "rank_ic": 0.026304454253643306,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VMA20",
+        "rank_ic": 0.025785495632846326,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260530_195339_g10_0",
+        "rank_ic": 0.025334729413983997,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha360_VOLUME5",
+        "rank_ic": 0.0252138706467081,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME6",
+        "rank_ic": 0.025182338732835926,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeContraction5v15Strict",
+        "rank_ic": 0.02513251242302602,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g28_2",
+        "rank_ic": 0.025115415932404572,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha158_IMIN20",
+        "rank_ic": 0.024975450451130303,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME9",
+        "rank_ic": 0.024934856007979605,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_IMIN60",
+        "rank_ic": 0.02469730937451653,
+        "valid_days": 5028
+      },
+      {
+        "name": "Alpha360_VOLUME7",
+        "rank_ic": 0.02463637746463237,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME8",
+        "rank_ic": 0.02427142836918198,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliAdjustedIssueDiscount",
+        "rank_ic": 0.02387844868590733,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_120",
+        "rank_ic": 0.02328450967054859,
+        "valid_days": 5041
+      },
+      {
+        "name": "PB3ROE5Signal",
+        "rank_ic": 0.022888794095159523,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.05",
+        "rank_ic": 0.022854083662831953,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260605_192540_g5_2",
+        "rank_ic": 0.022493072425580834,
+        "valid_days": 4496
+      },
+      {
+        "name": "Factor_20260531_005210_g11_0",
+        "rank_ic": 0.02234339691006336,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g32_0",
+        "rank_ic": 0.021759913250540962,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha360_VOLUME4",
+        "rank_ic": 0.021522292172704006,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g40_1",
+        "rank_ic": 0.02149940485021871,
+        "valid_days": 4490
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.05",
+        "rank_ic": 0.02053890891206079,
+        "valid_days": 4966
+      },
+      {
+        "name": "PricePosition250",
+        "rank_ic": 0.020450170187309966,
+        "valid_days": 5041
+      },
+      {
+        "name": "LowCashOutflowProfitGrowthSpread__penalty_0",
+        "rank_ic": 0.020180601188968576,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_CNTN5",
+        "rank_ic": 0.019676764173698857,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedDividendConsistency3YPIT",
+        "rank_ic": 0.01962249330481324,
+        "valid_days": 3098
+      },
+      {
+        "name": "Alpha158_IMIN10",
+        "rank_ic": 0.01908896079740572,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g38_1",
+        "rank_ic": 0.018592713188276138,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha360_HIGH1",
+        "rank_ic": 0.01850573245682989,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g34_1",
+        "rank_ic": 0.01848838702868925,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g8_1",
+        "rank_ic": 0.017994933969713856,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260530_195339_g17_0",
+        "rank_ic": 0.017837012940014572,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g25_3",
+        "rank_ic": 0.017421695252403308,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha360_VOLUME3",
+        "rank_ic": 0.01733371511508102,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g35_0",
+        "rank_ic": 0.0173190692656482,
+        "valid_days": 4490
+      },
+      {
+        "name": "HighOperatingProfitRevenueGrowthSpread",
+        "rank_ic": 0.017221425051254954,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g41_0",
+        "rank_ic": 0.017023364249143247,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g2_0",
+        "rank_ic": 0.01699635935608358,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g30_3",
+        "rank_ic": 0.01698350467119707,
+        "valid_days": 4490
+      },
+      {
+        "name": "DownsideOpenVolatilityStrict",
+        "rank_ic": 0.01676134863540709,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g11_3",
+        "rank_ic": 0.016252571621333374,
+        "valid_days": 4490
+      },
+      {
+        "name": "TrendOpenSignalV3",
+        "rank_ic": 0.0159579654388176,
+        "valid_days": 2426
+      },
+      {
+        "name": "Factor_20260531_005210_g15_4",
+        "rank_ic": 0.015899787066013565,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260530_195339_g17_4",
+        "rank_ic": 0.015567951690227715,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g39_1",
+        "rank_ic": 0.01518708922890678,
+        "valid_days": 4490
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.05",
+        "rank_ic": 0.015094683926736975,
+        "valid_days": 4756
+      },
+      {
+        "name": "Factor_20260531_005210_g20_3",
+        "rank_ic": 0.015008320630603941,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha158_CNTN30",
+        "rank_ic": 0.014996482845575127,
+        "valid_days": 5041
+      },
+      {
+        "name": "LowPRDecile",
+        "rank_ic": 0.014899792867852816,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g29_2",
+        "rank_ic": 0.014376947620003442,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha360_VOLUME2",
+        "rank_ic": 0.014221074658295453,
+        "valid_days": 5041
+      },
+      {
+        "name": "LowCashOutflowProfitGrowthSpread__penalty_1.5",
+        "rank_ic": 0.014136302421417786,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g3_3",
+        "rank_ic": 0.014102064247689375,
+        "valid_days": 4490
+      },
+      {
+        "name": "BiliLowPriceSmallCap200",
+        "rank_ic": 0.013473618332242424,
+        "valid_days": 4615
+      },
+      {
+        "name": "ProfitGrowth",
+        "rank_ic": 0.013220874744073048,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha158_CNTN20",
+        "rank_ic": 0.012387721528710524,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g26_4",
+        "rank_ic": 0.012265551486180687,
+        "valid_days": 4490
+      },
+      {
+        "name": "Factor_20260531_005210_g24_2",
+        "rank_ic": 0.012148166565288972,
+        "valid_days": 4490
+      },
+      {
+        "name": "HighAbnormalGrossProfit",
+        "rank_ic": 0.012030862489600495,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_RSQR60",
+        "rank_ic": 0.011608674379037252,
+        "valid_days": 5028
+      },
+      {
+        "name": "Factor_20260531_005210_g29_3",
+        "rank_ic": 0.011363110880640683,
+        "valid_days": 4490
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.1",
+        "rank_ic": 0.011324870179114209,
+        "valid_days": 5041
+      },
+      {
+        "name": "TrendOpenSignalV2",
+        "rank_ic": 0.011017991454486155,
+        "valid_days": 1994
+      },
+      {
+        "name": "CashFlowYield",
+        "rank_ic": 0.010715168863503184,
+        "valid_days": 4490
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_3__roe_0.1",
+        "rank_ic": 0.010604011951639602,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal",
+        "rank_ic": 0.010200042691835763,
+        "valid_days": 4864
+      },
+      {
+        "name": "Factor_20260530_195339_g3_2",
+        "rank_ic": 0.009772896241885763,
+        "valid_days": 4490
+      },
+      {
+        "name": "Alpha158_MAX20",
+        "rank_ic": 0.009526860049732626,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_CNTN10",
+        "rank_ic": 0.009231702869602596,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.05",
+        "rank_ic": 0.0091728816171521,
+        "valid_days": 4275
+      },
+      {
+        "name": "Alpha360_VOLUME1",
+        "rank_ic": 0.00826654864558344,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowLifetimeRangeRatio",
+        "rank_ic": 0.008228498205789303,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.1",
+        "rank_ic": 0.007910856640582971,
+        "valid_days": 4495
+      },
+      {
+        "name": "Alpha158_CNTN60",
+        "rank_ic": 0.007493498439294851,
+        "valid_days": 5026
+      },
+      {
+        "name": "Factor_20260531_005210_g20_0",
+        "rank_ic": 0.007186758400876758,
+        "valid_days": 4490
+      },
+      {
+        "name": "HighOperatingCashSurplus",
+        "rank_ic": 0.007000088115033372,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_RSQR30",
+        "rank_ic": 0.0055172266665093625,
+        "valid_days": 5041
+      },
+      {
+        "name": "SameCalendarMonthReturn3YStrict",
+        "rank_ic": 0.005447900943070846,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.1",
+        "rank_ic": 0.0052067673557858515,
+        "valid_days": 3961
+      },
+      {
+        "name": "Alpha158_MAX5",
+        "rank_ic": 0.00459840781355616,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_MAX10",
+        "rank_ic": 0.003712521882113546,
+        "valid_days": 5041
+      },
+      {
+        "name": "GrossMarginQuality",
+        "rank_ic": 0.0036474479519691687,
+        "valid_days": 4489
+      },
+      {
+        "name": "Factor_20260531_005210_g37_2",
+        "rank_ic": 0.0030687951716837285,
+        "valid_days": 4490
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.15",
+        "rank_ic": 0.002709462872722392,
+        "valid_days": 4730
+      },
+      {
+        "name": "Alpha158_RSQR20",
+        "rank_ic": 0.002601603607370136,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g17_0",
+        "rank_ic": 0.002587980968801619,
+        "valid_days": 4490
+      },
+      {
+        "name": "BiliNineDownReversal",
+        "rank_ic": 0.0025121087596272082,
+        "valid_days": 4447
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.15",
+        "rank_ic": 0.0024504459818993777,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.15",
+        "rank_ic": 0.0021806926924852017,
+        "valid_days": 4940
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.15",
+        "rank_ic": 0.002014828602927628,
+        "valid_days": 4433
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.15",
+        "rank_ic": 0.0016427838204941723,
+        "valid_days": 3397
+      },
+      {
+        "name": "HighInventoryOtherPayable",
+        "rank_ic": 0.0008207000917706187,
+        "valid_days": 5041
+      },
+      {
+        "name": "HighReceivableOtherPayable",
+        "rank_ic": 0.0006814982314325681,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.2",
+        "rank_ic": 0.0002743487995289338,
+        "valid_days": 4442
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.2",
+        "rank_ic": 0.00012666376034662903,
+        "valid_days": 3502
+      },
+      {
+        "name": "BiliMACDBottomDivergence30",
+        "rank_ic": 4.376379923012312e-05,
+        "valid_days": 3030
+      }
+    ],
+    "15": [
+      {
+        "name": "AmountBasedSmallCap5",
+        "rank_ic": 0.10852463953274293,
+        "valid_days": 5041
+      },
+      {
+        "name": "LowResidualVol20",
+        "rank_ic": 0.10524536350777786,
+        "valid_days": 5041
+      },
+      {
+        "name": "persistent_quiet20_60__prior_120__recent_10",
+        "rank_ic": 0.10293743090193254,
+        "valid_days": 4395
+      },
+      {
+        "name": "attention_contraction_10_60__attention_10__prior_120__recent_5__weight_0.75",
+        "rank_ic": 0.09872062949793463,
+        "valid_days": 4437
+      },
+      {
+        "name": "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.75",
+        "rank_ic": 0.0978498015943257,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_10",
+        "rank_ic": 0.09444824126450073,
+        "valid_days": 5041
+      },
+      {
+        "name": "persistent_quiet20_60__prior_20__recent_30",
+        "rank_ic": 0.08676501202206163,
+        "valid_days": 5030
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_30",
+        "rank_ic": 0.08414332483490021,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_120__recent_20",
+        "rank_ic": 0.08281882921749731,
+        "valid_days": 5041
+      },
+      {
+        "name": "attention_contraction_10_60__attention_30__prior_120__recent_5__weight_0.25",
+        "rank_ic": 0.0808877561623139,
+        "valid_days": 4437
+      },
+      {
+        "name": "TrendReversalPreCloseStrict",
+        "rank_ic": 0.07959139915318757,
+        "valid_days": 4990
+      },
+      {
+        "name": "Alpha360_LOW28",
+        "rank_ic": 0.07912082811205093,
+        "valid_days": 5041
+      },
+      {
+        "name": "MainTurnover",
+        "rank_ic": 0.0781320466452108,
+        "valid_days": 137
+      },
+      {
+        "name": "persistent_quiet20_60__prior_120__recent_60",
+        "rank_ic": 0.07768666983802026,
+        "valid_days": 3953
+      },
+      {
+        "name": "attention_contraction_40_20",
+        "rank_ic": 0.07600450013975038,
+        "valid_days": 4990
+      },
+      {
+        "name": "attention_contraction_10_60__attention_10__prior_60__recent_20__weight_0.25",
+        "rank_ic": 0.07538801586908729,
+        "valid_days": 4818
+      },
+      {
+        "name": "Alpha360_LOW39",
+        "rank_ic": 0.07464022766879476,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedRangeVolatility20",
+        "rank_ic": 0.07411524123696116,
+        "valid_days": 5041
+      },
+      {
+        "name": "high_to_quiet_40_60",
+        "rank_ic": 0.07260928896711441,
+        "valid_days": 4650
+      },
+      {
+        "name": "Alpha360_LOW55",
+        "rank_ic": 0.07110350868898176,
+        "valid_days": 5016
+      },
+      {
+        "name": "high_to_quiet_20_20",
+        "rank_ic": 0.07077378088540172,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_QTLD30",
+        "rank_ic": 0.07002153910521634,
+        "valid_days": 5041
+      },
+      {
+        "name": "high_to_quiet_10_20",
+        "rank_ic": 0.06967501579363213,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_10",
+        "rank_ic": 0.06944387876881976,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_MIN60",
+        "rank_ic": 0.0656620517624454,
+        "valid_days": 4990
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_60",
+        "rank_ic": 0.06370077008400532,
+        "valid_days": 5041
+      },
+      {
+        "name": "attention_contraction_10_60__attention_30__prior_20__recent_10__weight_0.25",
+        "rank_ic": 0.06361493278814367,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_30",
+        "rank_ic": 0.06314783377197702,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowReturnAttention20__window_120",
+        "rank_ic": 0.0627166584068858,
+        "valid_days": 4478
+      },
+      {
+        "name": "TrendIndividualV5",
+        "rank_ic": 0.06056197865154268,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_QTLU30",
+        "rank_ic": 0.059646119928431676,
+        "valid_days": 5041
+      },
+      {
+        "name": "LongHorizonVol36MStrict",
+        "rank_ic": 0.05622283234622776,
+        "valid_days": 2557
+      },
+      {
+        "name": "attention_contraction_10_60__attention_10__prior_20__recent_5__weight_0.25",
+        "rank_ic": 0.05519455660374712,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_LOW11",
+        "rank_ic": 0.05509766526935553,
+        "valid_days": 5041
+      },
+      {
+        "name": "IndustryPeerReversal120Strict",
+        "rank_ic": 0.05495380562801013,
+        "valid_days": 4297
+      },
+      {
+        "name": "BookToMarketQuality",
+        "rank_ic": 0.05371416034580528,
+        "valid_days": 4489
+      },
+      {
+        "name": "CompletedAmihudIlliquidity20__window_60",
+        "rank_ic": 0.052006392971689144,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedPriorMonthTurnoverStrict",
+        "rank_ic": 0.05193213872314941,
+        "valid_days": 5041
+      },
+      {
+        "name": "Optimized__TrueMarketCap",
+        "rank_ic": 0.0510309693734416,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_60",
+        "rank_ic": 0.05066243278573513,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VSUMN60",
+        "rank_ic": 0.050650314348059076,
+        "valid_days": 4981
+      },
+      {
+        "name": "Alpha158_MIN5",
+        "rank_ic": 0.04897986825845254,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCVStrict",
+        "rank_ic": 0.04896848602054199,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME57",
+        "rank_ic": 0.048149968448220275,
+        "valid_days": 5003
+      },
+      {
+        "name": "Alpha360_LOW7",
+        "rank_ic": 0.04770928395161371,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME55",
+        "rank_ic": 0.04748201598202002,
+        "valid_days": 5016
+      },
+      {
+        "name": "Alpha360_VOLUME53",
+        "rank_ic": 0.047318452893221306,
+        "valid_days": 5023
+      },
+      {
+        "name": "Alpha360_VOLUME41",
+        "rank_ic": 0.046960083396593175,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME43",
+        "rank_ic": 0.04692632977818854,
+        "valid_days": 5040
+      },
+      {
+        "name": "Alpha360_VOLUME45",
+        "rank_ic": 0.046913669361525884,
+        "valid_days": 5038
+      },
+      {
+        "name": "attention_decay20_60",
+        "rank_ic": 0.04679219744961105,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME48",
+        "rank_ic": 0.04666288470571203,
+        "valid_days": 5031
+      },
+      {
+        "name": "Alpha360_VOLUME51",
+        "rank_ic": 0.046488072772541245,
+        "valid_days": 5028
+      },
+      {
+        "name": "Alpha360_VOLUME39",
+        "rank_ic": 0.046109844929126786,
+        "valid_days": 5041
+      },
+      {
+        "name": "DeepValueComposite",
+        "rank_ic": 0.04607648588898306,
+        "valid_days": 4489
+      },
+      {
+        "name": "Alpha360_LOW4",
+        "rank_ic": 0.04581649059840303,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME37",
+        "rank_ic": 0.04496167057594061,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_30",
+        "rank_ic": 0.04495351337570971,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VMA60",
+        "rank_ic": 0.04474650809370928,
+        "valid_days": 4990
+      },
+      {
+        "name": "Alpha360_VOLUME35",
+        "rank_ic": 0.04446555796192644,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_10",
+        "rank_ic": 0.04420068536640536,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME33",
+        "rank_ic": 0.04382328950407964,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME31",
+        "rank_ic": 0.042690989201363085,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VSUMN30",
+        "rank_ic": 0.04267839740851312,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_LOW2",
+        "rank_ic": 0.04152367739487607,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME29",
+        "rank_ic": 0.04103517161463522,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_LOW0",
+        "rank_ic": 0.04044246499395945,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME27",
+        "rank_ic": 0.039571724947058594,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_IMIN30",
+        "rank_ic": 0.03948927300775732,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliRawIssueDiscount",
+        "rank_ic": 0.03942540218835652,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowPriceAbove2",
+        "rank_ic": 0.03884302664128256,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g32_1",
+        "rank_ic": 0.0385049208724354,
+        "valid_days": 4489
+      },
+      {
+        "name": "Alpha360_LOW1",
+        "rank_ic": 0.038386530364423806,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME25",
+        "rank_ic": 0.03828307895743316,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedAmountConditionedReversal20Strict",
+        "rank_ic": 0.03714931018181819,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME23",
+        "rank_ic": 0.03687073981397625,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedDividendYield504PIT",
+        "rank_ic": 0.03681855969867735,
+        "valid_days": 3158
+      },
+      {
+        "name": "Alpha158_IMIN60",
+        "rank_ic": 0.03666461004040926,
+        "valid_days": 4990
+      },
+      {
+        "name": "IndustryPeerReversal60Strict",
+        "rank_ic": 0.0358571522461375,
+        "valid_days": 4902
+      },
+      {
+        "name": "Factor_20260531_005210_g22_2",
+        "rank_ic": 0.03576954453714985,
+        "valid_days": 4489
+      },
+      {
+        "name": "VolumeCV__window_60",
+        "rank_ic": 0.03524977703167438,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_IMIN20",
+        "rank_ic": 0.0352314430435256,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME21",
+        "rank_ic": 0.0350465559976704,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VSUMN20",
+        "rank_ic": 0.03332472412164887,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_5",
+        "rank_ic": 0.03308253794303956,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliAdjustedIssueDiscount",
+        "rank_ic": 0.03213990968367306,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME19",
+        "rank_ic": 0.031838405937407,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260530_195339_g10_0",
+        "rank_ic": 0.03169472231957919,
+        "valid_days": 4489
+      },
+      {
+        "name": "Factor_20260531_005210_g28_2",
+        "rank_ic": 0.031304052822412894,
+        "valid_days": 4489
+      },
+      {
+        "name": "PB3ROE5Signal",
+        "rank_ic": 0.029237734700505717,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME17",
+        "rank_ic": 0.029113723668449876,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.05",
+        "rank_ic": 0.028410523158190825,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260605_192540_g5_2",
+        "rank_ic": 0.02836294287454825,
+        "valid_days": 4496
+      },
+      {
+        "name": "Factor_20260531_005210_g11_0",
+        "rank_ic": 0.027926610796378277,
+        "valid_days": 4489
+      },
+      {
+        "name": "Alpha158_QTLU10",
+        "rank_ic": 0.02778915277044453,
+        "valid_days": 5041
+      },
+      {
+        "name": "DownsideOpenVolatilityStrict",
+        "rank_ic": 0.027623582369780846,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g32_0",
+        "rank_ic": 0.027140509448835497,
+        "valid_days": 4489
+      },
+      {
+        "name": "Factor_20260531_005210_g40_1",
+        "rank_ic": 0.02710242153076359,
+        "valid_days": 4489
+      },
+      {
+        "name": "Alpha158_MAX60",
+        "rank_ic": 0.026638955303721144,
+        "valid_days": 4990
+      },
+      {
+        "name": "LowCashOutflowProfitGrowthSpread__penalty_0",
+        "rank_ic": 0.02658988287338029,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.05",
+        "rank_ic": 0.026573499757779374,
+        "valid_days": 4957
+      },
+      {
+        "name": "Alpha360_VOLUME15",
+        "rank_ic": 0.026389805487153608,
+        "valid_days": 5041
+      },
+      {
+        "name": "IndustryPeerReversal20Strict",
+        "rank_ic": 0.02617424334900741,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME14",
+        "rank_ic": 0.025248626564301404,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME13",
+        "rank_ic": 0.024215966384364095,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedDividendConsistency3YPIT",
+        "rank_ic": 0.023976267336618,
+        "valid_days": 3098
+      },
+      {
+        "name": "Factor_20260531_005210_g38_1",
+        "rank_ic": 0.023100821831011187,
+        "valid_days": 4489
+      },
+      {
+        "name": "VolumeCV__window_120",
+        "rank_ic": 0.02302323605167976,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME12",
+        "rank_ic": 0.022990102412986702,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g8_1",
+        "rank_ic": 0.02298190898599096,
+        "valid_days": 4489
+      },
+      {
+        "name": "Factor_20260531_005210_g34_1",
+        "rank_ic": 0.022799454691111477,
+        "valid_days": 4489
+      },
+      {
+        "name": "Factor_20260530_195339_g17_0",
+        "rank_ic": 0.02276210024712475,
+        "valid_days": 4489
+      },
+      {
+        "name": "HighOperatingProfitRevenueGrowthSpread",
+        "rank_ic": 0.02237060634023346,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g35_0",
+        "rank_ic": 0.022261115818678442,
+        "valid_days": 4489
+      },
+      {
+        "name": "VolumeContraction5v15Strict",
+        "rank_ic": 0.022105122305952636,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g41_0",
+        "rank_ic": 0.021852649270632962,
+        "valid_days": 4489
+      },
+      {
+        "name": "Alpha360_HIGH3",
+        "rank_ic": 0.02155718540455148,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME11",
+        "rank_ic": 0.02153634145367313,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g25_3",
+        "rank_ic": 0.021422860717383828,
+        "valid_days": 4489
+      },
+      {
+        "name": "Factor_20260531_005210_g30_3",
+        "rank_ic": 0.021158048148269822,
+        "valid_days": 4489
+      },
+      {
+        "name": "Factor_20260531_005210_g2_0",
+        "rank_ic": 0.021117861464359004,
+        "valid_days": 4489
+      },
+      {
+        "name": "TrendOpenSignalV3",
+        "rank_ic": 0.02093961582413345,
+        "valid_days": 2426
+      },
+      {
+        "name": "Alpha158_VWAP0",
+        "rank_ic": 0.02064507093800605,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME10",
+        "rank_ic": 0.02047408684510904,
+        "valid_days": 5041
+      },
+      {
+        "name": "High52Week",
+        "rank_ic": 0.02030376793564877,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g11_3",
+        "rank_ic": 0.020280546134536667,
+        "valid_days": 4489
+      },
+      {
+        "name": "Factor_20260531_005210_g15_4",
+        "rank_ic": 0.020069386669019935,
+        "valid_days": 4489
+      },
+      {
+        "name": "Factor_20260531_005210_g20_3",
+        "rank_ic": 0.01987182550827098,
+        "valid_days": 4489
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.05",
+        "rank_ic": 0.019850871743998487,
+        "valid_days": 4743
+      },
+      {
+        "name": "Factor_20260531_005210_g39_1",
+        "rank_ic": 0.019631850331301447,
+        "valid_days": 4489
+      },
+      {
+        "name": "Alpha158_IMIN10",
+        "rank_ic": 0.019331823135671028,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME9",
+        "rank_ic": 0.01921805881631621,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260530_195339_g17_4",
+        "rank_ic": 0.019171035898996765,
+        "valid_days": 4489
+      },
+      {
+        "name": "Alpha158_VMA20",
+        "rank_ic": 0.019123869343445787,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_IMIN5",
+        "rank_ic": 0.018714396906083924,
+        "valid_days": 5041
+      },
+      {
+        "name": "LowPRDecile",
+        "rank_ic": 0.018532063051561104,
+        "valid_days": 5041
+      },
+      {
+        "name": "LowCashOutflowProfitGrowthSpread__penalty_1.5",
+        "rank_ic": 0.018012519796263702,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME8",
+        "rank_ic": 0.017912687769707336,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g29_2",
+        "rank_ic": 0.017885225027494712,
+        "valid_days": 4489
+      },
+      {
+        "name": "Alpha158_OPEN0",
+        "rank_ic": 0.017390003343166996,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g3_3",
+        "rank_ic": 0.017367469310004376,
+        "valid_days": 4489
+      },
+      {
+        "name": "Alpha360_VOLUME7",
+        "rank_ic": 0.01700914420253187,
+        "valid_days": 5041
+      },
+      {
+        "name": "HighAbnormalGrossProfit",
+        "rank_ic": 0.016846402493609493,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME6",
+        "rank_ic": 0.016776042066447686,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowPriceSmallCap200",
+        "rank_ic": 0.016470217826091187,
+        "valid_days": 4594
+      },
+      {
+        "name": "Alpha360_VOLUME5",
+        "rank_ic": 0.016369240533716727,
+        "valid_days": 5041
+      },
+      {
+        "name": "ProfitGrowth",
+        "rank_ic": 0.016293135535245543,
+        "valid_days": 4489
+      },
+      {
+        "name": "Factor_20260531_005210_g26_4",
+        "rank_ic": 0.016220763197099933,
+        "valid_days": 4489
+      },
+      {
+        "name": "Factor_20260531_005210_g24_2",
+        "rank_ic": 0.016081791424213166,
+        "valid_days": 4489
+      },
+      {
+        "name": "Alpha158_CNTN30",
+        "rank_ic": 0.015703933083957913,
+        "valid_days": 5041
+      },
+      {
+        "name": "TrendOpenSignalV2",
+        "rank_ic": 0.014702510125916548,
+        "valid_days": 1994
+      },
+      {
+        "name": "Alpha158_CNTN20",
+        "rank_ic": 0.014343158208034503,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_RSQR60",
+        "rank_ic": 0.01418006787413642,
+        "valid_days": 4990
+      },
+      {
+        "name": "Alpha360_VOLUME4",
+        "rank_ic": 0.013812822776531872,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g29_3",
+        "rank_ic": 0.013795354712555821,
+        "valid_days": 4489
+      },
+      {
+        "name": "FinancialQualityGrowthNeutralPIT",
+        "rank_ic": 0.013432281827495157,
+        "valid_days": 4496
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.1",
+        "rank_ic": 0.013268706640807041,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_3__roe_0.1",
+        "rank_ic": 0.013042943370284835,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal",
+        "rank_ic": 0.012962219977628002,
+        "valid_days": 4864
+      },
+      {
+        "name": "Alpha158_RSQR30",
+        "rank_ic": 0.012655774987015197,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowLifetimeRangeRatio",
+        "rank_ic": 0.01199617573767567,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME3",
+        "rank_ic": 0.010969518029371567,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_RSQR20",
+        "rank_ic": 0.010930076132119167,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.05",
+        "rank_ic": 0.010841860276195355,
+        "valid_days": 4271
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.1",
+        "rank_ic": 0.010571407975074205,
+        "valid_days": 4489
+      },
+      {
+        "name": "HighOperatingCashSurplus",
+        "rank_ic": 0.010447832724625376,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_CNTN5",
+        "rank_ic": 0.00982471209312719,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g20_0",
+        "rank_ic": 0.009815027263689963,
+        "valid_days": 4489
+      },
+      {
+        "name": "Alpha360_VOLUME2",
+        "rank_ic": 0.008205473478637997,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_CNTN60",
+        "rank_ic": 0.008083682238097106,
+        "valid_days": 4981
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.1",
+        "rank_ic": 0.006369987879229801,
+        "valid_days": 3957
+      },
+      {
+        "name": "Alpha158_RSQR10",
+        "rank_ic": 0.0061718877423950595,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_CNTN10",
+        "rank_ic": 0.006152581190298549,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g37_2",
+        "rank_ic": 0.005025047378505437,
+        "valid_days": 4489
+      },
+      {
+        "name": "GrossMarginQuality",
+        "rank_ic": 0.004904908534481094,
+        "valid_days": 4488
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.15",
+        "rank_ic": 0.004016657198533294,
+        "valid_days": 4724
+      },
+      {
+        "name": "Alpha360_VOLUME1",
+        "rank_ic": 0.003875972527762337,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.15",
+        "rank_ic": 0.0036029590823589983,
+        "valid_days": 4423
+      },
+      {
+        "name": "BiliNineDownReversal",
+        "rank_ic": 0.003107284344739047,
+        "valid_days": 4419
+      },
+      {
+        "name": "Alpha158_MAX20",
+        "rank_ic": 0.0030982948422641414,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.15",
+        "rank_ic": 0.002840264113621555,
+        "valid_days": 4932
+      },
+      {
+        "name": "Alpha360_HIGH1",
+        "rank_ic": 0.0027102677470486718,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_RSQR5",
+        "rank_ic": 0.0026189637076446774,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g17_0",
+        "rank_ic": 0.002392006818487566,
+        "valid_days": 4489
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.15",
+        "rank_ic": 0.0021816525530906263,
+        "valid_days": 3383
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.15",
+        "rank_ic": 0.002039037719736525,
+        "valid_days": 5041
+      },
+      {
+        "name": "AccrualsYield",
+        "rank_ic": 0.0016685646729221353,
+        "valid_days": 4488
+      },
+      {
+        "name": "SameCalendarMonthReturn3YStrict",
+        "rank_ic": 0.00134619549379936,
+        "valid_days": 5041
+      },
+      {
+        "name": "HighReceivableOtherPayable",
+        "rank_ic": 0.0012316353257922669,
+        "valid_days": 5041
+      },
+      {
+        "name": "HighInventoryOtherPayable",
+        "rank_ic": 0.0011961705809910442,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.2",
+        "rank_ic": 0.00069924684172363,
+        "valid_days": 4421
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.2",
+        "rank_ic": 0.0005519473049058244,
+        "valid_days": 3494
+      },
+      {
+        "name": "BiliMACDBottomDivergence30",
+        "rank_ic": 0.00015546159531074845,
+        "valid_days": 2985
+      },
+      {
+        "name": "Alpha158_KLOW2",
+        "rank_ic": 0.00011936969676876233,
+        "valid_days": 5041
+      }
+    ],
+    "30": [
+      {
+        "name": "AmountBasedSmallCap5",
+        "rank_ic": 0.13003146368149612,
+        "valid_days": 5041
+      },
+      {
+        "name": "persistent_quiet20_60__prior_60__recent_10",
+        "rank_ic": 0.12098138424007975,
+        "valid_days": 4779
+      },
+      {
+        "name": "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.75",
+        "rank_ic": 0.11113304761519041,
+        "valid_days": 5039
+      },
+      {
+        "name": "attention_contraction_10_60__attention_10__prior_120__recent_20__weight_0.75",
+        "rank_ic": 0.10741853829477038,
+        "valid_days": 4174
+      },
+      {
+        "name": "MainTurnover",
+        "rank_ic": 0.10586134708538636,
+        "valid_days": 137
+      },
+      {
+        "name": "BiliLowReturnAttention20__window_5",
+        "rank_ic": 0.10389855572050614,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_10",
+        "rank_ic": 0.1025870587928785,
+        "valid_days": 5041
+      },
+      {
+        "name": "low_residual_vol20__window_120",
+        "rank_ic": 0.1022960887985199,
+        "valid_days": 4349
+      },
+      {
+        "name": "BiliLowReturnAttention20__window_60",
+        "rank_ic": 0.09396006315653294,
+        "valid_days": 4863
+      },
+      {
+        "name": "attention_contraction_40_60",
+        "rank_ic": 0.09204551836229234,
+        "valid_days": 4516
+      },
+      {
+        "name": "CompletedRangeVolatility20",
+        "rank_ic": 0.09177151448200517,
+        "valid_days": 5041
+      },
+      {
+        "name": "attention_contraction_10_60__attention_30__prior_20__recent_20__weight_0.5",
+        "rank_ic": 0.09065841595439887,
+        "valid_days": 5019
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_30",
+        "rank_ic": 0.08981602216475658,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_QTLD60",
+        "rank_ic": 0.08737376682108693,
+        "valid_days": 4863
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_120__recent_20",
+        "rank_ic": 0.08660113797110383,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_LOW24",
+        "rank_ic": 0.08065843030827449,
+        "valid_days": 5041
+      },
+      {
+        "name": "LongHorizonVol36MStrict",
+        "rank_ic": 0.07757729068416061,
+        "valid_days": 2557
+      },
+      {
+        "name": "BiliLowReturnAttention20__window_120",
+        "rank_ic": 0.07702999506144549,
+        "valid_days": 4349
+      },
+      {
+        "name": "Alpha360_LOW17",
+        "rank_ic": 0.07475203030370263,
+        "valid_days": 5041
+      },
+      {
+        "name": "high_to_quiet_10_20",
+        "rank_ic": 0.07429588736652253,
+        "valid_days": 5039
+      },
+      {
+        "name": "Alpha360_LOW54",
+        "rank_ic": 0.07408861417556169,
+        "valid_days": 4907
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_60",
+        "rank_ic": 0.07358465467539135,
+        "valid_days": 5041
+      },
+      {
+        "name": "TrendIndividualV5",
+        "rank_ic": 0.07327667526836769,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_MIN30",
+        "rank_ic": 0.07298394847482294,
+        "valid_days": 5039
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_10",
+        "rank_ic": 0.07015587164930087,
+        "valid_days": 5041
+      },
+      {
+        "name": "high_to_quiet_20_60",
+        "rank_ic": 0.0700587620648092,
+        "valid_days": 4694
+      },
+      {
+        "name": "CompletedAmihudIlliquidity20__window_60",
+        "rank_ic": 0.06900266336864225,
+        "valid_days": 5041
+      },
+      {
+        "name": "BookToMarketQuality",
+        "rank_ic": 0.06881295813938641,
+        "valid_days": 4488
+      },
+      {
+        "name": "CompletedPriorMonthTurnoverStrict",
+        "rank_ic": 0.06694084222369007,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_QTLU60",
+        "rank_ic": 0.06672580273437205,
+        "valid_days": 4863
+      },
+      {
+        "name": "Alpha360_LOW11",
+        "rank_ic": 0.06517761564573214,
+        "valid_days": 5041
+      },
+      {
+        "name": "attention_contraction_10_60__attention_30__prior_20__recent_10__weight_0.25",
+        "rank_ic": 0.06486604533740493,
+        "valid_days": 5039
+      },
+      {
+        "name": "Optimized__TrueMarketCap",
+        "rank_ic": 0.06280653033464541,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_30",
+        "rank_ic": 0.06243965360631799,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_MIN10",
+        "rank_ic": 0.06139793950419296,
+        "valid_days": 5041
+      },
+      {
+        "name": "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.25",
+        "rank_ic": 0.061041758348472516,
+        "valid_days": 5039
+      },
+      {
+        "name": "DeepValueComposite",
+        "rank_ic": 0.05862701368221328,
+        "valid_days": 4488
+      },
+      {
+        "name": "Alpha360_LOW7",
+        "rank_ic": 0.057086876713112744,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_60",
+        "rank_ic": 0.05289270428555936,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_LOW4",
+        "rank_ic": 0.05207677576764934,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VSUMN60",
+        "rank_ic": 0.05050272943000233,
+        "valid_days": 4855
+      },
+      {
+        "name": "attention_decay20_60",
+        "rank_ic": 0.0503102351067669,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowPriceAbove2",
+        "rank_ic": 0.050119320627123355,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g32_1",
+        "rank_ic": 0.04984731857659769,
+        "valid_days": 4488
+      },
+      {
+        "name": "IndustryPeerReversal120Strict",
+        "rank_ic": 0.04978861342678654,
+        "valid_days": 4168
+      },
+      {
+        "name": "BiliRawIssueDiscount",
+        "rank_ic": 0.04962262438933466,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME58",
+        "rank_ic": 0.04885182462352847,
+        "valid_days": 4871
+      },
+      {
+        "name": "Alpha360_VOLUME53",
+        "rank_ic": 0.04825041517151229,
+        "valid_days": 4914
+      },
+      {
+        "name": "Alpha360_VOLUME49",
+        "rank_ic": 0.04811772012398049,
+        "valid_days": 4949
+      },
+      {
+        "name": "Alpha360_VOLUME56",
+        "rank_ic": 0.04809380803303586,
+        "valid_days": 4890
+      },
+      {
+        "name": "Alpha360_VOLUME47",
+        "rank_ic": 0.0480136381506114,
+        "valid_days": 4965
+      },
+      {
+        "name": "Alpha360_VOLUME43",
+        "rank_ic": 0.04797760180223184,
+        "valid_days": 4997
+      },
+      {
+        "name": "Alpha360_VOLUME45",
+        "rank_ic": 0.04796271986733064,
+        "valid_days": 4981
+      },
+      {
+        "name": "CompletedDividendYield504PIT",
+        "rank_ic": 0.04764508359964237,
+        "valid_days": 3158
+      },
+      {
+        "name": "Alpha360_VOLUME51",
+        "rank_ic": 0.04762613930456301,
+        "valid_days": 4931
+      },
+      {
+        "name": "Alpha360_VOLUME41",
+        "rank_ic": 0.04746039599640516,
+        "valid_days": 5011
+      },
+      {
+        "name": "Alpha158_LOW0",
+        "rank_ic": 0.046999877464544114,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME39",
+        "rank_ic": 0.04697607891239218,
+        "valid_days": 5019
+      },
+      {
+        "name": "Alpha360_VOLUME34",
+        "rank_ic": 0.046304401554301065,
+        "valid_days": 5030
+      },
+      {
+        "name": "Alpha360_VOLUME37",
+        "rank_ic": 0.046289130336359834,
+        "valid_days": 5026
+      },
+      {
+        "name": "Alpha158_VMA60",
+        "rank_ic": 0.04620972385955478,
+        "valid_days": 4863
+      },
+      {
+        "name": "Factor_20260531_005210_g22_2",
+        "rank_ic": 0.04619074685859591,
+        "valid_days": 4488
+      },
+      {
+        "name": "Alpha360_LOW2",
+        "rank_ic": 0.04559073824851664,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME32",
+        "rank_ic": 0.045584870109462605,
+        "valid_days": 5032
+      },
+      {
+        "name": "Alpha158_VSUMN30",
+        "rank_ic": 0.04497181439092154,
+        "valid_days": 5038
+      },
+      {
+        "name": "Alpha360_VOLUME29",
+        "rank_ic": 0.04385527219044831,
+        "valid_days": 5039
+      },
+      {
+        "name": "VolumeCVStrict",
+        "rank_ic": 0.04349018423931322,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_IMIN30",
+        "rank_ic": 0.04309094017113002,
+        "valid_days": 5039
+      },
+      {
+        "name": "DownsideOpenVolatilityStrict",
+        "rank_ic": 0.04294873378282537,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_LOW1",
+        "rank_ic": 0.042857059752466106,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME27",
+        "rank_ic": 0.04236478481604195,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_IMIN60",
+        "rank_ic": 0.041292623276993616,
+        "valid_days": 4863
+      },
+      {
+        "name": "Alpha360_VOLUME25",
+        "rank_ic": 0.04112105378864439,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedAmountConditionedReversal20Strict",
+        "rank_ic": 0.04109180091112317,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliAdjustedIssueDiscount",
+        "rank_ic": 0.040794047979551044,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_30",
+        "rank_ic": 0.0405341407453269,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260530_195339_g10_0",
+        "rank_ic": 0.04002749880600714,
+        "valid_days": 4488
+      },
+      {
+        "name": "Alpha158_IMIN20",
+        "rank_ic": 0.03999625615103248,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g28_2",
+        "rank_ic": 0.039501094312668614,
+        "valid_days": 4488
+      },
+      {
+        "name": "contraction_20_20",
+        "rank_ic": 0.03943945151882891,
+        "valid_days": 5019
+      },
+      {
+        "name": "Alpha360_VOLUME23",
+        "rank_ic": 0.039248614152350945,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_10",
+        "rank_ic": 0.03803016216792011,
+        "valid_days": 5041
+      },
+      {
+        "name": "PB3ROE5Signal",
+        "rank_ic": 0.037924150692598246,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME21",
+        "rank_ic": 0.03748779917025149,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VSUMN20",
+        "rank_ic": 0.03603607943782637,
+        "valid_days": 5041
+      },
+      {
+        "name": "IndustryPeerReversal60Strict",
+        "rank_ic": 0.03553839643301722,
+        "valid_days": 4773
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.05",
+        "rank_ic": 0.03524167489100073,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260605_192540_g5_2",
+        "rank_ic": 0.03521630880764796,
+        "valid_days": 4496
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.05",
+        "rank_ic": 0.035123340136508106,
+        "valid_days": 4939
+      },
+      {
+        "name": "Alpha360_VOLUME19",
+        "rank_ic": 0.03473958554733241,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g11_0",
+        "rank_ic": 0.03469802206995555,
+        "valid_days": 4488
+      },
+      {
+        "name": "Factor_20260531_005210_g40_1",
+        "rank_ic": 0.03437050786265566,
+        "valid_days": 4488
+      },
+      {
+        "name": "LowCashOutflowProfitGrowthSpread__penalty_0",
+        "rank_ic": 0.03414205289508328,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g32_0",
+        "rank_ic": 0.03388579622059915,
+        "valid_days": 4488
+      },
+      {
+        "name": "VolumeCV__window_60",
+        "rank_ic": 0.03180286030001775,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME17",
+        "rank_ic": 0.031650654790328615,
+        "valid_days": 5041
+      },
+      {
+        "name": "CompletedDividendConsistency3YPIT",
+        "rank_ic": 0.03136568831237745,
+        "valid_days": 3098
+      },
+      {
+        "name": "contraction_40_20",
+        "rank_ic": 0.031300024745214663,
+        "valid_days": 4863
+      },
+      {
+        "name": "Alpha158_QTLU10",
+        "rank_ic": 0.030786613667249555,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260530_195339_g17_0",
+        "rank_ic": 0.02979352943345634,
+        "valid_days": 4488
+      },
+      {
+        "name": "Factor_20260531_005210_g38_1",
+        "rank_ic": 0.029125693712755057,
+        "valid_days": 4488
+      },
+      {
+        "name": "Factor_20260531_005210_g8_1",
+        "rank_ic": 0.029095978131662373,
+        "valid_days": 4488
+      },
+      {
+        "name": "Factor_20260531_005210_g34_1",
+        "rank_ic": 0.029069073903705642,
+        "valid_days": 4488
+      },
+      {
+        "name": "Factor_20260531_005210_g35_0",
+        "rank_ic": 0.028817780701388962,
+        "valid_days": 4488
+      },
+      {
+        "name": "Alpha360_VOLUME15",
+        "rank_ic": 0.028732952797421114,
+        "valid_days": 5041
+      },
+      {
+        "name": "HighOperatingProfitRevenueGrowthSpread",
+        "rank_ic": 0.028675496389295504,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g41_0",
+        "rank_ic": 0.02789532867849669,
+        "valid_days": 4488
+      },
+      {
+        "name": "Factor_20260531_005210_g25_3",
+        "rank_ic": 0.027824724166414898,
+        "valid_days": 4488
+      },
+      {
+        "name": "VolumeCV__window_5",
+        "rank_ic": 0.027566765278252227,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME14",
+        "rank_ic": 0.027404760831763592,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g2_0",
+        "rank_ic": 0.027184906852647468,
+        "valid_days": 4488
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.05",
+        "rank_ic": 0.027155215284126233,
+        "valid_days": 4720
+      },
+      {
+        "name": "Factor_20260531_005210_g30_3",
+        "rank_ic": 0.02707281878803884,
+        "valid_days": 4488
+      },
+      {
+        "name": "IndustryPeerReversal20Strict",
+        "rank_ic": 0.026717249750893218,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeContraction5v15Strict",
+        "rank_ic": 0.026500611885127742,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g20_3",
+        "rank_ic": 0.026393517106871097,
+        "valid_days": 4488
+      },
+      {
+        "name": "Alpha360_VOLUME13",
+        "rank_ic": 0.026232904927260138,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g11_3",
+        "rank_ic": 0.02618807081505226,
+        "valid_days": 4488
+      },
+      {
+        "name": "Factor_20260531_005210_g39_1",
+        "rank_ic": 0.025861706590779118,
+        "valid_days": 4488
+      },
+      {
+        "name": "Factor_20260531_005210_g15_4",
+        "rank_ic": 0.025643065705102018,
+        "valid_days": 4488
+      },
+      {
+        "name": "Alpha360_VOLUME12",
+        "rank_ic": 0.024844480891766225,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260530_195339_g17_4",
+        "rank_ic": 0.024775768579559453,
+        "valid_days": 4488
+      },
+      {
+        "name": "Alpha158_IMIN10",
+        "rank_ic": 0.02457296365312338,
+        "valid_days": 5041
+      },
+      {
+        "name": "LowPRDecile",
+        "rank_ic": 0.023904997159137475,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME11",
+        "rank_ic": 0.023402166018245817,
+        "valid_days": 5041
+      },
+      {
+        "name": "HighAbnormalGrossProfit",
+        "rank_ic": 0.022956450854545504,
+        "valid_days": 5041
+      },
+      {
+        "name": "LowCashOutflowProfitGrowthSpread__penalty_1.5",
+        "rank_ic": 0.022869067658435452,
+        "valid_days": 5041
+      },
+      {
+        "name": "TrendOpenSignalV3",
+        "rank_ic": 0.022839406771495763,
+        "valid_days": 2420
+      },
+      {
+        "name": "Factor_20260531_005210_g29_2",
+        "rank_ic": 0.022675327247244532,
+        "valid_days": 4488
+      },
+      {
+        "name": "Alpha360_VOLUME10",
+        "rank_ic": 0.022165823035179756,
+        "valid_days": 5041
+      },
+      {
+        "name": "VolumeCV__window_120",
+        "rank_ic": 0.02213064881465892,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VMA20",
+        "rank_ic": 0.02211625633943057,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g3_3",
+        "rank_ic": 0.02199944247380364,
+        "valid_days": 4488
+      },
+      {
+        "name": "Alpha360_HIGH3",
+        "rank_ic": 0.021968106264038265,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g24_2",
+        "rank_ic": 0.021388321236763312,
+        "valid_days": 4488
+      },
+      {
+        "name": "Alpha360_VOLUME9",
+        "rank_ic": 0.020623095471563838,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g26_4",
+        "rank_ic": 0.0204192571770446,
+        "valid_days": 4488
+      },
+      {
+        "name": "Alpha158_RSQR30",
+        "rank_ic": 0.02040871507675191,
+        "valid_days": 5039
+      },
+      {
+        "name": "Alpha158_IMIN5",
+        "rank_ic": 0.02030841530821386,
+        "valid_days": 5041
+      },
+      {
+        "name": "ProfitGrowth",
+        "rank_ic": 0.020284697006015987,
+        "valid_days": 4488
+      },
+      {
+        "name": "BiliLowPriceSmallCap200",
+        "rank_ic": 0.019406949572732084,
+        "valid_days": 4530
+      },
+      {
+        "name": "Alpha360_VOLUME8",
+        "rank_ic": 0.019291648592605834,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_RSQR20",
+        "rank_ic": 0.019204224089911324,
+        "valid_days": 5041
+      },
+      {
+        "name": "High52Week",
+        "rank_ic": 0.019060832939405963,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_VWAP0",
+        "rank_ic": 0.019011830848599993,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_OPEN0",
+        "rank_ic": 0.019001824202160306,
+        "valid_days": 5041
+      },
+      {
+        "name": "FinancialQualityGrowthNeutralPIT",
+        "rank_ic": 0.018527821663916377,
+        "valid_days": 4496
+      },
+      {
+        "name": "Alpha360_VOLUME7",
+        "rank_ic": 0.018245640335853318,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.1",
+        "rank_ic": 0.01814469957124581,
+        "valid_days": 5004
+      },
+      {
+        "name": "Alpha158_CNTN20",
+        "rank_ic": 0.017942387096215276,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME6",
+        "rank_ic": 0.017597143077900185,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_CNTN30",
+        "rank_ic": 0.017534773691374027,
+        "valid_days": 5038
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal",
+        "rank_ic": 0.017401714000327632,
+        "valid_days": 4852
+      },
+      {
+        "name": "Factor_20260531_005210_g29_3",
+        "rank_ic": 0.016965972752731595,
+        "valid_days": 4488
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.1",
+        "rank_ic": 0.01667972508789904,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME5",
+        "rank_ic": 0.016447954284069456,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliLowLifetimeRangeRatio",
+        "rank_ic": 0.015545122815483382,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.1",
+        "rank_ic": 0.015183660105642626,
+        "valid_days": 4470
+      },
+      {
+        "name": "TrendOpenSignalV2",
+        "rank_ic": 0.014463641146166798,
+        "valid_days": 1994
+      },
+      {
+        "name": "HighOperatingCashSurplus",
+        "rank_ic": 0.014405026568533154,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.05",
+        "rank_ic": 0.01397485032106731,
+        "valid_days": 4258
+      },
+      {
+        "name": "Alpha158_CNTN5",
+        "rank_ic": 0.013901175828636142,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha360_VOLUME4",
+        "rank_ic": 0.013364824184507795,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_MAX30",
+        "rank_ic": 0.013321836799296282,
+        "valid_days": 5039
+      },
+      {
+        "name": "Alpha158_CNTN10",
+        "rank_ic": 0.01299574797121896,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_RSQR10",
+        "rank_ic": 0.012966202078465638,
+        "valid_days": 5041
+      },
+      {
+        "name": "Factor_20260531_005210_g20_0",
+        "rank_ic": 0.012867382090949788,
+        "valid_days": 4488
+      },
+      {
+        "name": "Alpha158_RSQR60",
+        "rank_ic": 0.011512149163770634,
+        "valid_days": 4863
+      },
+      {
+        "name": "Alpha360_VOLUME3",
+        "rank_ic": 0.010128995743291609,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.1",
+        "rank_ic": 0.008785502712540446,
+        "valid_days": 3939
+      },
+      {
+        "name": "Factor_20260531_005210_g37_2",
+        "rank_ic": 0.007183329354001762,
+        "valid_days": 4488
+      },
+      {
+        "name": "Alpha360_VOLUME2",
+        "rank_ic": 0.007033904772528518,
+        "valid_days": 5041
+      },
+      {
+        "name": "Alpha158_CNTN60",
+        "rank_ic": 0.00667839372649317,
+        "valid_days": 4855
+      },
+      {
+        "name": "BiliNineDownReversal",
+        "rank_ic": 0.006403815439062907,
+        "valid_days": 4370
+      },
+      {
+        "name": "GrossMarginQuality",
+        "rank_ic": 0.006175288042603397,
+        "valid_days": 4487
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.15",
+        "rank_ic": 0.0060104247541825796,
+        "valid_days": 4695
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.15",
+        "rank_ic": 0.005556553152650401,
+        "valid_days": 4384
+      },
+      {
+        "name": "Alpha158_RSQR5",
+        "rank_ic": 0.005154853423472696,
+        "valid_days": 5041
+      },
+      {
+        "name": "Completed6030PoolBeta60Strict",
+        "rank_ic": 0.004895005205316371,
+        "valid_days": 4863
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.15",
+        "rank_ic": 0.004366288225911631,
+        "valid_days": 4903
+      },
+      {
+        "name": "AccrualsYield",
+        "rank_ic": 0.003895972690678429,
+        "valid_days": 4487
+      },
+      {
+        "name": "Factor_20260531_005210_g17_0",
+        "rank_ic": 0.0036393739537804214,
+        "valid_days": 4488
+      },
+      {
+        "name": "Alpha360_VOLUME1",
+        "rank_ic": 0.0034629724042234303,
+        "valid_days": 5041
+      },
+      {
+        "name": "Completed52WeekHighProximityStrict",
+        "rank_ic": 0.002856184309264039,
+        "valid_days": 3160
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.15",
+        "rank_ic": 0.002391401226423461,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.15",
+        "rank_ic": 0.0022896101015559733,
+        "valid_days": 3359
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.2",
+        "rank_ic": 0.0014390617647791503,
+        "valid_days": 4374
+      },
+      {
+        "name": "Alpha158_KLOW2",
+        "rank_ic": 0.0012789940324885905,
+        "valid_days": 5041
+      },
+      {
+        "name": "BiliKDJOversoldCross",
+        "rank_ic": 0.0007960562544028506,
+        "valid_days": 3453
+      },
+      {
+        "name": "BiliMACDBottomDivergence30",
+        "rank_ic": 0.000684639693316401,
+        "valid_days": 2897
+      },
+      {
+        "name": "HighReceivableOtherPayable",
+        "rank_ic": 0.0006383178866078837,
+        "valid_days": 5041
+      },
+      {
+        "name": "HighInventoryOtherPayable",
+        "rank_ic": 0.0005646657001701085,
+        "valid_days": 5041
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.2",
+        "rank_ic": 0.00035440971283497386,
+        "valid_days": 3469
+      },
+      {
+        "name": "Alpha360_HIGH1",
+        "rank_ic": 1.817032217425396e-05,
+        "valid_days": 5041
+      }
+    ],
+    "60": [
+      {
+        "name": "AmountBasedSmallCap5",
+        "rank_ic": 0.15337415217749742,
+        "valid_days": 5040
+      },
+      {
+        "name": "persistent_quiet20_60__prior_120__recent_10",
+        "rank_ic": 0.147633033947892,
+        "valid_days": 3995
+      },
+      {
+        "name": "MainTurnover",
+        "rank_ic": 0.1418331522654341,
+        "valid_days": 137
+      },
+      {
+        "name": "low_residual_vol20__window_30",
+        "rank_ic": 0.13811517765719158,
+        "valid_days": 4863
+      },
+      {
+        "name": "low_residual_vol20__window_10",
+        "rank_ic": 0.1263246660296792,
+        "valid_days": 5020
+      },
+      {
+        "name": "persistent_quiet20_60__prior_120__recent_60",
+        "rank_ic": 0.11932479380304695,
+        "valid_days": 3388
+      },
+      {
+        "name": "attention_contraction_10_60__attention_20__prior_120__recent_20__weight_0.75",
+        "rank_ic": 0.11555949889456638,
+        "valid_days": 3904
+      },
+      {
+        "name": "CompletedRangeVolatility20",
+        "rank_ic": 0.11400489786183675,
+        "valid_days": 4951
+      },
+      {
+        "name": "BiliLowReturnAttention20__window_5",
+        "rank_ic": 0.11285973945833197,
+        "valid_days": 5030
+      },
+      {
+        "name": "BiliLowReturnAttention20__window_60",
+        "rank_ic": 0.1091047621288697,
+        "valid_days": 4607
+      },
+      {
+        "name": "LongHorizonVol36MStrict",
+        "rank_ic": 0.10617543337427884,
+        "valid_days": 2544
+      },
+      {
+        "name": "BiliLowReturnAttention20__window_120",
+        "rank_ic": 0.09948952473156711,
+        "valid_days": 4083
+      },
+      {
+        "name": "LowFloatTurnover20_10",
+        "rank_ic": 0.09777216556026094,
+        "valid_days": 141
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_10",
+        "rank_ic": 0.09621824696172616,
+        "valid_days": 4699
+      },
+      {
+        "name": "high_to_quiet_40_20",
+        "rank_ic": 0.09040345313558233,
+        "valid_days": 4607
+      },
+      {
+        "name": "CompletedAmihudIlliquidity20__window_60",
+        "rank_ic": 0.08978383843919015,
+        "valid_days": 5040
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_30",
+        "rank_ic": 0.08828326900120027,
+        "valid_days": 4699
+      },
+      {
+        "name": "TrendIndividualV5",
+        "rank_ic": 0.08747296024665106,
+        "valid_days": 5040
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_120__recent_20",
+        "rank_ic": 0.08690101474453157,
+        "valid_days": 4877
+      },
+      {
+        "name": "Alpha158_MIN60",
+        "rank_ic": 0.08610618626220289,
+        "valid_days": 4607
+      },
+      {
+        "name": "BookToMarketQuality",
+        "rank_ic": 0.08525849886840527,
+        "valid_days": 4487
+      },
+      {
+        "name": "TrendReversalV11",
+        "rank_ic": 0.08087907176115933,
+        "valid_days": 4930
+      },
+      {
+        "name": "high_to_quiet_20_20",
+        "rank_ic": 0.08066824206405891,
+        "valid_days": 4783
+      },
+      {
+        "name": "high_to_quiet_10_20",
+        "rank_ic": 0.07966771773576115,
+        "valid_days": 4863
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_252__recent_60",
+        "rank_ic": 0.07837572053606799,
+        "valid_days": 4690
+      },
+      {
+        "name": "TrueMarketCapT1",
+        "rank_ic": 0.07814526178163944,
+        "valid_days": 5035
+      },
+      {
+        "name": "Alpha158_MIN20",
+        "rank_ic": 0.0758300378844345,
+        "valid_days": 4951
+      },
+      {
+        "name": "Alpha360_LOW27",
+        "rank_ic": 0.07516909784193082,
+        "valid_days": 4880
+      },
+      {
+        "name": "Alpha360_LOW38",
+        "rank_ic": 0.0723493424570411,
+        "valid_days": 4791
+      },
+      {
+        "name": "Alpha360_LOW52",
+        "rank_ic": 0.07168403512389548,
+        "valid_days": 4668
+      },
+      {
+        "name": "Alpha360_LOW18",
+        "rank_ic": 0.071313539719981,
+        "valid_days": 4958
+      },
+      {
+        "name": "DeepValueComposite",
+        "rank_ic": 0.06927531591582574,
+        "valid_days": 4487
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_10",
+        "rank_ic": 0.06698357851265391,
+        "valid_days": 4887
+      },
+      {
+        "name": "attention_contraction_10_60__attention_30__prior_20__recent_10__weight_0.25",
+        "rank_ic": 0.06696293059535446,
+        "valid_days": 4863
+      },
+      {
+        "name": "DownsideOpenVolatilityStrict",
+        "rank_ic": 0.06695735403090285,
+        "valid_days": 4951
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_30",
+        "rank_ic": 0.0650698599424008,
+        "valid_days": 4884
+      },
+      {
+        "name": "Alpha360_LOW12",
+        "rank_ic": 0.0638169808437244,
+        "valid_days": 5003
+      },
+      {
+        "name": "Alpha158_MIN5",
+        "rank_ic": 0.0635349676049253,
+        "valid_days": 5030
+      },
+      {
+        "name": "attention_contraction_10_60__attention_30__prior_20__recent_5__weight_0.25",
+        "rank_ic": 0.06236072373067875,
+        "valid_days": 4863
+      },
+      {
+        "name": "BiliLowPriceAbove2",
+        "rank_ic": 0.062242645123470094,
+        "valid_days": 5039
+      },
+      {
+        "name": "CompletedDividendYield504PIT",
+        "rank_ic": 0.060734847255829096,
+        "valid_days": 3158
+      },
+      {
+        "name": "BiliRawIssueDiscount",
+        "rank_ic": 0.0601131231180495,
+        "valid_days": 5039
+      },
+      {
+        "name": "BiliLowAmountAttention20__history_60__recent_60",
+        "rank_ic": 0.05725480250261538,
+        "valid_days": 4879
+      },
+      {
+        "name": "Factor_20260531_005210_g32_1",
+        "rank_ic": 0.05683368789807847,
+        "valid_days": 4487
+      },
+      {
+        "name": "Factor_20260531_005210_g22_2",
+        "rank_ic": 0.056350907264118684,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha360_LOW8",
+        "rank_ic": 0.05518692628311147,
+        "valid_days": 5023
+      },
+      {
+        "name": "contraction_20_60",
+        "rank_ic": 0.052268893416036175,
+        "valid_days": 4437
+      },
+      {
+        "name": "Alpha360_LOW5",
+        "rank_ic": 0.050593906772052215,
+        "valid_days": 5029
+      },
+      {
+        "name": "Alpha158_LOW0",
+        "rank_ic": 0.05043567822014295,
+        "valid_days": 5039
+      },
+      {
+        "name": "attention_decay20_60",
+        "rank_ic": 0.04964643239712518,
+        "valid_days": 4915
+      },
+      {
+        "name": "contraction_40_60",
+        "rank_ic": 0.048798614168611504,
+        "valid_days": 4259
+      },
+      {
+        "name": "BiliAdjustedIssueDiscount",
+        "rank_ic": 0.04850224881142719,
+        "valid_days": 5039
+      },
+      {
+        "name": "Alpha158_VSUMN60",
+        "rank_ic": 0.04807791810996994,
+        "valid_days": 4597
+      },
+      {
+        "name": "Alpha360_VOLUME58",
+        "rank_ic": 0.04759882089330666,
+        "valid_days": 4617
+      },
+      {
+        "name": "Alpha360_VOLUME53",
+        "rank_ic": 0.0473699904128007,
+        "valid_days": 4660
+      },
+      {
+        "name": "Alpha360_VOLUME55",
+        "rank_ic": 0.04704811499716318,
+        "valid_days": 4643
+      },
+      {
+        "name": "Alpha360_VOLUME51",
+        "rank_ic": 0.04689749515332423,
+        "valid_days": 4677
+      },
+      {
+        "name": "Alpha360_VOLUME49",
+        "rank_ic": 0.046582525519933395,
+        "valid_days": 4694
+      },
+      {
+        "name": "Alpha360_LOW3",
+        "rank_ic": 0.04616082583316884,
+        "valid_days": 5032
+      },
+      {
+        "name": "Alpha360_VOLUME47",
+        "rank_ic": 0.04574409759558153,
+        "valid_days": 4710
+      },
+      {
+        "name": "Alpha360_VOLUME45",
+        "rank_ic": 0.04514224378272378,
+        "valid_days": 4727
+      },
+      {
+        "name": "Alpha360_VOLUME43",
+        "rank_ic": 0.04445629094339677,
+        "valid_days": 4741
+      },
+      {
+        "name": "Alpha360_VOLUME41",
+        "rank_ic": 0.043998900403726386,
+        "valid_days": 4759
+      },
+      {
+        "name": "PB3ROE5Signal",
+        "rank_ic": 0.04382878494452987,
+        "valid_days": 5036
+      },
+      {
+        "name": "Factor_20260531_005210_g28_2",
+        "rank_ic": 0.04369493804338279,
+        "valid_days": 4487
+      },
+      {
+        "name": "IndustryPeerReversal120Strict",
+        "rank_ic": 0.04303005405372062,
+        "valid_days": 3898
+      },
+      {
+        "name": "Alpha360_VOLUME39",
+        "rank_ic": 0.04296934535420851,
+        "valid_days": 4783
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.05",
+        "rank_ic": 0.04285972749834798,
+        "valid_days": 4905
+      },
+      {
+        "name": "Alpha360_LOW1",
+        "rank_ic": 0.042490699562465074,
+        "valid_days": 5038
+      },
+      {
+        "name": "Factor_20260530_195339_g10_0",
+        "rank_ic": 0.04246500246573673,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha360_VOLUME37",
+        "rank_ic": 0.04211921014153582,
+        "valid_days": 4800
+      },
+      {
+        "name": "Factor_20260605_192540_g5_2",
+        "rank_ic": 0.04197798260008488,
+        "valid_days": 4496
+      },
+      {
+        "name": "Alpha360_VOLUME35",
+        "rank_ic": 0.041416993255839314,
+        "valid_days": 4813
+      },
+      {
+        "name": "CompletedDividendConsistency3YPIT",
+        "rank_ic": 0.04138404593818333,
+        "valid_days": 3098
+      },
+      {
+        "name": "Alpha158_VMA60",
+        "rank_ic": 0.04105247159009478,
+        "valid_days": 4607
+      },
+      {
+        "name": "Alpha360_VOLUME33",
+        "rank_ic": 0.04012242604336144,
+        "valid_days": 4828
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.05",
+        "rank_ic": 0.040074641438297094,
+        "valid_days": 5036
+      },
+      {
+        "name": "CompletedAmountConditionedReversal20Strict",
+        "rank_ic": 0.03968210451197076,
+        "valid_days": 4951
+      },
+      {
+        "name": "Factor_20260531_005210_g11_0",
+        "rank_ic": 0.03931620945037656,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha360_VOLUME31",
+        "rank_ic": 0.039081317512151895,
+        "valid_days": 4845
+      },
+      {
+        "name": "Alpha158_VSUMN30",
+        "rank_ic": 0.03861496261566566,
+        "valid_days": 4855
+      },
+      {
+        "name": "LowCashOutflowProfitGrowthSpread__penalty_0",
+        "rank_ic": 0.03856696390638099,
+        "valid_days": 5036
+      },
+      {
+        "name": "Factor_20260531_005210_g35_0",
+        "rank_ic": 0.03848356906066992,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha360_VOLUME29",
+        "rank_ic": 0.03751673234529897,
+        "valid_days": 4863
+      },
+      {
+        "name": "VolumeCVStrict",
+        "rank_ic": 0.03707955898667804,
+        "valid_days": 4989
+      },
+      {
+        "name": "Factor_20260531_005210_g40_1",
+        "rank_ic": 0.036180744541560915,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha360_VOLUME27",
+        "rank_ic": 0.036126146491154344,
+        "valid_days": 4880
+      },
+      {
+        "name": "Alpha158_IMIN30",
+        "rank_ic": 0.03564763669759286,
+        "valid_days": 4863
+      },
+      {
+        "name": "Alpha360_VOLUME25",
+        "rank_ic": 0.035327083900545904,
+        "valid_days": 4897
+      },
+      {
+        "name": "VolumeCV__window_30",
+        "rank_ic": 0.0350267602864962,
+        "valid_days": 5040
+      },
+      {
+        "name": "Factor_20260531_005210_g15_4",
+        "rank_ic": 0.03448266307314329,
+        "valid_days": 4487
+      },
+      {
+        "name": "Factor_20260531_005210_g41_0",
+        "rank_ic": 0.03445916837955292,
+        "valid_days": 4487
+      },
+      {
+        "name": "Factor_20260531_005210_g38_1",
+        "rank_ic": 0.03431173058679163,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha360_VOLUME23",
+        "rank_ic": 0.03410785960747735,
+        "valid_days": 4915
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.05",
+        "rank_ic": 0.03410280062329371,
+        "valid_days": 4631
+      },
+      {
+        "name": "Factor_20260531_005210_g34_1",
+        "rank_ic": 0.03376999019622889,
+        "valid_days": 4487
+      },
+      {
+        "name": "Factor_20260531_005210_g32_0",
+        "rank_ic": 0.033661623304481414,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha158_IMIN20",
+        "rank_ic": 0.033125249316208485,
+        "valid_days": 4951
+      },
+      {
+        "name": "contraction_40_20",
+        "rank_ic": 0.033027588350598415,
+        "valid_days": 4607
+      },
+      {
+        "name": "Factor_20260531_005210_g8_1",
+        "rank_ic": 0.03296704639848842,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha360_VOLUME21",
+        "rank_ic": 0.032923358872071526,
+        "valid_days": 4934
+      },
+      {
+        "name": "Factor_20260531_005210_g2_0",
+        "rank_ic": 0.03259442231984141,
+        "valid_days": 4487
+      },
+      {
+        "name": "Factor_20260531_005210_g20_3",
+        "rank_ic": 0.032533804746996596,
+        "valid_days": 4487
+      },
+      {
+        "name": "Factor_20260531_005210_g25_3",
+        "rank_ic": 0.03247272942090689,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha158_IMIN60",
+        "rank_ic": 0.03208994189187002,
+        "valid_days": 4607
+      },
+      {
+        "name": "Factor_20260531_005210_g39_1",
+        "rank_ic": 0.03197191496827614,
+        "valid_days": 4487
+      },
+      {
+        "name": "HighOperatingProfitRevenueGrowthSpread",
+        "rank_ic": 0.03187861248931695,
+        "valid_days": 5037
+      },
+      {
+        "name": "Factor_20260530_195339_g17_0",
+        "rank_ic": 0.0315481574820217,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha158_VSUMN20",
+        "rank_ic": 0.03147306759302172,
+        "valid_days": 4943
+      },
+      {
+        "name": "VolumeCV__window_10",
+        "rank_ic": 0.03128639849580579,
+        "valid_days": 5040
+      },
+      {
+        "name": "HighAbnormalGrossProfit",
+        "rank_ic": 0.031150161771019737,
+        "valid_days": 5036
+      },
+      {
+        "name": "Alpha360_VOLUME19",
+        "rank_ic": 0.030716592780985128,
+        "valid_days": 4951
+      },
+      {
+        "name": "Factor_20260531_005210_g11_3",
+        "rank_ic": 0.03067963905917237,
+        "valid_days": 4487
+      },
+      {
+        "name": "IndustryPeerReversal60Strict",
+        "rank_ic": 0.029220437439928124,
+        "valid_days": 4513
+      },
+      {
+        "name": "Factor_20260530_195339_g17_4",
+        "rank_ic": 0.029167570332436027,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha360_VOLUME17",
+        "rank_ic": 0.028984940221721114,
+        "valid_days": 4966
+      },
+      {
+        "name": "Factor_20260531_005210_g30_3",
+        "rank_ic": 0.028670342816622986,
+        "valid_days": 4487
+      },
+      {
+        "name": "Factor_20260531_005210_g24_2",
+        "rank_ic": 0.027046404154493192,
+        "valid_days": 4487
+      },
+      {
+        "name": "VolumeCV__window_60",
+        "rank_ic": 0.027026228786202353,
+        "valid_days": 5040
+      },
+      {
+        "name": "Alpha360_VOLUME15",
+        "rank_ic": 0.026987669267566433,
+        "valid_days": 4981
+      },
+      {
+        "name": "LowCashOutflowProfitGrowthSpread__penalty_1.5",
+        "rank_ic": 0.02612262055582723,
+        "valid_days": 5036
+      },
+      {
+        "name": "Alpha360_VOLUME14",
+        "rank_ic": 0.02584433203972831,
+        "valid_days": 4990
+      },
+      {
+        "name": "Factor_20260531_005210_g29_2",
+        "rank_ic": 0.024937201504831637,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha360_VOLUME13",
+        "rank_ic": 0.02468781134768247,
+        "valid_days": 4996
+      },
+      {
+        "name": "VolumeContraction5v15Strict",
+        "rank_ic": 0.024530171514250403,
+        "valid_days": 4951
+      },
+      {
+        "name": "Completed6030PoolBeta60Strict",
+        "rank_ic": 0.02447148982873541,
+        "valid_days": 4607
+      },
+      {
+        "name": "CashFlowYield",
+        "rank_ic": 0.024189975449954913,
+        "valid_days": 4487
+      },
+      {
+        "name": "BiliLowPriceSmallCap200",
+        "rank_ic": 0.024071301807466743,
+        "valid_days": 4290
+      },
+      {
+        "name": "LowPRDecile",
+        "rank_ic": 0.023962041077120803,
+        "valid_days": 5035
+      },
+      {
+        "name": "Factor_20260531_005210_g3_3",
+        "rank_ic": 0.023869352198482376,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha360_VOLUME12",
+        "rank_ic": 0.023730557097400965,
+        "valid_days": 5003
+      },
+      {
+        "name": "Alpha360_VWAP2",
+        "rank_ic": 0.02368451295153918,
+        "valid_days": 5034
+      },
+      {
+        "name": "TrendOpenSignalV3",
+        "rank_ic": 0.023455034613291143,
+        "valid_days": 2348
+      },
+      {
+        "name": "Alpha158_IMIN10",
+        "rank_ic": 0.02260830552971131,
+        "valid_days": 5020
+      },
+      {
+        "name": "Alpha360_VOLUME11",
+        "rank_ic": 0.022216426945329736,
+        "valid_days": 5011
+      },
+      {
+        "name": "Alpha158_QTLU10",
+        "rank_ic": 0.02158973668793914,
+        "valid_days": 5020
+      },
+      {
+        "name": "Alpha158_VMA20",
+        "rank_ic": 0.02132810394759255,
+        "valid_days": 4951
+      },
+      {
+        "name": "IndustryPeerReversal20Strict",
+        "rank_ic": 0.021318755630335764,
+        "valid_days": 4897
+      },
+      {
+        "name": "VolumeCV__window_5",
+        "rank_ic": 0.020951502158081687,
+        "valid_days": 5040
+      },
+      {
+        "name": "Alpha360_VOLUME10",
+        "rank_ic": 0.02072988265833325,
+        "valid_days": 5016
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal",
+        "rank_ic": 0.020614743125200504,
+        "valid_days": 4785
+      },
+      {
+        "name": "VolumeCV__window_120",
+        "rank_ic": 0.020463367553361884,
+        "valid_days": 5040
+      },
+      {
+        "name": "Factor_20260531_005210_g26_4",
+        "rank_ic": 0.02022019399422989,
+        "valid_days": 4487
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.1",
+        "rank_ic": 0.020178727045979124,
+        "valid_days": 4991
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.1",
+        "rank_ic": 0.019606395860556507,
+        "valid_days": 4398
+      },
+      {
+        "name": "BiliLowLifetimeRangeRatio",
+        "rank_ic": 0.019428305864725107,
+        "valid_days": 5040
+      },
+      {
+        "name": "HighOperatingCashSurplus",
+        "rank_ic": 0.01939304516364901,
+        "valid_days": 5009
+      },
+      {
+        "name": "Alpha360_VOLUME9",
+        "rank_ic": 0.018928744802482425,
+        "valid_days": 5020
+      },
+      {
+        "name": "ProfitGrowth",
+        "rank_ic": 0.018711868289442837,
+        "valid_days": 4487
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.05",
+        "rank_ic": 0.018398154858243407,
+        "valid_days": 4199
+      },
+      {
+        "name": "Completed52WeekHighProximityStrict",
+        "rank_ic": 0.01794803373924006,
+        "valid_days": 3146
+      },
+      {
+        "name": "Alpha158_OPEN0",
+        "rank_ic": 0.017922825444006536,
+        "valid_days": 5039
+      },
+      {
+        "name": "Factor_20260530_195339_g3_2",
+        "rank_ic": 0.01791005630365458,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha360_VOLUME8",
+        "rank_ic": 0.01737908459799379,
+        "valid_days": 5023
+      },
+      {
+        "name": "Alpha158_IMIN5",
+        "rank_ic": 0.017284066610854822,
+        "valid_days": 5030
+      },
+      {
+        "name": "Factor_20260531_005210_g29_3",
+        "rank_ic": 0.016283334931065856,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha360_VOLUME7",
+        "rank_ic": 0.015995504898662277,
+        "valid_days": 5026
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.1",
+        "rank_ic": 0.015791742710182397,
+        "valid_days": 5036
+      },
+      {
+        "name": "Alpha360_VOLUME6",
+        "rank_ic": 0.015287137948433982,
+        "valid_days": 5028
+      },
+      {
+        "name": "TrendOpenSignalV2",
+        "rank_ic": 0.015056276108636888,
+        "valid_days": 1975
+      },
+      {
+        "name": "Alpha158_CNTN20",
+        "rank_ic": 0.014657976905839108,
+        "valid_days": 4943
+      },
+      {
+        "name": "Alpha360_VOLUME5",
+        "rank_ic": 0.014289814025398405,
+        "valid_days": 5029
+      },
+      {
+        "name": "Factor_20260531_005210_g20_0",
+        "rank_ic": 0.014005919044894127,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha158_VWAP0",
+        "rank_ic": 0.01290068743826144,
+        "valid_days": 5039
+      },
+      {
+        "name": "Alpha158_CNTN10",
+        "rank_ic": 0.012333650850199355,
+        "valid_days": 5016
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.1",
+        "rank_ic": 0.012272790376225888,
+        "valid_days": 3834
+      },
+      {
+        "name": "Alpha158_RSQR20",
+        "rank_ic": 0.012218385467453862,
+        "valid_days": 4951
+      },
+      {
+        "name": "Alpha360_VOLUME4",
+        "rank_ic": 0.011879072341724277,
+        "valid_days": 5030
+      },
+      {
+        "name": "Alpha158_CNTN30",
+        "rank_ic": 0.011581295637508216,
+        "valid_days": 4855
+      },
+      {
+        "name": "Alpha158_CNTN5",
+        "rank_ic": 0.011514055315064041,
+        "valid_days": 5029
+      },
+      {
+        "name": "Alpha158_RSQR30",
+        "rank_ic": 0.011062686112966309,
+        "valid_days": 4863
+      },
+      {
+        "name": "Factor_20260531_005210_g37_2",
+        "rank_ic": 0.01067659741030492,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha158_RSQR60",
+        "rank_ic": 0.009775635329409907,
+        "valid_days": 4607
+      },
+      {
+        "name": "Alpha360_VOLUME3",
+        "rank_ic": 0.008829709974594055,
+        "valid_days": 5032
+      },
+      {
+        "name": "Alpha158_RSQR10",
+        "rank_ic": 0.008565018852634564,
+        "valid_days": 5020
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.15",
+        "rank_ic": 0.008071455577751869,
+        "valid_days": 4545
+      },
+      {
+        "name": "High52Week",
+        "rank_ic": 0.007892306216077321,
+        "valid_days": 5039
+      },
+      {
+        "name": "Alpha158_KLOW2",
+        "rank_ic": 0.006782585213974726,
+        "valid_days": 5039
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.15",
+        "rank_ic": 0.006753130600242934,
+        "valid_days": 4289
+      },
+      {
+        "name": "GrossMarginQuality",
+        "rank_ic": 0.006485767998880544,
+        "valid_days": 4486
+      },
+      {
+        "name": "Alpha360_VOLUME2",
+        "rank_ic": 0.006172773169549286,
+        "valid_days": 5034
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2.5__roe_0.15",
+        "rank_ic": 0.0049969245656694816,
+        "valid_days": 4822
+      },
+      {
+        "name": "Factor_20260531_005210_g17_0",
+        "rank_ic": 0.0047434902670370075,
+        "valid_days": 4487
+      },
+      {
+        "name": "Alpha158_RSQR5",
+        "rank_ic": 0.004359638840548026,
+        "valid_days": 5030
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1__roe_0.15",
+        "rank_ic": 0.003705452969758775,
+        "valid_days": 3236
+      },
+      {
+        "name": "BiliNineDownReversal",
+        "rank_ic": 0.0033354023541710956,
+        "valid_days": 4214
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_2__roe_0.2",
+        "rank_ic": 0.0032287599334257272,
+        "valid_days": 4222
+      },
+      {
+        "name": "Alpha360_VOLUME1",
+        "rank_ic": 0.0032087667552811367,
+        "valid_days": 5038
+      },
+      {
+        "name": "Alpha158_WVMA60",
+        "rank_ic": 0.002751902798174986,
+        "valid_days": 4597
+      },
+      {
+        "name": "Alpha158_MAX60",
+        "rank_ic": 0.0008716161942222514,
+        "valid_days": 4607
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_1.5__roe_0.2",
+        "rank_ic": 0.0006749678617248091,
+        "valid_days": 3386
+      },
+      {
+        "name": "PBBelowTwoROEAbove10Signal__pb_4__roe_0.15",
+        "rank_ic": 0.000285565413486859,
+        "valid_days": 5019
+      }
+    ]
+  },
+  "correlation_threshold": 0.8,
+  "selection_receipt_sha256": "daafeccb25f0b8b5e779cd4a676770b8b05255a49eec788a2c1e3701d0ba7518"
+}

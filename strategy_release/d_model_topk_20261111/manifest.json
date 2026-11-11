@@ -1,0 +1,61 @@
+{
+  "release_id": "d_model_topk_20261111",
+  "default_method": "rank_buffer",
+  "display_name": "D模型 + TopK 40/40，最短3日，每日最多换出2只",
+  "horizons": [
+    3,
+    7,
+    15,
+    30,
+    60
+  ],
+  "weights": [
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2
+  ],
+  "parameters": {
+    "buy_n": 40,
+    "sell_m": 40,
+    "hold_thresh": 3,
+    "max_replacements": 2
+  },
+  "allow_cash": true,
+  "top_up_existing_positions": false,
+  "new_entry_nav_fraction": 0.025,
+  "fees": {
+    "commission_rate": 8.54e-05,
+    "minimum_commission": 0.1,
+    "slippage_rate": 0.0025,
+    "stamp_tax_rate": 0.0005,
+    "transfer_fee_rate": 2e-05
+  },
+  "training_interval": [
+    "2005-01-01",
+    "2025-12-31"
+  ],
+  "features": 278,
+  "trees": 583,
+  "integration_scope": "portable model+normalization+allocation; live repository supplies causal features, legal masks and confirmed account. Existing trade.main PPO entry is not this adapter.",
+  "research_source_scope": "Exact tested research source for feature-provider porting, not a broker configuration; machine secrets/data/model caches excluded",
+  "files": {
+    "evaluation_summary.json": "c3d6396a9d291cb6a61c21e6a9a4ab8efc5e13a75df602b8cc54f31c7f7125a2",
+    "factor_selection.json": "e38f832c958a969092afb06581dfe57af94160d88293d292855843fc5139db0d",
+    "features.json": "73a59a8eb5e79dcf2c05ab3adba9292109422f53d3ccc9591e53592a4c3cf7f5",
+    "model.json": "eaacb5145d32396000ad015d005a6509c97155af297d94d0b3413c933bd72b93",
+    "model.txt": "b99b45fae48be92f56809f46052e7f5386ae8d783c657b035c9c0a67a068c7ca",
+    "QLIB_LICENSE.txt": "7df20dcdf9197e9945c14858d41c60f11b52b93e5b69e2b63416b874d598d322",
+    "research_source.zip": "f71e2389bb662de7a366b68ec28fb8b10557d6e1a40f8c6632918d200b482cca",
+    "research_source_manifest.json": "01f580d8995b525d4793f4558f67fc688d8e1f968ea4f917d7f1667b0bd6b59d",
+    "training_provenance.json": "774106a338b46a16590db95dc3cba31a9c0806d63c63a5e4d61eca7614bbbe0d",
+    "verification.json": "9f647fd66fd4504b941af4a0e75c1277d2b1898002616e1a9555d948111ca74a"
+  },
+  "early_stopping_interval": [
+    "2026-01-01",
+    "2026-11-10"
+  ],
+  "label_endpoint": "2026-11-10 open",
+  "actual_training_rounds": 783
+}

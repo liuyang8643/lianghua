@@ -1,6 +1,6 @@
 {
   "strategy": "new_model_topk",
-  "bundle": "strategy_release/new_model_topk_20261108",
-  "manifest_sha256": "6e0595b704f4ea047e9e1c14dae4ee5d77b97720f1bee300ab7dd388863c8a4f",
+  "bundle": "strategy_release/d_model_topk_20261111",
+  "manifest_sha256": "ddf69ee927ed359a841d89182f63f3524b231ce6f841ae314bfbc77b73facde6",
   "mvo_enabled": false
 }
